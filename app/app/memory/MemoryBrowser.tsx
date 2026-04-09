@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Edit3, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
+import { Edit3, PanelLeftOpen, PanelLeftClose, Plus, ArrowRightLeft, RefreshCw, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../../lib/api';
 import { Button, Badge } from '../../components/ui';
@@ -12,6 +12,8 @@ import KeywordManager from './components/KeywordManager';
 import DomainNode from './components/MemorySidebar';
 import GlossaryHighlighter from './components/GlossaryHighlighter';
 import MemoryEditor from './components/MemoryEditor';
+import MoveDialog from './components/MoveDialog';
+import CreateNodeForm from './components/CreateNodeForm';
 import MemoryChildrenList from './components/MemoryChildrenList';
 import { AxiosError } from 'axios';
 
@@ -54,6 +56,7 @@ interface MemoryNode {
   aliases?: string[];
   is_virtual?: boolean;
   node_uuid?: string;
+  created_at?: string | null;
   glossary_keywords?: string[];
   memory_views?: MemoryView[];
   glossary_matches?: GlossaryMatch[];
@@ -101,6 +104,9 @@ export default function MemoryBrowser(): React.JSX.Element {
   const [editDisclosure, setEditDisclosure] = useState('');
   const [editPriority, setEditPriority] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [moving, setMoving] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [rebuildingViews, setRebuildingViews] = useState(false);
 
   const currentRouteRef = useRef({ domain, path });
   useEffect(() => { currentRouteRef.current = { domain, path }; }, [domain, path]);
@@ -166,6 +172,29 @@ export default function MemoryBrowser(): React.JSX.Element {
       alert(`Save failed: ${axiosErr.message}`);
     }
     finally { setSaving(false); }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm(t('Delete this node and all its children? This cannot be undone.'))) return;
+    try {
+      await api.delete('/browse/node', { params: { domain, path } });
+      const parentPath = path.includes('/') ? path.split('/').slice(0, -1).join('/') : '';
+      navigateTo(parentPath);
+    } catch (err) {
+      const axiosErr = err as AxiosError<{ detail?: string }>;
+      alert(axiosErr.response?.data?.detail || axiosErr.message || 'Delete failed');
+    }
+  };
+
+  const handleRebuildViews = async () => {
+    setRebuildingViews(true);
+    try {
+      await api.post('/browse/recall/rebuild');
+      await refreshData();
+    } catch (err) {
+      const axiosErr = err as AxiosError<{ detail?: string }>;
+      alert(axiosErr.response?.data?.detail || axiosErr.message || 'Rebuild failed');
+    } finally { setRebuildingViews(false); }
   };
 
   const isRoot = !path;
@@ -243,6 +272,11 @@ export default function MemoryBrowser(): React.JSX.Element {
             ))}
           </div>
         )}
+        {node.created_at && !editing && (
+          <p className="mt-2 text-[11px] text-txt-quaternary">
+            {t('Created')}: {new Date(node.created_at).toLocaleString()}
+          </p>
+        )}
       </div>
       <div className="flex items-center gap-2 shrink-0 flex-wrap">
         {!sidebarOpen && (
@@ -250,10 +284,28 @@ export default function MemoryBrowser(): React.JSX.Element {
             <PanelLeftOpen size={14} /> {t('Tree')}
           </Button>
         )}
-        {!editing && (
-          <Button variant="ghost" size="sm" onClick={startEditing}>
-            <Edit3 size={14} /> {t('Edit')}
-          </Button>
+        {!editing && !moving && !creating && node && !node.is_virtual && (
+          <>
+            <Button variant="ghost" size="sm" onClick={startEditing}>
+              <Edit3 size={14} /> {t('Edit')}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setCreating(true)}>
+              <Plus size={14} /> {t('New')}
+            </Button>
+            {!isRoot && (
+              <Button variant="ghost" size="sm" onClick={() => setMoving(true)}>
+                <ArrowRightLeft size={14} /> {t('Move')}
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={handleRebuildViews} disabled={rebuildingViews}>
+              <RefreshCw size={14} className={rebuildingViews ? 'animate-spin' : ''} /> {rebuildingViews ? t('Rebuilding…') : t('Rebuild')}
+            </Button>
+            {!isRoot && (
+              <Button variant="destructive" size="sm" onClick={handleDelete}>
+                <Trash2 size={14} /> {t('Delete')}
+              </Button>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -340,13 +392,27 @@ export default function MemoryBrowser(): React.JSX.Element {
               <>
                 {pageHeader}
 
-                {/* Editor sits where content will show */}
+                {/* Inline panels: editor / move / create */}
                 {editing && (
                   <MemoryEditor
                     editContent={editContent} setEditContent={setEditContent}
                     editDisclosure={editDisclosure} setEditDisclosure={setEditDisclosure}
                     editPriority={editPriority} setEditPriority={setEditPriority}
                     saving={saving} onSave={handleSave} onCancel={() => setEditing(false)}
+                  />
+                )}
+                {moving && (
+                  <MoveDialog
+                    domain={domain} path={path}
+                    onMoved={(d, p) => { setMoving(false); navigateTo(p, d); }}
+                    onCancel={() => setMoving(false)}
+                  />
+                )}
+                {creating && (
+                  <CreateNodeForm
+                    domain={domain} parentPath={path}
+                    onCreated={() => { setCreating(false); refreshData(); }}
+                    onCancel={() => setCreating(false)}
                   />
                 )}
 

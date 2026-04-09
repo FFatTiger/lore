@@ -196,7 +196,7 @@ describe('executeDreamTool', () => {
   it('dispatches search to searchMemories', async () => {
     mockSearchMemories.mockResolvedValue([] as any);
     await executeDreamTool('search', { query: 'hello', limit: 5 });
-    expect(mockSearchMemories).toHaveBeenCalledWith({ query: 'hello', limit: 5, hybrid: true });
+    expect(mockSearchMemories).toHaveBeenCalledWith({ query: 'hello', limit: 5 });
   });
 
   it('dispatches list_domains', async () => {

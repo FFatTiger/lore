@@ -273,11 +273,14 @@ export async function searchMemories({
       scoredMap.set(row.uri, {
         uri: row.uri,
         score: contentBonus + 0.05,
+        exact_score: 0,
+        glossary_semantic_score: 0,
+        dense_score: 0,
+        lexical_score: contentBonus,
+        score_breakdown: { content: contentBonus },
         priority: row.priority,
-        disclosure: row.disclosure || '',
         cues: ['content'],
-        view_types: [],
-        timestamps: [],
+        matched_on: ['content'],
       });
     }
   }
@@ -297,18 +300,24 @@ export async function searchMemories({
     if (row.snippet && !snippetMap.has(row.uri)) snippetMap.set(row.uri, row.snippet);
   }
 
-  // 8. Build results
+  // 8. Build disclosure map from content rows
+  const disclosureMap = new Map<string, string>();
+  for (const row of contentRows) {
+    if (row.disclosure && !disclosureMap.has(row.uri)) disclosureMap.set(row.uri, row.disclosure);
+  }
+
+  // 9. Build results
   const results: SearchResult[] = merged.map((item) => ({
     uri: item.uri,
     domain: item.uri.split('://')[0] || '',
     path: item.uri.includes('://') ? item.uri.split('://')[1] : item.uri,
     priority: item.priority,
-    disclosure: item.disclosure || null,
+    disclosure: disclosureMap.get(item.uri) || null,
     score: Number(item.score.toFixed(6)),
     score_display: Number(item.score.toFixed(2)),
     content: contentMap.get(item.uri) || null,
     snippet: snippetMap.get(item.uri) || null,
-    matched_on: item.cues || [],
+    matched_on: item.matched_on || item.cues || [],
     cues: item.cues || [],
   }));
 

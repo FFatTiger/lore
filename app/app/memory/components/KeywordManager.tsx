@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, KeyboardEvent, ChangeEvent } from '
 import { X } from 'lucide-react';
 import { api } from '../../../lib/api';
 import { useT } from '../../../lib/i18n';
+import { useConfirm } from '../../../components/ConfirmDialog';
 import { AxiosError } from 'axios';
 
 interface KeywordManagerProps {
@@ -14,6 +15,7 @@ interface KeywordManagerProps {
 
 const KeywordManager = ({ keywords, nodeUuid, onUpdate }: KeywordManagerProps): React.JSX.Element => {
   const { t } = useT();
+  const { toast } = useConfirm();
   const [adding, setAdding] = useState(false);
   const [newKeyword, setNewKeyword] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -28,7 +30,7 @@ const KeywordManager = ({ keywords, nodeUuid, onUpdate }: KeywordManagerProps): 
       setNewKeyword(''); setAdding(false); onUpdate();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      alert(`Failed: ${axiosErr.response?.data?.detail || axiosErr.message}`);
+      toast(axiosErr.response?.data?.detail || axiosErr.message || 'Failed');
     }
   };
 
@@ -39,7 +41,7 @@ const KeywordManager = ({ keywords, nodeUuid, onUpdate }: KeywordManagerProps): 
       onUpdate();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      alert(`Failed: ${axiosErr.response?.data?.detail || axiosErr.message}`);
+      toast(axiosErr.response?.data?.detail || axiosErr.message || 'Failed');
     }
   };
 

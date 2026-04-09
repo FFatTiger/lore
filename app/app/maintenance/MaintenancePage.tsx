@@ -8,6 +8,7 @@ import { api } from '../../lib/api';
 import { PageCanvas, PageTitle, Button, Badge, EmptyState } from '../../components/ui';
 import { useT } from '../../lib/i18n';
 import { AxiosError } from 'axios';
+import { useConfirm } from '../../components/ConfirmDialog';
 
 interface MigrationTarget {
   id?: string | number;
@@ -31,6 +32,7 @@ interface OrphanDetail {
 
 export default function MaintenancePage(): React.JSX.Element {
   const { t } = useT();
+  const { confirm: confirmDialog } = useConfirm();
   const [orphans, setOrphans] = useState<OrphanItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +60,9 @@ export default function MaintenancePage(): React.JSX.Element {
   }, []);
 
   const handleBatchDelete = async () => {
-    if (!selectedIds.size || !confirm(t('Delete {n} memories?').replace('{n}', String(selectedIds.size)))) return;
+    if (!selectedIds.size) return;
+    const ok = await confirmDialog({ message: t('Delete {n} memories?').replace('{n}', String(selectedIds.size)), destructive: true, confirmLabel: t('Delete') });
+    if (!ok) return;
     setBatchDeleting(true);
     const toDelete = [...selectedIds], failed: Array<string | number> = [];
     for (const id of toDelete) { try { await api.delete(`/maintenance/orphans/${id}`); } catch { failed.push(id); } }

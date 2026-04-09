@@ -7,6 +7,7 @@ import { api } from '../../lib/api';
 import { useT } from '../../lib/i18n';
 import DiffViewer from '../../components/DiffViewer';
 import { PageCanvas, PageTitle, Section, Button, Badge, StatCard, Table, EmptyState } from '../../components/ui';
+import { useConfirm } from '../../components/ConfirmDialog';
 
 function fmtDuration(ms: number | null | undefined): string {
   if (!ms) return '—';
@@ -93,6 +94,7 @@ interface DreamConfig {
 
 export default function DreamPage(): React.JSX.Element {
   const { t } = useT();
+  const { confirm: confirmDialog } = useConfirm();
   const [entries, setEntries] = useState<DreamEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -158,7 +160,8 @@ export default function DreamPage(): React.JSX.Element {
   const handleBack = () => { setSelectedId(null); setDetail(null); };
 
   const handleRollback = async (id: string | number) => {
-    if (!confirm(t('Confirm rollback? This will reverse all changes from this dream.'))) return;
+    const ok = await confirmDialog({ message: t('Confirm rollback? This will reverse all changes from this dream.'), destructive: true, confirmLabel: t('Rollback') });
+    if (!ok) return;
     setRollingBack(true);
     try {
       await api.post('/browse/dream', { action: 'rollback', id }).then((r) => r.data);

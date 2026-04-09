@@ -16,6 +16,7 @@ import MoveDialog from './components/MoveDialog';
 import CreateNodeForm from './components/CreateNodeForm';
 import MemoryChildrenList from './components/MemoryChildrenList';
 import { AxiosError } from 'axios';
+import { useConfirm } from '../../components/ConfirmDialog';
 
 interface SkeletonLineProps {
   w?: string;
@@ -108,6 +109,7 @@ export default function MemoryBrowser(): React.JSX.Element {
   const [creating, setCreating] = useState(false);
   const [rebuildingViews, setRebuildingViews] = useState(false);
 
+  const { confirm, toast } = useConfirm();
   const currentRouteRef = useRef({ domain, path });
   useEffect(() => { currentRouteRef.current = { domain, path }; }, [domain, path]);
 
@@ -169,20 +171,21 @@ export default function MemoryBrowser(): React.JSX.Element {
       setEditing(false);
     } catch (err) {
       const axiosErr = err as AxiosError;
-      alert(`Save failed: ${axiosErr.message}`);
+      toast(`Save failed: ${axiosErr.message}`);
     }
     finally { setSaving(false); }
   };
 
   const handleDelete = async () => {
-    if (!confirm(t('Delete this node and all its children? This cannot be undone.'))) return;
+    const ok = await confirm({ message: t('Delete this node and all its children? This cannot be undone.'), destructive: true, confirmLabel: t('Delete') });
+    if (!ok) return;
     try {
       await api.delete('/browse/node', { params: { domain, path } });
       const parentPath = path.includes('/') ? path.split('/').slice(0, -1).join('/') : '';
       navigateTo(parentPath);
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      alert(axiosErr.response?.data?.detail || axiosErr.message || 'Delete failed');
+      toast(axiosErr.response?.data?.detail || axiosErr.message || 'Delete failed');
     }
   };
 
@@ -193,7 +196,7 @@ export default function MemoryBrowser(): React.JSX.Element {
       await refreshData();
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      alert(axiosErr.response?.data?.detail || axiosErr.message || 'Rebuild failed');
+      toast(axiosErr.response?.data?.detail || axiosErr.message || 'Rebuild failed');
     } finally { setRebuildingViews(false); }
   };
 

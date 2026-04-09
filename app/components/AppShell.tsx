@@ -8,6 +8,7 @@ import { getDomains, AUTH_ERROR_EVENT } from '../lib/api';
 import { LanguageProvider, useT } from '../lib/i18n';
 import { ThemeProvider, useTheme } from '../lib/theme';
 import TokenAuth from './TokenAuth';
+import { ConfirmProvider } from './ConfirmDialog';
 import { AxiosError } from 'axios';
 
 interface Tab {
@@ -295,7 +296,9 @@ export default function AppShell({ children }: AppShellProps): React.JSX.Element
   return (
     <ThemeProvider>
       <LanguageProvider>
-        <AppShellInner>{children}</AppShellInner>
+        <ConfirmProvider>
+          <AppShellInner>{children}</AppShellInner>
+        </ConfirmProvider>
       </LanguageProvider>
     </ThemeProvider>
   );

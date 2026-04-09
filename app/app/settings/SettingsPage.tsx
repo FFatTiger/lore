@@ -6,6 +6,7 @@ import { api } from '../../lib/api';
 import { PageCanvas, PageTitle, Section, Badge, Button } from '../../components/ui';
 import { useT } from '../../lib/i18n';
 import { AxiosError } from 'axios';
+import { useConfirm } from '../../components/ConfirmDialog';
 
 type SettingSource = 'db' | 'env' | 'default';
 
@@ -185,6 +186,7 @@ export default function SettingsPage(): React.JSX.Element {
   const [rebuilding, setRebuilding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
+  const { confirm: confirmDialog } = useConfirm();
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -252,7 +254,7 @@ export default function SettingsPage(): React.JSX.Element {
   const handleSave = useCallback(async () => {
     if (!dirtyKeys.length) return;
     if (embeddingChanged) {
-      const ok = confirm(t('Changing the embedding model will invalidate all existing embeddings and trigger a full rebuild. Continue?'));
+      const ok = await confirmDialog({ message: t('Changing the embedding model will invalidate all existing embeddings and trigger a full rebuild. Continue?'), confirmLabel: t('Continue') });
       if (!ok) return;
     }
     setSaving(true); setError(null);
@@ -388,6 +390,7 @@ interface BackupStatus {
 
 function BackupActionPanel(): React.JSX.Element {
   const { t } = useT();
+  const { confirm: confirmDialog } = useConfirm();
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [backupRunning, setBackupRunning] = useState(false);
@@ -434,7 +437,8 @@ function BackupActionPanel(): React.JSX.Element {
   };
 
   const handleImport = async (file: File) => {
-    if (!confirm(t('Confirm restore? This will replace ALL current data.'))) {
+    const ok = await confirmDialog({ message: t('Confirm restore? This will replace ALL current data.'), destructive: true, confirmLabel: t('Restore') });
+    if (!ok) {
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }

@@ -49,32 +49,34 @@ const TokenAuth = ({ onAuthenticated }: TokenAuthProps): React.JSX.Element => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="mb-2 block text-[13px] font-medium text-txt-secondary">{t('API Token')}</label>
-            <input
-              type="password"
-              value={token}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => { setToken(e.target.value); if (error) setError(''); }}
-              placeholder={t('Enter your token')}
-              disabled={loading}
-              autoFocus
-              className="w-full rounded-xl border border-separator-thin bg-bg-elevated px-4 py-3 text-[15px] text-txt-primary placeholder:text-txt-quaternary focus:border-sys-blue/60 focus:bg-bg-raised focus:outline-none"
-            />
+          <div className="rounded-2xl border border-separator-thin bg-bg-elevated p-5 space-y-4">
+            <label className="block">
+              <span className="mb-2 block text-[13px] font-medium text-txt-secondary">{t('API Token')}</span>
+              <input
+                type="password"
+                value={token}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => { setToken(e.target.value); if (error) setError(''); }}
+                placeholder={t('Enter your token')}
+                disabled={loading}
+                autoFocus
+                className="w-full rounded-xl border border-separator-thin bg-bg-raised px-4 py-3 text-[15px] text-txt-primary placeholder:text-txt-quaternary focus:border-sys-blue/60 focus:outline-none transition-colors"
+              />
+            </label>
+
+            {error && (
+              <div className="rounded-xl bg-sys-red/10 border border-sys-red/20 px-3.5 py-2.5 text-[13px] text-sys-red">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading || !token.trim()}
+              className="press w-full h-11 rounded-full bg-sys-blue text-[15px] font-medium text-white hover:bg-[#1E90FF] disabled:bg-fill-primary disabled:text-txt-quaternary disabled:cursor-not-allowed transition-colors"
+            >
+              {loading ? t('Connecting…') : t('Continue')}
+            </button>
           </div>
-
-          {error && (
-            <div className="rounded-xl bg-sys-red/10 px-3.5 py-2.5 text-[13px] text-sys-red">
-              {error}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading || !token.trim()}
-            className="press w-full h-11 rounded-xl bg-sys-blue text-[15px] font-medium text-white hover:bg-[#1E90FF] disabled:bg-fill-primary disabled:text-txt-quaternary disabled:cursor-not-allowed"
-          >
-            {loading ? t('Connecting…') : t('Continue')}
-          </button>
         </form>
       </div>
     </div>

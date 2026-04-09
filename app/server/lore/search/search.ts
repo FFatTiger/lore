@@ -253,7 +253,7 @@ export async function searchMemories({
 
   // 3. Score via recall's strategy engine (4 view-based paths)
   const byUri = collectCandidates(
-    { exactRows, glossarySemanticRows: gsRows, denseRows, lexicalRows: viewLexicalRows },
+    { exactRows: exactRows as unknown as Record<string, unknown>[], glossarySemanticRows: gsRows as unknown as Record<string, unknown>[], denseRows: denseRows as unknown as Record<string, unknown>[], lexicalRows: viewLexicalRows as unknown as Record<string, unknown>[] },
     { viewPriors: scoringConfig.view_priors as Record<string, number> | null },
   );
   const scored = runStrategy(scoringConfig.strategy, byUri, scoringConfig);

@@ -14,7 +14,7 @@ import { getNodePayload, listDomains } from './lore/memory/browse';
 import { createNode, updateNodeByPath, deleteNodeByPath, moveNode } from './lore/memory/write';
 import { searchMemories } from './lore/search/search';
 import { markSessionRead, listSessionReads, clearSessionReads } from './lore/memory/session';
-import { markRecallEventUsedBySession } from './lore/recall/recallEventLog';
+import { markRecallEventsUsedInAnswer } from './lore/recall/recallEventLog';
 import { validateCreatePolicy, validateUpdatePolicy, validateDeletePolicy } from './lore/ops/policy';
 
 import {
@@ -89,20 +89,21 @@ export function createMcpServer(): InstanceType<typeof McpServer> {
   // ── lore_get_node ────────────────────────────────────────────
   server.tool(
     'lore_get_node',
-    'Open a memory node to inspect its full content, metadata, and nearby structure. Pass session_id from the <recall> tag to enable per-session read tracking.',
+    'Open a memory node to inspect its full content, metadata, and nearby structure. Pass session_id and query_id from the <recall> tag to enable read tracking and adoption.',
     {
       uri: z.string().describe('Full memory URI for the node you want to open, such as core://soul.'),
       nav_only: z.boolean().optional().describe('If true, skip expensive glossary processing.'),
-      session_id: z.string().optional().describe('Session identifier from the <recall session_id="..."> tag. Enables per-session read tracking and recall suppression.'),
+      session_id: z.string().optional().describe('Session identifier from the <recall session_id="..."> tag.'),
+      query_id: z.string().optional().describe('Query identifier from the <recall query_id="..."> tag. Marks this recall as adopted.'),
     },
     async (args) => {
       try {
         const { domain, path } = resolveUri(args, defaultDomain);
         const data = await getNodePayload({ domain, path, navOnly: args?.nav_only === true });
 
-        // best-effort session read + recall adoption tracking
         const node = data?.node || {};
         const sid = typeof args?.session_id === 'string' && args.session_id.trim() ? args.session_id.trim() : 'mcp-embedded';
+        const qid = typeof args?.query_id === 'string' ? args.query_id.trim() : '';
         if (node.uri && node.node_uuid) {
           try {
             await Promise.all([
@@ -112,8 +113,8 @@ export function createMcpServer(): InstanceType<typeof McpServer> {
                 node_uuid: node.node_uuid,
                 source: 'mcp:lore_get_node',
               }),
-              sid !== 'mcp-embedded'
-                ? markRecallEventUsedBySession(sid, node.uri, 'mcp:lore_get_node')
+              qid
+                ? markRecallEventsUsedInAnswer({ queryId: qid, sessionId: sid, nodeUris: [node.uri], source: 'mcp:lore_get_node', success: true })
                 : Promise.resolve(),
             ]);
           } catch { /* best effort */ }

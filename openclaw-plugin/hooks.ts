@@ -63,7 +63,8 @@ export async function fetchRecallBlock(pluginCfg: any, query: string, sessionId:
   // All display params (min_display_score, max_display_items, etc.) controlled server-side via /settings
   const payload = { query, session_id: sessionId };
   const data = await fetchJson(pluginCfg, "/browse/recall", { method: "POST", body: JSON.stringify(payload) });
-  const block = formatRecallBlock(data?.items || [], 2, sessionId);
+  const queryId = data?.event_log?.query_id || "";
+  const block = formatRecallBlock(data?.items || [], 2, sessionId, queryId);
   return block ? { block, data } : null;
 }
 

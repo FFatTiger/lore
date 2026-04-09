@@ -2,10 +2,7 @@
   "mcpServers": {
     "lore": {
       "type": "http",
-      "url": "${LORE_BASE_URL:-http://127.0.0.1:18901}/api/mcp",
-      "headers": {
-        "Authorization": "Bearer ${LORE_API_TOKEN}"
-      }
+      "url": "${LORE_BASE_URL:-http://127.0.0.1:18901}/api/mcp"
     }
   }
 }

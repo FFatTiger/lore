@@ -14,6 +14,7 @@ import { getNodePayload, listDomains } from './lore/memory/browse';
 import { createNode, updateNodeByPath, deleteNodeByPath, moveNode } from './lore/memory/write';
 import { searchMemories } from './lore/search/search';
 import { markSessionRead, listSessionReads, clearSessionReads } from './lore/memory/session';
+import { markRecallEventUsedBySession } from './lore/recall/recallEventLog';
 import { validateCreatePolicy, validateUpdatePolicy, validateDeletePolicy } from './lore/ops/policy';
 
 import {
@@ -99,17 +100,22 @@ export function createMcpServer(): InstanceType<typeof McpServer> {
         const { domain, path } = resolveUri(args, defaultDomain);
         const data = await getNodePayload({ domain, path, navOnly: args?.nav_only === true });
 
-        // best-effort session read tracking
+        // best-effort session read + recall adoption tracking
         const node = data?.node || {};
         const sid = typeof args?.session_id === 'string' && args.session_id.trim() ? args.session_id.trim() : 'mcp-embedded';
         if (node.uri && node.node_uuid) {
           try {
-            await markSessionRead({
-              session_id: sid,
-              uri: node.uri,
-              node_uuid: node.node_uuid,
-              source: 'mcp:lore_get_node',
-            });
+            await Promise.all([
+              markSessionRead({
+                session_id: sid,
+                uri: node.uri,
+                node_uuid: node.node_uuid,
+                source: 'mcp:lore_get_node',
+              }),
+              sid !== 'mcp-embedded'
+                ? markRecallEventUsedBySession(sid, node.uri, 'mcp:lore_get_node')
+                : Promise.resolve(),
+            ]);
           } catch { /* best effort */ }
         }
 

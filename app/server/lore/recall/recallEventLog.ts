@@ -335,3 +335,37 @@ export async function markRecallEventsUsedInAnswer({
     node_uris: safeUris,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Mark events used by session + URI (for MCP clients without query_id)
+// ---------------------------------------------------------------------------
+
+export async function markRecallEventUsedBySession(
+  sessionId: string,
+  nodeUri: string,
+  source = 'mcp:lore_get_node',
+): Promise<{ updated_count: number }> {
+  if (!sessionId || !nodeUri) return { updated_count: 0 };
+
+  const metadataPatch: Record<string, unknown> = {
+    answer_signal_source: source,
+    answer_session_id: sessionId,
+    answer_marked_at: new Date().toISOString(),
+  };
+
+  const result = await sql(
+    `
+      UPDATE recall_events
+      SET
+        used_in_answer = TRUE,
+        metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb
+      WHERE metadata->>'session_id' = $1
+        AND node_uri = $2
+        AND selected = TRUE
+        AND used_in_answer = FALSE
+    `,
+    [sessionId, nodeUri, JSON.stringify(metadataPatch)],
+  );
+
+  return { updated_count: Number(result.rowCount || 0) };
+}

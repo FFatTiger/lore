@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Node / Next
+node_modules/
+.next/
+out/
+
+# Runtime / local state
+.env
+.env.*
+!.env.example
+!.env.local.example
+*.log
+state/
+*.db
+*.db-*
+*.bak
+snapshots/
+
+# Claude Code local settings (not tracked)
+.claude/
+/.claude-plugin/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Superpowers specs/plans (local-only)
+docs/superpowers/
+
+# Claude Code Connect
+.cc-connect/
+
+# Coverage / build
+coverage/
+dist/
+build/
+
+# DB migration script (local only)
+migrate-db-rename.sql
+「纯干货」几万字都讲不明白的Memory架构与思考.pdf
+app/tsconfig.tsbuildinfo

@@ -1,0 +1,11 @@
+{
+  "name": "lore",
+  "description": "Long-term memory for AI agents — MCP tools + automatic recall injection",
+  "version": "1.0.0",
+  "author": {
+    "name": "FFatTiger"
+  },
+  "homepage": "https://github.com/FFatTiger/lore",
+  "repository": "https://github.com/FFatTiger/lore",
+  "license": "MIT"
+}

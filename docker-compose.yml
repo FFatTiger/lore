@@ -1,0 +1,49 @@
+services:
+  postgres:
+    image: ${LORE_POSTGRES_IMAGE:-pgvector/pgvector:pg16}
+    build:
+      context: ./postgres
+    container_name: ${LORE_POSTGRES_CONTAINER:-lore-postgres}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-lore}
+      POSTGRES_USER: ${POSTGRES_USER:-lore}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - lore_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lore} -d ${POSTGRES_DB:-lore}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    image: ${LORE_FRONTEND_IMAGE:-fffattiger/lore:ssr-20260326-1022-amd64}
+    build:
+      context: ./app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://lore:change-me@postgres:5432/lore}
+      API_TOKEN: ${API_TOKEN:-}
+      CORE_MEMORY_URIS: ${CORE_MEMORY_URIS:-core://soul,preferences://user,core://agent}
+      SNAPSHOT_DIR: /app/snapshots
+      LORE_EMBEDDING_BASE_URL: ${LORE_EMBEDDING_BASE_URL:-http://127.0.0.1:8090/v1}
+      LORE_EMBEDDING_API_KEY: ${LORE_EMBEDDING_API_KEY:-change-me}
+      LORE_EMBEDDING_MODEL: ${LORE_EMBEDDING_MODEL:-Qwen/Qwen3-Embedding-0.6B}
+      LORE_VIEW_LLM_BASE_URL: ${LORE_VIEW_LLM_BASE_URL:-http://127.0.0.1:8090/v1}
+      LORE_VIEW_LLM_API_KEY: ${LORE_VIEW_LLM_API_KEY:-change-me}
+      LORE_VIEW_LLM_MODEL: ${LORE_VIEW_LLM_MODEL:-glm-5.1}
+      LORE_VIEW_LLM_MAX_DOCS_PER_RUN: ${LORE_VIEW_LLM_MAX_DOCS_PER_RUN:-4}
+    ports:
+      - "${WEB_PORT:-18901}:18901"
+    volumes:
+      - lore_frontend_snapshots:/app/snapshots
+
+volumes:
+  lore_postgres_data:
+  lore_frontend_snapshots:

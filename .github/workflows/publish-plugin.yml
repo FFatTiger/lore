@@ -1,0 +1,46 @@
+name: Publish Claude Code Plugin
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'claudecode-plugin/**'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Publish to plugin branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          VERSION=$(jq -r .version claudecode-plugin/.claude-plugin/plugin.json)
+
+          # Save plugin files to temp
+          cp -r claudecode-plugin /tmp/plugin-staging
+
+          # Switch to plugin branch (create orphan if new)
+          git fetch origin plugin 2>/dev/null && git checkout plugin || git checkout --orphan plugin
+
+          # Clean working tree
+          git rm -rf . 2>/dev/null || true
+          rm -rf *
+
+          # Copy plugin files to root
+          cp -r /tmp/plugin-staging/* .
+          cp -r /tmp/plugin-staging/.claude-plugin .
+          cp /tmp/plugin-staging/.mcp.json .
+
+          # Commit and push
+          git add -A
+          if ! git diff --staged --quiet; then
+            git commit -m "plugin v${VERSION}"
+            git push origin plugin
+          fi

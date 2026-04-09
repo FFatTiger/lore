@@ -1,0 +1,39 @@
+{
+  "id": "lore",
+  "name": "Lore",
+  "description": "Primary long-term memory system for identity, preferences, rules, and cross-session project knowledge, with recall and lifecycle hooks.",
+  "version": "1.0.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": { "type": "boolean" },
+      "baseUrl": { "type": "string" },
+      "apiToken": { "type": "string" },
+      "timeoutMs": { "type": "integer", "minimum": 1000, "maximum": 120000 },
+      "defaultDomain": { "type": "string" },
+      "injectPromptGuidance": { "type": "boolean" },
+      "startupHealthcheck": { "type": "boolean" },
+      "recallEnabled": { "type": "boolean" },
+      "minDisplayScore": { "type": "number" },
+      "maxDisplayItems": { "type": "integer", "minimum": 1, "maximum": 10 },
+      "scorePrecision": { "type": "integer", "minimum": 0, "maximum": 4 },
+      "readNodeDisplayMode": { "type": "string", "enum": ["soft", "hard"] },
+      "excludeBootFromResults": { "type": "boolean" }
+    }
+  },
+  "uiHints": {
+    "baseUrl": { "label": "Lore API Base URL", "placeholder": "http://127.0.0.1:18901" },
+    "apiToken": { "label": "Lore API Token", "sensitive": true },
+    "timeoutMs": { "label": "Timeout (ms)" },
+    "defaultDomain": { "label": "Default Domain", "placeholder": "core" },
+    "injectPromptGuidance": { "label": "Inject Prompt Guidance" },
+    "startupHealthcheck": { "label": "Startup Health Check" },
+    "recallEnabled": { "label": "Enable Recall Injection" },
+    "minDisplayScore": { "label": "Recall Min Display Score" },
+    "maxDisplayItems": { "label": "Recall Max Display Items" },
+    "scorePrecision": { "label": "Recall Score Precision" },
+    "readNodeDisplayMode": { "label": "Read Node Display Mode" },
+    "excludeBootFromResults": { "label": "Exclude Boot Nodes From Recall Results" }
+  }
+}

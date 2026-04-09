@@ -1,0 +1,19 @@
+{
+  "name": "@local/lore",
+  "version": "1.0.0",
+  "description": "Local Lore memory plugin for OpenClaw",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2"
+  }
+}

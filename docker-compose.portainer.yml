@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-lore}
+      POSTGRES_USER: ${POSTGRES_USER:-lore}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in stack.env}
+    ports:
+      - "${POSTGRES_PORT:-55439}:5432"
+    volumes:
+      - ${POSTGRES_DATA_DIR:-./data/postgres}:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lore -d lore"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    image: ${LORE_FRONTEND_IMAGE:-fffattiger/lore:latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-lore}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-lore}
+      API_TOKEN: ${API_TOKEN:-}
+      CORE_MEMORY_URIS: ${CORE_MEMORY_URIS:-core://soul,preferences://user,core://agent}
+      SNAPSHOT_DIR: /app/snapshots
+      LORE_EMBEDDING_BASE_URL: ${LORE_EMBEDDING_BASE_URL:-}
+      LORE_EMBEDDING_API_KEY: ${LORE_EMBEDDING_API_KEY:-}
+      LORE_EMBEDDING_MODEL: ${LORE_EMBEDDING_MODEL:-}
+      LORE_VIEW_LLM_BASE_URL: ${LORE_VIEW_LLM_BASE_URL:-}
+      LORE_VIEW_LLM_API_KEY: ${LORE_VIEW_LLM_API_KEY:-}
+      LORE_VIEW_LLM_MODEL: ${LORE_VIEW_LLM_MODEL:-}
+      LORE_VIEW_LLM_MAX_DOCS_PER_RUN: ${LORE_VIEW_LLM_MAX_DOCS_PER_RUN:-4}
+    ports:
+      - "${WEB_PORT:-18901}:18901"
+    volumes:
+      - ${SNAPSHOT_DATA_DIR:-./data/web/snapshots}:/app/snapshots

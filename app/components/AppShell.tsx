@@ -104,6 +104,9 @@ function NavDock(): React.JSX.Element {
             </svg>
           </div>
           <span className="hidden md:inline text-[14px] font-semibold tracking-tight text-txt-primary">Lore</span>
+          {version && (
+            <span className="hidden md:inline text-[10px] text-txt-tertiary/60 font-normal select-none -ml-0.5">{version}</span>
+          )}
         </button>
 
         <div className="hidden md:block h-5 w-px bg-separator-thin mx-0.5" />
@@ -182,12 +185,6 @@ function NavDock(): React.JSX.Element {
           ))}
         </div>
 
-        {/* version badge */}
-        {version && (
-          <span className="hidden md:inline text-[11px] text-txt-tertiary select-none ml-1">
-            v{version}
-          </span>
-        )}
       </div>
     </header>
   );

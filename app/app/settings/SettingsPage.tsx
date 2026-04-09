@@ -182,6 +182,7 @@ export default function SettingsPage(): React.JSX.Element {
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
 
@@ -231,19 +232,41 @@ export default function SettingsPage(): React.JSX.Element {
     finally { setSaving(false); }
   }, []);
 
+  const embeddingChanged = useMemo(
+    () => dirtyKeys.some((k) => k.startsWith('embedding.')),
+    [dirtyKeys],
+  );
+
+  const handleRebuild = useCallback(async () => {
+    setRebuilding(true); setError(null);
+    try {
+      const res = await api.post('/browse/recall/rebuild');
+      const d = res.data as Record<string, unknown>;
+      setToast({ type: 'success', text: t('Rebuild completed') + ` (views: ${d.updated_count ?? 0}, glossary: ${d.glossary_embedding_updated_count ?? 0})` });
+    } catch (e) {
+      const axiosErr = e as AxiosError<{ detail?: string }>;
+      setError(axiosErr.response?.data?.detail || axiosErr.message || 'Rebuild failed');
+    } finally { setRebuilding(false); }
+  }, [t]);
+
   const handleSave = useCallback(async () => {
     if (!dirtyKeys.length) return;
+    if (embeddingChanged) {
+      const ok = confirm(t('Changing the embedding model will invalidate all existing embeddings and trigger a full rebuild. Continue?'));
+      if (!ok) return;
+    }
     setSaving(true); setError(null);
     try {
       const { data: next } = await api.put('/settings', { patch: draft });
       setData(next); setDraft({});
       setToast({ type: 'success', text: `Saved ${dirtyKeys.length} change${dirtyKeys.length === 1 ? '' : 's'}` });
+      if (embeddingChanged) handleRebuild();
     } catch (e) {
       const axiosErr = e as AxiosError<{ detail?: string }>;
       setError(axiosErr.response?.data?.detail || axiosErr.message || 'Save failed');
     }
     finally { setSaving(false); }
-  }, [draft, dirtyKeys]);
+  }, [draft, dirtyKeys, embeddingChanged, handleRebuild, t]);
 
   const handleDiscard = useCallback(() => setDraft({}), []);
 
@@ -307,11 +330,17 @@ export default function SettingsPage(): React.JSX.Element {
                 padded={false}
                 title={section.label}
                 subtitle={section.description}
-                right={section.id === 'recall_weights' && weightSum !== null ? (
-                  <Badge tone={Math.abs(weightSum - 1) < 0.02 ? 'green' : 'orange'}>
-                    Σ = {weightSum.toFixed(3)}
-                  </Badge>
-                ) : null}
+                right={
+                  section.id === 'recall_weights' && weightSum !== null ? (
+                    <Badge tone={Math.abs(weightSum - 1) < 0.02 ? 'green' : 'orange'}>
+                      Σ = {weightSum.toFixed(3)}
+                    </Badge>
+                  ) : section.id === 'embedding' ? (
+                    <Button size="sm" variant="secondary" onClick={handleRebuild} disabled={rebuilding || saving}>
+                      {rebuilding ? t('Rebuilding…') : t('Rebuild Index')}
+                    </Button>
+                  ) : null
+                }
               >
                 {section.items.map((schema) => {
                   const effectiveValue = schema.key in draft ? draft[schema.key] : data.values[schema.key];

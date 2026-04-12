@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, HardDrive } from 'lucide-react';
 import clsx from 'clsx';
 import { getDomains, AUTH_ERROR_EVENT } from '../lib/api';
 import { LanguageProvider, useT } from '../lib/i18n';
@@ -22,6 +22,7 @@ const tabs: Tab[] = [
   { href: '/recall', label: 'Recall', match: (p) => p === '/recall' },
   { href: '/recall/drilldown', label: 'Analytics', match: (p) => p === '/recall/drilldown' },
   { href: '/maintenance', label: 'Cleanup' },
+  { href: '/backup', label: 'Backup' },
   { href: '/dream', label: '梦境' },
   { href: '/settings', label: 'Settings' },
 ];

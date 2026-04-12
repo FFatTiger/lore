@@ -35,6 +35,20 @@ export async function GET(request: NextRequest): Promise<NextResponse | Response
       return NextResponse.json({ backups: await listLocalBackups() });
     }
 
+    if (action === 'download') {
+      const filename = searchParams.get('filename');
+      if (!filename) return NextResponse.json({ detail: 'Missing filename' }, { status: 400 });
+      const { readLocalBackup } = await import('../../../server/lore/ops/backup');
+      try {
+        const content = await readLocalBackup(filename);
+        return new Response(content, {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      } catch {
+        return NextResponse.json({ detail: 'Backup file not found' }, { status: 404 });
+      }
+    }
+
     // Default: status
     const { sql } = await import('../../../server/db');
     const { listLocalBackups } = await import('../../../server/lore/ops/backup');

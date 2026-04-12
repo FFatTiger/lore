@@ -282,7 +282,7 @@ export function StatCard({ label, value, hint, tone = 'default' }: StatCardProps
 
 interface EmptyStateProps {
   text: string;
-  icon?: ElementType<{ size: number; className: string }>;
+  icon?: React.ElementType<Record<string, unknown>>;
 }
 
 export function EmptyState({ text, icon: Icon }: EmptyStateProps): React.JSX.Element {

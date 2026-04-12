@@ -1,0 +1,21 @@
+name: lore
+version: 1.0.0
+description: Long-term memory integration for Hermes Agent using Lore memory system
+author: Hermes
+requires_env: []
+provides_tools:
+  - lore_status
+  - lore_boot
+  - lore_get_node
+  - lore_create_node
+  - lore_update_node
+  - lore_delete_node
+  - lore_move_node
+  - lore_search
+  - lore_recall
+  - lore_list_domains
+  - lore_list_session_reads
+  - lore_clear_session_reads
+provides_hooks:
+  - pre_llm_call
+  - on_session_end

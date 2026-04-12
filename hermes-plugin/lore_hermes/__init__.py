@@ -660,15 +660,15 @@ def _register_hooks(ctx: Any, client: LoreClient) -> None:
     global _boot_cache
     
     # Hook: pre_llm_call - inject boot context and recall
-    def on_pre_llm_call(messages: List[Dict], **kwargs) -> Optional[Dict]:
+    def on_pre_llm_call(conversation_history: List[Dict], **kwargs) -> Optional[Dict]:
         """Inject Lore context before LLM call."""
         global _boot_cache, _client, _guidance_text
-        if not messages:
+        if not conversation_history:
             return None
         
         # Find the last user message
         last_user_msg = None
-        for msg in reversed(messages):
+        for msg in reversed(conversation_history):
             if msg.get("role") == "user":
                 last_user_msg = msg
                 break
@@ -705,10 +705,7 @@ def _register_hooks(ctx: Any, client: LoreClient) -> None:
                 logger.warning(f"Lore boot failed: {e}")
                 _boot_cache = _get_guidance()
         
-        if _boot_cache:
-            result_parts.append(_boot_cache)
-        
-        # 2. Perform recall based on user message
+        # 2. Perform recall based on user message (place before boot so it's prominent)
         try:
             session_id = kwargs.get("session_id")
             recall_data = client.recall(user_content.strip()[:500], session_id=session_id)  # Limit query length
@@ -723,6 +720,10 @@ def _register_hooks(ctx: Any, client: LoreClient) -> None:
                     result_parts.append("以下记忆节点与当前查询相关,建议提前读取。\n\n" + recall_block)
         except Exception as e:
             logger.debug(f"Lore recall failed: {e}")
+        
+        # 3. Append boot cache after recall so recall stays prominent
+        if _boot_cache:
+            result_parts.append(_boot_cache)
         
         if result_parts:
             return {"context": "\n\n".join(result_parts)}

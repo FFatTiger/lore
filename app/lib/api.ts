@@ -39,4 +39,12 @@ api.interceptors.response.use(
 
 export const getDomains = (): Promise<unknown> => api.get('/browse/domains').then((r) => r.data);
 
+export const getBackupStatus = (): Promise<unknown> => api.get('/backup').then((r) => r.data);
+export const listBackups = (): Promise<unknown> => api.get('/backup?action=list').then((r) => r.data);
+export const downloadBackup = (filename: string): Promise<unknown> =>
+  api.get(`/backup?action=download&filename=${encodeURIComponent(filename)}`).then((r) => r.data);
+export const createBackup = (): Promise<unknown> => api.post('/backup', {}).then((r) => r.data);
+export const restoreBackup = (data: unknown): Promise<unknown> =>
+  api.post('/backup', { action: 'restore', data }).then((r) => r.data);
+
 export default api;

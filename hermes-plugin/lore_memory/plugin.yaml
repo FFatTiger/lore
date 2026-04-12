@@ -1,8 +1,7 @@
 name: lore
 version: 1.0.0
-description: Long-term memory integration for Hermes Agent using Lore memory system
-author: Hermes
-requires_env: []
+description: Lore long-term memory system — persistent identity, preferences, project knowledge, and cross-session recall
+author: FFatTiger
 provides_tools:
   - lore_status
   - lore_boot
@@ -12,10 +11,6 @@ provides_tools:
   - lore_delete_node
   - lore_move_node
   - lore_search
-  - lore_recall
   - lore_list_domains
   - lore_list_session_reads
   - lore_clear_session_reads
-provides_hooks:
-  - pre_llm_call
-  - on_session_end

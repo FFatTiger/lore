@@ -114,24 +114,6 @@ function detectProjectInfo(): ProjectInfo {
   return { dirName, repoName };
 }
 
-function formatRecallTag(items: any[], source: string, query: string, sessionId?: string): string {
-  if (!Array.isArray(items) || items.length === 0) return "";
-  const attrs = `source="${source}" query="${query}"${sessionId ? ` session_id="${sessionId}"` : ""}`;
-  const lines = [`<recall ${attrs}>`];
-  for (const item of items) {
-    const score = Number.isFinite(item?.score_display)
-      ? Number(item.score_display).toFixed(2)
-      : String(item?.score ?? "");
-    const cues = Array.isArray(item?.cues)
-      ? item.cues.map((x: any) => String(x || "").trim()).filter(Boolean).slice(0, 3)
-      : [];
-    const cueText = cues.join(" · ");
-    lines.push(`${score} | ${item?.uri || ""}${cueText ? ` | ${cueText}` : ""}`);
-  }
-  lines.push("</recall>");
-  return lines.join("\n");
-}
-
 // ---- Boot content cache (fetched once per process) ----
 
 let _cachedBootSection: string | null = null;
@@ -285,7 +267,7 @@ export function registerHooks(api: any, pluginCfg: any, GUIDANCE: string) {
           const bootText = formatBootSection(bootData) || '';
 
           const blocks = recallQueries
-            .map((q, i) => formatRecallTag(recallResults[i]?.items || [], q.source, q.query, ctx?.sessionId))
+            .map((q, i) => formatRecallBlock(recallResults[i]?.items || [], 2, ctx?.sessionId, recallResults[i]?.event_log?.query_id))
             .filter(Boolean);
 
           const recallText = blocks.length > 0

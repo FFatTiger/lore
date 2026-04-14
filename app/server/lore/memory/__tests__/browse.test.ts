@@ -180,6 +180,7 @@ describe('getNodePayload', () => {
     priority = 5,
     disclosure = null as string | null,
     alias_total = 1,
+    latestWriteRows = [] as Record<string, unknown>[],
   } = {}) {
     // getMemoryByPath → main SELECT
     mockSql.mockResolvedValueOnce({
@@ -209,6 +210,8 @@ describe('getNodePayload', () => {
     mockSql.mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
     // getChildren → edge query
     mockSql.mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
+    // getLatestWriteMetaByNodeUuid for current node
+    mockSql.mockResolvedValueOnce({ rows: latestWriteRows, rowCount: latestWriteRows.length } as any);
   }
 
   it('returns node with expected shape for a normal path', async () => {
@@ -305,6 +308,8 @@ describe('getNodePayload', () => {
     mockSql.mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
     // getChildren
     mockSql.mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
+    // getLatestWriteMetaByNodeUuid for current node
+    mockSql.mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
 
     const result = await getNodePayload({ domain: 'core', path: 'cat' });
     expect(result.node.aliases).toContain('animals://feline');
@@ -331,6 +336,8 @@ describe('getNodePayload', () => {
         rowCount: 2,
       } as any)
       // children
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
+      // latest write meta
       .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
 
     const result = await getNodePayload({ domain: 'core', path: 'plants' });
@@ -349,12 +356,13 @@ describe('getNodePayload', () => {
       // getAliases
       .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
       // getChildren (no glossary call expected)
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
+      // latest write meta
       .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
 
     const result = await getNodePayload({ domain: 'core', path: 'navtest', navOnly: true });
     expect(result.node.glossary_keywords).toEqual([]);
-    // Ensure sql was NOT called for glossary (only 4 calls: main, alias_count, aliases, children)
-    expect(mockSql).toHaveBeenCalledTimes(4);
+    expect(mockSql).toHaveBeenCalledTimes(5);
   });
 
   it('skips memoryViews fetch when navOnly=true', async () => {
@@ -366,6 +374,7 @@ describe('getNodePayload', () => {
         rowCount: 1,
       } as any)
       .mockResolvedValueOnce({ rows: [{ total_paths: '1' }], rowCount: 1 } as any)
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
       .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
       .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
 
@@ -405,6 +414,10 @@ describe('getNodePayload', () => {
       ],
       rowCount: 1,
     } as any);
+    // getLatestWriteMetaByNodeUuid for current node
+    mockSql.mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
+    // getLatestWriteMetaByNodeUuid for children
+    mockSql.mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
     // getChildren → child counts query
     mockSql.mockResolvedValueOnce({
       rows: [{ parent_uuid: 'uuid-child1', child_count: '3' }],
@@ -443,6 +456,10 @@ describe('getNodePayload', () => {
         rows: [{ edge_id: 200, child_uuid: 'uuid-long', priority: 1, disclosure: null, content: longContent }],
         rowCount: 1,
       } as any)
+      // latest write meta for current node
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
+      // latest write meta for children
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
       // counts
       .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
       // paths
@@ -450,6 +467,131 @@ describe('getNodePayload', () => {
 
     const result = await getNodePayload({ domain: 'core', path: 'parent' });
     expect(result.children[0].content_snippet).toBe('x'.repeat(100) + '...');
+  });
+
+  it('returns null latest write metadata when no history exists', async () => {
+    mockSql
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
+
+    const result = await getNodePayload({ domain: 'core', path: '' });
+    expect(result.node.last_updated_client_type).toBeNull();
+    expect(result.node.last_updated_source).toBeNull();
+    expect(result.node.last_updated_at).toBeNull();
+  });
+
+  it('includes latest write metadata for node and children', async () => {
+    mockSql
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            domain: 'core',
+            path: 'parent',
+            node_uuid: 'uuid-parent',
+            priority: 1,
+            disclosure: null,
+            id: 10,
+            content: 'parent content',
+            deprecated: false,
+            created_at: null,
+          },
+        ],
+        rowCount: 1,
+      } as any)
+      .mockResolvedValueOnce({ rows: [{ total_paths: '1' }], rowCount: 1 } as any)
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            edge_id: 100,
+            child_uuid: 'uuid-child1',
+            priority: 1,
+            disclosure: null,
+            content: 'child content here',
+          },
+        ],
+        rowCount: 1,
+      } as any)
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            node_uuid: 'uuid-parent',
+            source: 'mcp:lore_update_node',
+            client_type: 'openclaw',
+            created_at: '2025-01-02T00:00:00Z',
+            id: 10,
+          },
+        ],
+        rowCount: 1,
+      } as any)
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            node_uuid: 'uuid-child1',
+            source: 'api:PUT /browse/node',
+            client_type: 'hermes',
+            created_at: '2025-01-03T00:00:00Z',
+            id: 11,
+          },
+        ],
+        rowCount: 1,
+      } as any)
+      .mockResolvedValueOnce({
+        rows: [{ parent_uuid: 'uuid-child1', child_count: '2' }],
+        rowCount: 1,
+      } as any)
+      .mockResolvedValueOnce({
+        rows: [{ edge_id: 100, domain: 'core', path: 'parent/child1' }],
+        rowCount: 1,
+      } as any);
+
+    const result = await getNodePayload({ domain: 'core', path: 'parent' });
+    expect(result.node.last_updated_client_type).toBe('openclaw');
+    expect(result.node.last_updated_source).toBe('mcp:lore_update_node');
+    expect(result.node.last_updated_at).toBe(new Date('2025-01-02T00:00:00Z').toISOString());
+    expect(result.children[0].last_updated_client_type).toBe('hermes');
+    expect(result.children[0].last_updated_source).toBe('api:PUT /browse/node');
+    expect(result.children[0].last_updated_at).toBe(new Date('2025-01-03T00:00:00Z').toISOString());
+  });
+
+  it('orders latest write lookup by created_at and id descending', async () => {
+    setupNormalNode({
+      path: 'animals/cat',
+      node_uuid: 'uuid-cat',
+      latestWriteRows: [{
+        node_uuid: 'uuid-cat',
+        source: 'mcp:lore_update_node',
+        client_type: 'openclaw',
+        created_at: '2025-01-04T00:00:00Z',
+        id: 12,
+      }],
+    });
+
+    const result = await getNodePayload({ domain: 'core', path: 'animals/cat' });
+    const latestWriteQuery = mockSql.mock.calls.find((c) => String(c[0]).includes('FROM memory_events'));
+    expect(latestWriteQuery).toBeDefined();
+    expect(String(latestWriteQuery![0])).toContain('ORDER BY node_uuid ASC, created_at DESC, id DESC');
+    expect(result.node.last_updated_client_type).toBe('openclaw');
+  });
+
+  it('returns null client_type when latest write is legacy', async () => {
+    setupNormalNode({
+      path: 'legacy/node',
+      node_uuid: 'uuid-legacy',
+      latestWriteRows: [{
+        node_uuid: 'uuid-legacy',
+        source: 'api:PUT /browse/node',
+        client_type: null,
+        created_at: '2025-01-05T00:00:00Z',
+        id: 13,
+      }],
+    });
+
+    const result = await getNodePayload({ domain: 'core', path: 'legacy/node' });
+    expect(result.node.last_updated_client_type).toBeNull();
+    expect(result.node.last_updated_source).toBe('api:PUT /browse/node');
+    expect(result.node.last_updated_at).toBe(new Date('2025-01-05T00:00:00Z').toISOString());
   });
 
   it('uses default domain=core and path="" when no options provided', async () => {

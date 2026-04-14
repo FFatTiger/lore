@@ -148,7 +148,7 @@ interface RecallData {
   retrieval_meta?: RetrievalMeta;
 }
 
-function clientTypeTone(clientType: unknown): 'blue' | 'purple' | 'teal' | 'orange' | 'soft' {
+export function clientTypeTone(clientType: unknown): 'blue' | 'purple' | 'teal' | 'orange' | 'soft' {
   switch (String(clientType || '').trim()) {
     case 'claudecode':
       return 'blue';
@@ -163,7 +163,7 @@ function clientTypeTone(clientType: unknown): 'blue' | 'purple' | 'teal' | 'oran
   }
 }
 
-function clientTypeLabel(clientType: unknown): string {
+export function clientTypeLabel(clientType: unknown): string {
   switch (String(clientType || '').trim()) {
     case 'claudecode':
       return 'Claude Code';

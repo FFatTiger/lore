@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import type { ClientType } from '../../auth';
 import { getPool } from '../../db';
 import { ROOT_NODE_UUID } from './browse';
 import {
@@ -29,6 +30,7 @@ interface PathContext {
 interface EventContext {
   source?: string;
   session_id?: string | null;
+  client_type?: ClientType | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -236,6 +238,7 @@ export async function createNode(
       path,
       source: eventContext.source || 'unknown',
       session_id: eventContext.session_id || null,
+      client_type: eventContext.client_type || null,
       before_snapshot: null,
       after_snapshot: { content, priority, disclosure },
       details: { parent_path: parentPath, title: slug },
@@ -339,6 +342,7 @@ export async function updateNodeByPath(
       path,
       source: eventContext.source || 'unknown',
       session_id: eventContext.session_id || null,
+      client_type: eventContext.client_type || null,
       before_snapshot: {
         content: beforeContent,
         priority: ctx.priority,
@@ -453,6 +457,7 @@ export async function deleteNodeByPath(
       path,
       source: eventContext.source || 'unknown',
       session_id: eventContext.session_id || null,
+      client_type: eventContext.client_type || null,
       before_snapshot: {
         content: beforeContent,
         priority: baseCtx.priority,
@@ -531,13 +536,14 @@ export async function moveNode(
 
     await logMemoryEvent({
       client,
-      event_type: 'update',
+      event_type: 'move',
       node_uri: new_uri,
       node_uuid: oldCtx.child_uuid,
       domain: target.domain,
       path: target.path,
       source: eventContext.source || 'unknown',
       session_id: eventContext.session_id || null,
+      client_type: eventContext.client_type || null,
       before_snapshot: { uri: old_uri },
       after_snapshot: { uri: new_uri },
       details: { old_uri, new_uri, operation: 'move' },

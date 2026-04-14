@@ -100,15 +100,40 @@ describe('addGlossaryKeyword', () => {
     );
   });
 
-  it('uses [uuid] fallback URI when no paths found', async () => {
+  it('falls back to uuid uri when node has no paths', async () => {
     mockSql
       .mockResolvedValueOnce(makeResult())
-      .mockResolvedValueOnce(makeResult([])); // no paths
+      .mockResolvedValueOnce(makeResult([]));
 
-    await addGlossaryKeyword({ keyword: 'orphan', node_uuid: 'uuid-orphan' });
+    await addGlossaryKeyword({ keyword: 'alpha', node_uuid: 'uuid-1' });
+    await new Promise((r) => queueMicrotask(r as any));
 
     expect(mockLogMemoryEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ node_uri: '[uuid]/uuid-orphan' }),
+      expect.objectContaining({
+        node_uri: '[uuid]/uuid-1',
+        domain: 'core',
+        path: '',
+      }),
+    );
+  });
+
+  it('passes client_type through glossary event logging', async () => {
+    mockSql
+      .mockResolvedValueOnce(makeResult())
+      .mockResolvedValueOnce(makeResult([{ domain: 'core', path: 'agent/test' }]));
+
+    await addGlossaryKeyword(
+      { keyword: 'alpha', node_uuid: 'uuid-1' },
+      { source: 'mcp', session_id: 'sess-1', client_type: 'hermes' },
+    );
+
+    await new Promise((r) => queueMicrotask(r as any));
+
+    expect(mockLogMemoryEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: 'glossary_add',
+        client_type: 'hermes',
+      }),
     );
   });
 

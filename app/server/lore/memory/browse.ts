@@ -1,3 +1,4 @@
+import { normalizeClientType, type ClientType } from '../../auth';
 import { sql } from '../../db';
 import { listMemoryViewsByNode } from '../view/viewCrud';
 import { ROOT_NODE_UUID } from '../core/constants';
@@ -35,6 +36,12 @@ interface ChildRow {
   content: string;
 }
 
+interface LatestWriteMeta {
+  last_updated_client_type: ClientType | null;
+  last_updated_source: string | null;
+  last_updated_at: string | null;
+}
+
 export interface DomainSummary {
   domain: string;
   root_count: number;
@@ -55,6 +62,9 @@ export interface ChildNode {
   disclosure: string | null;
   content_snippet: string;
   approx_children_count: number;
+  last_updated_client_type: ClientType | null;
+  last_updated_source: string | null;
+  last_updated_at: string | null;
 }
 
 export interface NodeData {
@@ -71,6 +81,9 @@ export interface NodeData {
   glossary_keywords: string[];
   glossary_matches: string[];
   memory_views: unknown[];
+  last_updated_client_type: ClientType | null;
+  last_updated_source: string | null;
+  last_updated_at: string | null;
 }
 
 export interface NodePayload {
@@ -125,6 +138,23 @@ export function buildBreadcrumbs(path: string | null | undefined): Breadcrumb[] 
     breadcrumbs.push({ path: accumulated, label: seg });
   }
   return breadcrumbs;
+}
+
+function emptyLatestWriteMeta(): LatestWriteMeta {
+  return {
+    last_updated_client_type: null,
+    last_updated_source: null,
+    last_updated_at: null,
+  };
+}
+
+function formatLatestWriteMeta(row?: Record<string, unknown> | null): LatestWriteMeta {
+  if (!row) return emptyLatestWriteMeta();
+  return {
+    last_updated_client_type: normalizeClientType(row.client_type),
+    last_updated_source: typeof row.source === 'string' && row.source.trim() ? row.source : null,
+    last_updated_at: row.created_at ? new Date(row.created_at as string).toISOString() : null,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -250,6 +280,38 @@ async function getGlossaryKeywords(nodeUuid: string): Promise<string[]> {
   return result.rows.map((row) => row.keyword);
 }
 
+async function getLatestWriteMetaByNodeUuid(nodeUuids: string[]): Promise<Map<string, LatestWriteMeta>> {
+  const safeNodeUuids = [...new Set(
+    (Array.isArray(nodeUuids) ? nodeUuids : [])
+      .map((value) => String(value || '').trim())
+      .filter(Boolean),
+  )];
+  if (safeNodeUuids.length === 0) return new Map();
+
+  const result = await sql(
+    `
+      SELECT DISTINCT ON (node_uuid)
+        node_uuid,
+        source,
+        details->>'client_type' AS client_type,
+        created_at,
+        id
+      FROM memory_events
+      WHERE node_uuid = ANY($1::text[])
+      ORDER BY node_uuid ASC, created_at DESC, id DESC
+    `,
+    [safeNodeUuids],
+  );
+
+  const map = new Map<string, LatestWriteMeta>();
+  for (const rawRow of result.rows as Record<string, unknown>[]) {
+    const nodeUuid = String(rawRow.node_uuid || '').trim();
+    if (!nodeUuid) continue;
+    map.set(nodeUuid, formatLatestWriteMeta(rawRow));
+  }
+  return map;
+}
+
 async function getChildren(
   nodeUuid: string,
   contextDomain: string,
@@ -282,6 +344,7 @@ async function getChildren(
 
   const childUuids = [...new Set(childRows.map((row) => row.child_uuid))];
   const edgeIds = [...new Set(childRows.map((row) => row.edge_id))];
+  const latestWriteMetaByNodeUuid = await getLatestWriteMetaByNodeUuid(childUuids);
 
   const countsResult = await sql(
     `
@@ -328,6 +391,7 @@ async function getChildren(
     }
 
     const pathObj = pickBestPath(allPaths, contextDomain, prefix);
+    const latestWriteMeta = latestWriteMetaByNodeUuid.get(row.child_uuid) || emptyLatestWriteMeta();
     children.push({
       node_uuid: row.child_uuid,
       edge_id: row.edge_id,
@@ -338,6 +402,7 @@ async function getChildren(
       disclosure: row.disclosure,
       content_snippet: toSnippet(row.content),
       approx_children_count: childCountMap.get(row.child_uuid) || 0,
+      ...latestWriteMeta,
     });
   }
 
@@ -362,14 +427,16 @@ export async function getNodePayload({
     throw error;
   }
 
-  const [aliases, glossaryKeywords, children, memoryViews] = await Promise.all([
+  const [aliases, glossaryKeywords, children, memoryViews, latestWriteMetaByNodeUuid] = await Promise.all([
     getAliases(memory.node_uuid, domain, path),
     navOnly ? Promise.resolve([]) : getGlossaryKeywords(memory.node_uuid),
     getChildren(memory.node_uuid, domain, path),
     navOnly || memory.node_uuid === ROOT_NODE_UUID
       ? Promise.resolve([])
       : listMemoryViewsByNode({ nodeUuid: memory.node_uuid, uri: `${domain}://${path}` }),
+    getLatestWriteMetaByNodeUuid([memory.node_uuid]),
   ]);
+  const latestWriteMeta = latestWriteMetaByNodeUuid.get(memory.node_uuid) || emptyLatestWriteMeta();
 
   return {
     node: {
@@ -386,6 +453,7 @@ export async function getNodePayload({
       glossary_keywords: glossaryKeywords,
       glossary_matches: [],
       memory_views: memoryViews,
+      ...latestWriteMeta,
     },
     children,
     breadcrumbs: buildBreadcrumbs(path),

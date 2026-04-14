@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireBearerAuth } from '../../../../server/auth';
+import { normalizeClientType, requireBearerAuth } from '../../../../server/auth';
 import { addGlossaryKeyword, getGlossary, removeGlossaryKeyword } from '../../../../server/lore/search/glossary';
 
 export const runtime = 'nodejs';
@@ -19,7 +19,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const unauthorized = requireBearerAuth(request);
   if (unauthorized) return unauthorized;
   try {
-    return NextResponse.json(await addGlossaryKeyword(await request.json(), { source: 'api:POST /browse/glossary' }));
+    const clientType = normalizeClientType(request.nextUrl.searchParams.get('client_type'));
+    return NextResponse.json(await addGlossaryKeyword(await request.json(), { source: 'api:POST /browse/glossary', client_type: clientType }));
   } catch (error) {
     return NextResponse.json({ detail: (error as Error)?.message || 'Failed to add glossary keyword' }, { status: Number((error as { status?: number })?.status || 500) });
   }
@@ -29,7 +30,8 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
   const unauthorized = requireBearerAuth(request);
   if (unauthorized) return unauthorized;
   try {
-    return NextResponse.json(await removeGlossaryKeyword(await request.json(), { source: 'api:DELETE /browse/glossary' }));
+    const clientType = normalizeClientType(request.nextUrl.searchParams.get('client_type'));
+    return NextResponse.json(await removeGlossaryKeyword(await request.json(), { source: 'api:DELETE /browse/glossary', client_type: clientType }));
   } catch (error) {
     return NextResponse.json({ detail: (error as Error)?.message || 'Failed to remove glossary keyword' }, { status: Number((error as { status?: number })?.status || 500) });
   }

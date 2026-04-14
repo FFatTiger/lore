@@ -10,6 +10,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import type { ClientType } from './auth';
 import { addGlossaryKeyword, removeGlossaryKeyword } from './lore/search/glossary';
 
 // ── types ─────────────────────────────────────────────────────────
@@ -63,6 +64,7 @@ export interface NodeData {
 
 export interface EventContext {
   source: string;
+  client_type?: ClientType | null;
 }
 
 // ── response wrappers ─────────────────────────────────────────────

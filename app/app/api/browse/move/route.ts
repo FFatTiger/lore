@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireBearerAuth } from '../../../../server/auth';
+import { normalizeClientType, requireBearerAuth } from '../../../../server/auth';
 import { moveNode } from '../../../../server/lore/memory/write';
 
 export const runtime = 'nodejs';
@@ -11,8 +11,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   try {
     const body = await request.json();
+    const clientType = normalizeClientType(request.nextUrl.searchParams.get('client_type'));
     return NextResponse.json(
-      await moveNode(body || {}, { source: 'api:POST /browse/move' }),
+      await moveNode(body || {}, { source: 'api:POST /browse/move', client_type: clientType }),
     );
   } catch (error) {
     return NextResponse.json(

@@ -1,4 +1,5 @@
 import { sql } from '../../db';
+import type { ClientType } from '../../auth';
 import { ROOT_NODE_UUID } from '../core/constants';
 import { upsertGeneratedGlossaryEmbeddingsForPath } from './glossarySemantic';
 import { upsertGeneratedMemoryViewsForPath } from '../view/viewCrud';
@@ -17,6 +18,7 @@ interface PathRow {
 interface EventContext {
   source?: string;
   session_id?: string | null;
+  client_type?: ClientType | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -97,6 +99,7 @@ export async function addGlossaryKeyword(
     path: paths[0]?.path || '',
     source: eventContext.source || 'unknown',
     session_id: eventContext.session_id || null,
+    client_type: eventContext.client_type || null,
     after_snapshot: { keyword },
     details: {},
   }).catch((err) => console.error('[write_events] glossary_add log failed', err));
@@ -123,6 +126,7 @@ export async function removeGlossaryKeyword(
       path: paths[0]?.path || '',
       source: eventContext.source || 'unknown',
       session_id: eventContext.session_id || null,
+      client_type: eventContext.client_type || null,
       before_snapshot: { keyword },
       details: {},
     }).catch((err) => console.error('[write_events] glossary_remove log failed', err));
@@ -170,6 +174,7 @@ export async function manageTriggers(
     logMemoryEvent({
       event_type: 'glossary_add', node_uri: nodeUri, node_uuid: nodeUuid, domain, path,
       source: eventContext.source || 'unknown', session_id: eventContext.session_id || null,
+      client_type: eventContext.client_type || null,
       after_snapshot: { keyword }, details: {},
     }).catch((err) => console.error('[write_events] glossary_add log failed', err));
   }
@@ -183,6 +188,7 @@ export async function manageTriggers(
       logMemoryEvent({
         event_type: 'glossary_remove', node_uri: nodeUri, node_uuid: nodeUuid, domain, path,
         source: eventContext.source || 'unknown', session_id: eventContext.session_id || null,
+        client_type: eventContext.client_type || null,
         before_snapshot: { keyword }, details: {},
       }).catch((err) => console.error('[write_events] glossary_remove log failed', err));
     } else {

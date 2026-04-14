@@ -1,3 +1,4 @@
+import { normalizeClientType, type ClientType } from '../../auth';
 import { sql } from '../../db';
 import type { TransactionClient } from '../core/types';
 import { clampLimit } from '../core/utils';
@@ -35,6 +36,7 @@ export interface LogMemoryEventOptions {
   /** e.g. 'mcp:lore_create_node' or 'api:PUT /browse/node' */
   source?: string;
   session_id?: string | null;
+  client_type?: ClientType | null;
   /** { content, priority, disclosure } before mutation */
   before_snapshot?: NodeSnapshot | null;
   /** { content, priority, disclosure } after mutation */
@@ -121,10 +123,14 @@ export async function logMemoryEvent({
   path = '',
   source = 'unknown',
   session_id = null,
+  client_type = null,
   before_snapshot = null,
   after_snapshot = null,
   details = {},
 }: LogMemoryEventOptions): Promise<void> {
+  const normalizedClientType = normalizeClientType(client_type);
+  const normalizedDetails = { ...(details || {}) };
+  if (normalizedClientType) normalizedDetails.client_type = normalizedClientType;
   const query = `
     INSERT INTO memory_events (event_type, node_uri, node_uuid, domain, path, source, session_id, before_snapshot, after_snapshot, details, created_at)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
@@ -139,7 +145,7 @@ export async function logMemoryEvent({
     session_id || null,
     before_snapshot ? JSON.stringify(before_snapshot) : null,
     after_snapshot ? JSON.stringify(after_snapshot) : null,
-    JSON.stringify(details || {}),
+    JSON.stringify(normalizedDetails),
   ];
   if (client) {
     await client.query(query, values as unknown[]);

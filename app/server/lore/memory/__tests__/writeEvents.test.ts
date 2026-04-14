@@ -110,19 +110,47 @@ describe('logMemoryEvent', () => {
     expect(insertCalls).toHaveLength(0);
   });
 
+  it('persists normalized client_type into details', async () => {
+    await logMemoryEvent({
+      event_type: 'create',
+      node_uri: 'core://agent/prefs',
+      client_type: 'ClaudeCode',
+      details: { test: true },
+    });
+
+    const insertCall = mockSql.mock.calls.find((c) => c[0].includes('INSERT INTO memory_events'));
+    const values = insertCall![1] as unknown[];
+    expect(JSON.parse(values[9] as string)).toMatchObject({ test: true, client_type: 'claudecode' });
+  });
+
+  it('does not persist invalid client_type values', async () => {
+    await logMemoryEvent({
+      event_type: 'create',
+      node_uri: 'core://agent/prefs',
+      client_type: 'web',
+      details: { test: true },
+    });
+
+    const insertCall = mockSql.mock.calls.find((c) => c[0].includes('INSERT INTO memory_events'));
+    const values = insertCall![1] as unknown[];
+    expect(JSON.parse(values[9] as string)).toEqual({ test: true });
+  });
+
   it('uses default values for optional fields', async () => {
     await logMemoryEvent({
-      event_type: 'alias',
-      node_uri: 'core://some/path',
+      event_type: 'create',
+      node_uri: 'core://defaults',
     });
 
     const insertCall = mockSql.mock.calls.find((c) => c[0].includes('INSERT INTO memory_events'));
     expect(insertCall).toBeDefined();
     const values = insertCall![1] as unknown[];
-    expect(values[3]).toBe('core'); // domain default
-    expect(values[4]).toBe('');    // path default
-    expect(values[5]).toBe('unknown'); // source default
-    expect(values[6]).toBeNull();  // session_id default
+    expect(values[2]).toBeNull();
+    expect(values[3]).toBe('core');
+    expect(values[4]).toBe('');
+    expect(values[5]).toBe('unknown');
+    expect(values[6]).toBeNull();
+    expect(values[9]).toBe('{}');
   });
 });
 

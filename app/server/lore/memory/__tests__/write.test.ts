@@ -5,10 +5,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // ---------------------------------------------------------------------------
 
 vi.mock('../../../db', () => ({
-  // Not used directly by write.ts, but required for db module resolution
-}));
-
-vi.mock('../../../db', () => ({
   getPool: vi.fn(),
 }));
 
@@ -44,6 +40,7 @@ import {
   createNode,
   updateNodeByPath,
   deleteNodeByPath,
+  moveNode,
   assertValidPathSegment,
   assertValidPathSegments,
   parseUri,
@@ -299,22 +296,41 @@ describe('createNode', () => {
     });
   });
 
-  it('throws 422 when parentPath is not found', async () => {
+  it('passes client_type through create events', async () => {
     const client = makeMockClient([
-      { rows: [], rowCount: 0 },      // BEGIN
-      { rows: [], rowCount: 0 },      // getPathContext for parent → not found
-      { rows: [], rowCount: 0 },      // ROLLBACK
+      { rows: [], rowCount: 0 },
+      { rows: [], rowCount: 0 },
+      { rows: [], rowCount: 0 },
+      { rows: [{ id: 5 }], rowCount: 1 },
+      { rows: [], rowCount: 0 },
+      { rows: [], rowCount: 0 },
     ]);
     mockGetPool.mockReturnValue(makePool(client) as any);
 
-    await expect(
-      createNode({ domain: 'core', parentPath: 'missing', title: 'child', content: 'x' }),
-    ).rejects.toThrow('Parent path not found');
+    await createNode({ domain: 'core', title: 'evt_node', content: 'test' }, { client_type: 'openclaw' });
 
-    const err = await createNode(
-      { domain: 'core', parentPath: 'missing', title: 'child', content: 'x' },
-    ).catch((e: any) => e);
+    expect(mockLogMemoryEvent.mock.calls[0][0]).toMatchObject({ client_type: 'openclaw' });
+  });
+
+  it('throws 422 when parentPath is not found', async () => {
+    const client = makeMockClient([
+      { rows: [], rowCount: 0 },
+      { rows: [], rowCount: 0 },
+      { rows: [], rowCount: 0 },
+    ]);
+    mockGetPool.mockReturnValue(makePool(client) as any);
+
+    let err: any;
+    try {
+      await createNode({ domain: 'core', parentPath: 'missing', title: 'child', content: 'x' });
+      expect.fail('should have thrown');
+    } catch (error) {
+      err = error;
+    }
+
+    expect(err.message).toContain('Parent path not found');
     expect(err.status).toBe(422);
+    expect(client.release).toHaveBeenCalledOnce();
   });
 
   it('throws 422 for invalid title containing uppercase', async () => {
@@ -476,19 +492,44 @@ describe('updateNodeByPath', () => {
     expect(mockLogMemoryEvent.mock.calls[0][0]).toMatchObject({ event_type: 'update' });
   });
 
+  it('passes client_type through update events', async () => {
+    const client = makeUpdateClient({ currentContent: 'old' });
+    mockGetPool.mockReturnValue(makePool(client) as any);
+
+    await updateNodeByPath(
+      { domain: 'core', path: 'agent/prefs', content: 'updated' },
+      { client_type: 'claudecode' },
+    );
+
+    expect(mockLogMemoryEvent.mock.calls[0][0]).toMatchObject({ client_type: 'claudecode' });
+  });
+
   it('rolls back on failure and re-throws', async () => {
     const client = {
       query: vi.fn()
-        .mockResolvedValueOnce({ rows: [], rowCount: 0 })  // BEGIN
-        .mockRejectedValueOnce(new Error('DB crash')),      // getPathContext fails
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+        .mockResolvedValueOnce({
+          rows: [{
+            domain: 'core',
+            path: 'anything',
+            edge_id: 20,
+            parent_uuid: 'parent-uuid',
+            child_uuid: 'node-uuid',
+            priority: 1,
+            disclosure: null,
+          }],
+          rowCount: 1,
+        })
+        .mockRejectedValueOnce(new Error('DB crash')),
       release: vi.fn(),
     };
-    mockGetPool.mockReturnValue(makePool(client) as any);
+    mockGetPool.mockReturnValue(makePool(client as any) as any);
 
     await expect(
       updateNodeByPath({ domain: 'core', path: 'anything', content: 'x' }),
     ).rejects.toThrow('DB crash');
 
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK');
     expect(client.release).toHaveBeenCalledOnce();
   });
 });
@@ -599,16 +640,141 @@ describe('deleteNodeByPath', () => {
     expect(deleteCalls.length).toBeGreaterThanOrEqual(1);
   });
 
+  it('passes client_type through delete events', async () => {
+    const client = makeDeleteClient();
+    mockGetPool.mockReturnValue(makePool(client) as any);
+
+    await deleteNodeByPath({ domain: 'core', path: 'to/delete' }, { client_type: 'mcp' });
+
+    expect(mockLogMemoryEvent.mock.calls[0][0]).toMatchObject({ client_type: 'mcp' });
+  });
+
   it('rolls back on failure', async () => {
     const client = {
       query: vi.fn()
-        .mockResolvedValueOnce({ rows: [], rowCount: 0 })  // BEGIN
-        .mockRejectedValueOnce(new Error('constraint')),    // getPathContext throws
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+        .mockResolvedValueOnce({
+          rows: [{
+            domain: 'core',
+            path: 'x',
+            edge_id: 50,
+            parent_uuid: 'parent',
+            child_uuid: 'del-uuid',
+            priority: 0,
+            disclosure: null,
+          }],
+          rowCount: 1,
+        })
+        .mockResolvedValueOnce({ rows: [{ content: 'some content' }], rowCount: 1 })
+        .mockRejectedValueOnce(new Error('constraint')),
       release: vi.fn(),
     };
-    mockGetPool.mockReturnValue(makePool(client) as any);
+    mockGetPool.mockReturnValue(makePool(client as any) as any);
 
     await expect(deleteNodeByPath({ domain: 'core', path: 'x' })).rejects.toThrow('constraint');
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+    expect(client.release).toHaveBeenCalledOnce();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// moveNode
+// ---------------------------------------------------------------------------
+
+describe('moveNode', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function makeMoveClient() {
+    return makeMockClient([
+      { rows: [], rowCount: 0 },
+      {
+        rows: [{
+          domain: 'core',
+          path: 'old/path',
+          edge_id: 70,
+          parent_uuid: 'parent',
+          child_uuid: 'move-uuid',
+          priority: 2,
+          disclosure: null,
+        }],
+        rowCount: 1,
+      },
+      { rows: [], rowCount: 0 },
+      { rows: [], rowCount: 1 },
+      { rows: [], rowCount: 1 },
+      { rows: [{ path: 'new/path/child' }], rowCount: 1 },
+      { rows: [], rowCount: 0 },
+    ]);
+  }
+
+  it('moves node and returns old/new uri with node_uuid', async () => {
+    const client = makeMoveClient();
+    mockGetPool.mockReturnValue(makePool(client) as any);
+
+    const result = await moveNode({ old_uri: 'core://old/path', new_uri: 'core://new/path' });
+    expect(result.success).toBe(true);
+    expect(result.old_uri).toBe('core://old/path');
+    expect(result.new_uri).toBe('core://new/path');
+    expect(result.node_uuid).toBe('move-uuid');
+  });
+
+  it('logs a move event', async () => {
+    const client = makeMoveClient();
+    mockGetPool.mockReturnValue(makePool(client) as any);
+
+    await moveNode({ old_uri: 'core://old/path', new_uri: 'core://new/path' });
+
+    expect(mockLogMemoryEvent).toHaveBeenCalledOnce();
+    expect(mockLogMemoryEvent.mock.calls[0][0]).toMatchObject({
+      event_type: 'move',
+      node_uri: 'core://new/path',
+      node_uuid: 'move-uuid',
+      details: {
+        old_uri: 'core://old/path',
+        new_uri: 'core://new/path',
+        operation: 'move',
+      },
+    });
+  });
+
+  it('passes client_type through move events', async () => {
+    const client = makeMoveClient();
+    mockGetPool.mockReturnValue(makePool(client) as any);
+
+    await moveNode(
+      { old_uri: 'core://old/path', new_uri: 'core://new/path' },
+      { client_type: 'hermes' },
+    );
+
+    expect(mockLogMemoryEvent.mock.calls[0][0]).toMatchObject({ client_type: 'hermes' });
+  });
+
+  it('rolls back when target path already exists', async () => {
+    const client = makeMockClient([
+      { rows: [], rowCount: 0 },
+      {
+        rows: [{
+          domain: 'core',
+          path: 'old/path',
+          edge_id: 70,
+          parent_uuid: 'parent',
+          child_uuid: 'move-uuid',
+          priority: 2,
+          disclosure: null,
+        }],
+        rowCount: 1,
+      },
+      { rows: [{ '?column?': 1 }], rowCount: 1 },
+      { rows: [], rowCount: 0 },
+    ]);
+    mockGetPool.mockReturnValue(makePool(client) as any);
+
+    await expect(
+      moveNode({ old_uri: 'core://old/path', new_uri: 'core://new/path' }),
+    ).rejects.toThrow('Target path already exists');
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK');
     expect(client.release).toHaveBeenCalledOnce();
   });
 });

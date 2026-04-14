@@ -237,7 +237,7 @@ export function createMcpServer(context: McpServerContext = {}): InstanceType<ty
         });
         if (policyResult.errors.length > 0) return fail('Lore create blocked by policy', policyResult.errors.join('; '));
 
-        const eventContext = { source: 'mcp:lore_create_node' };
+        const eventContext = { source: 'mcp:lore_create_node', client_type: context.clientType ?? null };
         const data = await createNode({
           domain,
           parentPath,
@@ -287,7 +287,7 @@ export function createMcpServer(context: McpServerContext = {}): InstanceType<ty
         });
         if (policyResult.errors.length > 0) return fail('Lore update blocked by policy', policyResult.errors.join('; '));
 
-        const eventContext = { source: 'mcp:lore_update_node' };
+        const eventContext = { source: 'mcp:lore_update_node', client_type: context.clientType ?? null };
         const body: Record<string, unknown> = {};
         if (typeof args?.content === 'string') body.content = args.content;
         if (Number.isFinite(args?.priority)) body.priority = args!.priority;
@@ -334,7 +334,10 @@ export function createMcpServer(context: McpServerContext = {}): InstanceType<ty
         const policyResult = await validateDeletePolicy({ domain, path, sessionId: sid });
         if (policyResult.errors.length > 0) return fail('Lore delete blocked by policy', policyResult.errors.join('; '));
 
-        await deleteNodeByPath({ domain, path }, { source: 'mcp:lore_delete_node' });
+        await deleteNodeByPath({ domain, path }, {
+          source: 'mcp:lore_delete_node',
+          client_type: context.clientType ?? null,
+        });
         return ok(formatPolicyResult(`Deleted ${domain}://${path}`, policyResult.warnings));
       } catch (error) {
         return fail('Lore delete failed', error);
@@ -355,7 +358,10 @@ export function createMcpServer(context: McpServerContext = {}): InstanceType<ty
         const result = await moveNode({
           old_uri: String(args?.old_uri || '').trim(),
           new_uri: String(args?.new_uri || '').trim(),
-        }, { source: 'mcp:lore_move_node' });
+        }, {
+          source: 'mcp:lore_move_node',
+          client_type: context.clientType ?? null,
+        });
         return ok(`Moved ${result.old_uri} → ${result.new_uri}`);
       } catch (error) {
         return fail('Lore move failed', error);

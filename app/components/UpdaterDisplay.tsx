@@ -35,13 +35,7 @@ interface UpdaterDisplayProps {
   className?: string;
 }
 
-const AVATAR_BG: Record<ClientTone, string> = {
-  blue: 'bg-sys-blue/10',
-  purple: 'bg-sys-purple/10',
-  teal: 'bg-sys-teal/10',
-  orange: 'bg-sys-orange/10',
-  soft: 'bg-fill-quaternary',
-};
+const AVATAR_SURFACE = 'bg-bg-elevated';
 
 const AVATAR_TEXT: Record<ClientTone, string> = {
   blue: 'text-sys-blue',
@@ -54,8 +48,30 @@ const AVATAR_TEXT: Record<ClientTone, string> = {
 const MAX_VISIBLE_UPDATERS = 2;
 
 const SIZE_MAP = {
-  sm: { avatar: 20, popupAvatar: 28, fontSize: 10, overlap: 0.46 },
-  md: { avatar: 24, popupAvatar: 30, fontSize: 11, overlap: 0.48 },
+  sm: {
+    avatar: 20,
+    popupAvatar: 28,
+    fontSize: 10,
+    stackPrimary: 20,
+    stackSecondary: 14,
+    stackWidth: 26,
+    stackHeight: 20,
+    stackOffsetX: 12,
+    stackOffsetY: 6,
+    overflow: 18,
+  },
+  md: {
+    avatar: 24,
+    popupAvatar: 30,
+    fontSize: 11,
+    stackPrimary: 24,
+    stackSecondary: 16,
+    stackWidth: 31,
+    stackHeight: 24,
+    stackOffsetX: 15,
+    stackOffsetY: 8,
+    overflow: 22,
+  },
 } as const;
 
 function normalizeUpdater(updater?: UpdaterSummary | null): ResolvedUpdater | null {
@@ -138,7 +154,7 @@ export function ChannelAvatar({
     <span
       className={clsx(
         'flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-separator-thin shadow-sm',
-        AVATAR_BG[tone],
+        AVATAR_SURFACE,
         AVATAR_TEXT[tone],
       )}
       style={{
@@ -194,10 +210,22 @@ export default function UpdaterDisplay({
 
   if (resolvedUpdaters.length === 0) return null;
 
-  const { avatar, popupAvatar, fontSize, overlap } = SIZE_MAP[size];
+  const {
+    avatar,
+    popupAvatar,
+    fontSize,
+    stackPrimary,
+    stackSecondary,
+    stackWidth,
+    stackHeight,
+    stackOffsetX,
+    stackOffsetY,
+    overflow,
+  } = SIZE_MAP[size];
   const visibleUpdaters = resolvedUpdaters.slice(0, MAX_VISIBLE_UPDATERS);
   const overflowCount = Math.max(0, resolvedUpdaters.length - visibleUpdaters.length);
   const latestUpdater = resolvedUpdaters[0];
+  const showStack = visibleUpdaters.length > 1;
 
   return (
     <span
@@ -224,19 +252,22 @@ export default function UpdaterDisplay({
           if (event.key === 'Escape') setOpen(false);
         }}
       >
-        {visibleUpdaters.map((updater, index) => (
-          <span
-            key={`${updater.client_type || 'legacy'}:${updater.source || 'unknown'}:${updater.updated_at || index}`}
-            className="relative"
-            style={{ marginLeft: index === 0 ? 0 : -Math.round(avatar * overlap), zIndex: visibleUpdaters.length - index }}
-          >
-            <ChannelAvatar clientType={updater.client_type} size={avatar} elevated />
+        {showStack ? (
+          <span className="relative inline-block shrink-0" style={{ width: stackWidth, height: stackHeight }}>
+            <span className="absolute left-0 top-0 z-10">
+              <ChannelAvatar clientType={visibleUpdaters[0].client_type} size={stackPrimary} elevated />
+            </span>
+            <span className="absolute z-20" style={{ left: stackOffsetX, top: stackOffsetY }}>
+              <ChannelAvatar clientType={visibleUpdaters[1].client_type} size={stackSecondary} elevated />
+            </span>
           </span>
-        ))}
+        ) : (
+          <ChannelAvatar clientType={latestUpdater.client_type} size={avatar} elevated />
+        )}
         {overflowCount > 0 && (
           <span
-            className="ml-1 inline-flex items-center justify-center rounded-full border border-separator-thin bg-fill-quaternary font-medium text-txt-secondary"
-            style={{ minWidth: Math.max(avatar - 2, 18), height: Math.max(avatar - 2, 18), fontSize }}
+            className="ml-1 inline-flex shrink-0 items-center justify-center rounded-full border border-separator-thin bg-bg-elevated font-medium text-txt-secondary shadow-sm"
+            style={{ minWidth: overflow, height: overflow, fontSize }}
           >
             +{overflowCount}
           </span>

@@ -418,6 +418,7 @@ export async function getRecallStats({
           COUNT(DISTINCT node_uri) AS merged_count,
           COUNT(DISTINCT node_uri) FILTER (WHERE selected) AS shown_count,
           COUNT(DISTINCT node_uri) FILTER (WHERE used_in_answer) AS used_count,
+          MIN(metadata->>'client_type') AS client_type,
           MAX(created_at) AS created_at
         FROM recall_events
         WHERE ${filterWhere}
@@ -477,6 +478,7 @@ export async function getRecallStats({
       query_id: filters.query_id,
       query_text: recentEvents.rows[0]?.query_text || '',
       query: recentEvents.rows[0]?.query_text || '',
+      client_type: typeof recentEvents.rows[0]?.client_type === 'string' && recentEvents.rows[0]?.client_type.trim() ? recentEvents.rows[0].client_type.trim() : null,
       merged_count: Number(summaryRow.total_merged || 0),
       shown_count: Number(summaryRow.total_shown || 0),
       used_count: Number(summaryRow.total_used || 0),
@@ -548,6 +550,7 @@ export async function getRecallStats({
       merged_count: Number(row.merged_count || 0),
       shown_count: Number(row.shown_count || 0),
       used_count: Number(row.used_count || 0),
+      client_type: typeof row.client_type === 'string' && row.client_type.trim() ? row.client_type.trim() : null,
       created_at: row.created_at ? new Date(row.created_at as string).toISOString() : null,
     })),
     recent_events: recentEvents.rows.map((row: Record<string, unknown>) => ({

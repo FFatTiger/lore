@@ -7,7 +7,7 @@ import {
   PageCanvas, PageTitle, Card, Section, Button, Badge, Table, inputClass,
   fmt, trunc, asNumber,
 } from '../../components/ui';
-import RecallStages from '../../components/RecallStages';
+import RecallStages, { clientTypeTone, clientTypeLabel } from '../../components/RecallStages';
 import { useT } from '../../lib/i18n';
 import { AxiosError } from 'axios';
 
@@ -58,7 +58,7 @@ export default function RecallDrilldown(): React.JSX.Element {
     { key: 'query_text', label: t('Query'), render: (v: unknown) => (
       <div className="max-w-[32rem] text-[14px] font-medium leading-snug text-txt-primary">{trunc(v, 140)}</div>
     ) },
-    { key: 'merged_count', label: t('Merged'), render: (v: unknown) => <span className="font-mono tabular-nums text-txt-secondary">{String(v ?? '—')}</span> },
+    { key: 'client_type', label: t('Source'), render: (v: unknown) => <Badge tone={clientTypeTone(v)}>{clientTypeLabel(v)}</Badge> },
     { key: 'shown_count', label: t('Shown'), render: (v: unknown) => <span className="font-mono tabular-nums text-sys-blue">{String(v ?? '—')}</span> },
     { key: 'used_count', label: t('Used'), render: (v: unknown) => <span className="font-mono tabular-nums text-sys-green">{String(v ?? '—')}</span> },
     { key: 'created_at', label: t('When'), render: (v: unknown) => (
@@ -82,7 +82,6 @@ export default function RecallDrilldown(): React.JSX.Element {
     { key: 'created_at', label: t('When'), render: (v: unknown) => <span className="text-[11px] text-txt-tertiary">{v ? new Date(String(v)).toLocaleString() : '—'}</span> },
     { key: 'query_text', label: t('Query'), render: (v: unknown) => <div className="max-w-[22rem] text-[12.5px] text-txt-primary">{trunc(v, 100)}</div> },
     { key: 'node_uri', label: t('Entry'), render: (v: unknown) => <div className="max-w-[18rem] break-all font-mono text-[11px] text-txt-primary">{String(v ?? '—')}</div> },
-    { key: 'client_type', label: t('Source'), render: (v: unknown) => <Badge tone={String(v || '').trim() ? 'blue' : 'soft'}>{String(v || 'Legacy')}</Badge> },
     { key: 'retrieval_path', label: t('Path'), render: (v: unknown, row: RowData) => (
       <div className="flex items-center gap-1.5 text-[11px]">
         <Badge tone="default">{String(v ?? '')}</Badge>
@@ -217,7 +216,12 @@ export default function RecallDrilldown(): React.JSX.Element {
         {queryDetail ? (
           <Section
             title={trunc(String(queryDetail.query_text || queryDetail.query || ''), 80)}
-            subtitle={`${queryDetail.merged_count} ${t('Merged')} · ${queryDetail.shown_count} ${t('Shown')} · ${queryDetail.used_count} ${t('Used')}`}
+            subtitle={
+              <span className="inline-flex items-center gap-2">
+                <Badge tone={clientTypeTone(queryDetail.client_type)}>{clientTypeLabel(queryDetail.client_type)}</Badge>
+                <span className="text-txt-secondary">{`${queryDetail.merged_count} ${t('Merged')} · ${queryDetail.shown_count} ${t('Shown')} · ${queryDetail.used_count} ${t('Used')}`}</span>
+              </span>
+            }
             right={
               <Button variant="ghost" onClick={() => patch({ queryId: '', queryText: '', nodeUri: '' })}>
                 ← {t('Back')}

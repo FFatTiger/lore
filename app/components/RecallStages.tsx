@@ -84,7 +84,6 @@ function CandidateDetail({ candidate, data, exactColumns, glossarySemanticColumn
         <code className="font-mono text-[12.5px] text-txt-primary break-all">{String(uri ?? '')}</code>
         <span className="text-[28px] font-bold leading-none tabular-nums tracking-tight text-sys-blue">{fmt(candidate.score, 3)}</span>
         {candidate.priority != null && <Badge tone="default">{t('Priority')} {String(candidate.priority)}</Badge>}
-        <Badge tone={clientTypeTone(candidate.client_type)}>{clientTypeLabel(candidate.client_type)}</Badge>
         {displayed ? <Badge tone="green">{t('Shown')}</Badge> : <Badge tone="red">{t('Withheld')}</Badge>}
       </div>
       <BreakdownGrid breakdown={candidate.score_breakdown as Record<string, unknown> | null} />

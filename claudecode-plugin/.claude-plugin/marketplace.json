@@ -8,7 +8,7 @@
     {
       "name": "lore",
       "description": "Long-term memory for AI agents — MCP tools + automatic recall injection",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "source": "./",
       "author": {
         "name": "FFatTiger"

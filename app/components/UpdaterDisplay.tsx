@@ -158,10 +158,12 @@ export function ChannelAvatar({
   size: number;
   elevated?: boolean;
 }): React.JSX.Element {
+  const normalizedClientType = typeof clientType === 'string' ? clientType.trim().toLowerCase() : '';
   const tone = clientTypeTone(clientType);
   const label = clientTypeLabel(clientType);
   const src = clientTypeAssetPath(clientType);
   const initials = clientTypeInitials(clientType);
+  const isHermes = normalizedClientType === 'hermes';
 
   return (
     <span
@@ -179,12 +181,31 @@ export function ChannelAvatar({
       title={label}
     >
       {src ? (
-        <img
-          src={src}
-          alt={label}
-          className="h-[72%] w-[72%] object-contain select-none"
-          draggable={false}
-        />
+        isHermes ? (
+          <span className="relative flex h-[72%] w-[72%] items-center justify-center">
+            <img
+              src={src}
+              alt=""
+              aria-hidden="true"
+              className="theme-dark-asset h-full w-full object-contain select-none"
+              draggable={false}
+            />
+            <img
+              src="/channel-icons/hermes-light.svg"
+              alt=""
+              aria-hidden="true"
+              className="theme-light-asset absolute inset-0 h-full w-full object-contain select-none"
+              draggable={false}
+            />
+          </span>
+        ) : (
+          <img
+            src={src}
+            alt={label}
+            className="h-[72%] w-[72%] object-contain select-none"
+            draggable={false}
+          />
+        )
       ) : (
         <span className="font-semibold" style={{ fontSize: Math.max(10, Math.floor(size * 0.38)) }}>
           {initials}

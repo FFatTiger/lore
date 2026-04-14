@@ -236,7 +236,7 @@ export default function MemoryBrowser(): React.JSX.Element {
         : null;
 
   const pageHeader = node ? (
-    <div className="relative z-10 mb-6 md:mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4 md:gap-6 animate-in">
+    <div className="mb-6 md:mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4 md:gap-6 animate-in">
       <div className="min-w-0">
         {/* eyebrow = Memory label + breadcrumb path */}
         <nav className="mb-2 flex items-center gap-1 text-[11px] md:text-[12px] font-medium uppercase tracking-[0.08em] flex-wrap">

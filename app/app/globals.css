@@ -104,6 +104,22 @@
     --scrollbar-thumb-hover: rgba(0, 0, 0, 0.28);
   }
 
+  .theme-dark-asset {
+    display: block;
+  }
+
+  .theme-light-asset {
+    display: none;
+  }
+
+  :root[data-theme="light"] .theme-dark-asset {
+    display: none;
+  }
+
+  :root[data-theme="light"] .theme-light-asset {
+    display: block;
+  }
+
   html, body {
     width: 100%;
     max-width: 100%;

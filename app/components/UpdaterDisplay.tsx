@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 import { Badge } from './ui';
 import {
@@ -33,6 +34,13 @@ interface UpdaterDisplayProps {
   size?: 'sm' | 'md';
   showTimestamp?: boolean;
   className?: string;
+}
+
+interface UpdaterPopupPosition {
+  left: number;
+  top?: number;
+  bottom?: number;
+  maxHeight: number;
 }
 
 const AVATAR_SURFACE = 'bg-bg-elevated';
@@ -136,6 +144,11 @@ function stopEvent(event: React.MouseEvent<HTMLElement>): void {
   event.stopPropagation();
 }
 
+function clampPopupLeft(anchorLeft: number, width: number): number {
+  if (typeof window === 'undefined') return anchorLeft;
+  return Math.max(16, Math.min(anchorLeft, window.innerWidth - width - 16));
+}
+
 export function ChannelAvatar({
   clientType,
   size,
@@ -191,6 +204,7 @@ export default function UpdaterDisplay({
   className,
 }: UpdaterDisplayProps): React.JSX.Element | null {
   const [open, setOpen] = useState(false);
+  const [popupPosition, setPopupPosition] = useState<UpdaterPopupPosition | null>(null);
   const wrapperRef = useRef<HTMLSpanElement>(null);
   const resolvedUpdaters = useMemo(() => resolveUpdaters({
     updaters,
@@ -199,14 +213,45 @@ export default function UpdaterDisplay({
     fallbackUpdatedAt,
   }), [fallbackClientType, fallbackSource, fallbackUpdatedAt, updaters]);
 
+  const updatePopupPosition = useCallback(() => {
+    if (!wrapperRef.current || typeof window === 'undefined') return;
+    const rect = wrapperRef.current.getBoundingClientRect();
+    const popupWidth = 288;
+    const left = clampPopupLeft(rect.left, popupWidth);
+    const estimatedHeight = 280;
+    const shouldOpenAbove = rect.bottom + estimatedHeight > window.innerHeight - 16 && rect.top > estimatedHeight + 16;
+    setPopupPosition(shouldOpenAbove
+      ? {
+        left,
+        bottom: window.innerHeight - rect.top + 8,
+        maxHeight: Math.max(120, rect.top - 24),
+      }
+      : {
+        left,
+        top: rect.bottom + 8,
+        maxHeight: Math.max(120, window.innerHeight - rect.bottom - 24),
+      });
+  }, []);
+
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open) {
+      setPopupPosition(null);
+      return undefined;
+    }
+    updatePopupPosition();
     const handlePointerDown = (event: MouseEvent) => {
       if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) setOpen(false);
     };
+    const handleViewportChange = () => updatePopupPosition();
     document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [open]);
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('scroll', handleViewportChange, true);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('scroll', handleViewportChange, true);
+    };
+  }, [open, updatePopupPosition]);
 
   if (resolvedUpdaters.length === 0) return null;
 
@@ -278,9 +323,10 @@ export default function UpdaterDisplay({
           {formatUpdatedAt(latestUpdater.updated_at)}
         </span>
       )}
-      {open && (
+      {open && popupPosition && createPortal(
         <div
-          className="animate-scale absolute left-0 top-full z-[90] mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-2xl border border-separator-thin bg-bg-elevated shadow-card shadow-2xl shadow-black/60 backdrop-blur-xl"
+          className="animate-scale fixed z-[110] w-72 max-w-[calc(100vw-2rem)] rounded-2xl border border-separator-thin bg-bg-elevated shadow-card shadow-2xl shadow-black/60 backdrop-blur-xl"
+          style={popupPosition}
           onClick={stopEvent}
           onMouseDown={stopEvent}
         >
@@ -316,7 +362,8 @@ export default function UpdaterDisplay({
               </div>
             ))}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </span>
   );

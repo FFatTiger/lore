@@ -325,6 +325,7 @@ ${guidance ? `## 记忆使用规则（完整版）\n\n${guidance}` : ''}
   // Recall drilldown data: recent queries, path-level stats, noisy nodes from recall
   const recallStats = healthData.recallStats as Record<string, unknown> || {};
   const writeStats = healthData.writeStats as Record<string, unknown> || {};
+  const recentQueries = (((recallStats.recent_queries as Record<string, unknown> | undefined)?.items) as Array<Record<string, unknown>>) || [];
   const drilldown = JSON.stringify({
     activity_summary: {
       recall_merged: (recallStats.summary as Record<string, unknown>)?.merged_count || 0,
@@ -341,7 +342,7 @@ ${guidance ? `## 记忆使用规则（完整版）\n\n${guidance}` : ''}
     recall_noisy_nodes: ((recallStats.noisy_nodes as Array<Record<string, unknown>>) || []).slice(0, 10).map((n) => ({
       uri: n.node_uri, total: n.total, selected: n.selected, avg_score: n.avg_final_rank_score,
     })),
-    recent_queries: ((recallStats.recent_queries as Array<Record<string, unknown>>) || []).slice(0, 10).map((q) => ({
+    recent_queries: recentQueries.slice(0, 10).map((q) => ({
       query: (q.query_text as string)?.slice(0, 100), merged: q.merged_count, shown: q.shown_count, used: q.used_count,
     })),
     path_effectiveness: ((healthData.pathEffectiveness as Record<string, unknown>)?.paths as Array<Record<string, unknown>> || []).map((p) => ({

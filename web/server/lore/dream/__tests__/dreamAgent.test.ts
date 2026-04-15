@@ -86,7 +86,7 @@ function makeHealthData(overrides: Partial<HealthData> = {}): HealthData {
     health: { classification_summary: {}, nodes: [] },
     deadWrites: { dead_writes: [], total_dead_writes: 0 },
     pathEffectiveness: { recommendations: [], paths: [] },
-    recallStats: { summary: {}, by_path: [], noisy_nodes: [], recent_queries: [] },
+    recallStats: { summary: {}, by_path: [], noisy_nodes: [], recent_queries: { items: [], total: 0, limit: 20, offset: 0, has_more: false } },
     writeStats: { summary: {}, hot_nodes: [] },
     orphanCount: 0,
     ...overrides,
@@ -365,6 +365,37 @@ describe('buildDreamSystemPrompt', () => {
     expect(prompt).toContain('get_node_recall_detail');
     expect(prompt).toContain('inspect_neighbors');
     expect(prompt).toContain('任何写操作前');
+  });
+
+  it('reads recent_queries from the paginated stats block', () => {
+    const prompt = buildDreamSystemPrompt(makeHealthData({
+      recallStats: {
+        summary: {},
+        by_path: [],
+        noisy_nodes: [],
+        recent_queries: {
+          items: [{ query_text: 'long query text', merged_count: 3, shown_count: 2, used_count: 1 }],
+          total: 1,
+          limit: 20,
+          offset: 0,
+          has_more: false,
+        },
+      } as any,
+    }));
+    expect(prompt).toContain('long query text');
+    expect(prompt).toContain('"merged": 3');
+  });
+
+  it('tolerates missing recent_queries items', () => {
+    const prompt = buildDreamSystemPrompt(makeHealthData({
+      recallStats: {
+        summary: {},
+        by_path: [],
+        noisy_nodes: [],
+        recent_queries: {} as any,
+      } as any,
+    }));
+    expect(prompt).toContain('"recent_queries": []');
   });
 
   it('includes recent diary section when provided', () => {

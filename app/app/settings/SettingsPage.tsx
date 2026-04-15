@@ -520,21 +520,21 @@ function BackupActionPanel(): React.JSX.Element {
           </div>
 
           {backups.length > 0 && (
-            <div className="rounded-xl border border-separator-thin overflow-hidden">
-              <table className="w-full text-left text-[13px]">
+            <div className="overflow-x-auto">
+              <table className="min-w-full border-collapse text-left text-[13px]">
                 <thead>
                   <tr className="border-b border-separator-thin text-[11px] font-medium uppercase tracking-[0.06em] text-txt-tertiary">
-                    <th className="px-4 py-2">{t('Date')}</th>
-                    <th className="px-4 py-2 text-right">{t('Size')}</th>
-                    <th className="px-4 py-2 text-right">{t('Actions')}</th>
+                    <th className="px-0 py-2 first:pr-4">{t('Date')}</th>
+                    <th className="px-0 py-2 text-right">{t('Size')}</th>
+                    <th className="px-0 py-2 text-right last:pl-4">{t('Actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {backups.slice(0, 10).map((b) => (
                     <tr key={b.filename} className="border-b border-separator-hairline last:border-b-0">
-                      <td className="px-4 py-2 font-mono text-txt-primary">{b.filename.replace('lore-backup-', '').replace('.json', '')}</td>
-                      <td className="px-4 py-2 text-right text-txt-tertiary">{fmtBytes(b.size)}</td>
-                      <td className="px-4 py-2 text-right">
+                      <td className="px-0 py-2 font-mono text-txt-primary first:pr-4">{b.filename.replace('lore-backup-', '').replace('.json', '')}</td>
+                      <td className="px-0 py-2 text-right text-txt-tertiary">{fmtBytes(b.size)}</td>
+                      <td className="px-0 py-2 text-right last:pl-4">
                         <Button variant="ghost" size="sm" onClick={() => handleRestoreFile(b.filename)} disabled={!!restoringFile}>
                           {restoringFile === b.filename ? t('Restoring…') : t('Restore')}
                         </Button>

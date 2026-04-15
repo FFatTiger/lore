@@ -51,7 +51,7 @@ describe('buildStatsWhere', () => {
     const result = buildStatsWhere({ days: 7 });
     expect(result.where).toContain("created_at >= NOW() - ($1::int * INTERVAL '1 day')");
     expect(result.params).toEqual([7]);
-    expect(result.filters).toEqual({ query_id: '', query_text: '', node_uri: '' });
+    expect(result.filters).toEqual({ query_id: '', query_text: '', node_uri: '', client_type: '' });
   });
 
   it('adds queryId clause', () => {

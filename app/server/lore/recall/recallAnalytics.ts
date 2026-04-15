@@ -20,12 +20,13 @@ interface StatsWhereArgs {
   queryId?: string;
   queryText?: string;
   nodeUri?: string;
+  clientType?: string;
 }
 
 interface StatsWhereResult {
   where: string;
   params: unknown[];
-  filters: { query_id: string; query_text: string; node_uri: string };
+  filters: { query_id: string; query_text: string; node_uri: string; client_type: string };
 }
 
 export function buildStatsWhere({
@@ -33,6 +34,7 @@ export function buildStatsWhere({
   queryId = '',
   queryText = '',
   nodeUri = '',
+  clientType = '',
 }: StatsWhereArgs = {}): StatsWhereResult {
   const safeDays = intervalDaysSql(days);
   const clauses = [`created_at >= NOW() - ($1::int * INTERVAL '1 day')`];
@@ -41,6 +43,7 @@ export function buildStatsWhere({
   const safeQueryId = sanitizeFilter(queryId, 120);
   const safeQueryText = sanitizeFilter(queryText, 240);
   const safeNodeUri = sanitizeFilter(nodeUri, 240);
+  const safeClientType = sanitizeFilter(clientType, 120).toLowerCase();
 
   if (safeQueryId) {
     params.push(safeQueryId);
@@ -54,11 +57,15 @@ export function buildStatsWhere({
     params.push(safeNodeUri);
     clauses.push(`node_uri = $${params.length}`);
   }
+  if (safeClientType) {
+    params.push(safeClientType);
+    clauses.push(`LOWER(COALESCE(metadata->>'client_type', '')) = $${params.length}`);
+  }
 
   return {
     where: clauses.join(' AND '),
     params,
-    filters: { query_id: safeQueryId, query_text: safeQueryText, node_uri: safeNodeUri },
+    filters: { query_id: safeQueryId, query_text: safeQueryText, node_uri: safeNodeUri, client_type: safeClientType },
   };
 }
 
@@ -326,24 +333,35 @@ export function reshapeEventsForDebugView(rows: EventRow[], mergedCandidates: Me
 interface RecallStatsArgs {
   days?: number;
   limit?: number;
+  recentQueriesLimit?: number;
+  recentQueriesOffset?: number;
   queryId?: string;
   queryText?: string;
   nodeUri?: string;
+  clientType?: string;
 }
 
 export async function getRecallStats({
   days = 7,
   limit = 12,
+  recentQueriesLimit = 20,
+  recentQueriesOffset = 0,
   queryId = '',
   queryText = '',
   nodeUri = '',
+  clientType = '',
 }: RecallStatsArgs = {}) {
   const safeDays = intervalDaysSql(days);
   const safeLimit = Math.max(3, Math.min(50, Number(limit) || 12));
-  const { where: filterWhere, params: filterParams, filters } = buildStatsWhere({ days, queryId, queryText, nodeUri });
-  const hasFilter = filters.query_id || filters.query_text || filters.node_uri;
+  const safeRecentQueriesLimit = clampLimit(recentQueriesLimit, 1, 100, 20);
+  const safeRecentQueriesOffset = Math.max(0, Number(recentQueriesOffset) || 0);
+  const { where: filterWhere, params: filterParams, filters } = buildStatsWhere({ days, queryId, queryText, nodeUri, clientType });
+  const hasFilter = filters.query_id || filters.query_text || filters.node_uri || filters.client_type;
 
-  const [summary, byPath, byViewType, noisyNodes, recentQueries, recentEvents] = await Promise.all([
+  const recentQueriesCountParams = [...filterParams];
+  const recentQueriesListParams = [...filterParams, safeRecentQueriesLimit, safeRecentQueriesOffset];
+
+  const [summary, byPath, byViewType, noisyNodes, recentQueriesCount, recentQueries, recentEvents] = await Promise.all([
     sql(
       `
         SELECT
@@ -412,6 +430,19 @@ export async function getRecallStats({
     ),
     sql(
       `
+        SELECT COUNT(*)::int AS total
+        FROM (
+          SELECT COALESCE(metadata->>'query_id', id::text) AS query_id
+          FROM recall_events
+          WHERE ${filterWhere}
+            AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = node_uri)
+          GROUP BY COALESCE(metadata->>'query_id', id::text)
+        ) grouped_queries
+      `,
+      recentQueriesCountParams,
+    ),
+    sql(
+      `
         SELECT
           COALESCE(metadata->>'query_id', id::text) AS query_id,
           MIN(query_text) AS query_text,
@@ -424,10 +455,11 @@ export async function getRecallStats({
         WHERE ${filterWhere}
           AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = node_uri)
         GROUP BY COALESCE(metadata->>'query_id', id::text)
-        ORDER BY created_at DESC
+        ORDER BY MAX(created_at) DESC, COALESCE(metadata->>'query_id', id::text) DESC
         LIMIT $${filterParams.length + 1}
+        OFFSET $${filterParams.length + 2}
       `,
-      [...filterParams, safeLimit],
+      recentQueriesListParams,
     ),
     sql(
       `
@@ -444,6 +476,16 @@ export async function getRecallStats({
   ]);
 
   const summaryRow = summary.rows[0] || {};
+  const recentQueriesTotal = Number(recentQueriesCount.rows[0]?.total || 0);
+  const recentQueryRows = recentQueries.rows.map((row: Record<string, unknown>) => ({
+    query_id: row.query_id,
+    query_text: row.query_text,
+    merged_count: Number(row.merged_count || 0),
+    shown_count: Number(row.shown_count || 0),
+    used_count: Number(row.used_count || 0),
+    client_type: typeof row.client_type === 'string' && row.client_type.trim() ? row.client_type.trim() : null,
+    created_at: row.created_at ? new Date(row.created_at as string).toISOString() : null,
+  }));
 
   // Query detail: when filtering by queryId, fetch per-node and per-path breakdowns
   let queryDetail: Record<string, unknown> | null = null;
@@ -544,15 +586,13 @@ export async function getRecallStats({
       avg_final_rank_score: asNumber(row.avg_final_rank_score),
       last_event_at: row.last_event_at ? new Date(row.last_event_at as string).toISOString() : null,
     })),
-    recent_queries: recentQueries.rows.map((row: Record<string, unknown>) => ({
-      query_id: row.query_id,
-      query_text: row.query_text,
-      merged_count: Number(row.merged_count || 0),
-      shown_count: Number(row.shown_count || 0),
-      used_count: Number(row.used_count || 0),
-      client_type: typeof row.client_type === 'string' && row.client_type.trim() ? row.client_type.trim() : null,
-      created_at: row.created_at ? new Date(row.created_at as string).toISOString() : null,
-    })),
+    recent_queries: {
+      items: recentQueryRows,
+      total: recentQueriesTotal,
+      limit: safeRecentQueriesLimit,
+      offset: safeRecentQueriesOffset,
+      has_more: safeRecentQueriesOffset + recentQueryRows.length < recentQueriesTotal,
+    },
     recent_events: recentEvents.rows.map((row: Record<string, unknown>) => ({
       id: Number(row.id),
       query_text: row.query_text,

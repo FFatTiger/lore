@@ -9,21 +9,41 @@ import {
 } from '../../components/ui';
 import RecallStages from '../../components/RecallStages';
 import { ChannelAvatar } from '../../components/UpdaterDisplay';
-import { clientTypeLabel } from '../../components/clientTypeMeta';
+import { clientTypeLabel, KNOWN_CLIENT_TYPES } from '../../components/clientTypeMeta';
 import { useT } from '../../lib/i18n';
 import { AxiosError } from 'axios';
 
 interface Filters {
   days: number | string;
   limit: number | string;
+  recentQueriesLimit: number | string;
+  recentQueriesOffset: number;
   queryText: string;
   queryId: string;
   nodeUri: string;
+  clientType: string;
 }
 
-const DEFAULT_FILTERS: Filters = { days: 14, limit: 12, queryText: '', queryId: '', nodeUri: '' };
+const DEFAULT_FILTERS: Filters = {
+  days: 14,
+  limit: 12,
+  recentQueriesLimit: 20,
+  recentQueriesOffset: 0,
+  queryText: '',
+  queryId: '',
+  nodeUri: '',
+  clientType: '',
+};
 
 type RowData = Record<string, unknown>;
+
+interface RecentQueriesBlock {
+  items: RowData[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
 
 function ClientAvatarLabel({ clientType, compact = false }: { clientType: unknown; compact?: boolean }): React.JSX.Element {
   const label = clientTypeLabel(clientType);
@@ -34,6 +54,11 @@ function ClientAvatarLabel({ clientType, compact = false }: { clientType: unknow
       {!compact && <span className="truncate text-[12px] font-medium text-txt-secondary">{label}</span>}
     </span>
   );
+}
+
+function formatRangeLabel(offset: number, count: number, total: number): string {
+  if (total <= 0 || count <= 0) return '0–0';
+  return `${offset + 1}–${offset + count}`;
 }
 
 export default function RecallDrilldown(): React.JSX.Element {
@@ -50,19 +75,43 @@ export default function RecallDrilldown(): React.JSX.Element {
     setLoading(true); setError('');
     try {
       const { data } = await api.get('/browse/recall/stats', {
-        params: { days: asNumber(f.days, 14), limit: asNumber(f.limit, 12), query_id: f.queryId || undefined, query_text: f.queryText || undefined, node_uri: f.nodeUri || undefined },
+        params: {
+          days: asNumber(f.days, 14),
+          limit: asNumber(f.limit, 12),
+          recent_queries_limit: asNumber(f.recentQueriesLimit, 20),
+          recent_queries_offset: Math.max(0, Number(f.recentQueriesOffset) || 0),
+          query_id: f.queryId || undefined,
+          query_text: f.queryText || undefined,
+          node_uri: f.nodeUri || undefined,
+          client_type: f.clientType || undefined,
+        },
       });
       setStats(data);
     } catch (e) {
       const axiosErr = e as AxiosError<{ detail?: string }>;
-      setError(axiosErr.response?.data?.detail || axiosErr.message || 'Failed to load');
+      setError(axiosErr.response?.data?.detail || axiosErr.message || t('Failed to load'));
     }
     finally { setLoading(false); }
   }
 
-  useEffect(() => { loadStats(filters); }, [filters.days, filters.limit, filters.queryId, filters.queryText, filters.nodeUri]);
+  useEffect(() => {
+    loadStats(filters);
+  }, [filters.days, filters.limit, filters.recentQueriesLimit, filters.recentQueriesOffset, filters.queryId, filters.queryText, filters.nodeUri, filters.clientType]);
 
-  const patch = (p: Partial<Filters>) => setFilters((prev) => ({ ...prev, ...p }));
+  const patch = (p: Partial<Filters>) => setFilters((prev) => {
+    const next = { ...prev, ...p };
+    if (
+      ('days' in p)
+      || ('queryText' in p)
+      || ('queryId' in p)
+      || ('nodeUri' in p)
+      || ('clientType' in p)
+      || ('recentQueriesLimit' in p)
+    ) {
+      next.recentQueriesOffset = 'recentQueriesOffset' in p ? Number(p.recentQueriesOffset) || 0 : 0;
+    }
+    return next;
+  });
 
   const queryDetail = (stats?.query_detail as Record<string, unknown>) || null;
   const nodeDetail = (stats?.node_detail as Record<string, unknown>) || null;
@@ -117,7 +166,10 @@ export default function RecallDrilldown(): React.JSX.Element {
     ) },
   ], [t]);
 
-  const recentQueries = (stats?.recent_queries as RowData[]) || [];
+  const recentQueriesBlock = (stats?.recent_queries as RecentQueriesBlock) || { items: [], total: 0, limit: asNumber(filters.recentQueriesLimit, 20), offset: filters.recentQueriesOffset, has_more: false };
+  const recentQueries = recentQueriesBlock.items || [];
+  const recentQueriesRange = formatRangeLabel(recentQueriesBlock.offset, recentQueries.length, recentQueriesBlock.total);
+  const sourceOptions = useMemo(() => KNOWN_CLIENT_TYPES.map((value) => ({ value, label: clientTypeLabel(value) })), []);
 
   function renderAgg(): ReactNode {
     switch (aggTab) {
@@ -151,7 +203,7 @@ export default function RecallDrilldown(): React.JSX.Element {
       <PageTitle
         eyebrow={t('Recall')}
         title={t('Analytics')}
-        description={`${t('Recent queries')} · ${filters.days}d`}
+        description={`${t('Recent queries')} · ${filters.days} ${t('days')}`}
         right={
           <Button variant="ghost" onClick={() => loadStats(filters)} disabled={loading}>
             {loading ? t('Loading…') : t('Refresh')}
@@ -193,7 +245,7 @@ export default function RecallDrilldown(): React.JSX.Element {
         </button>
         {filterOpen && (
           <Card className="mt-3" padded={false}>
-            <div className="p-5 grid gap-x-6 gap-y-4 md:grid-cols-4">
+            <div className="p-5 grid gap-x-6 gap-y-4 md:grid-cols-5">
               <label className="block">
                 <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Days')}</span>
                 <input type="number" value={String(filters.days)} onChange={(e) => patch({ days: e.target.value })} className={inputClass + ' tabular-nums'} />
@@ -201,6 +253,15 @@ export default function RecallDrilldown(): React.JSX.Element {
               <label className="block">
                 <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Limit')}</span>
                 <input type="number" value={String(filters.limit)} onChange={(e) => patch({ limit: e.target.value })} className={inputClass + ' tabular-nums'} />
+              </label>
+              <label className="block">
+                <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Source')}</span>
+                <select value={filters.clientType} onChange={(e) => patch({ clientType: e.target.value })} className={inputClass}>
+                  <option value="">{t('All sources')}</option>
+                  {sourceOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
               </label>
               <label className="block">
                 <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Query text')}</span>
@@ -262,7 +323,7 @@ export default function RecallDrilldown(): React.JSX.Element {
         ) : (
           <Section
             title={t('Recent queries')}
-            subtitle={`${recentQueries.length}`}
+            subtitle={`${recentQueriesBlock.total}`}
           >
             <Table
               columns={recentQueryCols}
@@ -270,6 +331,29 @@ export default function RecallDrilldown(): React.JSX.Element {
               empty={t('No queries recorded yet.')}
               onRowClick={(row) => patch({ queryId: String(row.query_id || ''), queryText: '', nodeUri: '' })}
             />
+            <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="text-[12px] text-txt-secondary">
+                {t('Showing range')} {recentQueriesRange} {t('of')} {recentQueriesBlock.total}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={recentQueriesBlock.offset <= 0}
+                  onClick={() => patch({ recentQueriesOffset: Math.max(0, recentQueriesBlock.offset - recentQueriesBlock.limit) })}
+                >
+                  {t('Previous')}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={!recentQueriesBlock.has_more}
+                  onClick={() => patch({ recentQueriesOffset: recentQueriesBlock.offset + recentQueriesBlock.limit })}
+                >
+                  {t('Next')}
+                </Button>
+              </div>
+            </div>
           </Section>
         )}
       </div>

@@ -34,6 +34,8 @@ const CLIENT_TYPE_META: Record<string, ClientTypeMeta> = {
   },
 };
 
+export const KNOWN_CLIENT_TYPES = Object.keys(CLIENT_TYPE_META);
+
 function normalizeClientTypeKey(clientType: unknown): string {
   return String(clientType || '').trim().toLowerCase();
 }

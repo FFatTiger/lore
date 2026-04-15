@@ -129,12 +129,12 @@ export default function RecallDrilldown(): React.JSX.Element {
   ], [t]);
 
   const nodeQueryCols = useMemo(() => [
-    { key: 'query_text', label: t('Query'), render: (v: unknown) => <div className="max-w-[24rem] text-[13px] text-txt-primary">{trunc(v, 160)}</div> },
-    { key: 'total', label: t('Events'), render: (v: unknown) => <span className="font-mono tabular-nums text-txt-secondary">{String(v ?? '—')}</span> },
-    { key: 'selected', label: t('Shown'), render: (v: unknown) => <span className="font-mono tabular-nums text-sys-blue">{String(v ?? '—')}</span> },
-    { key: 'used_in_answer', label: t('Used'), render: (v: unknown) => <span className="font-mono tabular-nums text-sys-green">{String(v ?? '—')}</span> },
-    { key: 'avg_final_rank_score', label: t('Avg'), render: (v: unknown) => <span className="font-mono tabular-nums text-txt-secondary">{fmt(v)}</span> },
-    { key: '_drill', label: '', render: (_: unknown, row: RowData) => (
+    { key: 'query_text', label: t('Query'), className: 'w-[46%]', render: (v: unknown) => <div className="max-w-[28rem] text-[13px] text-txt-primary">{trunc(v, 160)}</div> },
+    { key: 'total', label: t('Events'), className: 'w-[7rem] text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-txt-secondary text-right">{String(v ?? '—')}</span> },
+    { key: 'selected', label: t('Shown'), className: 'w-[7rem] text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-sys-blue text-right">{String(v ?? '—')}</span> },
+    { key: 'used_in_answer', label: t('Used'), className: 'w-[7rem] text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-sys-green text-right">{String(v ?? '—')}</span> },
+    { key: 'avg_final_rank_score', label: t('Avg'), className: 'w-[7.5rem] text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-txt-secondary text-right">{fmt(v)}</span> },
+    { key: '_drill', label: '', className: 'w-[5.5rem] text-right', render: (_: unknown, row: RowData) => (
       <button onClick={(e) => { e.stopPropagation(); patch({ queryId: String(row.query_id || ''), queryText: '', nodeUri: '' }); }}
         className="text-[11px] text-sys-blue hover:opacity-80">{t('Open')} →</button>
     ) },

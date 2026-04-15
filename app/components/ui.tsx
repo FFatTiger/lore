@@ -342,12 +342,15 @@ interface AppSelectProps {
   className?: string;
 }
 
+const EMPTY_SELECT_VALUE = '__empty_option__';
+
 export function AppSelect({ value, onValueChange, options, placeholder, className }: AppSelectProps): React.JSX.Element {
+  const normalizedValue = value === '' ? undefined : value;
   const selected = options.find((option) => option.value === value);
   return (
-    <Select.Root value={value} onValueChange={onValueChange}>
+    <Select.Root value={normalizedValue} onValueChange={(next) => onValueChange(next === EMPTY_SELECT_VALUE ? '' : next)}>
       <Select.Trigger className={clsx(inputClass, 'inline-flex items-center justify-between gap-2 font-sans', className)}>
-        <Select.Value>{selected?.label || placeholder || '—'}</Select.Value>
+        <Select.Value placeholder={placeholder || '—'}>{selected?.label}</Select.Value>
         <Select.Icon>
           <ChevronDown size={14} className="text-txt-quaternary" />
         </Select.Icon>
@@ -359,15 +362,18 @@ export function AppSelect({ value, onValueChange, options, placeholder, classNam
           className="z-[120] overflow-hidden rounded-xl border border-separator-thin bg-bg-elevated shadow-card backdrop-blur-xl"
         >
           <Select.Viewport className="p-1.5">
-            {options.map((option) => (
-              <Select.Item
-                key={option.value}
-                value={option.value}
-                className="cursor-pointer rounded-lg px-3 py-2 text-[13px] text-txt-primary outline-none transition-colors data-[highlighted]:bg-fill-primary data-[state=checked]:text-sys-blue"
-              >
-                <Select.ItemText>{option.label}</Select.ItemText>
-              </Select.Item>
-            ))}
+            {options.map((option) => {
+              const optionValue = option.value === '' ? EMPTY_SELECT_VALUE : option.value;
+              return (
+                <Select.Item
+                  key={optionValue}
+                  value={optionValue}
+                  className="cursor-pointer rounded-lg px-3 py-2 text-[13px] text-txt-primary outline-none transition-colors data-[highlighted]:bg-fill-primary data-[state=checked]:text-sys-blue"
+                >
+                  <Select.ItemText>{option.label}</Select.ItemText>
+                </Select.Item>
+              );
+            })}
           </Select.Viewport>
         </Select.Content>
       </Select.Portal>

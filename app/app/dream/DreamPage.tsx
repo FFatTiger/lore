@@ -199,10 +199,10 @@ export default function DreamPage(): React.JSX.Element {
   const lastEntry = entries[0];
 
   const columns = [
-    { key: 'started_at', label: t('Date'), className: 'w-[10rem]', render: (v: unknown) => <span className="whitespace-nowrap">{fmtDate(String(v || ''))}</span> },
-    { key: 'status', label: t('Status'), className: 'w-[6rem]', render: (v: unknown) => <Badge tone={statusTone(String(v || ''))}>{t(String(v || ''))}</Badge> },
-    { key: 'duration_ms', label: t('Duration'), className: 'hidden sm:table-cell w-[5rem] text-right', render: (v: unknown) => <span className="block text-right">{fmtDuration(v as number)}</span> },
-    { key: 'summary', label: t('Summary'), className: 'hidden sm:table-cell', render: (_: unknown, row: Record<string, unknown>) => <SummaryBadges summary={row.summary as DreamSummary} t={t} /> },
+    { key: 'started_at', label: t('Date'), className: 'w-[9rem]', render: (v: unknown) => <span className="whitespace-nowrap">{fmtDate(String(v || ''))}</span> },
+    { key: 'status', label: t('Status'), className: 'w-[5.5rem]', render: (v: unknown) => <Badge tone={statusTone(String(v || ''))}>{t(String(v || ''))}</Badge> },
+    { key: 'duration_ms', label: t('Duration'), className: 'hidden sm:table-cell w-[4.5rem] text-right', render: (v: unknown) => <span className="block text-right">{fmtDuration(v as number)}</span> },
+    { key: 'summary', label: t('Summary'), className: 'hidden sm:table-cell w-[16rem]', render: (_: unknown, row: Record<string, unknown>) => <SummaryBadges summary={row.summary as DreamSummary} t={t} /> },
   ];
 
   return (
@@ -502,5 +502,5 @@ function SummaryBadges({ summary, t }: SummaryBadgesProps): React.JSX.Element | 
     if (h.noisy) items.push(`${t('noisy')} ${h.noisy}`);
     if (items.length) parts.push(items.join(' '));
   }
-  return <span className="block max-w-[32rem] text-xs text-txt-tertiary">{parts.join(' · ') || '—'}</span>;
+  return <span className="block max-w-[16rem] text-xs text-txt-tertiary">{parts.join(' · ') || '—'}</span>;
 }

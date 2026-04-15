@@ -117,32 +117,32 @@ export default function RecallDrilldown(): React.JSX.Element {
   const nodeDetail = (stats?.node_detail as Record<string, unknown>) || null;
 
   const recentQueryCols = useMemo(() => [
-    { key: 'query_text', label: t('Query'), className: 'w-[40%]', render: (v: unknown) => (
-      <div className="max-w-[20rem] text-[14px] font-medium leading-snug text-txt-primary">{trunc(v, 140)}</div>
+    { key: 'query_text', label: t('Query'), className: 'w-[60%]', render: (v: unknown) => (
+      <div className="max-w-full text-[14px] font-medium leading-snug text-txt-primary">{trunc(v, 140)}</div>
     ) },
-    { key: 'client_type', label: t('Source'), className: 'w-[8.5rem]', render: (v: unknown) => <ClientAvatarLabel clientType={v} compact /> },
-    { key: 'shown_count', label: t('Shown'), className: 'w-[6.5rem] text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-sys-blue text-right">{String(v ?? '—')}</span> },
-    { key: 'used_count', label: t('Used'), className: 'w-[6.5rem] text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-sys-green text-right">{String(v ?? '—')}</span> },
-    { key: 'created_at', label: t('When'), className: 'w-[11rem] text-right', render: (v: unknown) => (
+    { key: 'client_type', label: t('Source'), className: 'text-center', render: (v: unknown) => <div className="flex justify-center"><ClientAvatarLabel clientType={v} compact /></div> },
+    { key: 'shown_count', label: t('Shown'), className: 'text-center', render: (v: unknown) => <span className="block font-mono tabular-nums text-sys-blue text-center">{String(v ?? '—')}</span> },
+    { key: 'used_count', label: t('Used'), className: 'text-center', render: (v: unknown) => <span className="block font-mono tabular-nums text-sys-green text-center">{String(v ?? '—')}</span> },
+    { key: 'created_at', label: t('When'), className: 'w-[8.5rem] text-right', render: (v: unknown) => (
       <span className="block whitespace-nowrap text-[12px] text-right text-txt-tertiary">{v ? new Date(String(v)).toLocaleString() : '—'}</span>
     ) },
   ], [t]);
 
   const nodeQueryCols = useMemo(() => [
-    { key: 'query_text', label: t('Query'), className: 'w-[24%]', render: (v: unknown) => <div className="max-w-[14rem] text-[13px] text-txt-primary">{trunc(v, 160)}</div> },
-    { key: 'total', label: t('Events'), className: 'w-[7rem] text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-txt-secondary text-right">{String(v ?? '—')}</span> },
-    { key: 'selected', label: t('Shown'), className: 'w-[7rem] text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-sys-blue text-right">{String(v ?? '—')}</span> },
-    { key: 'used_in_answer', label: t('Used'), className: 'w-[7rem] text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-sys-green text-right">{String(v ?? '—')}</span> },
-    { key: 'avg_final_rank_score', label: t('Avg'), className: 'w-[7.5rem] text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-txt-secondary text-right">{fmt(v)}</span> },
-    { key: '_drill', label: '', className: 'w-[5.5rem] text-right', render: (_: unknown, row: RowData) => (
+    { key: 'query_text', label: t('Query'), className: 'w-[60%]', render: (v: unknown) => <div className="max-w-full text-[13px] text-txt-primary">{trunc(v, 160)}</div> },
+    { key: 'total', label: t('Events'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-txt-secondary text-right">{String(v ?? '—')}</span> },
+    { key: 'selected', label: t('Shown'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-sys-blue text-right">{String(v ?? '—')}</span> },
+    { key: 'used_in_answer', label: t('Used'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-sys-green text-right">{String(v ?? '—')}</span> },
+    { key: 'avg_final_rank_score', label: t('Avg'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-txt-secondary text-right">{fmt(v)}</span> },
+    { key: '_drill', label: '', className: 'text-right', render: (_: unknown, row: RowData) => (
       <button onClick={(e) => { e.stopPropagation(); patch({ queryId: String(row.query_id || ''), queryText: '', nodeUri: '' }); }}
         className="text-[11px] text-sys-blue hover:opacity-80">{t('Open')} →</button>
     ) },
   ], [t]);
 
   const eventCols = useMemo(() => [
-    { key: 'created_at', label: t('When'), render: (v: unknown) => <span className="text-[11px] text-txt-tertiary">{v ? new Date(String(v)).toLocaleString() : '—'}</span> },
-    { key: 'query_text', label: t('Query'), render: (v: unknown) => <div className="max-w-[22rem] text-[12.5px] text-txt-primary">{trunc(v, 100)}</div> },
+    { key: 'created_at', label: t('When'), className: 'w-[8rem] text-right', render: (v: unknown) => <span className="block whitespace-nowrap text-[11px] text-right text-txt-tertiary">{v ? new Date(String(v)).toLocaleString() : '—'}</span> },
+    { key: 'query_text', label: t('Query'), className: 'w-[60%]', render: (v: unknown) => <div className="max-w-full text-[12.5px] text-txt-primary">{trunc(v, 100)}</div> },
     { key: 'node_uri', label: t('Entry'), render: (v: unknown) => <div className="max-w-[18rem] break-all font-mono text-[11px] text-txt-primary">{String(v ?? '—')}</div> },
     { key: 'retrieval_path', label: t('Path'), render: (v: unknown, row: RowData) => (
       <div className="flex items-center gap-1.5 text-[11px]">
@@ -152,15 +152,15 @@ export default function RecallDrilldown(): React.JSX.Element {
         {!!row.used_in_answer && <Badge tone="green">{t('Used')}</Badge>}
       </div>
     ) },
-    { key: 'final_rank_score', label: t('Score'), render: (v: unknown) => <span className="font-mono tabular-nums text-sys-blue">{fmt(v)}</span> },
+    { key: 'final_rank_score', label: t('Score'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-sys-blue text-right">{fmt(v)}</span> },
   ], [t]);
 
   const noisyNodeCols = useMemo(() => [
-    { key: 'node_uri', label: t('Entry'), render: (v: unknown) => <span className="break-all font-mono text-[11.5px] text-txt-primary">{String(v ?? '—')}</span> },
-    { key: 'total', label: t('Events'), render: (v: unknown) => <span className="font-mono tabular-nums text-txt-secondary">{String(v ?? '—')}</span> },
-    { key: 'selected', label: t('Shown'), render: (v: unknown) => <span className="font-mono tabular-nums text-sys-blue">{String(v ?? '—')}</span> },
-    { key: 'avg_final_rank_score', label: t('Avg'), render: (v: unknown) => <span className="font-mono tabular-nums text-txt-secondary">{fmt(v)}</span> },
-    { key: '_drill', label: '', render: (_: unknown, row: RowData) => (
+    { key: 'node_uri', label: t('Entry'), render: (v: unknown) => <div className="max-w-[20rem] break-all font-mono text-[11.5px] text-txt-primary">{String(v ?? '—')}</div> },
+    { key: 'total', label: t('Events'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-txt-secondary text-right">{String(v ?? '—')}</span> },
+    { key: 'selected', label: t('Shown'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-sys-blue text-right">{String(v ?? '—')}</span> },
+    { key: 'avg_final_rank_score', label: t('Avg'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-txt-secondary text-right">{fmt(v)}</span> },
+    { key: '_drill', label: '', className: 'text-right', render: (_: unknown, row: RowData) => (
       <button onClick={(e) => { e.stopPropagation(); patch({ queryId: '', queryText: '', nodeUri: String(row.node_uri || '') }); }}
         className="text-[11px] text-sys-blue hover:opacity-80">{t('Open')} →</button>
     ) },

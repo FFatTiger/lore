@@ -252,11 +252,12 @@ interface BadgeProps {
   children: ReactNode;
   tone?: BadgeTone;
   dot?: boolean;
+  className?: string;
 }
 
-export function Badge({ children, tone = 'default', dot = false }: BadgeProps): React.JSX.Element {
+export function Badge({ children, tone = 'default', dot = false, className }: BadgeProps): React.JSX.Element {
   return (
-    <span className={clsx('inline-flex items-center gap-1 rounded-md px-1.5 py-[2px] text-[11px] font-medium leading-[1.4]', BADGE_TONES[tone] || BADGE_TONES.default)}>
+    <span className={clsx('inline-flex items-center gap-1 rounded-md px-1.5 py-[2px] text-[11px] font-medium leading-[1.4]', BADGE_TONES[tone] || BADGE_TONES.default, className)}>
       {dot && <span className="h-1.5 w-1.5 rounded-full bg-current opacity-80" aria-hidden />}
       {children}
     </span>

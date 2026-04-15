@@ -27,9 +27,17 @@ function fmtDate(iso: string | null | undefined): string {
   try { return new Date(iso).toLocaleString(); } catch { return iso; }
 }
 
-type StatusTone = 'green' | 'red' | 'default' | 'blue';
+type BadgeStatusTone = 'green' | 'red' | 'soft' | 'blue';
+type StatStatusTone = 'green' | 'red' | 'default' | 'blue';
 
-function statusTone(s: string): StatusTone {
+function statusTone(s: string): BadgeStatusTone {
+  if (s === 'completed') return 'green';
+  if (s === 'error') return 'red';
+  if (s === 'rolled_back') return 'soft';
+  return 'blue';
+}
+
+function statusStatTone(s: string): StatStatusTone {
   if (s === 'completed') return 'green';
   if (s === 'error') return 'red';
   if (s === 'rolled_back') return 'default';
@@ -199,10 +207,10 @@ export default function DreamPage(): React.JSX.Element {
   const lastEntry = entries[0];
 
   const columns = [
-    { key: 'started_at', label: t('Date'), className: 'w-[9rem]', render: (v: unknown) => <span className="whitespace-nowrap">{fmtDate(String(v || ''))}</span> },
-    { key: 'status', label: t('Status'), className: 'w-[5.5rem]', render: (v: unknown) => <Badge tone={statusTone(String(v || ''))}>{t(String(v || ''))}</Badge> },
-    { key: 'duration_ms', label: t('Duration'), className: 'hidden sm:table-cell w-[4.5rem] text-right', render: (v: unknown) => <span className="block text-right">{fmtDuration(v as number)}</span> },
-    { key: 'summary', label: t('Summary'), className: 'hidden sm:table-cell w-[16rem]', render: (_: unknown, row: Record<string, unknown>) => <SummaryBadges summary={row.summary as DreamSummary} t={t} /> },
+    { key: 'started_at', label: t('Date'), render: (v: unknown) => <span className="whitespace-nowrap">{fmtDate(String(v || ''))}</span> },
+    { key: 'status', label: t('Status'), render: (v: unknown) => <Badge className="min-w-[3.9rem] justify-center" tone={statusTone(String(v || ''))}>{t(String(v || ''))}</Badge> },
+    { key: 'duration_ms', label: t('Duration'), className: 'hidden sm:table-cell text-right', render: (v: unknown) => <span className="block text-right">{fmtDuration(v as number)}</span> },
+    { key: 'summary', label: t('Summary'), className: 'hidden sm:table-cell w-[30%] text-right', render: (_: unknown, row: Record<string, unknown>) => <SummaryBadges summary={row.summary as DreamSummary} t={t} /> },
   ];
 
   return (
@@ -224,7 +232,7 @@ export default function DreamPage(): React.JSX.Element {
       <div className="animate-in stagger-1 mb-5 grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard label={t('Last Dream')} value={lastEntry ? fmtDate(lastEntry.started_at) : '—'} tone="blue" compact />
         <StatCard label={t('Total Entries')} value={total} tone="default" compact />
-        <StatCard label={t('Last Status')} value={lastEntry ? t(lastEntry.status) : '—'} tone={lastEntry ? statusTone(lastEntry.status) : 'default'} compact />
+        <StatCard label={t('Last Status')} value={lastEntry ? t(lastEntry.status) : '—'} tone={lastEntry ? statusStatTone(lastEntry.status) : 'default'} compact />
         <StatCard
           label={t('Schedule')}
           value={config.enabled ? `${String(config.schedule_hour).padStart(2, '0')}:00` : t('Off')}
@@ -311,7 +319,7 @@ function DetailView({ entry, loading, canRollback, rollingBack, onBack, onRollba
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <Button variant="ghost" onClick={onBack}>← {t('Dream Diary')}</Button>
         <div className="flex items-center gap-3 flex-wrap">
-          <Badge tone={statusTone(entry.status)}>{t(entry.status)}</Badge>
+          <Badge className="min-w-[3.9rem] justify-center" tone={statusTone(entry.status)}>{t(entry.status)}</Badge>
           <span className="text-sm text-txt-tertiary">{fmtDate(entry.started_at)} · {fmtDuration(entry.duration_ms)}</span>
           {canRollback && (
             <Button variant="destructive" size="sm" onClick={onRollback} disabled={rollingBack}>
@@ -502,5 +510,5 @@ function SummaryBadges({ summary, t }: SummaryBadgesProps): React.JSX.Element | 
     if (h.noisy) items.push(`${t('noisy')} ${h.noisy}`);
     if (items.length) parts.push(items.join(' '));
   }
-  return <span className="block max-w-[16rem] text-xs text-txt-tertiary">{parts.join(' · ') || '—'}</span>;
+  return <span className="block max-w-[9rem] ml-auto text-right text-xs text-txt-tertiary">{parts.join(' · ') || '—'}</span>;
 }

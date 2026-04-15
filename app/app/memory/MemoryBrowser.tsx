@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Edit3, PanelLeftOpen, PanelLeftClose, Plus, ArrowRightLeft, RefreshCw, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../../lib/api';
-import { Button, Badge } from '../../components/ui';
+import { Button, Badge, PageTitle, Notice } from '../../components/ui';
 import UpdaterDisplay, { type UpdaterSummary } from '../../components/UpdaterDisplay';
 import { useT } from '../../lib/i18n';
 import PriorityBadge from './components/PriorityBadge';
@@ -235,11 +235,12 @@ export default function MemoryBrowser(): React.JSX.Element {
         ? `${data.children.length} ${t(isRoot ? 'Clusters' : 'Children')}`
         : null;
 
+  const titleText = path ? path.split('/').pop() || 'root' : 'root';
+
   const pageHeader = node ? (
-    <div className="mb-6 md:mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4 md:gap-6 animate-in">
-      <div className="min-w-0">
-        {/* eyebrow = Memory label + breadcrumb path */}
-        <nav className="mb-2 flex items-center gap-1 text-[11px] md:text-[12px] font-medium uppercase tracking-[0.08em] flex-wrap">
+    <PageTitle
+      eyebrow={
+        <nav className="flex items-center gap-1 flex-wrap">
           <button
             onClick={() => navigateTo('', domain)}
             className="text-sys-blue hover:opacity-80 transition-opacity"
@@ -258,82 +259,51 @@ export default function MemoryBrowser(): React.JSX.Element {
             </React.Fragment>
           ))}
         </nav>
-        <div className="flex items-start gap-3">
-          <h1 className="font-display text-[28px] sm:text-[34px] md:text-[44px] font-bold leading-[1.1] tracking-[-0.02em] text-txt-primary min-w-0 break-words">
-            {path ? path.split('/').pop() : 'root'}
-          </h1>
+      }
+      title={
+        <span className="inline-flex max-w-full items-start gap-3 align-top">
+          <span className="block min-w-0 truncate">{titleText}</span>
           {!editing && node.priority != null && (
-            <div className="mt-2"><PriorityBadge priority={node.priority} size="lg" /></div>
+            <span className="mt-1 shrink-0"><PriorityBadge priority={node.priority} size="lg" /></span>
+          )}
+        </span>
+      }
+      titleText={titleText}
+      truncateTitle
+      description={!node.disclosure ? fallbackDescription : undefined}
+      right={
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          {!sidebarOpen && (
+            <Button variant="ghost" size="sm" onClick={() => setSidebarOpen(true)}>
+              <PanelLeftOpen size={14} /> {t('Tree')}
+            </Button>
+          )}
+          {!editing && !moving && !creating && node && !node.is_virtual && (
+            <>
+              <Button variant="ghost" size="sm" onClick={startEditing}>
+                <Edit3 size={14} /> {t('Edit')}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setCreating(true)}>
+                <Plus size={14} /> {t('New')}
+              </Button>
+              {!isRoot && (
+                <Button variant="ghost" size="sm" onClick={() => setMoving(true)}>
+                  <ArrowRightLeft size={14} /> {t('Move')}
+                </Button>
+              )}
+              <Button variant="ghost" size="sm" onClick={handleRebuildViews} disabled={rebuildingViews}>
+                <RefreshCw size={14} className={rebuildingViews ? 'animate-spin' : ''} /> {rebuildingViews ? t('Rebuilding…') : t('Rebuild')}
+              </Button>
+              {!isRoot && (
+                <Button variant="destructive" size="sm" onClick={handleDelete}>
+                  <Trash2 size={14} /> {t('Delete')}
+                </Button>
+              )}
+            </>
           )}
         </div>
-        {node.disclosure && !editing && (
-          <p className="mt-2 md:mt-3 text-[14px] md:text-[16px] leading-relaxed text-sys-orange max-w-2xl">
-            {node.disclosure}
-          </p>
-        )}
-        {!node.disclosure && fallbackDescription && (
-          <p className="mt-2 md:mt-3 text-[14px] md:text-[16px] leading-relaxed text-txt-secondary max-w-2xl">
-            {fallbackDescription}
-          </p>
-        )}
-        {(node.aliases?.length ?? 0) > 0 && !editing && (
-          <div className="mt-3 flex items-center gap-2 flex-wrap text-[12px] text-txt-tertiary">
-            <span>{t('Also:')}</span>
-            {node.aliases?.map((a) => (
-              <code key={a} className="font-mono text-[11.5px] text-sys-blue bg-sys-blue/10 px-1.5 py-0.5 rounded-md">{a}</code>
-            ))}
-          </div>
-        )}
-        {node.created_at && !editing && (
-          <p className="mt-2 text-[11px] text-txt-quaternary">
-            {t('Created')}: {new Date(node.created_at).toLocaleString()}
-          </p>
-        )}
-        {!editing && node.last_updated_at && (
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-txt-quaternary">
-            <span>{t('Last updated by')}:</span>
-            <UpdaterDisplay
-              updaters={node.updaters}
-              fallbackClientType={node.last_updated_client_type}
-              fallbackSource={node.last_updated_source}
-              fallbackUpdatedAt={node.last_updated_at}
-              size="md"
-              showTimestamp
-            />
-          </div>
-        )}
-      </div>
-      <div className="flex items-center gap-2 shrink-0 flex-wrap">
-        {!sidebarOpen && (
-          <Button variant="ghost" size="sm" onClick={() => setSidebarOpen(true)}>
-            <PanelLeftOpen size={14} /> {t('Tree')}
-          </Button>
-        )}
-        {!editing && !moving && !creating && node && !node.is_virtual && (
-          <>
-            <Button variant="ghost" size="sm" onClick={startEditing}>
-              <Edit3 size={14} /> {t('Edit')}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => setCreating(true)}>
-              <Plus size={14} /> {t('New')}
-            </Button>
-            {!isRoot && (
-              <Button variant="ghost" size="sm" onClick={() => setMoving(true)}>
-                <ArrowRightLeft size={14} /> {t('Move')}
-              </Button>
-            )}
-            <Button variant="ghost" size="sm" onClick={handleRebuildViews} disabled={rebuildingViews}>
-              <RefreshCw size={14} className={rebuildingViews ? 'animate-spin' : ''} /> {rebuildingViews ? t('Rebuilding…') : t('Rebuild')}
-            </Button>
-            {!isRoot && (
-              <Button variant="destructive" size="sm" onClick={handleDelete}>
-                <Trash2 size={14} /> {t('Delete')}
-              </Button>
-            )}
-          </>
-        )}
-      </div>
-    </div>
+      }
+    />
   ) : null;
 
   return (
@@ -416,6 +386,41 @@ export default function MemoryBrowser(): React.JSX.Element {
             ) : (
               <>
                 {pageHeader}
+                {!editing && node && (
+                  <div className="mb-6 space-y-3">
+                    {(node.aliases?.length ?? 0) > 0 && (
+                      <div className="flex items-center gap-2 flex-wrap text-[12px] text-txt-tertiary">
+                        <span>{t('Also:')}</span>
+                        {node.aliases?.map((a) => (
+                          <Badge key={a} tone="blue">{a}</Badge>
+                        ))}
+                      </div>
+                    )}
+                    {node.disclosure && (
+                      <Notice tone="warning" icon={<span aria-hidden>⚠️</span>} className="max-w-2xl">
+                        {node.disclosure}
+                      </Notice>
+                    )}
+                    {node.created_at && (
+                      <p className="text-[11px] text-txt-quaternary">
+                        {t('Created')}: {new Date(node.created_at).toLocaleString()}
+                      </p>
+                    )}
+                    {node.last_updated_at && (
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-txt-quaternary">
+                        <span>{t('Last updated by')}:</span>
+                        <UpdaterDisplay
+                          updaters={node.updaters}
+                          fallbackClientType={node.last_updated_client_type}
+                          fallbackSource={node.last_updated_source}
+                          fallbackUpdatedAt={node.last_updated_at}
+                          size="md"
+                          showTimestamp
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Inline panels: editor / move / create */}
                 {editing && (

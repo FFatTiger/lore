@@ -122,9 +122,9 @@ function NavDock(): React.JSX.Element {
           <div
             aria-hidden
             className={clsx(
-              'pointer-events-none absolute inset-y-0 rounded-full transition-all duration-300 ease-spring',
+              'pointer-events-none absolute inset-y-0 rounded-full border border-sys-blue/15 shadow-sm transition-all duration-300 ease-spring',
               indicator.ready ? 'opacity-100' : 'opacity-0',
-              hoverHref ? 'bg-fill-primary' : 'bg-sys-blue/15',
+              hoverHref ? 'bg-fill-primary border-transparent shadow-none' : 'bg-bg-elevated',
             )}
             style={{ transform: `translateX(${indicator.x}px)`, width: `${indicator.w}px` }}
           />
@@ -144,7 +144,7 @@ function NavDock(): React.JSX.Element {
                     ? 'font-semibold text-sys-blue'
                     : isHover
                       ? 'font-medium text-txt-primary'
-                      : 'font-medium text-txt-secondary',
+                      : 'font-medium text-txt-secondary/90',
                 )}
               >
                 {t(tab.label)}

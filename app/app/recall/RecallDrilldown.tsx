@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState, ReactNode } from 'react';
 import clsx from 'clsx';
 import { api } from '../../lib/api';
 import {
-  PageCanvas, PageTitle, Card, Section, Button, Badge, Table, inputClass,
+  PageCanvas, PageTitle, Card, Section, Button, Badge, Table, StatCard, Notice, inputClass,
   fmt, trunc, asNumber,
 } from '../../components/ui';
 import RecallStages from '../../components/RecallStages';
@@ -203,6 +203,8 @@ export default function RecallDrilldown(): React.JSX.Element {
       <PageTitle
         eyebrow={t('Recall')}
         title={t('Analytics')}
+        titleText={t('Analytics')}
+        truncateTitle
         description={`${t('Recent queries')} · ${filters.days} ${t('days')}`}
         right={
           <Button variant="ghost" onClick={() => loadStats(filters)} disabled={loading}>
@@ -219,19 +221,9 @@ export default function RecallDrilldown(): React.JSX.Element {
             [t('Shown'), (stats?.summary as Record<string, unknown>)?.shown_count, 'blue'],
             [t('Queries'), (stats?.summary as Record<string, unknown>)?.query_count, 'purple'],
             [t('Used'), (stats?.summary as Record<string, unknown>)?.used_count, 'green'],
-          ] as [string, unknown, string][]
+          ] as [string, unknown, 'default' | 'blue' | 'purple' | 'green'][]
         ).map(([label, value, tone]) => (
-          <div key={label} className="rounded-2xl border border-separator-thin bg-bg-elevated shadow-card px-5 py-4">
-            <div className="text-[11px] font-medium text-txt-tertiary">{label}</div>
-            <div className={clsx('mt-1.5 text-[28px] font-bold leading-none tracking-tight tabular-nums', {
-              'text-txt-primary': tone === 'default',
-              'text-sys-blue': tone === 'blue',
-              'text-sys-purple': tone === 'purple',
-              'text-sys-green': tone === 'green',
-            })}>
-              {String(value ?? '—')}
-            </div>
-          </div>
+          <StatCard key={label} label={label} value={String(value ?? '—')} tone={tone} compact />
         ))}
       </div>
 
@@ -280,9 +272,9 @@ export default function RecallDrilldown(): React.JSX.Element {
       </div>
 
       {error && (
-        <div className="animate-scale mb-4 rounded-xl bg-sys-red/10 border border-sys-red/20 px-3.5 py-2.5 text-[13px] text-sys-red">
+        <Notice tone="danger" icon={<span aria-hidden>⚠️</span>} className="animate-scale mb-4">
           {error}
-        </div>
+        </Notice>
       )}
 
       {/* main content */}
@@ -291,9 +283,9 @@ export default function RecallDrilldown(): React.JSX.Element {
           <Section
             title={trunc(String(queryDetail.query_text || queryDetail.query || ''), 80)}
             subtitle={
-              <span className="inline-flex items-center gap-2">
+              <span className="inline-flex min-w-0 items-center gap-2">
                 <ClientAvatarLabel clientType={queryDetail.client_type} />
-                <span className="text-txt-secondary">{`${queryDetail.merged_count} ${t('Merged')} · ${queryDetail.shown_count} ${t('Shown')} · ${queryDetail.used_count} ${t('Used')}`}</span>
+                <span className="min-w-0 truncate text-txt-secondary" title={String(queryDetail.query_text || queryDetail.query || '')}>{`${queryDetail.merged_count} ${t('Merged')} · ${queryDetail.shown_count} ${t('Shown')} · ${queryDetail.used_count} ${t('Used')}`}</span>
               </span>
             }
             right={
@@ -310,7 +302,7 @@ export default function RecallDrilldown(): React.JSX.Element {
           </Section>
         ) : nodeDetail ? (
           <Section
-            title={<code className="font-mono text-[15px] text-txt-primary break-all">{String(nodeDetail.node_uri ?? '')}</code>}
+            title={<code className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[15px] text-txt-primary" title={String(nodeDetail.node_uri ?? '')}>{String(nodeDetail.node_uri ?? '')}</code>}
             subtitle={`${nodeDetail.merged_count} ${t('Merged')} · ${nodeDetail.shown_count} ${t('Shown')}`}
             right={
               <Button variant="ghost" onClick={() => patch({ queryId: '', queryText: '', nodeUri: '' })}>
@@ -375,8 +367,8 @@ export default function RecallDrilldown(): React.JSX.Element {
                     key={k}
                     onClick={() => setAggTab(k)}
                     className={clsx(
-                      'press rounded-full px-3 py-1 text-[12px] font-medium transition-all',
-                      aggTab === k ? 'bg-fill-primary text-txt-primary' : 'text-txt-secondary hover:text-txt-primary hover:bg-fill-quaternary',
+                      'press rounded-full border px-3 py-1 text-[12px] font-medium transition-all',
+                      aggTab === k ? 'border-sys-blue/15 bg-bg-elevated text-sys-blue shadow-sm' : 'border-transparent text-txt-secondary hover:text-txt-primary hover:bg-fill-quaternary',
                     )}
                   >
                     {label}

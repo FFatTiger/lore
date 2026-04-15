@@ -65,8 +65,8 @@ const TreeNode = ({ domain, path, name, childrenCount, activeDomain, activePath,
         className={clsx(
           'press flex cursor-pointer items-center gap-1.5 rounded-md py-1 pr-2 text-[13px] transition-colors',
           isActive
-            ? 'bg-sys-blue/10 text-sys-blue font-medium shadow-[inset_2px_0_0_0_currentColor]'
-            : 'text-txt-secondary hover:bg-fill-quaternary hover:text-txt-primary',
+            ? 'bg-sys-blue/12 text-sys-blue font-semibold shadow-[inset_2px_0_0_0_currentColor]'
+            : 'text-txt-secondary/90 hover:bg-fill-primary hover:text-txt-primary',
         )}
         style={{ paddingLeft: `${level * 12 + 8}px` }}
         onClick={handleClick}
@@ -145,10 +145,10 @@ const DomainNode = ({ domain, rootCount, activeDomain, activePath, onNavigate }:
       {/* group label — weakened, just a heading */}
       <div
         className={clsx(
-          'flex cursor-pointer items-center gap-1.5 px-2 py-1 text-[10.5px] font-semibold uppercase tracking-[0.1em] transition-colors',
+          'flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-[10.5px] font-semibold uppercase tracking-[0.1em] transition-colors',
           isActive
-            ? 'text-sys-blue'
-            : 'text-txt-quaternary hover:text-txt-tertiary',
+            ? 'bg-sys-blue/10 text-sys-blue'
+            : 'text-txt-tertiary hover:bg-fill-quaternary hover:text-txt-secondary',
         )}
         onClick={handleClick}
       >

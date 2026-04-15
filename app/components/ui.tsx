@@ -103,21 +103,30 @@ interface PageTitleProps {
   title: ReactNode;
   description?: ReactNode;
   right?: ReactNode;
+  titleText?: string;
+  truncateTitle?: boolean;
 }
 
 /**
  * PageTitle — large SF Pro Display-style title with optional eyebrow.
  */
-export function PageTitle({ eyebrow, title, description, right }: PageTitleProps): React.JSX.Element {
+export function PageTitle({ eyebrow, title, description, right, titleText, truncateTitle = false }: PageTitleProps): React.JSX.Element {
+  const resolvedTitleText = titleText ?? (typeof title === 'string' || typeof title === 'number' ? String(title) : undefined);
   return (
     <div className="mb-6 md:mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4 md:gap-6 animate-in">
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         {eyebrow && (
           <div className="mb-1.5 md:mb-2 text-[11px] md:text-[12px] font-medium uppercase tracking-[0.08em] text-sys-blue">
             {eyebrow}
           </div>
         )}
-        <h1 className="font-display text-[28px] sm:text-[34px] md:text-[48px] font-bold leading-[1.1] tracking-[-0.02em] text-txt-primary">
+        <h1
+          className={clsx(
+            'font-display text-[26px] sm:text-[32px] md:text-[42px] font-bold leading-[1.1] tracking-[-0.02em] text-txt-primary min-w-0',
+            truncateTitle && 'overflow-hidden whitespace-nowrap text-ellipsis',
+          )}
+          title={truncateTitle ? resolvedTitleText : undefined}
+        >
           {title}
         </h1>
         {description && (
@@ -223,25 +232,27 @@ export function Button({ variant = 'secondary', size = 'md', children, className
 type BadgeTone = 'default' | 'blue' | 'green' | 'orange' | 'red' | 'yellow' | 'purple' | 'teal' | 'soft';
 
 const BADGE_TONES: Record<BadgeTone, string> = {
-  default: 'bg-fill-tertiary text-txt-secondary',
-  blue: 'bg-sys-blue/15 text-sys-blue',
-  green: 'bg-sys-green/15 text-sys-green',
-  orange: 'bg-sys-orange/15 text-sys-orange',
-  red: 'bg-sys-red/15 text-sys-red',
-  yellow: 'bg-sys-yellow/15 text-sys-yellow',
-  purple: 'bg-sys-purple/15 text-sys-purple',
-  teal: 'bg-sys-teal/15 text-sys-teal',
-  soft: 'bg-fill-quaternary text-txt-tertiary',
+  default: 'border border-separator-thin bg-fill-secondary text-txt-secondary',
+  blue: 'border border-sys-blue/20 bg-sys-blue/12 text-sys-blue',
+  green: 'border border-sys-green/20 bg-sys-green/12 text-sys-green',
+  orange: 'border border-sys-orange/22 bg-sys-orange/12 text-sys-orange',
+  red: 'border border-sys-red/20 bg-sys-red/12 text-sys-red',
+  yellow: 'border border-sys-yellow/28 bg-sys-yellow/14 text-sys-yellow',
+  purple: 'border border-sys-purple/20 bg-sys-purple/12 text-sys-purple',
+  teal: 'border border-sys-teal/20 bg-sys-teal/12 text-sys-teal',
+  soft: 'border border-separator-thin bg-fill-quaternary text-txt-tertiary',
 };
 
 interface BadgeProps {
   children: ReactNode;
   tone?: BadgeTone;
+  dot?: boolean;
 }
 
-export function Badge({ children, tone = 'default' }: BadgeProps): React.JSX.Element {
+export function Badge({ children, tone = 'default', dot = false }: BadgeProps): React.JSX.Element {
   return (
     <span className={clsx('inline-flex items-center gap-1 rounded-md px-1.5 py-[2px] text-[11px] font-medium leading-[1.4]', BADGE_TONES[tone] || BADGE_TONES.default)}>
+      {dot && <span className="h-1.5 w-1.5 rounded-full bg-current opacity-80" aria-hidden />}
       {children}
     </span>
   );
@@ -266,16 +277,44 @@ interface StatCardProps {
   value: ReactNode;
   hint?: ReactNode;
   tone?: StatTone;
+  compact?: boolean;
 }
 
-export function StatCard({ label, value, hint, tone = 'default' }: StatCardProps): React.JSX.Element {
+export function StatCard({ label, value, hint, tone = 'default', compact = false }: StatCardProps): React.JSX.Element {
   return (
-    <div className="rounded-2xl border border-separator-thin bg-bg-elevated shadow-card p-5">
-      <div className="text-[12px] font-medium text-txt-tertiary">{label}</div>
-      <div className={clsx('mt-2 text-[32px] font-bold leading-none tracking-[-0.02em] tabular-nums', STAT_TONES[tone] || STAT_TONES.default)}>
+    <div className={clsx('rounded-2xl border border-separator-thin bg-bg-elevated shadow-card', compact ? 'p-4' : 'p-5')}>
+      <div className={clsx('font-medium text-txt-tertiary', compact ? 'text-[11px]' : 'text-[12px]')}>{label}</div>
+      <div className={clsx(compact ? 'mt-1.5 text-[26px]' : 'mt-2 text-[32px]', 'font-bold leading-none tracking-[-0.02em] tabular-nums', STAT_TONES[tone] || STAT_TONES.default)}>
         {value ?? '—'}
       </div>
-      {hint && <div className="mt-1 text-[12px] text-txt-tertiary">{hint}</div>}
+      {hint && <div className={clsx('text-txt-tertiary', compact ? 'mt-1 text-[11px]' : 'mt-1 text-[12px]')}>{hint}</div>}
+    </div>
+  );
+}
+
+interface NoticeProps {
+  tone?: 'info' | 'warning' | 'danger' | 'success';
+  icon?: ReactNode;
+  title?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}
+
+const NOTICE_TONES: Record<NonNullable<NoticeProps['tone']>, string> = {
+  info: 'border-sys-blue/18 bg-sys-blue/10 text-sys-blue',
+  warning: 'border-sys-orange/22 bg-sys-orange/10 text-sys-orange',
+  danger: 'border-sys-red/20 bg-sys-red/10 text-sys-red',
+  success: 'border-sys-green/20 bg-sys-green/10 text-sys-green',
+};
+
+export function Notice({ tone = 'info', icon, title, children, className }: NoticeProps): React.JSX.Element {
+  return (
+    <div className={clsx('flex items-start gap-3 rounded-xl border px-4 py-3', NOTICE_TONES[tone], className)}>
+      {icon && <div className="mt-0.5 shrink-0">{icon}</div>}
+      <div className="min-w-0">
+        {title && <div className="text-[12px] font-semibold uppercase tracking-[0.06em]">{title}</div>}
+        <div className={clsx('text-[13px] leading-relaxed', title && 'mt-1')}>{children}</div>
+      </div>
     </div>
   );
 }
@@ -326,7 +365,7 @@ export function Table<T extends RowData = RowData>({ columns, rows, empty = '暂
       <div className="w-full overflow-x-auto">
         <table className="min-w-full border-collapse text-left">
           <thead>
-            <tr className="border-b border-separator-thin">
+            <tr className="border-b border-separator">
               {columns.map((col) => (
                 <th key={col.key} className={clsx("px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.06em] text-txt-tertiary align-middle", col.className)}>
                   {col.label}
@@ -343,8 +382,8 @@ export function Table<T extends RowData = RowData>({ columns, rows, empty = '暂
                   key={key}
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
                   className={clsx(
-                    'border-b border-separator-thin last:border-b-0 align-top transition-colors duration-150',
-                    active ? 'bg-sys-blue/[0.08]' : onRowClick && 'hover:bg-fill-quaternary',
+                    'border-b border-separator-thin last:border-b-0 align-top transition-colors duration-150 even:bg-fill-quaternary/30',
+                    active ? 'bg-sys-blue/[0.12]' : onRowClick && 'hover:bg-fill-primary/80',
                     onRowClick && 'cursor-pointer',
                   )}
                 >
@@ -422,4 +461,4 @@ export function CueList({ item }: CueListProps): React.JSX.Element {
 
 /* ── shared input classes ──────────────────────────────────────────────── */
 
-export const inputClass = 'w-full rounded-lg border border-separator-thin bg-bg-raised px-3 py-1.5 text-[13px] font-mono text-txt-primary placeholder:text-txt-quaternary focus:border-sys-blue/60 focus:bg-bg-surface focus:outline-none';
+export const inputClass = 'w-full rounded-lg border border-separator bg-bg-raised px-3 py-2 text-[13px] font-mono text-txt-primary placeholder:text-txt-quaternary shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] hover:border-separator hover:bg-bg-surface focus:border-sys-blue focus:bg-bg-elevated focus:ring-2 focus:ring-sys-blue/20 focus:outline-none';

@@ -6,7 +6,7 @@ import remarkGfm from 'remark-gfm';
 import { api } from '../../lib/api';
 import { useT } from '../../lib/i18n';
 import DiffViewer from '../../components/DiffViewer';
-import { PageCanvas, PageTitle, Section, Button, Badge, StatCard, Table, EmptyState } from '../../components/ui';
+import { PageCanvas, PageTitle, Section, Button, Badge, StatCard, Table, EmptyState, Notice, inputClass } from '../../components/ui';
 import { useConfirm } from '../../components/ConfirmDialog';
 
 function fmtDuration(ms: number | null | undefined): string {
@@ -210,6 +210,8 @@ export default function DreamPage(): React.JSX.Element {
       <PageTitle
         eyebrow={t('Memory Maintenance')}
         title={t('Dream Diary')}
+        titleText={t('Dream Diary')}
+        truncateTitle
         description={t('System dreams daily to organize memories — index refresh, health checks, and LLM-driven consolidation.')}
         right={
           <Button variant="primary" onClick={handleRun} disabled={running}>
@@ -220,32 +222,33 @@ export default function DreamPage(): React.JSX.Element {
 
       {/* Stats */}
       <div className="animate-in stagger-1 mb-5 grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label={t('Last Dream')} value={lastEntry ? fmtDate(lastEntry.started_at) : '—'} tone="blue" />
-        <StatCard label={t('Total Entries')} value={total} tone="default" />
-        <StatCard label={t('Last Status')} value={lastEntry ? t(lastEntry.status) : '—'} tone={lastEntry ? statusTone(lastEntry.status) : 'default'} />
+        <StatCard label={t('Last Dream')} value={lastEntry ? fmtDate(lastEntry.started_at) : '—'} tone="blue" compact />
+        <StatCard label={t('Total Entries')} value={total} tone="default" compact />
+        <StatCard label={t('Last Status')} value={lastEntry ? t(lastEntry.status) : '—'} tone={lastEntry ? statusTone(lastEntry.status) : 'default'} compact />
         <StatCard
           label={t('Schedule')}
           value={config.enabled ? `${String(config.schedule_hour).padStart(2, '0')}:00` : t('Off')}
           tone={config.enabled ? 'green' : 'default'}
+          compact
         />
       </div>
 
       {/* Schedule config */}
       <Section title={t('Schedule')} className="mb-5">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
-          <label className="flex items-center gap-2 cursor-pointer">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <label className="flex min-h-[44px] items-center gap-3 rounded-xl border border-separator-thin bg-bg-raised px-3 py-2 text-sm text-txt-primary hover:border-separator hover:bg-bg-surface">
             <input
               type="checkbox"
               checked={config.enabled}
               onChange={(e) => handleConfigChange('enabled', e.target.checked)}
-              className="accent-[var(--sys-blue)]"
+              className="h-4 w-4 rounded border-separator-thin text-sys-blue accent-sys-blue"
             />
-            <span className="text-sm">{t('Dream Diary')}</span>
+            <span>{t('Dream Diary')}</span>
           </label>
           <select
             value={config.schedule_hour}
             onChange={(e) => handleConfigChange('schedule_hour', Number(e.target.value))}
-            className="rounded-md border border-[var(--separator-thin)] bg-[var(--bg-elevated)] px-2 py-1 text-sm"
+            className={inputClass + ' w-full sm:w-[9rem]'}
           >
             {Array.from({ length: 24 }, (_, i) => (
               <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
@@ -323,10 +326,10 @@ function DetailView({ entry, loading, canRollback, rollingBack, onBack, onRollba
 
       {/* Stats */}
       <div className="animate-in stagger-1 mb-5 grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label={t('Viewed')} value={stats.viewed} tone="blue" />
-        <StatCard label={t('Modified')} value={stats.modified} tone="orange" />
-        <StatCard label={t('Created')} value={stats.created} tone="green" />
-        <StatCard label={t('Deleted')} value={stats.deleted} tone="red" />
+        <StatCard label={t('Viewed')} value={stats.viewed} tone="blue" compact />
+        <StatCard label={t('Modified')} value={stats.modified} tone="orange" compact />
+        <StatCard label={t('Created')} value={stats.created} tone="green" compact />
+        <StatCard label={t('Deleted')} value={stats.deleted} tone="red" compact />
       </div>
 
       {/* Narrative */}
@@ -365,9 +368,9 @@ function DetailView({ entry, loading, canRollback, rollingBack, onBack, onRollba
 
       {/* Error */}
       {entry.error && (
-        <Section title={t('error')} className="mt-5">
-          <div className="text-sm text-[var(--sys-red)] font-mono">{entry.error}</div>
-        </Section>
+        <Notice tone="danger" icon={<span aria-hidden>⚠️</span>} className="mt-5">
+          <span className="font-mono">{entry.error}</span>
+        </Notice>
       )}
     </>
   );

@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState, ReactNode } from 'react';
 import clsx from 'clsx';
 import { api } from '../../lib/api';
 import {
-  PageCanvas, PageTitle, Card, Section, Button, Badge, Table, StatCard, Notice, inputClass,
+  PageCanvas, PageTitle, Card, Section, Button, Badge, Table, StatCard, Notice, inputClass, AppSelect, Disclosure, SegmentedTabs,
   fmt, trunc, asNumber,
 } from '../../components/ui';
 import RecallStages from '../../components/RecallStages';
@@ -229,13 +229,15 @@ export default function RecallDrilldown(): React.JSX.Element {
 
       {/* filter bar */}
       <div className="animate-in stagger-2 mb-5">
-        <button
-          onClick={() => setFilterOpen((v) => !v)}
-          className="inline-flex items-center gap-1.5 text-[12.5px] text-sys-blue hover:opacity-80"
+        <Disclosure
+          open={filterOpen}
+          onOpenChange={setFilterOpen}
+          trigger={
+            <span className="inline-flex items-center gap-1.5 text-[12.5px] text-sys-blue hover:opacity-80">
+              {filterOpen ? `− ${t('Hide filters')}` : `+ ${t('Show filters')}`}
+            </span>
+          }
         >
-          {filterOpen ? `− ${t('Hide filters')}` : `+ ${t('Show filters')}`}
-        </button>
-        {filterOpen && (
           <Card className="mt-3" padded={false}>
             <div className="p-5 grid gap-x-6 gap-y-4 md:grid-cols-5">
               <label className="block">
@@ -248,12 +250,12 @@ export default function RecallDrilldown(): React.JSX.Element {
               </label>
               <label className="block">
                 <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Source')}</span>
-                <select value={filters.clientType} onChange={(e) => patch({ clientType: e.target.value })} className={inputClass}>
-                  <option value="">{t('All sources')}</option>
-                  {sourceOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
+                <AppSelect
+                  value={filters.clientType}
+                  onValueChange={(value) => patch({ clientType: value })}
+                  options={[{ value: '', label: t('All sources') }, ...sourceOptions]}
+                  className="font-sans"
+                />
               </label>
               <label className="block">
                 <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Query text')}</span>
@@ -268,11 +270,11 @@ export default function RecallDrilldown(): React.JSX.Element {
               <button onClick={() => setFilters(DEFAULT_FILTERS)} className="text-[12px] text-sys-blue hover:opacity-80">{t('Reset filters')}</button>
             </div>
           </Card>
-        )}
+        </Disclosure>
       </div>
 
       {error && (
-        <Notice tone="danger" icon={<span aria-hidden>⚠️</span>} className="animate-scale mb-4">
+        <Notice tone="danger" className="animate-scale mb-4">
           {error}
         </Notice>
       )}
@@ -352,28 +354,23 @@ export default function RecallDrilldown(): React.JSX.Element {
 
       {/* auxiliary data */}
       <div className="animate-in stagger-4 mt-5">
-        <button
-          onClick={() => setAuxOpen((v) => !v)}
-          className="inline-flex items-center gap-1.5 text-[12.5px] text-txt-secondary hover:text-txt-primary"
+        <Disclosure
+          open={auxOpen}
+          onOpenChange={setAuxOpen}
+          trigger={
+            <span className="inline-flex items-center gap-1.5 text-[12.5px] text-txt-secondary hover:text-txt-primary">
+              {auxOpen ? `− ${t('Hide appendix')}` : `+ ${t('Show appendix')}`}
+            </span>
+          }
         >
-          {auxOpen ? `− ${t('Hide appendix')}` : `+ ${t('Show appendix')}`}
-        </button>
-        {auxOpen && (
           <div className="mt-3 space-y-5">
             <Card padded={false}>
-              <div className="px-5 pt-4 pb-3 border-b border-separator-thin flex items-center gap-1">
-                {([['path', t('By path')], ['view', t('By view')], ['noisy', t('Noisy nodes')]] as [string, string][]).map(([k, label]) => (
-                  <button
-                    key={k}
-                    onClick={() => setAggTab(k)}
-                    className={clsx(
-                      'press rounded-full border px-3 py-1 text-[12px] font-medium transition-all',
-                      aggTab === k ? 'border-sys-blue/15 bg-bg-elevated text-sys-blue shadow-sm' : 'border-transparent text-txt-secondary hover:text-txt-primary hover:bg-fill-quaternary',
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
+              <div className="px-5 pt-4 pb-3 border-b border-separator-thin">
+                <SegmentedTabs
+                  value={aggTab}
+                  onValueChange={setAggTab}
+                  options={[['path', t('By path')], ['view', t('By view')], ['noisy', t('Noisy nodes')]].map(([value, label]) => ({ value, label }))}
+                />
               </div>
               <div className="p-5">{renderAgg()}</div>
             </Card>
@@ -382,7 +379,7 @@ export default function RecallDrilldown(): React.JSX.Element {
               <Table columns={eventCols} rows={stats?.recent_events as RowData[]} empty={t('No events yet.')} />
             </div>
           </div>
-        )}
+        </Disclosure>
       </div>
     </PageCanvas>
   );

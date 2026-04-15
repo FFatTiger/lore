@@ -1,7 +1,11 @@
 'use client';
 
-import React, { useState, useCallback, createContext, useContext, ReactNode } from 'react';
+import React, { useCallback, useContext, useMemo, useRef, useState, createContext, ReactNode } from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
+import { Toaster, toast as sonnerToast } from 'sonner';
+import clsx from 'clsx';
 import { Button } from './ui';
+import { useTheme } from '../lib/theme';
 
 interface ConfirmOptions {
   title?: string;
@@ -28,87 +32,102 @@ interface DialogState extends ConfirmOptions {
   resolve: (value: boolean) => void;
 }
 
-interface ToastState {
-  message: string;
-  type: 'success' | 'error';
-  id: number;
+function ConfirmModal({ dialog, onConfirm, onCancel }: { dialog: DialogState; onConfirm: () => void; onCancel: () => void }): React.JSX.Element {
+  return (
+    <Dialog.Root open onOpenChange={(open) => { if (!open) onCancel(); }}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-[90] bg-black/50 backdrop-blur-sm animate-in" />
+        <Dialog.Content
+          className="animate-in fixed left-1/2 top-1/2 z-[91] w-[calc(100vw-2rem)] max-w-[400px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-separator-thin bg-bg-elevated p-6 shadow-xl outline-none"
+          onEscapeKeyDown={onCancel}
+          onPointerDownOutside={onCancel}
+        >
+          {dialog.title ? (
+            <Dialog.Title className="mb-2 text-[17px] font-semibold tracking-tight text-txt-primary">
+              {dialog.title}
+            </Dialog.Title>
+          ) : null}
+          <Dialog.Description className="mb-6 text-[14px] leading-relaxed text-txt-secondary">
+            {dialog.message}
+          </Dialog.Description>
+          <div className="flex justify-end gap-2">
+            <Dialog.Close asChild>
+              <Button variant="ghost" size="sm" onClick={onCancel}>
+                {dialog.cancelLabel || 'Cancel'}
+              </Button>
+            </Dialog.Close>
+            <Button
+              variant={dialog.destructive ? 'destructive' : 'primary'}
+              size="sm"
+              onClick={onConfirm}
+              autoFocus
+            >
+              {dialog.confirmLabel || 'Confirm'}
+            </Button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
 }
 
 export function ConfirmProvider({ children }: { children: ReactNode }): React.JSX.Element {
+  const { theme } = useTheme();
   const [dialog, setDialog] = useState<DialogState | null>(null);
-  const [toasts, setToasts] = useState<ToastState[]>([]);
+  const dialogRef = useRef<DialogState | null>(null);
 
   const confirmFn = useCallback((options: ConfirmOptions): Promise<boolean> => {
     return new Promise((resolve) => {
-      setDialog({ ...options, resolve });
+      const nextDialog = { ...options, resolve };
+      dialogRef.current = nextDialog;
+      setDialog(nextDialog);
     });
   }, []);
 
-  const toastFn = useCallback((message: string, type: 'success' | 'error' = 'error') => {
-    const id = Date.now();
-    setToasts((prev) => [...prev, { message, type, id }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
+  const dismissDialog = useCallback((value: boolean) => {
+    const current = dialogRef.current;
+    if (!current) return;
+    dialogRef.current = null;
+    setDialog(null);
+    current.resolve(value);
   }, []);
 
-  const handleConfirm = () => {
-    dialog?.resolve(true);
-    setDialog(null);
-  };
+  const handleConfirm = useCallback(() => dismissDialog(true), [dismissDialog]);
+  const handleCancel = useCallback(() => dismissDialog(false), [dismissDialog]);
 
-  const handleCancel = () => {
-    dialog?.resolve(false);
-    setDialog(null);
-  };
+  const toastFn = useCallback((message: string, type: 'success' | 'error' = 'error') => {
+    const method = type === 'success' ? sonnerToast.success : sonnerToast.error;
+    method(message, {
+      duration: 4000,
+      classNames: {
+        toast: clsx(
+          'rounded-xl border px-4 py-3 text-[13px] shadow-lg backdrop-blur-xl',
+          type === 'success'
+            ? 'border-sys-green/20 bg-sys-green/10 text-sys-green'
+            : 'border-sys-red/20 bg-sys-red/10 text-sys-red',
+        ),
+        title: 'text-inherit font-medium',
+      },
+    });
+  }, []);
+
+  const contextValue = useMemo(() => ({ confirm: confirmFn, toast: toastFn }), [confirmFn, toastFn]);
 
   return (
-    <ConfirmContext.Provider value={{ confirm: confirmFn, toast: toastFn }}>
+    <ConfirmContext.Provider value={contextValue}>
       {children}
-
-      {/* Toast stack */}
-      {toasts.length > 0 && (
-        <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 max-w-sm">
-          {toasts.map((t) => (
-            <div
-              key={t.id}
-              className={`animate-in rounded-xl border px-4 py-3 text-[13px] shadow-lg backdrop-blur-xl ${
-                t.type === 'success'
-                  ? 'border-sys-green/20 bg-sys-green/10 text-sys-green'
-                  : 'border-sys-red/20 bg-sys-red/10 text-sys-red'
-              }`}
-            >
-              {t.message}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Confirm dialog overlay */}
-      {dialog && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={handleCancel}>
-          <div
-            className="animate-in mx-4 w-full max-w-[400px] rounded-2xl border border-separator-thin bg-bg-elevated p-6 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {dialog.title && (
-              <h3 className="mb-2 text-[17px] font-semibold tracking-tight text-txt-primary">{dialog.title}</h3>
-            )}
-            <p className="mb-6 text-[14px] leading-relaxed text-txt-secondary">{dialog.message}</p>
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" size="sm" onClick={handleCancel}>
-                {dialog.cancelLabel || 'Cancel'}
-              </Button>
-              <Button
-                variant={dialog.destructive ? 'destructive' : 'primary'}
-                size="sm"
-                onClick={handleConfirm}
-                autoFocus
-              >
-                {dialog.confirmLabel || 'Confirm'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Toaster
+        position="bottom-right"
+        theme={theme === 'light' ? 'light' : 'dark'}
+        visibleToasts={4}
+        expand={false}
+        richColors={false}
+        closeButton={false}
+        toastOptions={{
+          unstyled: true,
+        }}
+      />
+      {dialog ? <ConfirmModal dialog={dialog} onConfirm={handleConfirm} onCancel={handleCancel} /> : null}
     </ConfirmContext.Provider>
   );
 }

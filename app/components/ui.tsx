@@ -1,7 +1,12 @@
 'use client';
 
-import React, { ReactNode, ComponentPropsWithoutRef, ElementType } from 'react';
+import React, { ReactNode, ComponentPropsWithoutRef, ElementType, useMemo } from 'react';
 import clsx from 'clsx';
+import * as Accordion from '@radix-ui/react-accordion';
+import * as Select from '@radix-ui/react-select';
+import * as Tabs from '@radix-ui/react-tabs';
+import { ChevronDown } from 'lucide-react';
+import { flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 
 /* ── formatters ───────────────────────────────────────────────────────── */
 
@@ -324,6 +329,103 @@ interface EmptyStateProps {
   icon?: React.ElementType<Record<string, unknown>>;
 }
 
+interface SelectOption {
+  value: string;
+  label: ReactNode;
+}
+
+interface AppSelectProps {
+  value: string;
+  onValueChange: (value: string) => void;
+  options: SelectOption[];
+  placeholder?: ReactNode;
+  className?: string;
+}
+
+export function AppSelect({ value, onValueChange, options, placeholder, className }: AppSelectProps): React.JSX.Element {
+  const selected = options.find((option) => option.value === value);
+  return (
+    <Select.Root value={value} onValueChange={onValueChange}>
+      <Select.Trigger className={clsx(inputClass, 'inline-flex items-center justify-between gap-2 font-sans', className)}>
+        <Select.Value>{selected?.label || placeholder || '—'}</Select.Value>
+        <Select.Icon>
+          <ChevronDown size={14} className="text-txt-quaternary" />
+        </Select.Icon>
+      </Select.Trigger>
+      <Select.Portal>
+        <Select.Content
+          position="popper"
+          sideOffset={8}
+          className="z-[120] overflow-hidden rounded-xl border border-separator-thin bg-bg-elevated shadow-card backdrop-blur-xl"
+        >
+          <Select.Viewport className="p-1.5">
+            {options.map((option) => (
+              <Select.Item
+                key={option.value}
+                value={option.value}
+                className="cursor-pointer rounded-lg px-3 py-2 text-[13px] text-txt-primary outline-none transition-colors data-[highlighted]:bg-fill-primary data-[state=checked]:text-sys-blue"
+              >
+                <Select.ItemText>{option.label}</Select.ItemText>
+              </Select.Item>
+            ))}
+          </Select.Viewport>
+        </Select.Content>
+      </Select.Portal>
+    </Select.Root>
+  );
+}
+
+interface DisclosureProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  trigger: ReactNode;
+  children: ReactNode;
+  className?: string;
+}
+
+export function Disclosure({ open, onOpenChange, trigger, children, className }: DisclosureProps): React.JSX.Element {
+  return (
+    <Accordion.Root type="single" collapsible value={open ? 'open' : undefined} onValueChange={(value) => onOpenChange(value === 'open')} className={className}>
+      <Accordion.Item value="open" className="border-none">
+        <Accordion.Trigger asChild>
+          <button type="button" className="w-full text-left">{trigger}</button>
+        </Accordion.Trigger>
+        <Accordion.Content>{children}</Accordion.Content>
+      </Accordion.Item>
+    </Accordion.Root>
+  );
+}
+
+interface SegmentedTabOption {
+  value: string;
+  label: ReactNode;
+}
+
+interface SegmentedTabsProps {
+  value: string;
+  onValueChange: (value: string) => void;
+  options: SegmentedTabOption[];
+  className?: string;
+}
+
+export function SegmentedTabs({ value, onValueChange, options, className }: SegmentedTabsProps): React.JSX.Element {
+  return (
+    <Tabs.Root value={value} onValueChange={onValueChange} className={className}>
+      <Tabs.List className="flex items-center gap-1">
+        {options.map((option) => (
+          <Tabs.Trigger
+            key={option.value}
+            value={option.value}
+            className="press rounded-full border px-3 py-1 text-[12px] font-medium text-txt-secondary transition-all data-[state=active]:border-sys-blue/15 data-[state=active]:bg-bg-elevated data-[state=active]:text-sys-blue data-[state=active]:shadow-sm hover:bg-fill-quaternary hover:text-txt-primary"
+          >
+            {option.label}
+          </Tabs.Trigger>
+        ))}
+      </Tabs.List>
+    </Tabs.Root>
+  );
+}
+
 export function EmptyState({ text, icon: Icon }: EmptyStateProps): React.JSX.Element {
   return (
     <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-separator-thin py-14 text-center">
@@ -359,37 +461,49 @@ interface TableProps<T extends RowData = RowData> {
 }
 
 export function Table<T extends RowData = RowData>({ columns, rows, empty = '暂无数据', onRowClick, activeRowKey }: TableProps<T>): React.JSX.Element {
-  if (!rows?.length) return <EmptyState text={empty} />;
+  const data = useMemo(() => rows || [], [rows]);
+  const tableColumns = useMemo(() => columns.map((col) => ({
+    id: col.key,
+    accessorFn: (row: T) => row[col.key],
+    header: () => col.label,
+    cell: ({ row }: { row: { original: T } }) => (col.render ? col.render(row.original[col.key] as T[string], row.original) : String(row.original[col.key] ?? '—')),
+    meta: { className: col.className },
+  })), [columns]);
+  const table = useReactTable({ data, columns: tableColumns, getCoreRowModel: getCoreRowModel() });
+  if (!data.length) return <EmptyState text={empty} />;
   return (
     <div className="rounded-2xl border border-separator-thin bg-bg-elevated shadow-card overflow-hidden">
       <div className="w-full overflow-x-auto">
         <table className="min-w-full border-collapse text-left">
           <thead>
-            <tr className="border-b border-separator">
-              {columns.map((col) => (
-                <th key={col.key} className={clsx("px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.06em] text-txt-tertiary align-middle", col.className)}>
-                  {col.label}
-                </th>
-              ))}
-            </tr>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <tr key={headerGroup.id} className="border-b border-separator">
+                {headerGroup.headers.map((header) => (
+                  <th key={header.id} className={clsx('px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.06em] text-txt-tertiary align-middle', (header.column.columnDef.meta as { className?: string } | undefined)?.className)}>
+                    {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                  </th>
+                ))}
+              </tr>
+            ))}
           </thead>
           <tbody>
-            {rows.map((row, i) => {
-              const key = rowKey(row as RowData, i);
-              const active = activeRowKey && activeRowKey === (row.uri || row.node_uri);
+            {table.getRowModel().rows.map((row, i) => {
+              const original = row.original as T & RowData;
+              const key = rowKey(original, i);
+              const active = activeRowKey && activeRowKey === (original.uri || original.node_uri);
               return (
                 <tr
                   key={key}
-                  onClick={onRowClick ? () => onRowClick(row) : undefined}
+                  onClick={onRowClick ? () => onRowClick(row.original) : undefined}
                   className={clsx(
                     'border-b border-separator-thin last:border-b-0 align-top transition-colors duration-150 even:bg-fill-quaternary/30',
                     active ? 'bg-sys-blue/[0.12]' : onRowClick && 'hover:bg-fill-primary/80',
                     onRowClick && 'cursor-pointer',
                   )}
                 >
-                  {columns.map((col) => (
-                    <td key={col.key} className={clsx("px-4 py-3 text-[13px] text-txt-primary", col.className)}>
-                      {col.render ? col.render(row[col.key] as T[string], row) : String(row[col.key] ?? '—')}
+                  {row.getVisibleCells().map((cell) => (
+                    <td key={cell.id} className={clsx('px-4 py-3 text-[13px] text-txt-primary', (cell.column.columnDef.meta as { className?: string } | undefined)?.className)}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>
                   ))}
                 </tr>

@@ -6,7 +6,7 @@ import remarkGfm from 'remark-gfm';
 import { api } from '../../lib/api';
 import { useT } from '../../lib/i18n';
 import DiffViewer from '../../components/DiffViewer';
-import { PageCanvas, PageTitle, Section, Button, Badge, StatCard, Table, EmptyState, Notice, inputClass } from '../../components/ui';
+import { PageCanvas, PageTitle, Section, Button, Badge, StatCard, Table, EmptyState, Notice, inputClass, AppSelect } from '../../components/ui';
 import { useConfirm } from '../../components/ConfirmDialog';
 
 function fmtDuration(ms: number | null | undefined): string {
@@ -245,15 +245,12 @@ export default function DreamPage(): React.JSX.Element {
             />
             <span>{t('Dream Diary')}</span>
           </label>
-          <select
-            value={config.schedule_hour}
-            onChange={(e) => handleConfigChange('schedule_hour', Number(e.target.value))}
-            className={inputClass + ' w-full sm:w-[9rem]'}
-          >
-            {Array.from({ length: 24 }, (_, i) => (
-              <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
-            ))}
-          </select>
+          <AppSelect
+            value={String(config.schedule_hour)}
+            onValueChange={(value) => handleConfigChange('schedule_hour', Number(value))}
+            options={Array.from({ length: 24 }, (_, i) => ({ value: String(i), label: `${String(i).padStart(2, '0')}:00` }))}
+            className="w-full sm:w-[9rem]"
+          />
         </div>
       </Section>
 
@@ -368,7 +365,7 @@ function DetailView({ entry, loading, canRollback, rollingBack, onBack, onRollba
 
       {/* Error */}
       {entry.error && (
-        <Notice tone="danger" icon={<span aria-hidden>⚠️</span>} className="mt-5">
+        <Notice tone="danger" className="mt-5">
           <span className="font-mono">{entry.error}</span>
         </Notice>
       )}

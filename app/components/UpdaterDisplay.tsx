@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useMemo, useState } from 'react';
+import * as Popover from '@radix-ui/react-popover';
 import clsx from 'clsx';
 import { Badge } from './ui';
 import {
@@ -34,13 +34,6 @@ interface UpdaterDisplayProps {
   size?: 'sm' | 'md';
   showTimestamp?: boolean;
   className?: string;
-}
-
-interface UpdaterPopupPosition {
-  left: number;
-  top?: number;
-  bottom?: number;
-  maxHeight: number;
 }
 
 const AVATAR_SURFACE = 'bg-bg-elevated';
@@ -139,16 +132,6 @@ function formatEventCount(eventCount: number): string {
   return eventCount === 1 ? '1 update' : `${eventCount} updates`;
 }
 
-function stopEvent(event: React.MouseEvent<HTMLElement>): void {
-  event.preventDefault();
-  event.stopPropagation();
-}
-
-function clampPopupLeft(anchorLeft: number, width: number): number {
-  if (typeof window === 'undefined') return anchorLeft;
-  return Math.max(16, Math.min(anchorLeft, window.innerWidth - width - 16));
-}
-
 export function ChannelAvatar({
   clientType,
   size,
@@ -221,54 +204,12 @@ export default function UpdaterDisplay({
   className,
 }: UpdaterDisplayProps): React.JSX.Element | null {
   const [open, setOpen] = useState(false);
-  const [popupPosition, setPopupPosition] = useState<UpdaterPopupPosition | null>(null);
-  const wrapperRef = useRef<HTMLSpanElement>(null);
   const resolvedUpdaters = useMemo(() => resolveUpdaters({
     updaters,
     fallbackClientType,
     fallbackSource,
     fallbackUpdatedAt,
   }), [fallbackClientType, fallbackSource, fallbackUpdatedAt, updaters]);
-
-  const updatePopupPosition = useCallback(() => {
-    if (!wrapperRef.current || typeof window === 'undefined') return;
-    const rect = wrapperRef.current.getBoundingClientRect();
-    const popupWidth = 288;
-    const left = clampPopupLeft(rect.left, popupWidth);
-    const estimatedHeight = 280;
-    const shouldOpenAbove = rect.bottom + estimatedHeight > window.innerHeight - 16 && rect.top > estimatedHeight + 16;
-    setPopupPosition(shouldOpenAbove
-      ? {
-        left,
-        bottom: window.innerHeight - rect.top + 8,
-        maxHeight: Math.max(120, rect.top - 24),
-      }
-      : {
-        left,
-        top: rect.bottom + 8,
-        maxHeight: Math.max(120, window.innerHeight - rect.bottom - 24),
-      });
-  }, []);
-
-  useEffect(() => {
-    if (!open) {
-      setPopupPosition(null);
-      return undefined;
-    }
-    updatePopupPosition();
-    const handlePointerDown = (event: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) setOpen(false);
-    };
-    const handleViewportChange = () => updatePopupPosition();
-    document.addEventListener('mousedown', handlePointerDown);
-    window.addEventListener('resize', handleViewportChange);
-    window.addEventListener('scroll', handleViewportChange, true);
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      window.removeEventListener('resize', handleViewportChange);
-      window.removeEventListener('scroll', handleViewportChange, true);
-    };
-  }, [open, updatePopupPosition]);
 
   if (resolvedUpdaters.length === 0) return null;
 
@@ -290,62 +231,49 @@ export default function UpdaterDisplay({
   const showStack = visibleUpdaters.length > 1;
 
   return (
-    <span
-      ref={wrapperRef}
-      className={clsx('relative inline-flex items-center gap-2', className)}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-    >
-      <span
-        className="inline-flex cursor-pointer items-center"
-        onClick={(event) => {
-          stopEvent(event);
-          setOpen((value) => !value);
-        }}
-        role="button"
-        tabIndex={0}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            setOpen((value) => !value);
-          }
-          if (event.key === 'Escape') setOpen(false);
-        }}
-      >
-        {showStack ? (
-          <span className="relative inline-block shrink-0" style={{ width: stackWidth, height: stackHeight }}>
-            <span className="absolute left-0 top-0 z-10">
-              <ChannelAvatar clientType={visibleUpdaters[0].client_type} size={stackPrimary} elevated />
-            </span>
-            <span className="absolute z-20" style={{ left: stackOffsetX, top: stackOffsetY }}>
-              <ChannelAvatar clientType={visibleUpdaters[1].client_type} size={stackSecondary} elevated />
-            </span>
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <span
+          className={clsx('relative inline-flex items-center gap-2', className)}
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
+        >
+          <span className="inline-flex cursor-pointer items-center" role="button" tabIndex={0} aria-haspopup="dialog" aria-expanded={open}>
+            {showStack ? (
+              <span className="relative inline-block shrink-0" style={{ width: stackWidth, height: stackHeight }}>
+                <span className="absolute left-0 top-0 z-10">
+                  <ChannelAvatar clientType={visibleUpdaters[0].client_type} size={stackPrimary} elevated />
+                </span>
+                <span className="absolute z-20" style={{ left: stackOffsetX, top: stackOffsetY }}>
+                  <ChannelAvatar clientType={visibleUpdaters[1].client_type} size={stackSecondary} elevated />
+                </span>
+              </span>
+            ) : (
+              <ChannelAvatar clientType={latestUpdater.client_type} size={avatar} elevated />
+            )}
+            {overflowCount > 0 && (
+              <span
+                className="ml-1 inline-flex shrink-0 items-center justify-center rounded-full border border-separator-thin bg-bg-elevated font-medium text-txt-secondary shadow-sm"
+                style={{ minWidth: overflow, height: overflow, fontSize }}
+              >
+                +{overflowCount}
+              </span>
+            )}
           </span>
-        ) : (
-          <ChannelAvatar clientType={latestUpdater.client_type} size={avatar} elevated />
-        )}
-        {overflowCount > 0 && (
-          <span
-            className="ml-1 inline-flex shrink-0 items-center justify-center rounded-full border border-separator-thin bg-bg-elevated font-medium text-txt-secondary shadow-sm"
-            style={{ minWidth: overflow, height: overflow, fontSize }}
-          >
-            +{overflowCount}
-          </span>
-        )}
-      </span>
-      {showTimestamp && latestUpdater.updated_at && (
-        <span className="text-[11px] text-txt-quaternary">
-          {formatUpdatedAt(latestUpdater.updated_at)}
+          {showTimestamp && latestUpdater.updated_at && (
+            <span className="text-[11px] text-txt-quaternary">
+              {formatUpdatedAt(latestUpdater.updated_at)}
+            </span>
+          )}
         </span>
-      )}
-      {open && popupPosition && createPortal(
-        <div
-          className="animate-scale fixed z-[110] w-72 max-w-[calc(100vw-2rem)] rounded-2xl border border-separator-thin bg-bg-elevated shadow-card shadow-2xl shadow-black/60 backdrop-blur-xl"
-          style={popupPosition}
-          onClick={stopEvent}
-          onMouseDown={stopEvent}
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          sideOffset={8}
+          collisionPadding={16}
+          className="animate-scale z-[110] w-72 max-w-[calc(100vw-2rem)] rounded-2xl border border-separator-thin bg-bg-elevated shadow-card shadow-2xl shadow-black/60 backdrop-blur-xl outline-none"
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
         >
           <div className="flex items-center gap-2 border-b border-separator-thin px-4 py-3">
             <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-txt-tertiary">
@@ -379,9 +307,8 @@ export default function UpdaterDisplay({
               </div>
             ))}
           </div>
-        </div>,
-        document.body,
-      )}
-    </span>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }

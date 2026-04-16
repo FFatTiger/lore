@@ -1,13 +1,13 @@
 {
   "name": "lore",
-  "description": "Lore long-term memory plugin marketplace",
+  "description": "Lore plugin marketplace for fixed-boot long-term memory",
   "owner": {
     "name": "FFatTiger"
   },
   "plugins": [
     {
       "name": "lore",
-      "description": "Long-term memory for AI agents — MCP tools + automatic recall injection",
+      "description": "Long-term Lore memory for AI agents — fixed boot baseline, recall injection, and MCP tools",
       "version": "1.0.2",
       "source": "./",
       "author": {

@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import type { ClientType } from '../../auth';
 import { getPool } from '../../db';
 import { ROOT_NODE_UUID } from './browse';
+import { getBootNodeSpec } from './boot';
 import {
   deleteGeneratedMemoryViewsByPrefix,
   upsertGeneratedMemoryViewsForPath,
@@ -142,6 +143,53 @@ function parseUri(uri: unknown): URI {
     return { domain: d.trim() || 'core', path: (p ?? '').replace(/^\/+|\/+$/g, '') };
   }
   return { domain: 'core', path: value.replace(/^\/+|\/+$/g, '') };
+}
+
+function isRollbackContext(eventContext: EventContext): boolean {
+  return eventContext.source === 'dream:rollback';
+}
+
+function throwProtectedBootError(message: string, blockedUri: string): never {
+  const spec = getBootNodeSpec(blockedUri);
+  const error = Object.assign(new Error(message), {
+    status: 409,
+    code: 'protected_boot_path',
+    blocked_uri: blockedUri,
+    boot_role: spec?.role,
+    boot_role_label: spec?.role_label,
+  });
+  throw error;
+}
+
+function assertDeleteAllowed(domain: string, path: string, eventContext: EventContext): void {
+  if (isRollbackContext(eventContext)) return;
+  const blockedUri = `${domain}://${path}`;
+  const spec = getBootNodeSpec(blockedUri);
+  if (!spec) return;
+  throwProtectedBootError(
+    `Cannot delete fixed boot node ${spec.uri} (${spec.role_label}). Fixed boot paths cannot be deleted.`,
+    spec.uri,
+  );
+}
+
+function assertMoveAllowed(oldUri: string, newUri: string, eventContext: EventContext): void {
+  if (isRollbackContext(eventContext)) return;
+
+  const oldSpec = getBootNodeSpec(oldUri);
+  if (oldSpec) {
+    throwProtectedBootError(
+      `Cannot move fixed boot node ${oldSpec.uri} (${oldSpec.role_label}). Fixed boot paths cannot be moved.`,
+      oldSpec.uri,
+    );
+  }
+
+  const newSpec = getBootNodeSpec(newUri);
+  if (newSpec) {
+    throwProtectedBootError(
+      `Cannot move a node onto fixed boot path ${newSpec.uri} (${newSpec.role_label}). Fixed boot paths are reserved.`,
+      newSpec.uri,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -385,6 +433,8 @@ export async function deleteNodeByPath(
   { domain = 'core', path }: DeleteNodeByPathOptions,
   eventContext: EventContext = {},
 ): Promise<DeleteNodeResult> {
+  assertDeleteAllowed(domain, path, eventContext);
+
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
@@ -502,6 +552,7 @@ export async function moveNode(
   const old = parseUri(old_uri);
   const target = parseUri(new_uri);
   assertValidPathSegments(target.path, 'new_uri path');
+  assertMoveAllowed(`${old.domain}://${old.path}`, `${target.domain}://${target.path}`, eventContext);
 
   const client = await getPool().connect();
   try {

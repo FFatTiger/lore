@@ -36,9 +36,30 @@ function mergeWorkflowEvents(existing: DreamWorkflowEvent[] | undefined, incomin
   return Array.from(byId.values()).sort((a, b) => a.id - b.id);
 }
 
+function formatProtectedNodeBlockedDetail(payload: Record<string, unknown> | undefined): string {
+  if (!payload) return '';
+  const blockedUri = typeof payload.blocked_uri === 'string' ? payload.blocked_uri : '';
+  const requestedOldUri = typeof payload.requested_old_uri === 'string' ? payload.requested_old_uri : '';
+  const requestedNewUri = typeof payload.requested_new_uri === 'string' ? payload.requested_new_uri : '';
+  const tool = typeof payload.tool === 'string' ? payload.tool : '';
+
+  if (tool === 'update_node' && blockedUri) return `固定启动节点 ${blockedUri} 不允许更新`;
+  if (tool === 'delete_node' && blockedUri) return `固定启动节点 ${blockedUri} 不允许删除`;
+  if (tool === 'move_node' && blockedUri) {
+    if (requestedNewUri && requestedNewUri === blockedUri) {
+      return requestedOldUri
+        ? `不能把 ${requestedOldUri} 移动到固定启动路径 ${blockedUri}`
+        : `不能把其他节点移动到固定启动路径 ${blockedUri}`;
+    }
+    return `固定启动节点 ${blockedUri} 不允许移动`;
+  }
+  if (blockedUri) return `固定启动节点 ${blockedUri} 已拦截`;
+  return '';
+}
+
 function pickWorkflowArgs(payload: Record<string, unknown> | undefined): string {
   if (!payload) return '';
-  const preferredKeys = ['uri', 'old_uri', 'new_uri', 'query', 'keyword', 'node_uuid', 'days', 'limit', 'priority'];
+  const preferredKeys = ['uri', 'old_uri', 'new_uri', 'requested_old_uri', 'requested_new_uri', 'blocked_uri', 'query', 'keyword', 'node_uuid', 'days', 'limit', 'priority'];
   const compact: Record<string, unknown> = {};
   for (const key of preferredKeys) {
     if (payload[key] !== undefined) compact[key] = payload[key];
@@ -99,7 +120,11 @@ function buildWorkflowRows(workflowEvents: DreamWorkflowEvent[]): Array<{ key: s
       key: `${event.id}`,
       label: workflowEventLabel(event.event_type),
       tone: workflowEventTone(event.event_type),
-      detail: event.event_type === 'assistant_note' ? String(event.payload?.message || '') : '',
+      detail: event.event_type === 'assistant_note'
+        ? String(event.payload?.message || '')
+        : event.event_type === 'protected_node_blocked'
+          ? formatProtectedNodeBlockedDetail(event.payload)
+          : '',
       time: event.created_at || null,
     });
   }
@@ -125,6 +150,7 @@ function workflowEventLabel(eventType: string): string {
     case 'llm_turn_started': return 'LLM turn';
     case 'tool_call_started': return 'Tool started';
     case 'tool_call_finished': return 'Tool finished';
+    case 'protected_node_blocked': return 'Protected boot block';
     case 'assistant_note': return 'Assistant note';
     case 'run_completed': return 'Run completed';
     case 'run_failed': return 'Run failed';
@@ -135,8 +161,8 @@ function workflowEventLabel(eventType: string): string {
 function workflowEventTone(eventType: string): 'green' | 'red' | 'orange' | 'blue' | 'default' {
   if (eventType === 'run_completed') return 'green';
   if (eventType === 'run_failed') return 'red';
+  if (eventType === 'protected_node_blocked' || eventType === 'assistant_note') return 'orange';
   if (eventType === 'phase_completed' || eventType === 'tool_call_finished') return 'green';
-  if (eventType === 'assistant_note') return 'orange';
   return 'blue';
 }
 
@@ -174,12 +200,14 @@ interface MemoryChangeBefore {
   content?: string;
   priority?: number;
   disclosure?: string;
+  uri?: string;
 }
 
 interface MemoryChangeAfter {
   content?: string;
   priority?: number;
   disclosure?: string;
+  uri?: string;
 }
 
 interface MemoryChange {
@@ -196,6 +224,13 @@ interface DreamSummary {
   health?: Record<string, number>;
   dead_writes?: {
     total?: number;
+  };
+  paths?: {
+    recommendations_count?: number;
+  };
+  structure?: {
+    moved?: number;
+    protected_blocks?: number;
   };
   orphans?: {
     count?: number;
@@ -418,11 +453,11 @@ export default function DreamPage(): React.JSX.Element {
   return (
     <PageCanvas size="5xl">
       <PageTitle
-        eyebrow={t('Memory Maintenance')}
+        eyebrow={t('Structural Audit')}
         title={t('Dream Diary')}
         titleText={t('Dream Diary')}
         truncateTitle
-        description={t('System dreams daily to organize memories — index refresh, health checks, and LLM-driven consolidation.')}
+        description={t('Dream audits Lore structure — path placement, split needs, retrieval-path issues, and safe move/update decisions.')}
         right={
           <Button variant="primary" onClick={handleRun} disabled={running}>
             {running ? t('Dreaming…') : t('Run Dream Now')}
@@ -552,11 +587,14 @@ function DetailView({ entry, loading, canRollback, rollingBack, onBack, onRollba
 
   const stats = useMemo(() => {
     const tc = entry?.tool_calls || [];
+    const changes = entry?.memory_changes || [];
     return {
       viewed: tc.filter((c) => c.tool === 'get_node').length,
       modified: tc.filter((c) => c.tool === 'update_node').length,
       created: tc.filter((c) => c.tool === 'create_node').length,
       deleted: tc.filter((c) => c.tool === 'delete_node').length,
+      moved: changes.filter((c) => c.type === 'move').length,
+      protectedBlocks: (entry?.workflow_events || []).filter((e) => e.event_type === 'protected_node_blocked').length,
     };
   }, [entry]);
 
@@ -588,11 +626,13 @@ function DetailView({ entry, loading, canRollback, rollingBack, onBack, onRollba
       </div>
 
       {/* Stats */}
-      <div className="animate-in stagger-1 mb-5 grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="animate-in stagger-1 mb-5 grid grid-cols-2 md:grid-cols-6 gap-3">
         <StatCard label={t('Viewed')} value={stats.viewed} tone="blue" compact />
         <StatCard label={t('Modified')} value={stats.modified} tone="orange" compact />
         <StatCard label={t('Created')} value={stats.created} tone="green" compact />
         <StatCard label={t('Deleted')} value={stats.deleted} tone="red" compact />
+        <StatCard label={t('Moved')} value={stats.moved} tone="blue" compact />
+        <StatCard label={t('Protected')} value={stats.protectedBlocks} tone="orange" compact />
       </div>
 
       {/* Narrative */}
@@ -737,6 +777,7 @@ function changeTone(type: string): ChangeTone {
   if (type === 'create') return 'green';
   if (type === 'delete') return 'red';
   if (type === 'update') return 'orange';
+  if (type === 'move') return 'blue';
   return 'blue';
 }
 
@@ -766,12 +807,20 @@ function MemoryChangesSection({ changes, t }: MemoryChangesSectionProps): React.
               {ch.before?.priority !== undefined && ch.after?.priority !== undefined && ch.before.priority !== ch.after.priority && (
                 <span className="text-xs text-txt-tertiary">P{ch.before.priority}→P{ch.after.priority}</span>
               )}
+              {ch.type === 'move' && ch.before?.uri && ch.after?.uri && (
+                <span className="text-xs text-txt-tertiary truncate max-w-[16rem]">{ch.before.uri} → {ch.after.uri}</span>
+              )}
               <span className="text-[11px] text-txt-quaternary">{expandedIdx === i ? '▲' : '▼'}</span>
             </div>
             {expandedIdx === i && (
               <div className="border-t border-[var(--separator-thin)] px-3 py-3 space-y-2">
                 {ch.type === 'update' && ch.before?.content !== undefined && ch.after?.content !== undefined ? (
                   <DiffViewer oldText={ch.before.content} newText={ch.after.content} />
+                ) : ch.type === 'move' && ch.before?.uri && ch.after?.uri ? (
+                  <div className="text-xs text-txt-tertiary space-y-1">
+                    <div>{t('Before')}: <code className="font-mono text-txt-primary">{ch.before.uri}</code></div>
+                    <div>{t('After')}: <code className="font-mono text-txt-primary">{ch.after.uri}</code></div>
+                  </div>
                 ) : ch.type === 'create' && ch.after?.content ? (
                   <div>
                     <div className="text-[11px] font-medium text-txt-tertiary mb-1">{t('After')}</div>
@@ -815,6 +864,9 @@ function SummaryBadges({ summary, t }: SummaryBadgesProps): React.JSX.Element | 
   const parts: string[] = [];
   const agent = summary.agent;
   if (agent?.tool_calls != null) parts.push(`${agent.tool_calls} ${t('calls')}`);
+  if (summary.paths?.recommendations_count) parts.push(`${t('Path recs')} ${summary.paths.recommendations_count}`);
+  if (summary.structure?.moved) parts.push(`${t('Moved')} ${summary.structure.moved}`);
+  if (summary.structure?.protected_blocks) parts.push(`${t('Protected')} ${summary.structure.protected_blocks}`);
   const h = summary.health;
   if (h) {
     const items: string[] = [];
@@ -823,5 +875,5 @@ function SummaryBadges({ summary, t }: SummaryBadgesProps): React.JSX.Element | 
     if (h.noisy) items.push(`${t('noisy')} ${h.noisy}`);
     if (items.length) parts.push(items.join(' '));
   }
-  return <span className="block max-w-[9rem] ml-auto text-right text-xs text-txt-tertiary">{parts.join(' · ') || '—'}</span>;
+  return <span className="block max-w-[13rem] ml-auto text-right text-xs text-txt-tertiary">{parts.join(' · ') || '—'}</span>;
 }

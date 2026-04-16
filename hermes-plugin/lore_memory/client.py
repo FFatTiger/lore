@@ -211,10 +211,18 @@ class LoreClient:
         query: str,
         domain: Optional[str] = None,
         limit: int = 10,
+        content_limit: int = 5,
         hybrid: bool = True
     ) -> Dict:
         """Search memories by keyword"""
-        data = {"query": query, "limit": limit, "hybrid": hybrid}
+        safe_limit = max(1, min(100, int(limit)))
+        safe_content_limit = max(0, min(20, int(content_limit)))
+        data = {
+            "query": query,
+            "limit": safe_limit,
+            "content_limit": safe_content_limit,
+            "hybrid": hybrid,
+        }
         if domain:
             data["domain"] = domain
         return self._request("POST", "/browse/search", data=data) or {}

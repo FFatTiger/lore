@@ -63,6 +63,7 @@ import {
   resolveEmbeddingConfig as mockResolveEmbeddingConfig,
   getEmbeddingRuntimeConfig as mockGetEmbeddingRuntimeConfig,
 } from '../../view/embeddings';
+import { getBootUris } from '../../memory/boot';
 import { DEFAULT_STRATEGY, STRATEGIES } from '../recallScoring';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -315,11 +316,10 @@ describe('getViewPrior', () => {
   });
 });
 
-// ─── defaultBootUris ─────────────────────────────────────────────────────
+// ─── fixed boot manifest integration ─────────────────────────────────────
 
-describe('defaultBootUris (via aggregateCandidates env integration)', () => {
+describe('fixed boot manifest integration', () => {
   it('aggregateCandidates runs without CORE_MEMORY_URIS set', () => {
-    // Just confirm the function works — env may or may not be set
     const result = aggregateCandidates({
       exactRows: [],
       glossarySemanticRows: [],
@@ -540,11 +540,11 @@ describe('loadScoringConfig (via getRecallRuntimeConfig)', () => {
     expect(config.recency.priority_exempt).toBe(1);
   });
 
-  it('core_memory_uris is sorted and is an array', async () => {
+  it('core_memory_uris is sorted and matches the fixed boot manifest', async () => {
     const config = await getRecallRuntimeConfig(null);
+    const expected = [...getBootUris()].sort();
     expect(Array.isArray(config.core_memory_uris)).toBe(true);
-    const sorted = [...config.core_memory_uris].sort();
-    expect(config.core_memory_uris).toEqual(sorted);
+    expect(config.core_memory_uris).toEqual(expected);
   });
 });
 

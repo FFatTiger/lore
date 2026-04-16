@@ -33,6 +33,8 @@ export interface BootMemory {
   node_uuid?: string;
   content?: string;
   created_at?: string | null;
+  boot_role_label?: string;
+  boot_purpose?: string;
 }
 
 export interface BootViewData {
@@ -161,10 +163,17 @@ export function formatBootView(data: BootViewData | undefined): string {
     lines.push('');
   }
   if (coreMemories.length > 0) {
-    lines.push('## Contents:');
+    lines.push('## Fixed boot baseline:');
+    lines.push('');
+    lines.push('Lore boot deterministically loads three fixed startup nodes inside Lore:');
+    lines.push('- core://agent — workflow constraints');
+    lines.push('- core://soul — style / persona / self-definition');
+    lines.push('- preferences://user — stable user definition / durable user context');
     lines.push('');
     for (const memory of coreMemories) {
       lines.push(`### ${memory?.uri || ''}`);
+      if (memory?.boot_role_label) lines.push(`Role: ${memory.boot_role_label}`);
+      if (memory?.boot_purpose) lines.push(`Purpose: ${memory.boot_purpose}`);
       if (Number.isFinite(memory?.priority)) lines.push(`Priority: ${memory.priority}`);
       if (memory?.disclosure) lines.push(`Disclosure: ${memory.disclosure}`);
       if (memory?.node_uuid) lines.push(`Node UUID: ${memory.node_uuid}`);

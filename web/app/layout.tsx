@@ -4,7 +4,7 @@ import { ReactNode } from 'react';
 
 export const metadata = {
   title: 'Lore',
-  description: 'Lore structured memory management',
+  description: 'Lore fixed-boot memory console and structural audit',
 };
 
 // Runs before React hydration to avoid a light/dark flash on first paint.

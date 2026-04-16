@@ -22,6 +22,7 @@ vi.mock('../../memory/write', () => ({
   createNode: vi.fn(),
   updateNodeByPath: vi.fn(),
   deleteNodeByPath: vi.fn(),
+  moveNode: vi.fn(),
 }));
 vi.mock('../../search/glossary', () => ({
   addGlossaryKeyword: vi.fn(),
@@ -48,7 +49,7 @@ vi.mock('../dreamWorkflow', () => ({
 
 import { sql } from '../../../db';
 import { getSettings, updateSettings } from '../../config/settings';
-import { deleteNodeByPath, updateNodeByPath, createNode } from '../../memory/write';
+import { deleteNodeByPath, updateNodeByPath, createNode, moveNode } from '../../memory/write';
 import { addGlossaryKeyword, removeGlossaryKeyword } from '../../search/glossary';
 import { listDreamWorkflowEvents } from '../dreamWorkflow';
 import {
@@ -65,6 +66,7 @@ const mockUpdateSettings = vi.mocked(updateSettings);
 const mockDeleteNodeByPath = vi.mocked(deleteNodeByPath);
 const mockUpdateNodeByPath = vi.mocked(updateNodeByPath);
 const mockCreateNode = vi.mocked(createNode);
+const mockMoveNode = vi.mocked(moveNode);
 const mockAddGlossaryKeyword = vi.mocked(addGlossaryKeyword);
 const mockRemoveGlossaryKeyword = vi.mocked(removeGlossaryKeyword);
 const mockListDreamWorkflowEvents = vi.mocked(listDreamWorkflowEvents);
@@ -159,6 +161,7 @@ describe('rollbackDream', () => {
     mockDeleteNodeByPath.mockReset();
     mockUpdateNodeByPath.mockReset();
     mockCreateNode.mockReset();
+    mockMoveNode.mockReset();
     mockAddGlossaryKeyword.mockReset();
     mockRemoveGlossaryKeyword.mockReset();
   });
@@ -246,6 +249,25 @@ describe('rollbackDream', () => {
     expect(result.events_reversed).toBe(1);
     expect(mockRemoveGlossaryKeyword).toHaveBeenCalledWith(
       { keyword: 'kw1', node_uuid: 'uuid1' },
+      { source: 'dream:rollback' },
+    );
+  });
+
+  it('reverses move events by moving the node back', async () => {
+    mockSql
+      .mockResolvedValueOnce(makeResult([{ id: 1, status: 'completed', started_at: '2024-01-01', completed_at: '2024-01-02' }]))
+      .mockResolvedValueOnce(makeResult([{
+        id: 14, event_type: 'move', node_uri: 'core://renamed', node_uuid: 'uuid1',
+        domain: 'core', path: 'renamed', before_snapshot: { uri: 'core://original' }, after_snapshot: { uri: 'core://renamed' }, details: {},
+      }]))
+      .mockResolvedValueOnce(makeResult());
+
+    mockMoveNode.mockResolvedValue({ success: true } as any);
+
+    const result = await rollbackDream(1);
+    expect(result.events_reversed).toBe(1);
+    expect(mockMoveNode).toHaveBeenCalledWith(
+      { old_uri: 'core://renamed', new_uri: 'core://original' },
       { source: 'dream:rollback' },
     );
   });

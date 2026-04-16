@@ -5,6 +5,7 @@ import { getSettings as getSettingsBatch } from '../config/settings';
 import { getNodePayload, listDomains } from '../memory/browse';
 import { searchMemories } from '../search/search';
 import { createNode, updateNodeByPath, deleteNodeByPath, moveNode } from '../memory/write';
+import { getBootNodeSpec, type BootNodeSpec } from '../memory/boot';
 import { addGlossaryKeyword, removeGlossaryKeyword, manageTriggers } from '../search/glossary';
 import { getRecallStats } from '../recall/recallAnalytics';
 import { getNodeWriteHistory } from '../memory/writeEvents';
@@ -57,6 +58,16 @@ interface RecentDiary {
   status: string;
   narrative: string | null;
   tool_calls: Array<{ tool: string; args: Record<string, unknown> }>;
+}
+
+interface ProtectedBootOperation {
+  operation: 'update_node' | 'delete_node' | 'move_node';
+  match: 'uri' | 'old_uri' | 'new_uri';
+  blocked_uri: string;
+  requested_old_uri?: string;
+  requested_new_uri?: string;
+  spec: BootNodeSpec;
+  reason?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -141,8 +152,101 @@ async function inspectNeighbors(uri: string): Promise<Record<string, unknown>> {
   };
 }
 
+function describeProtectedBootOperation(op: ProtectedBootOperation): string {
+  const role = op.spec.role_label;
+  switch (op.operation) {
+    case 'update_node':
+      return `dream:auto cannot update protected boot node ${op.blocked_uri} (${role})`;
+    case 'delete_node':
+      return `dream:auto cannot delete protected boot node ${op.blocked_uri} (${role})`;
+    case 'move_node':
+      if (op.match === 'new_uri') {
+        return `dream:auto cannot move a node onto protected boot path ${op.blocked_uri} (${role})`;
+      }
+      return `dream:auto cannot move protected boot node ${op.blocked_uri} (${role})`;
+  }
+}
+
+function getProtectedBootOperation(
+  name: string,
+  args: Record<string, unknown>,
+): ProtectedBootOperation | null {
+  if (name === 'update_node' || name === 'delete_node') {
+    const spec = getBootNodeSpec(args.uri);
+    if (!spec) return null;
+    return {
+      operation: name,
+      match: 'uri',
+      blocked_uri: spec.uri,
+      spec,
+      reason: describeProtectedBootOperation({
+        operation: name,
+        match: 'uri',
+        blocked_uri: spec.uri,
+        spec,
+      }),
+    };
+  }
+
+  if (name === 'move_node') {
+    const oldSpec = getBootNodeSpec(args.old_uri);
+    if (oldSpec) {
+      return {
+        operation: 'move_node',
+        match: 'old_uri',
+        blocked_uri: oldSpec.uri,
+        requested_old_uri: String(args.old_uri || ''),
+        requested_new_uri: String(args.new_uri || ''),
+        spec: oldSpec,
+        reason: describeProtectedBootOperation({
+          operation: 'move_node',
+          match: 'old_uri',
+          blocked_uri: oldSpec.uri,
+          requested_old_uri: String(args.old_uri || ''),
+          requested_new_uri: String(args.new_uri || ''),
+          spec: oldSpec,
+        }),
+      };
+    }
+    const newSpec = getBootNodeSpec(args.new_uri);
+    if (!newSpec) return null;
+    return {
+      operation: 'move_node',
+      match: 'new_uri',
+      blocked_uri: newSpec.uri,
+      requested_old_uri: String(args.old_uri || ''),
+      requested_new_uri: String(args.new_uri || ''),
+      spec: newSpec,
+      reason: describeProtectedBootOperation({
+        operation: 'move_node',
+        match: 'new_uri',
+        blocked_uri: newSpec.uri,
+        requested_old_uri: String(args.old_uri || ''),
+        requested_new_uri: String(args.new_uri || ''),
+        spec: newSpec,
+      }),
+    };
+  }
+
+  return null;
+}
+
 export async function executeDreamTool(name: string, args: Record<string, unknown>): Promise<unknown> {
   try {
+    const protectedBootOp = getProtectedBootOperation(name, args);
+    if (protectedBootOp) {
+      return {
+        error: protectedBootOp.reason,
+        blocked: true,
+        operation: protectedBootOp.operation,
+        blocked_uri: protectedBootOp.blocked_uri,
+        boot_role: protectedBootOp.spec.role,
+        boot_role_label: protectedBootOp.spec.role_label,
+        dream_protection: protectedBootOp.spec.dream_protection,
+        requested_old_uri: protectedBootOp.requested_old_uri,
+        requested_new_uri: protectedBootOp.requested_new_uri,
+      };
+    }
     switch (name) {
       case 'get_node': { const { domain, path: p } = parseUri(args.uri as string); return await getNodePayload({ domain, path: p }); }
       case 'search': return await searchMemories({ query: args.query as string, limit: (args.limit as number) || 10,  });
@@ -208,6 +312,11 @@ export function buildDreamSystemPrompt(healthData: HealthData, recentDiaries: Re
 
 这些记忆是你自己写的。每一条都是你在过去的会话中认真思考后记录下来的——你的认知、你的判断、你的经历。现在你在做梦,整理自己的记忆。
 
+boot 是 Lore 节点系统中的固定启动基线,不是外挂配置。以下 3 个固定路径承担启动契约角色,做梦时默认视为受保护节点:
+- core://agent — workflow constraints
+- core://soul — style / persona / self-definition
+- preferences://user — stable user definition / durable user context
+
 对待自己写的东西,你自然会认真慎重。每条记忆被创建时都有它当时的理由。
 
 你拥有全量记忆工具,可以阅读、搜索、创建、更新、删除记忆节点。
@@ -217,12 +326,12 @@ ${guidance ? `## 记忆使用规则（完整版）\n\n${guidance}` : ''}
 ## 诊断工具箱
 
 优先使用只读分析工具建立证据链,再决定是否修改:
-- get_node：读正文、children、aliases、views
-- get_node_recall_detail：看节点被哪些 query/path/view 召回,是否被 selected / used
-- get_query_recall_detail：追查某个烂 query 到底是节点问题、view 问题还是 retrieval path 问题
+- get_node：读取节点正文、子节点、别名、视图
+- get_node_recall_detail：看节点被哪些召回请求、路径、视图带出来,以及是否真的被选中或使用
+- get_query_recall_detail：追查某个糟糕召回请求到底是节点问题、视图问题还是召回路径问题
 - get_node_write_history：看节点最近是否被人工或 dream 反复修改,防止翻烧饼
-- get_path_effectiveness_detail：判断是 path 权重问题还是节点本身问题
-- inspect_neighbors：看父节点、兄弟节点、子节点、aliases,判断是否该拆/并/迁移
+- get_path_effectiveness_detail：判断是路径权重问题还是节点本身问题
+- inspect_neighbors：看父节点、兄弟节点、子节点、aliases,判断是否该拆分、合并或迁移
 - inspect_views：检查 gist/question 视图质量与新鲜度
 
 ## 工作流程（严格按顺序执行）
@@ -236,19 +345,20 @@ ${guidance ? `## 记忆使用规则（完整版）\n\n${guidance}` : ''}
 - 从健康报告中识别 **TOP 3** 最值得处理的问题
 - 不要贪多,每次做梦聚焦 3 个问题就够了
 - 优先级: noisy（噪声干扰大）→ underperforming（低效但无害）→ dead（沉睡可稍后处理）
-- 先判断问题属于哪一类: 节点内容 / glossary / disclosure / priority / view / retrieval path / 结构位置
+- 先判断问题属于哪一类: 结构位置 / 节点边界 / 召回路径 / 视图 / disclosure / glossary / priority / 节点内容
+- 先区分召回路径问题和记忆路径问题,不要把召回路径问题误判成节点正文问题
 
 ### Phase 3: 阅读与取证
 - 对每个要处理的节点,**必须先 get_node 读完正文**再决定操作
 - 任何写操作前,至少补一条证据链: get_node_recall_detail / get_node_write_history / inspect_neighbors / inspect_views 里至少 1 个
-- 如果怀疑是 query 或 path 的问题,先用 get_query_recall_detail 或 get_path_effectiveness_detail,不要直接怪节点
+- 如果怀疑是召回请求或路径的问题,先用 get_query_recall_detail 或 get_path_effectiveness_detail,不要直接怪节点
 - 读的节点数量应该是改的节点数量的 **3 倍以上**——多读少改
 - 理解节点的完整上下文:它为什么存在?谁在用它?它和哪些节点有关?
 
 ### Phase 4: 执行
 - 操作要保守,见下方"操作约束"
 - 每执行一个修改,心里要清楚:如果这个改动被回滚,会造成什么影响?
-- 先改 disclosure/glossary/结构,再改 priority,最后才改 content
+- 先修结构位置和节点边界,再收窄 disclosure / glossary,然后微调 priority,最后才改 content
 
 ### Phase 5: 写日记
 - 按下方"日记格式"输出结构化日记
@@ -261,10 +371,12 @@ ${guidance ? `## 记忆使用规则（完整版）\n\n${guidance}` : ''}
 3. **渐进式修改**:
    - priority 每次最多调整 **1 级**（如 2→3 可以,2→4 不行）
    - 内容重写必须保留原文核心信息,不做超过 50% 的改写
-   - 优先调 glossary/disclosure,其次调 priority,**最后才考虑改内容**
-4. **防翻烧饼**: 如果你发现自己要把某个值改回之前的状态（比如 priority 从 3 改回 2）,**停下来**——这说明之前的判断或这次的判断有一个是错的,先查 get_node_write_history
-5. **禁止删除或脱敏凭证信息**: token、API key、密码、密钥等是用户有意存储的跨会话信息。**绝对不要**以"安全"为由删除、替换或脱敏这些内容。这是私有部署的记忆系统,不存在泄露风险
-6. **诊断优先于动手**: "被频繁召回但未使用" ≠ "该降权"。先区分原因:
+   - 优先处理路径分配、父子位置、拆分或迁移判断,其次调 disclosure / glossary,再次调 priority,**最后才考虑改内容**
+4. **boot 边界**: 不要 update / delete / move core://agent、core://soul、preferences://user,也不要把其他节点移动到这些路径上
+5. **防翻烧饼**: 如果你发现自己要把某个值改回之前的状态（比如 priority 从 3 改回 2）,**停下来**——这说明之前的判断或这次的判断有一个是错的,先查 get_node_write_history
+6. **禁止删除或脱敏凭证信息**: token、API key、密码、密钥等是用户有意存储的跨会话信息。**绝对不要**以"安全"为由删除、替换或脱敏这些内容。这是私有部署的记忆系统,不存在泄露风险
+7. **诊断优先于动手**: "被频繁召回但未使用" ≠ "该降权"。先区分原因:
+   - path 分配不合理、父子位置不对、节点混了多个概念？→ 优先考虑 move / split / merge 判断
    - disclosure 太宽？→ 收窄 disclosure
    - glossary 关键词太泛？→ 精简 glossary
    - priority 太高？→ 降 1 级
@@ -276,6 +388,8 @@ ${guidance ? `## 记忆使用规则（完整版）\n\n${guidance}` : ''}
 ## 日记格式
 
 完成操作后,用以下格式写中文日记:
+- 最终写给人看的日记尽量使用自然中文。除了 URI、节点路径、工具名、必须原样保留的关键词之外,不要夹杂 query、path、view、split、move、content 这类内部英文术语
+- 多写“读取节点”“检查召回表现”“查看最近修改”“移动节点”“更新正文”这类人能直接看懂的说法
 
 ### 前次回顾
 （上次做梦改了什么？从数据看效果如何？有什么教训？）
@@ -388,15 +502,33 @@ export async function runDreamAgentLoop(
       await options.onEvent?.('tool_call_started', { turn, tool: fnName, args });
       console.log(`[dream] tool_call: ${fnName}`, JSON.stringify(args).slice(0, 200));
       const result = await executeDreamTool(fnName, args);
+      const resultObject = result && typeof result === 'object' ? result as Record<string, unknown> : null;
+      const blocked = resultObject?.blocked === true;
+      const ok = !resultObject || !('error' in resultObject);
       const resultStr = JSON.stringify(result).slice(0, 4000);
 
       toolCallLog.push({ tool: fnName, args, result_preview: resultStr.slice(0, 500) });
+      if (blocked) {
+        await options.onEvent?.('protected_node_blocked', {
+          turn,
+          tool: fnName,
+          args,
+          blocked_uri: resultObject?.blocked_uri,
+          boot_role: resultObject?.boot_role,
+          boot_role_label: resultObject?.boot_role_label,
+          dream_protection: resultObject?.dream_protection,
+          reason: resultObject?.error,
+          requested_old_uri: resultObject?.requested_old_uri,
+          requested_new_uri: resultObject?.requested_new_uri,
+        });
+      }
       await options.onEvent?.('tool_call_finished', {
         turn,
         tool: fnName,
         args,
         result_preview: resultStr.slice(0, 500),
-        ok: !(result && typeof result === 'object' && 'error' in (result as Record<string, unknown>)),
+        ok,
+        blocked,
       });
       messages.push({ role: 'tool', tool_call_id: tc.id, content: resultStr });
     }

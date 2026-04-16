@@ -45,7 +45,7 @@ const TokenAuth = ({ onAuthenticated }: TokenAuthProps): React.JSX.Element => {
             </svg>
           </div>
           <h1 className="text-[28px] font-bold tracking-[-0.02em] text-txt-primary">Lore</h1>
-          <p className="mt-1.5 text-[15px] text-txt-secondary">{t('Memory management console')}</p>
+          <p className="mt-1.5 text-[15px] text-txt-secondary">{t('Lore memory console')}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

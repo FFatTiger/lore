@@ -1,12 +1,25 @@
 import { sql } from '../../db';
 import { parseUri } from '../core/utils';
 
+export type BootNodeRole = 'agent' | 'soul' | 'user';
+
+export interface BootNodeSpec {
+  uri: string;
+  role: BootNodeRole;
+  role_label: string;
+  purpose: string;
+  dream_protection: 'protected';
+}
+
 interface CoreMemory {
   uri: string;
   content: string;
   priority: number;
   disclosure: string | null;
   node_uuid: string;
+  boot_role: BootNodeRole;
+  boot_role_label: string;
+  boot_purpose: string;
 }
 
 interface RecentMemory {
@@ -16,7 +29,7 @@ interface RecentMemory {
   created_at: string | null;
 }
 
-interface BootViewResult {
+export interface BootViewResult {
   loaded: number;
   total: number;
   failed: string[];
@@ -39,18 +52,68 @@ interface RecentMemoryRow {
   created_at: Date | string | null;
 }
 
-export async function bootView(coreMemoryUris?: string | null): Promise<BootViewResult> {
-  const uris = String(coreMemoryUris || process.env.CORE_MEMORY_URIS || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
+export const FIXED_BOOT_NODES: readonly BootNodeSpec[] = [
+  {
+    uri: 'core://agent',
+    role: 'agent',
+    role_label: 'workflow constraints',
+    purpose: 'Working rules, collaboration constraints, and execution protocol.',
+    dream_protection: 'protected',
+  },
+  {
+    uri: 'core://soul',
+    role: 'soul',
+    role_label: 'style / persona / self-definition',
+    purpose: 'Agent style, persona, and self-cognition baseline.',
+    dream_protection: 'protected',
+  },
+  {
+    uri: 'preferences://user',
+    role: 'user',
+    role_label: 'stable user definition',
+    purpose: 'Stable user information, user preferences, and durable collaboration context.',
+    dream_protection: 'protected',
+  },
+] as const;
 
+function normalizeUri(uri: unknown): string {
+  const { domain, path } = parseUri(uri);
+  return `${domain.toLowerCase()}://${path.toLowerCase()}`;
+}
+
+const FIXED_BOOT_NODE_MAP = new Map<string, BootNodeSpec>(
+  FIXED_BOOT_NODES.map((node) => [normalizeUri(node.uri), node]),
+);
+
+export function getBootNodeSpecs(): BootNodeSpec[] {
+  return [...FIXED_BOOT_NODES];
+}
+
+export function getBootUris(): string[] {
+  return FIXED_BOOT_NODES.map((node) => node.uri);
+}
+
+export function getBootUriSet(): Set<string> {
+  return new Set(getBootUris());
+}
+
+export function getBootNodeSpec(uri: unknown): BootNodeSpec | null {
+  if (!String(uri || '').trim()) return null;
+  return FIXED_BOOT_NODE_MAP.get(normalizeUri(uri)) || null;
+}
+
+export function isBootUri(uri: unknown): boolean {
+  return getBootNodeSpec(uri) !== null;
+}
+
+export async function bootView(): Promise<BootViewResult> {
+  const uris = getBootUris();
   const results: CoreMemory[] = [];
   const failed: string[] = [];
 
-  for (const uri of uris) {
+  for (const spec of FIXED_BOOT_NODES) {
     try {
-      const { domain, path } = parseUri(uri);
+      const { domain, path } = parseUri(spec.uri);
       const memoryResult = await sql(
         `
           SELECT e.child_uuid AS node_uuid, e.priority, e.disclosure, m.content
@@ -70,18 +133,21 @@ export async function bootView(coreMemoryUris?: string | null): Promise<BootView
       );
       const row = memoryResult.rows[0] as CoreMemoryRow | undefined;
       if (!row) {
-        failed.push(`- ${uri}: not found`);
+        failed.push(`- ${spec.uri}: not found`);
         continue;
       }
       results.push({
-        uri: `${domain}://${path}`,
+        uri: spec.uri,
         content: row.content || '',
         priority: row.priority || 0,
         disclosure: row.disclosure,
         node_uuid: row.node_uuid,
+        boot_role: spec.role,
+        boot_role_label: spec.role_label,
+        boot_purpose: spec.purpose,
       });
     } catch (error) {
-      failed.push(`- ${uri}: ${(error as Error).message}`);
+      failed.push(`- ${spec.uri}: ${(error as Error).message}`);
     }
   }
 

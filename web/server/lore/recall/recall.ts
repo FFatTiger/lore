@@ -23,6 +23,7 @@ import {
   type ScoringConfig,
 } from './recallScoring';
 import type { EmbeddingConfig } from '../core/types';
+import { getBootUris, getBootUriSet } from '../memory/boot';
 
 // ─── Settings key lists ────────────────────────────────────────────────────
 
@@ -255,15 +256,6 @@ async function loadDisplayConfig(): Promise<LoadedDisplayConfig> {
   };
 }
 
-function defaultBootUris(): Set<string> {
-  return new Set(
-    String(process.env.CORE_MEMORY_URIS || '')
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean),
-  );
-}
-
 /**
  * Run scoring on a set of candidate rows using the requested strategy.
  * Accepts legacy `normalizedConfig` alias (maps to normalized_linear strategy
@@ -385,7 +377,7 @@ export async function getRecallRuntimeConfig(embedding: Partial<EmbeddingConfig>
       multi_view_cap: scoring.multi_view_cap,
     },
     display,
-    core_memory_uris: [...defaultBootUris()].sort(),
+    core_memory_uris: [...getBootUris()].sort(),
   };
 }
 
@@ -455,7 +447,7 @@ async function runRecallPipeline(body: RecallRequestBody): Promise<RecallPipelin
     for (const row of readResult.rows) readUris.add(row.uri as string);
   }
 
-  const bootUris = body.exclude_boot_from_results === false ? new Set<string>() : defaultBootUris();
+  const bootUris = body.exclude_boot_from_results === false ? new Set<string>() : getBootUriSet();
   const scorePrecision = body.score_precision || 2;
   const minDisplayScore = Number(body.min_display_score ?? displayConfig.min_display_score);
   const readNodeDisplayMode = (body.read_node_display_mode || displayConfig.read_node_display_mode) as string;

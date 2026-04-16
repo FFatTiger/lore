@@ -67,8 +67,8 @@ describe('tool parameter schemas', () => {
     expect(tools.lore_get_node.parameters.required).toContain('uri');
   });
 
-  it('lore_search requires query', () => {
-    expect(tools.lore_search.parameters.required).toContain('query');
+  it('lore_search exposes content_limit', () => {
+    expect(tools.lore_search.parameters.properties.content_limit).toBeDefined();
   });
 
   it('lore_create_node requires content, priority, glossary', () => {
@@ -147,11 +147,23 @@ describe('tool response formatting', () => {
     expect(result.content[0].text).toContain('Lore offline');
   });
 
-  it('lore_boot returns formatted boot view on success', async () => {
-    mockFetch({ loaded: 1, total: 1, failed: [], core_memories: [{ uri: 'core://id', priority: 0, content: 'test' }], recent_memories: [] });
+  it('lore_boot returns formatted fixed boot view on success', async () => {
+    mockFetch({
+      loaded: 1,
+      total: 3,
+      failed: [],
+      core_memories: [{
+        uri: 'core://agent',
+        priority: 0,
+        content: 'test',
+        boot_role_label: 'workflow constraints',
+      }],
+      recent_memories: [],
+    });
     const result = await tools.lore_boot.execute();
     expect(result.details.ok).toBe(true);
-    expect(result.content[0].text).toContain('Core Memories');
+    expect(result.content[0].text).toContain('Fixed boot baseline');
+    expect(result.content[0].text).toContain('workflow constraints');
   });
 
   it('lore_boot returns ok=false on failure', async () => {
@@ -206,18 +218,20 @@ describe('tool response formatting', () => {
     const api2 = makeMockApi();
     registerTools(api2 as any, makePluginCfg({ recallEnabled: false }));
     mockFetch({ results: [] });
-    const result = await api2.tools.lore_search.execute(null, { query: 'hello' });
+    const result = await api2.tools.lore_search.execute(null, { query: 'hello', content_limit: 3 });
     // GET path: no results case
     expect(result.content[0].text).toContain('No matching memories found');
     const [callArgs] = (fetch as any).mock.calls;
     expect(callArgs[1].method).toBe('GET');
+    expect(String(callArgs[0])).toContain('content_limit=3');
   });
 
   it('lore_search uses POST when recallEnabled=true', async () => {
     mockFetch({ results: [] });
-    const result = await tools.lore_search.execute(null, { query: 'hello' });
+    const result = await tools.lore_search.execute(null, { query: 'hello', content_limit: 7 });
     expect(result.content[0].text).toContain('No matching memories found');
     const [callArgs] = (fetch as any).mock.calls;
     expect(callArgs[1].method).toBe('POST');
+    expect(JSON.parse(callArgs[1].body)).toMatchObject({ content_limit: 7 });
   });
 });

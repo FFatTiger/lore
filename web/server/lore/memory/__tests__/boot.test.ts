@@ -3,9 +3,26 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../../../db', () => ({ sql: vi.fn() }));
 
 import { sql } from '../../../db';
-import { bootView } from '../boot';
+import { bootView, getBootNodeSpec, getBootUris, isBootUri } from '../boot';
 
 const mockSql = vi.mocked(sql);
+
+describe('boot helpers', () => {
+  it('exposes fixed boot URIs in deterministic order', () => {
+    expect(getBootUris()).toEqual(['core://agent', 'core://soul', 'preferences://user']);
+  });
+
+  it('returns metadata for boot node lookups', () => {
+    expect(getBootNodeSpec('CORE://SOUL')).toMatchObject({
+      uri: 'core://soul',
+      role: 'soul',
+      role_label: 'style / persona / self-definition',
+      dream_protection: 'protected',
+    });
+    expect(isBootUri('preferences://user')).toBe(true);
+    expect(isBootUri('project://user')).toBe(false);
+  });
+});
 
 describe('bootView', () => {
   beforeEach(() => {
@@ -15,70 +32,96 @@ describe('bootView', () => {
 
   it('returns object with core_memories and recent_memories arrays', async () => {
     mockSql
-      .mockResolvedValueOnce({ rows: [{ node_uuid: 'uuid-1', priority: 5, disclosure: null, content: 'Hello world' }], rowCount: 1 } as any)
+      .mockResolvedValueOnce({ rows: [{ node_uuid: 'uuid-agent', priority: 5, disclosure: null, content: 'Agent rules' }], rowCount: 1 } as any)
+      .mockResolvedValueOnce({ rows: [{ node_uuid: 'uuid-soul', priority: 1, disclosure: 'always', content: 'Soul baseline' }], rowCount: 1 } as any)
+      .mockResolvedValueOnce({ rows: [{ node_uuid: 'uuid-user', priority: 2, disclosure: null, content: 'User profile' }], rowCount: 1 } as any)
       .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
 
-    const result = await bootView('core://some/path');
+    const result = await bootView();
     expect(result).toHaveProperty('core_memories');
     expect(result).toHaveProperty('recent_memories');
     expect(Array.isArray(result.core_memories)).toBe(true);
     expect(Array.isArray(result.recent_memories)).toBe(true);
+    expect(result.total).toBe(3);
+    expect(result.loaded).toBe(3);
+    expect(result.core_memories).toHaveLength(3);
   });
 
-  it('handles empty database (no rows)', async () => {
+  it('always uses the fixed boot manifest instead of CORE_MEMORY_URIS', async () => {
+    process.env.CORE_MEMORY_URIS = 'core://env/node';
     mockSql
+      .mockResolvedValueOnce({ rows: [{ node_uuid: 'agent-uuid', priority: 0, disclosure: null, content: 'Agent content' }], rowCount: 1 } as any)
+      .mockResolvedValueOnce({ rows: [{ node_uuid: 'soul-uuid', priority: 1, disclosure: null, content: 'Soul content' }], rowCount: 1 } as any)
+      .mockResolvedValueOnce({ rows: [{ node_uuid: 'user-uuid', priority: 2, disclosure: null, content: 'User content' }], rowCount: 1 } as any)
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
+
+    const result = await bootView();
+    expect(result.total).toBe(3);
+    expect(result.core_memories.map((memory) => memory.uri)).toEqual(['core://agent', 'core://soul', 'preferences://user']);
+  });
+
+  it('reports missing fixed boot nodes and keeps total at manifest size', async () => {
+    mockSql
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
+      .mockResolvedValueOnce({ rows: [{ node_uuid: 'soul-uuid', priority: 1, disclosure: null, content: 'Soul content' }], rowCount: 1 } as any)
       .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
       .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
 
-    const result = await bootView('core://missing/node');
-    expect(result.loaded).toBe(0);
-    expect(result.total).toBe(1);
-    expect(result.core_memories).toHaveLength(0);
-    expect(result.recent_memories).toHaveLength(0);
-    expect(result.failed).toContain('- core://missing/node: not found');
-  });
-
-  it('returns correct counts for loaded vs total', async () => {
-    mockSql
-      .mockResolvedValueOnce({ rows: [{ node_uuid: 'u1', priority: 1, disclosure: null, content: 'A' }], rowCount: 1 } as any)
-      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
-      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
-
-    const result = await bootView('core://found/node,core://missing/node');
-    expect(result.total).toBe(2);
+    const result = await bootView();
+    expect(result.total).toBe(3);
     expect(result.loaded).toBe(1);
-    expect(result.failed).toHaveLength(1);
-    expect(result.failed[0]).toContain('core://missing/node: not found');
+    expect(result.failed).toEqual([
+      '- core://agent: not found',
+      '- preferences://user: not found',
+    ]);
   });
 
-  it('correctly populates core_memories fields', async () => {
-    const ts = new Date('2025-01-01T00:00:00Z');
+  it('correctly populates core_memories fields and boot metadata', async () => {
     mockSql
       .mockResolvedValueOnce({
-        rows: [{ node_uuid: 'abc-123', priority: 8, disclosure: 'when asked', content: 'Core content' }],
+        rows: [{ node_uuid: 'agent-uuid', priority: 8, disclosure: 'when asked', content: 'Agent constitution' }],
+        rowCount: 1,
+      } as any)
+      .mockResolvedValueOnce({
+        rows: [{ node_uuid: 'soul-uuid', priority: 3, disclosure: 'always', content: 'Soul definition' }],
+        rowCount: 1,
+      } as any)
+      .mockResolvedValueOnce({
+        rows: [{ node_uuid: 'user-uuid', priority: 2, disclosure: null, content: 'Stable user info' }],
         rowCount: 1,
       } as any)
       .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
 
-    const result = await bootView('core://my/node');
+    const result = await bootView();
     expect(result.core_memories[0]).toEqual({
-      uri: 'core://my/node',
-      content: 'Core content',
+      uri: 'core://agent',
+      content: 'Agent constitution',
       priority: 8,
       disclosure: 'when asked',
-      node_uuid: 'abc-123',
+      node_uuid: 'agent-uuid',
+      boot_role: 'agent',
+      boot_role_label: 'workflow constraints',
+      boot_purpose: 'Working rules, collaboration constraints, and execution protocol.',
+    });
+    expect(result.core_memories[2]).toMatchObject({
+      uri: 'preferences://user',
+      boot_role: 'user',
+      boot_role_label: 'stable user definition',
     });
   });
 
   it('correctly populates recent_memories fields', async () => {
     const ts = new Date('2025-06-15T12:00:00Z');
-    // No URIs → only one SQL call (recent query)
-    mockSql.mockResolvedValueOnce({
-      rows: [{ domain: 'core', path: 'recent/item', priority: 3, disclosure: null, created_at: ts }],
-      rowCount: 1,
-    } as any);
+    mockSql
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
+      .mockResolvedValueOnce({
+        rows: [{ domain: 'core', path: 'recent/item', priority: 3, disclosure: null, created_at: ts }],
+        rowCount: 1,
+      } as any);
 
-    const result = await bootView('');
+    const result = await bootView();
     expect(result.recent_memories[0]).toEqual({
       uri: 'core://recent/item',
       priority: 3,
@@ -88,46 +131,29 @@ describe('bootView', () => {
   });
 
   it('handles null created_at in recent memories', async () => {
-    // No URIs → only one SQL call (recent query)
-    mockSql.mockResolvedValueOnce({
-      rows: [{ domain: 'core', path: 'some/path', priority: 1, disclosure: null, created_at: null }],
-      rowCount: 1,
-    } as any);
+    mockSql
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
+      .mockResolvedValueOnce({
+        rows: [{ domain: 'core', path: 'some/path', priority: 1, disclosure: null, created_at: null }],
+        rowCount: 1,
+      } as any);
 
-    const result = await bootView('');
+    const result = await bootView();
     expect(result.recent_memories[0].created_at).toBeNull();
   });
 
-  it('reads CORE_MEMORY_URIS from env when no arg provided', async () => {
-    process.env.CORE_MEMORY_URIS = 'core://env/node';
+  it('adds failed entries when SQL throws for a boot node', async () => {
     mockSql
-      .mockResolvedValueOnce({ rows: [{ node_uuid: 'env-uuid', priority: 2, disclosure: null, content: 'env content' }], rowCount: 1 } as any)
+      .mockRejectedValueOnce(new Error('connection refused'))
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any)
       .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
 
     const result = await bootView();
-    expect(result.total).toBe(1);
-    expect(result.loaded).toBe(1);
-    expect(result.core_memories[0].uri).toBe('core://env/node');
-  });
-
-  it('adds failed entries when SQL throws', async () => {
-    mockSql
-      .mockRejectedValueOnce(new Error('connection refused'))
-      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
-
-    const result = await bootView('core://broken/node');
-    expect(result.failed).toHaveLength(1);
-    expect(result.failed[0]).toContain('connection refused');
+    expect(result.failed).toContain('- core://agent: connection refused');
     expect(result.loaded).toBe(0);
-  });
-
-  it('returns empty arrays with no URIs configured', async () => {
-    mockSql.mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
-
-    const result = await bootView('');
-    expect(result.total).toBe(0);
-    expect(result.loaded).toBe(0);
-    expect(result.core_memories).toHaveLength(0);
-    expect(result.failed).toHaveLength(0);
+    expect(result.total).toBe(3);
   });
 });

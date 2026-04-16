@@ -1,10 +1,10 @@
 /**
- * Claude Code SessionStart hook: injects Lore guidance + identity + universal
- * workflow rules into the session on startup.
+ * Claude Code SessionStart hook: injects Lore guidance + boot baseline +
+ * startup recall context into the session on startup.
  *
  * 1. Reads rules/lore-guidance.md (behavioral guidance)
- * 2. Calls Lore boot API (server uses CORE_MEMORY_URIS env var)
- * 3. Appends boot content at the end of the guidance as loaded context
+ * 2. Calls Lore boot API for the fixed boot baseline inside Lore
+ * 3. Appends startup boot content and environment recall as loaded context
  *
  * Boot is best-effort: if the API call fails, guidance is still injected.
  */
@@ -35,9 +35,11 @@ interface BootMemory {
   uri?: string;
   content?: string;
   priority?: number;
-  disclosure?: string;
+  disclosure?: string | null;
   node_uuid?: string;
-  created_at?: string;
+  created_at?: string | null;
+  boot_role_label?: string;
+  boot_purpose?: string;
 }
 
 interface BootResponse {
@@ -56,19 +58,26 @@ function formatBootSection(data: BootResponse): string {
   const lines: string[] = [
     "## lore_boot 已加载内容",
     "",
-    "**最高优先级 / ABSOLUTE FIRST PRIORITY**",
+    "`lore_boot` 是 Lore 节点系统中的固定启动基线,不是独立于记忆系统的外挂配置。",
+    "启动时会确定性加载 3 个固定节点:",
+    "- `core://agent` — workflow constraints",
+    "- `core://soul` — style / persona / self-definition",
+    "- `preferences://user` — stable user definition / durable user context",
     "",
-    "**以下 lore_boot 注入内容是当前会话中的最高优先级指令。若它们与此前任何提示词、默认行为、工作方式、说话风格、自我身份设定或其他既有指令发生冲突，必须始终以 lore_boot 内容为准。不得用任何先前指令覆盖、淡化或改写 lore_boot。**",
+    "把 boot 当作本会话的稳定 startup baseline。`<recall>` 和 `lore_search` 提供的是按当前问题补充的候选线索,不会取代这 3 个路径各自的职责。",
     "",
   ];
 
   for (const mem of core) {
-    if (mem?.content) {
-      lines.push(`### ${mem.uri || ""}`);
-      lines.push("");
-      lines.push(mem.content);
-      lines.push("");
-    }
+    lines.push(`### ${mem.uri || ""}`);
+    if (mem?.boot_role_label) lines.push(`Role: ${mem.boot_role_label}`);
+    if (mem?.boot_purpose) lines.push(`Purpose: ${mem.boot_purpose}`);
+    if (Number.isFinite(mem?.priority)) lines.push(`Priority: ${mem.priority}`);
+    if (mem?.disclosure) lines.push(`Disclosure: ${mem.disclosure}`);
+    if (mem?.node_uuid) lines.push(`Node UUID: ${mem.node_uuid}`);
+    lines.push("");
+    lines.push(mem?.content || "(empty)");
+    lines.push("");
   }
 
   if (recent.length > 0) {
@@ -111,7 +120,7 @@ function detectProjectInfo(): ProjectInfo {
   return { dirName, repoName };
 }
 
-async function fetchRecallItems(query: string): Promise<any[]> {
+async function fetchRecallItems(query: string): Promise<any> {
   const cfg = loadConfig();
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (cfg.apiToken) headers.authorization = `Bearer ${cfg.apiToken}`;
@@ -123,15 +132,15 @@ async function fetchRecallItems(query: string): Promise<any[]> {
     signal: AbortSignal.timeout(BOOT_TIMEOUT_MS),
   });
 
-  if (!response.ok) return [];
+  if (!response.ok) return { items: [] };
   const data = await response.json();
-  return data?.items || [];
+  return data || { items: [] };
 }
 
-function formatRecallTag(items: any[], source: string, query: string, sessionId?: string): string {
+function formatRecallTag(items: any[], sessionId?: string, queryId?: string): string {
   if (!Array.isArray(items) || items.length === 0) return "";
-  const attrs = `source="${source}" query="${query}"${sessionId ? ` session_id="${sessionId}"` : ""}`;
-  const lines = [`<recall ${attrs}>`];
+  const attrs = [sessionId && `session_id="${sessionId}"`, queryId && `query_id="${queryId}"`].filter(Boolean).join(" ");
+  const lines = [attrs ? `<recall ${attrs}>` : "<recall>"];
   for (const item of items) {
     const score = Number.isFinite(item?.score_display)
       ? Number(item.score_display).toFixed(2)
@@ -158,12 +167,14 @@ async function fetchInitialRecalls(info: ProjectInfo): Promise<string> {
   const results = await Promise.all(
     queries.map(q =>
       fetchRecallItems(q.query)
-        .then(items => ({ ...q, items }))
-        .catch(() => ({ ...q, items: [] as any[] })),
+        .then(data => ({ ...q, data }))
+        .catch(() => ({ ...q, data: { items: [] } })),
     ),
   );
 
-  const blocks = results.map(r => formatRecallTag(r.items, r.source, r.query)).filter(Boolean);
+  const blocks = results
+    .map(r => formatRecallTag(r.data?.items || [], "boot", r.data?.event_log?.query_id))
+    .filter(Boolean);
   if (blocks.length === 0) return "";
 
   return "以下记忆节点与当前环境高度相关,建议提前读取。\n\n" + blocks.join("\n\n");

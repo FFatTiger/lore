@@ -1,6 +1,6 @@
 {
   "name": "lore",
-  "description": "Long-term memory for AI agents — MCP tools + automatic recall injection",
+  "description": "Long-term Lore memory for AI agents — fixed boot baseline, recall injection, and MCP tools",
   "version": "1.0.2",
   "author": {
     "name": "FFatTiger"

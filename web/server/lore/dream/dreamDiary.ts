@@ -6,7 +6,7 @@ import { getMemoryHealthReport, getDeadWrites, getPathEffectiveness } from '../r
 import { getRecallStats } from '../recall/recallAnalytics';
 import { getWriteEventStats } from '../memory/writeEvents';
 import { listOrphans } from '../ops/maintenance';
-import { createNode, updateNodeByPath, deleteNodeByPath } from '../memory/write';
+import { createNode, updateNodeByPath, deleteNodeByPath, moveNode } from '../memory/write';
 import { addGlossaryKeyword, removeGlossaryKeyword } from '../search/glossary';
 import {
   loadLlmConfig,
@@ -153,6 +153,23 @@ export async function runDream(): Promise<DreamResult> {
       summary: { turns: agentResult.turns, tool_calls: agentResult.toolCalls.length },
     });
 
+    const workflowEvents = await listDreamWorkflowEvents(diaryId);
+    const memoryChangeStatsResult = await sql(
+      `SELECT event_type, COUNT(*)::int AS total
+       FROM memory_events
+       WHERE source = 'dream:auto'
+         AND created_at >= (SELECT started_at FROM dream_diary WHERE id = $1)
+       GROUP BY event_type`,
+      [diaryId],
+    );
+    const memoryChangeCounts = Object.fromEntries(
+      memoryChangeStatsResult.rows.map((row: Record<string, unknown>) => [
+        String(row.event_type || ''),
+        Number(row.total || 0),
+      ]),
+    ) as Record<string, number>;
+    const protectedBlocks = workflowEvents.filter((event) => event.event_type === 'protected_node_blocked').length;
+
     // Step 4: Save diary
     const indexResultTyped = indexResult as Record<string, unknown>;
     const summary: Record<string, unknown> = {
@@ -160,6 +177,10 @@ export async function runDream(): Promise<DreamResult> {
       health: (health as unknown as Record<string, unknown>).classification_summary,
       dead_writes: { total: (deadWrites as unknown as Record<string, unknown>).total_dead_writes },
       paths: { recommendations_count: ((pathEffectiveness as unknown as Record<string, unknown>).recommendations as unknown[] || []).length },
+      structure: {
+        moved: Number(memoryChangeCounts.move || 0),
+        protected_blocks: protectedBlocks,
+      },
       activity: {
         recall_events: ((recallStats as unknown as Record<string, unknown>).summary as Record<string, unknown>)?.merged_count || 0,
         recall_queries: ((recallStats as unknown as Record<string, unknown>).summary as Record<string, unknown>)?.query_count || 0,
@@ -349,6 +370,14 @@ export async function rollbackDream(id: number | string): Promise<{
               domain, parentPath, content: before.content as string,
               priority: (before.priority as number) ?? 2, title,
               disclosure: (before.disclosure as string) || null,
+            }, ROLLBACK_EVENT_CONTEXT);
+          }
+          break;
+        case 'move':
+          if (before.uri && after.uri) {
+            await moveNode({
+              old_uri: after.uri as string,
+              new_uri: before.uri as string,
             }, ROLLBACK_EVENT_CONTEXT);
           }
           break;

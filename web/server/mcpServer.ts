@@ -79,11 +79,11 @@ export function createMcpServer(context: McpServerContext = {}): InstanceType<ty
   // ── lore_boot ────────────────────────────────────────────────
   server.tool(
     'lore_boot',
-    'Load the boot memory view that restores long-term identity and core operating context.',
+    'Load the fixed boot memory view that restores the deterministic startup baseline and core operating context.',
     {},
     async () => {
       try {
-        const data = await bootView(process.env.CORE_MEMORY_URIS);
+        const data = await bootView();
         return ok(formatBootView(data));
       } catch (error) {
         return fail('Lore boot failed', error);

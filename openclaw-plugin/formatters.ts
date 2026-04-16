@@ -47,13 +47,17 @@ export function formatBootView(data: any) {
   }
 
   if (coreMemories.length > 0) {
-    lines.push("## Contents:");
+    lines.push("## Fixed boot baseline:");
     lines.push("");
-    lines.push("For full memory index, use: lore_list_domains and lore_get_node.");
-    lines.push("For recent memories, see below.");
+    lines.push("Lore boot deterministically loads three fixed startup nodes inside Lore:");
+    lines.push("- core://agent — workflow constraints");
+    lines.push("- core://soul — style / persona / self-definition");
+    lines.push("- preferences://user — stable user definition / durable user context");
     lines.push("");
     for (const memory of coreMemories) {
       lines.push(`### ${memory?.uri || ""}`);
+      if (memory?.boot_role_label) lines.push(`Role: ${memory.boot_role_label}`);
+      if (memory?.boot_purpose) lines.push(`Purpose: ${memory.boot_purpose}`);
       if (Number.isFinite(memory?.priority)) lines.push(`Priority: ${memory.priority}`);
       if (memory?.disclosure) lines.push(`Disclosure: ${memory.disclosure}`);
       if (memory?.node_uuid) lines.push(`Node UUID: ${memory.node_uuid}`);
@@ -62,7 +66,7 @@ export function formatBootView(data: any) {
       lines.push("");
     }
   } else {
-    lines.push("(No core memories loaded. Run migration first.)");
+    lines.push("(No core memories loaded.)");
   }
 
   if (recentMemories.length > 0) {

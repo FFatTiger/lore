@@ -15,6 +15,9 @@ vi.mock('../../memory/browse', () => ({
 vi.mock('../../search/search', () => ({
   searchMemories: vi.fn(),
 }));
+vi.mock('../../memory/boot', () => ({
+  getBootNodeSpec: vi.fn(),
+}));
 vi.mock('../../memory/write', () => ({
   createNode: vi.fn(),
   updateNodeByPath: vi.fn(),
@@ -51,6 +54,7 @@ import { generateTextWithTools } from '../../llm/provider';
 import { getNodePayload, listDomains } from '../../memory/browse';
 import { searchMemories } from '../../search/search';
 import { createNode, updateNodeByPath, deleteNodeByPath, moveNode } from '../../memory/write';
+import { getBootNodeSpec } from '../../memory/boot';
 import { addGlossaryKeyword, removeGlossaryKeyword, manageTriggers } from '../../search/glossary';
 import { getRecallStats } from '../../recall/recallAnalytics';
 import { getNodeWriteHistory } from '../../memory/writeEvents';
@@ -81,6 +85,7 @@ const mockCreateNode = vi.mocked(createNode);
 const mockUpdateNodeByPath = vi.mocked(updateNodeByPath);
 const mockDeleteNodeByPath = vi.mocked(deleteNodeByPath);
 const mockMoveNode = vi.mocked(moveNode);
+const mockGetBootNodeSpec = vi.mocked(getBootNodeSpec);
 const mockAddGlossaryKeyword = vi.mocked(addGlossaryKeyword);
 const mockRemoveGlossaryKeyword = vi.mocked(removeGlossaryKeyword);
 const mockManageTriggers = vi.mocked(manageTriggers);
@@ -232,7 +237,10 @@ describe('parseUri', () => {
 // ---------------------------------------------------------------------------
 
 describe('executeDreamTool', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetBootNodeSpec.mockReturnValue(null);
+  });
 
   it('dispatches get_node to getNodePayload', async () => {
     mockGetNodePayload.mockResolvedValue({ domain: 'core', path: 'test' } as any);
@@ -339,6 +347,94 @@ describe('executeDreamTool', () => {
     );
   });
 
+  it('blocks update_node on protected boot nodes', async () => {
+    mockGetBootNodeSpec.mockReturnValue({
+      uri: 'core://agent',
+      role: 'agent',
+      role_label: 'workflow constraints',
+      purpose: 'Working rules',
+      dream_protection: 'protected',
+    });
+
+    const result = await executeDreamTool('update_node', { uri: 'core://agent', content: 'updated' });
+    expect(result).toEqual({
+      error: 'dream:auto cannot update protected boot node core://agent (workflow constraints)',
+      blocked: true,
+      operation: 'update_node',
+      blocked_uri: 'core://agent',
+      boot_role: 'agent',
+      boot_role_label: 'workflow constraints',
+      dream_protection: 'protected',
+      requested_old_uri: undefined,
+      requested_new_uri: undefined,
+    });
+    expect(mockUpdateNodeByPath).not.toHaveBeenCalled();
+  });
+
+  it('blocks move_node when source is a protected boot node', async () => {
+    mockGetBootNodeSpec.mockImplementation((uri) => {
+      if (uri === 'core://soul') {
+        return {
+          uri: 'core://soul',
+          role: 'soul',
+          role_label: 'style / persona / self-definition',
+          purpose: 'Persona baseline',
+          dream_protection: 'protected',
+        };
+      }
+      return null;
+    });
+
+    const result = await executeDreamTool('move_node', {
+      old_uri: 'core://soul',
+      new_uri: 'core://soul_archive',
+    });
+    expect(result).toEqual({
+      error: 'dream:auto cannot move protected boot node core://soul (style / persona / self-definition)',
+      blocked: true,
+      operation: 'move_node',
+      blocked_uri: 'core://soul',
+      boot_role: 'soul',
+      boot_role_label: 'style / persona / self-definition',
+      dream_protection: 'protected',
+      requested_old_uri: 'core://soul',
+      requested_new_uri: 'core://soul_archive',
+    });
+    expect(mockMoveNode).not.toHaveBeenCalled();
+  });
+
+  it('blocks move_node when target is a protected boot path', async () => {
+    mockGetBootNodeSpec.mockImplementation((uri) => {
+      if (uri === 'preferences://user') {
+        return {
+          uri: 'preferences://user',
+          role: 'user',
+          role_label: 'stable user definition',
+          purpose: 'Stable user context',
+          dream_protection: 'protected',
+        };
+      }
+      return null;
+    });
+
+    const result = await executeDreamTool('move_node', {
+      old_uri: 'core://scratch/user_profile',
+      new_uri: 'preferences://user',
+    });
+    expect(result).toEqual({
+      error: 'dream:auto cannot move a node onto protected boot path preferences://user (stable user definition)',
+      blocked: true,
+      operation: 'move_node',
+      blocked_uri: 'preferences://user',
+      boot_role: 'user',
+      boot_role_label: 'stable user definition',
+      dream_protection: 'protected',
+      requested_old_uri: 'core://scratch/user_profile',
+      requested_new_uri: 'preferences://user',
+    });
+    expect(mockMoveNode).not.toHaveBeenCalled();
+  });
+
   it('dispatches add_glossary', async () => {
     mockAddGlossaryKeyword.mockResolvedValue({ success: true } as any);
     await executeDreamTool('add_glossary', { keyword: 'test', node_uuid: 'n1' });
@@ -433,11 +529,14 @@ describe('buildDreamSystemPrompt', () => {
     expect(prompt).not.toContain('最近日记（避免重复整理）');
   });
 
-  it('includes the guidance file content (mocked)', () => {
+  it('mentions fixed boot protection in the system prompt', () => {
     const prompt = buildDreamSystemPrompt(makeHealthData());
-    // The mock returns '# MCP Guidance\nlore_get_node is useful'
-    // lore_get_node gets remapped to get_node
-    expect(prompt).toContain('get_node');
+    expect(prompt).toContain('固定启动基线');
+    expect(prompt).toContain('core://agent');
+    expect(prompt).toContain('不要 update / delete / move core://agent、core://soul、preferences://user');
+    expect(prompt).toContain('优先处理路径分配、父子位置、拆分或迁移判断');
+    expect(prompt).toContain('最终写给人看的日记尽量使用自然中文');
+    expect(prompt).toContain('不要夹杂 query、path、view、split、move、content 这类内部英文术语');
   });
 });
 
@@ -446,6 +545,7 @@ describe('runDreamAgentLoop', () => {
     vi.clearAllMocks();
     mockGenerateTextWithTools.mockReset();
     mockListDomains.mockResolvedValue(['core'] as any);
+    mockGetBootNodeSpec.mockReturnValue(null);
   });
 
   it('emits workflow events for turns, tool calls, and final note', async () => {
@@ -482,6 +582,59 @@ describe('runDreamAgentLoop', () => {
     expect(events[1].payload).toMatchObject({ turn: 1, tool: 'list_domains' });
     expect(events[2].payload).toMatchObject({ turn: 1, tool: 'list_domains', ok: true });
     expect(events[4].payload).toMatchObject({ message: 'Final narrative' });
+  });
+
+  it('emits protected_node_blocked when a boot node write is blocked', async () => {
+    mockGetBootNodeSpec.mockImplementation((uri) => {
+      if (uri === 'core://agent') {
+        return {
+          uri: 'core://agent',
+          role: 'agent',
+          role_label: 'workflow constraints',
+          purpose: 'Working rules',
+          dream_protection: 'protected',
+        };
+      }
+      return null;
+    });
+    mockGenerateTextWithTools
+      .mockResolvedValueOnce(makeToolResponse([{ id: 'call-1', function: { name: 'update_node', arguments: '{"uri":"core://agent","content":"x"}' } }]))
+      .mockResolvedValueOnce(makeTextResponse('Blocked and moved on'));
+
+    const events: Array<{ type: string; payload?: Record<string, unknown> }> = [];
+    const config: LlmConfig = {
+      provider: 'openai_compatible',
+      base_url: 'http://localhost:1234/v1',
+      api_key: 'test-key',
+      model: 'gpt-4o-mini',
+      timeout_ms: 5000,
+      temperature: 0.3,
+      api_version: '',
+    };
+
+    const result = await runDreamAgentLoop(config, makeHealthData(), [], {
+      onEvent: async (type, payload) => {
+        events.push({ type, payload });
+      },
+    });
+
+    expect(result.narrative).toBe('Blocked and moved on');
+    expect(events.map((event) => event.type)).toEqual([
+      'llm_turn_started',
+      'tool_call_started',
+      'protected_node_blocked',
+      'tool_call_finished',
+      'llm_turn_started',
+      'assistant_note',
+    ]);
+    expect(events[2].payload).toMatchObject({
+      tool: 'update_node',
+      blocked_uri: 'core://agent',
+      boot_role: 'agent',
+      reason: 'dream:auto cannot update protected boot node core://agent (workflow constraints)',
+    });
+    expect(events[3].payload).toMatchObject({ tool: 'update_node', ok: false, blocked: true });
+    expect(mockUpdateNodeByPath).not.toHaveBeenCalled();
   });
 
   it('supports anthropic tool use flow', async () => {

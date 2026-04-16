@@ -198,17 +198,27 @@ describe('formatBootView', () => {
   it('formats core and recent memories', () => {
     const text = formatBootView({
       core_memories: [
-        { uri: 'core://soul', priority: 0, content: 'identity', node_uuid: 'u1' },
+        {
+          uri: 'core://soul',
+          priority: 0,
+          content: 'identity',
+          node_uuid: 'u1',
+          boot_role_label: 'style / persona / self-definition',
+          boot_purpose: 'Agent style, persona, and self-cognition baseline.',
+        },
       ],
       recent_memories: [
         { uri: 'log://entry', priority: 2, created_at: '2025-01-01' },
       ],
       loaded: 1,
-      total: 1,
+      total: 3,
     });
     expect(text).toContain('# Core Memories');
-    expect(text).toContain('# Loaded: 1/1 memories');
-    expect(text).toContain('### core://soul');
+    expect(text).toContain('# Loaded: 1/3 memories');
+    expect(text).toContain('## Fixed boot baseline:');
+    expect(text).toContain('core://agent — workflow constraints');
+    expect(text).toContain('Role: style / persona / self-definition');
+    expect(text).toContain('Purpose: Agent style, persona, and self-cognition baseline.');
     expect(text).toContain('identity');
     expect(text).toContain('# Recent Memories');
     expect(text).toContain('- log://entry (priority: 2, created: 2025-01-01)');

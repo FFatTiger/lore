@@ -22,11 +22,11 @@ Lore gives an AI agent **persistent memory that survives session resets**. Inste
 
 Core capabilities:
 
-- **Boot** — restore identity, preferences, and rules at session start
+- **Boot** — load a fixed startup baseline inside Lore (`core://agent`, `core://soul`, `preferences://user`)
 - **Recall** — semantic pre-fetch of relevant memories before each reply, with 8 pluggable scoring strategies
 - **Read / Search** — explicit memory lookup by URI, keyword, or vector similarity
 - **Write** — create, update, delete, and alias memory nodes with policy validation
-- **Dream** — LLM-driven autonomous memory consolidation (merge, prune, restructure)
+- **Dream** — structure-first memory audit for path placement, split/move judgment, and cautious repairs with rollback
 - **Backup** — scheduled local + WebDAV database backup and restore
 - **Web UI** — browse, inspect, configure, and manage the full memory graph
 
@@ -92,7 +92,7 @@ One memory, multiple entry points. A node at `project://my_project` can have an 
 
 | Layer | What it does |
 |-------|-------------|
-| **Boot** | Loads designated core URIs at session start |
+| **Boot** | Loads Lore's fixed startup baseline (`core://agent`, `core://soul`, `preferences://user`) |
 | **Recall** | Multi-signal semantic pre-fetch before each LLM turn |
 | **Search** | Hybrid FTS + vector search for explicit queries |
 
@@ -104,9 +104,9 @@ Candidates from four retrieval paths (exact, glossary-semantic, dense, lexical) 
 
 Each memory node generates derived **views** (gist + question) that serve as embedding targets for recall. Views can optionally be refined by an LLM to improve retrieval quality. View weights and priors are configurable per view type.
 
-### Dream Consolidation
+### Dream Structural Audit
 
-Lore can run autonomous **dream cycles** — an LLM agent reviews memory health metrics, identifies dead writes, noisy nodes, and structural issues, then creates, updates, merges, or prunes memories. Dreams run on a configurable schedule and produce diary entries that can be reviewed and rolled back.
+Lore can run autonomous **dream cycles** — an LLM agent reviews memory health metrics, checks path placement and split needs, distinguishes retrieval-path issues from node-structure issues, and makes cautious move/update/delete decisions. Fixed boot nodes stay protected, and every change is logged and can be rolled back.
 
 ### Policy System
 
@@ -146,7 +146,8 @@ Open `http://127.0.0.1:18901` for the Web UI.
 | `DATABASE_URL` | auto | Full connection string |
 | `API_TOKEN` | (empty) | Set this for auth on public deployments |
 | `WEB_PORT` | `18901` | Web app port |
-| `CORE_MEMORY_URIS` | `core://soul,preferences://user,core://agent` | URIs loaded on boot |
+
+Boot is fixed in server code and always loads the same three startup nodes: `core://agent`, `core://soul`, and `preferences://user`.
 
 Recall weights, scoring strategy, view LLM, embedding endpoint, dream schedule, backup config, and policy settings are managed at runtime via the **Settings UI** (`/settings`), stored in the `app_settings` table.
 
@@ -279,7 +280,7 @@ The plugin exposes 12 tools to the LLM:
 |------|---------|
 | `lore_guidance` | Load the full Lore usage rules |
 | `lore_status` | Check connection health |
-| `lore_boot` | Load core memories for session init |
+| `lore_boot` | Load the fixed startup baseline (3 boot nodes) |
 | `lore_get_node` | Read a node by URI |
 | `lore_search` | Find memories by keyword or domain |
 | `lore_list_domains` | Browse top-level domains |
@@ -452,7 +453,7 @@ Runtime configuration is managed through the Settings UI at `/settings`, organiz
 
 **8 scoring strategies.** Recall ranking is pluggable: `raw_plus_lex_damp` (default), `normalized_linear`, `rrf`, `weighted_rrf`, `max_signal`, `cascade`, `dense_floor`, `raw_score`. Each strategy combines scores from four retrieval paths (exact, glossary-semantic, dense, lexical) differently.
 
-**Dream consolidation.** An LLM agent periodically reviews memory health metrics, identifies issues (dead writes, noisy nodes, structural problems), and autonomously restructures the memory graph. All changes are logged and reversible.
+**Dream structural audit.** An LLM agent periodically reviews memory health metrics, checks path placement and split needs, distinguishes retrieval-path issues from node-structure issues, and makes cautious changes with full rollback support.
 
 **Policy-gated writes.** Create/update/delete operations are validated against configurable policies (priority budgets, read-before-modify checks, disclosure validation) to prevent accidental memory corruption.
 

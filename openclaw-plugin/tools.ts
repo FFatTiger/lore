@@ -42,7 +42,7 @@ export function registerTools(api: any, pluginCfg: any) {
   api.registerTool({
     name: "lore_boot",
     label: "Lore boot",
-    description: "Load the boot memory view that restores long-term identity and core operating context.",
+    description: "Load the fixed boot memory view that restores the deterministic startup baseline and core operating context.",
     parameters: { type: "object", additionalProperties: false, properties: {} },
     async execute() {
       try {
@@ -127,12 +127,14 @@ export function registerTools(api: any, pluginCfg: any) {
       properties: {
         query: { type: "string" },
         domain: { type: "string", description: "Optional domain filter to narrow the search." },
-        limit: { type: "integer", minimum: 1, maximum: 100 }
+        limit: { type: "integer", minimum: 1, maximum: 100 },
+        content_limit: { type: "integer", minimum: 0, maximum: 20, description: "How many top results include full content (default 5)." }
       }
     },
     async execute(_id: any, params: any) {
       const query = String(params?.query || "").trim();
       const safeLimit = Number.isFinite(params?.limit) ? Math.max(1, Math.min(100, params.limit)) : 10;
+      const safeContentLimit = Number.isFinite(params?.content_limit) ? Math.max(0, Math.min(20, params.content_limit)) : 5;
       try {
         let data;
         if (hasRecallConfig(pluginCfg)) {
@@ -142,6 +144,7 @@ export function registerTools(api: any, pluginCfg: any) {
               query,
               domain: typeof params?.domain === "string" && params.domain.trim() ? params.domain.trim() : null,
               limit: safeLimit,
+              content_limit: safeContentLimit,
               hybrid: true,
             }),
           });
@@ -149,6 +152,7 @@ export function registerTools(api: any, pluginCfg: any) {
           const qs = new URLSearchParams({ query });
           if (typeof params?.domain === "string" && params.domain.trim()) qs.set("domain", params.domain.trim());
           qs.set("limit", String(safeLimit));
+          qs.set("content_limit", String(safeContentLimit));
           data = await fetchJson(pluginCfg, `/browse/search?${qs.toString()}`, { method: "GET" });
         }
         const results = normalizeSearchResults(data);

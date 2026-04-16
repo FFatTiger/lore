@@ -73,22 +73,38 @@ describe('formatNode', () => {
 });
 
 describe('formatBootView', () => {
-  it('formats boot view with core memories', () => {
+  it('formats boot view with fixed boot baseline metadata', () => {
     const result = formatBootView({
       loaded: 2,
-      total: 2,
+      total: 3,
       failed: [],
       core_memories: [
-        { uri: 'core://identity', priority: 0, content: 'I am AI', node_uuid: 'uuid-1' },
-        { uri: 'core://prefs', priority: 1, content: 'User likes dark mode' },
+        {
+          uri: 'core://agent',
+          priority: 0,
+          content: 'I follow workflow rules',
+          node_uuid: 'uuid-1',
+          boot_role_label: 'workflow constraints',
+          boot_purpose: 'Working rules, collaboration constraints, and execution protocol.',
+        },
+        {
+          uri: 'core://soul',
+          priority: 1,
+          content: 'I have a stable style',
+          boot_role_label: 'style / persona / self-definition',
+        },
       ],
       recent_memories: [],
     });
     expect(result).toContain('# Core Memories');
-    expect(result).toContain('Loaded: 2/2');
-    expect(result).toContain('### core://identity');
-    expect(result).toContain('I am AI');
-    expect(result).toContain('### core://prefs');
+    expect(result).toContain('Loaded: 2/3');
+    expect(result).toContain('## Fixed boot baseline:');
+    expect(result).toContain('core://agent — workflow constraints');
+    expect(result).toContain('### core://agent');
+    expect(result).toContain('Role: workflow constraints');
+    expect(result).toContain('Purpose: Working rules, collaboration constraints, and execution protocol.');
+    expect(result).toContain('I follow workflow rules');
+    expect(result).toContain('### core://soul');
   });
 
   it('shows failed URIs', () => {
@@ -119,7 +135,7 @@ describe('formatBootView', () => {
 
   it('handles empty data', () => {
     const result = formatBootView({});
-    expect(result).toContain('No core memories loaded');
+    expect(result).toContain('No core memories loaded.');
   });
 
   it('handles null', () => {

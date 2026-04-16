@@ -26,6 +26,10 @@ vi.mock('../writeEvents', () => ({
   logMemoryEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('../boot', () => ({
+  getBootNodeSpec: vi.fn(),
+}));
+
 import { getPool } from '../../../db';
 import { logMemoryEvent } from '../writeEvents';
 import {
@@ -45,9 +49,11 @@ import {
   assertValidPathSegments,
   parseUri,
 } from '../write';
+import { getBootNodeSpec } from '../boot';
 
 const mockGetPool = vi.mocked(getPool);
 const mockLogMemoryEvent = vi.mocked(logMemoryEvent);
+const mockGetBootNodeSpec = vi.mocked(getBootNodeSpec);
 
 // ---------------------------------------------------------------------------
 // Mock client factory
@@ -383,6 +389,8 @@ describe('createNode', () => {
 describe('updateNodeByPath', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetBootNodeSpec.mockReset();
+    mockGetBootNodeSpec.mockReturnValue(null);
   });
 
   function makeUpdateClient({
@@ -541,6 +549,8 @@ describe('updateNodeByPath', () => {
 describe('deleteNodeByPath', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetBootNodeSpec.mockReset();
+    mockGetBootNodeSpec.mockReturnValue(null);
   });
 
   function makeDeleteClient({ found = true } = {}) {
@@ -585,6 +595,63 @@ describe('deleteNodeByPath', () => {
       { rows: [], rowCount: 0 },                         // COMMIT
     ]);
   }
+
+  it('blocks deletion of fixed boot nodes outside rollback', async () => {
+    mockGetBootNodeSpec.mockReturnValue({
+      uri: 'core://soul',
+      role: 'soul',
+      role_label: 'style / persona / self-definition',
+      purpose: 'Agent style, persona, and self-cognition baseline.',
+      dream_protection: 'protected',
+    } as any);
+
+    const err = await deleteNodeByPath({ domain: 'core', path: 'soul' }).catch((e: any) => e);
+    expect(err.message).toContain('Cannot delete fixed boot node core://soul');
+    expect(err.status).toBe(409);
+    expect(err.code).toBe('protected_boot_path');
+    expect(mockGetPool).not.toHaveBeenCalled();
+  });
+
+  it('allows rollback to delete fixed boot nodes', async () => {
+    mockGetBootNodeSpec.mockReturnValue({
+      uri: 'core://soul',
+      role: 'soul',
+      role_label: 'style / persona / self-definition',
+      purpose: 'Agent style, persona, and self-cognition baseline.',
+      dream_protection: 'protected',
+    } as any);
+    const client = makeMockClient([
+      { rows: [], rowCount: 0 },
+      {
+        rows: [{
+          domain: 'core', path: 'soul', edge_id: 50,
+          parent_uuid: 'parent', child_uuid: 'del-uuid',
+          priority: 0, disclosure: null,
+        }],
+        rowCount: 1,
+      },
+      { rows: [{ content: 'some content' }], rowCount: 1 },
+      {
+        rows: [{ domain: 'core', path: 'soul', edge_id: 50, child_uuid: 'del-uuid' }],
+        rowCount: 1,
+      },
+      { rows: [], rowCount: 1 },
+      { rows: [{ count: '0' }], rowCount: 1 },
+      { rows: [], rowCount: 1 },
+      { rows: [{ count: '0' }], rowCount: 1 },
+      { rows: [], rowCount: 1 },
+      { rows: [], rowCount: 0 },
+    ]);
+    mockGetPool.mockReturnValue(makePool(client) as any);
+
+    const result = await deleteNodeByPath(
+      { domain: 'core', path: 'soul' },
+      { source: 'dream:rollback' },
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.deleted_uri).toBe('core://soul');
+  });
 
   it('deletes node and returns deleted_uri', async () => {
     const client = makeDeleteClient();
@@ -684,6 +751,8 @@ describe('deleteNodeByPath', () => {
 describe('moveNode', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetBootNodeSpec.mockReset();
+    mockGetBootNodeSpec.mockReturnValue(null);
   });
 
   function makeMoveClient() {
@@ -708,6 +777,83 @@ describe('moveNode', () => {
       { rows: [], rowCount: 0 },
     ]);
   }
+
+  it('blocks moving fixed boot nodes outside rollback', async () => {
+    mockGetBootNodeSpec.mockImplementation((uri: unknown) => String(uri) === 'core://soul'
+      ? {
+          uri: 'core://soul',
+          role: 'soul',
+          role_label: 'style / persona / self-definition',
+          purpose: 'Agent style, persona, and self-cognition baseline.',
+          dream_protection: 'protected',
+        } as any
+      : null);
+
+    const err = await moveNode({ old_uri: 'core://soul', new_uri: 'core://soul_archive' }).catch((e: any) => e);
+    expect(err.message).toContain('Cannot move fixed boot node core://soul');
+    expect(err.status).toBe(409);
+    expect(err.code).toBe('protected_boot_path');
+    expect(mockGetPool).not.toHaveBeenCalled();
+  });
+
+  it('blocks moving nodes onto fixed boot paths outside rollback', async () => {
+    mockGetBootNodeSpec.mockImplementation((uri: unknown) => String(uri) === 'preferences://user'
+      ? {
+          uri: 'preferences://user',
+          role: 'user',
+          role_label: 'stable user definition',
+          purpose: 'Stable user information, user preferences, and durable collaboration context.',
+          dream_protection: 'protected',
+        } as any
+      : null);
+
+    const err = await moveNode({ old_uri: 'core://old_path', new_uri: 'preferences://user' }).catch((e: any) => e);
+    expect(err.message).toContain('Cannot move a node onto fixed boot path preferences://user');
+    expect(err.status).toBe(409);
+    expect(err.code).toBe('protected_boot_path');
+    expect(mockGetPool).not.toHaveBeenCalled();
+  });
+
+  it('allows rollback to move fixed boot nodes', async () => {
+    mockGetBootNodeSpec.mockImplementation((uri: unknown) => String(uri) === 'core://soul'
+      ? {
+          uri: 'core://soul',
+          role: 'soul',
+          role_label: 'style / persona / self-definition',
+          purpose: 'Agent style, persona, and self-cognition baseline.',
+          dream_protection: 'protected',
+        } as any
+      : null);
+    const client = makeMockClient([
+      { rows: [], rowCount: 0 },
+      {
+        rows: [{
+          domain: 'core',
+          path: 'soul',
+          edge_id: 70,
+          parent_uuid: 'parent',
+          child_uuid: 'move-uuid',
+          priority: 2,
+          disclosure: null,
+        }],
+        rowCount: 1,
+      },
+      { rows: [], rowCount: 0 },
+      { rows: [], rowCount: 1 },
+      { rows: [], rowCount: 1 },
+      { rows: [{ path: 'soul_archive/child' }], rowCount: 1 },
+      { rows: [], rowCount: 0 },
+    ]);
+    mockGetPool.mockReturnValue(makePool(client) as any);
+
+    const result = await moveNode(
+      { old_uri: 'core://soul', new_uri: 'core://soul_archive' },
+      { source: 'dream:rollback' },
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.new_uri).toBe('core://soul_archive');
+  });
 
   it('moves node and returns old/new uri with node_uuid', async () => {
     const client = makeMoveClient();

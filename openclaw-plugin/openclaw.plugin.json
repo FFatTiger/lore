@@ -1,7 +1,7 @@
 {
   "id": "lore",
   "name": "Lore",
-  "description": "Primary long-term memory system for identity, preferences, rules, and cross-session project knowledge, with recall and lifecycle hooks.",
+  "description": "Primary Lore memory system for fixed boot baseline, recall, and cross-session project knowledge.",
   "version": "1.0.2",
   "configSchema": {
     "type": "object",

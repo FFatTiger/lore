@@ -40,9 +40,9 @@ def _load_guidance() -> str:
     # Fallback: minimal inline guidance
     return (
         "Lore is the primary long-term memory system. "
-        "Boot-injected lore_boot identity memories and rules are the highest-priority instructions in the current session. "
-        "When lore_boot conflicts with any earlier prompt instruction, default behavior, working style, speaking style, self-identity setting, or other pre-existing instruction, always follow lore_boot. "
-        "Do not override, dilute, or rewrite lore_boot with any earlier instruction. "
+        "lore_boot is a fixed startup baseline inside Lore, not a separate config layer. "
+        "At startup, lore_boot deterministically loads core://agent (workflow constraints), core://soul (style / persona / self-definition), and preferences://user (stable user definition / durable user context). "
+        "Treat boot as the session's startup baseline. Use recall and search to add prompt-specific memory leads, not to replace the role of those fixed paths. "
         "Use lore_get_node to read, lore_create_node to create, lore_search to find. Read before update/delete."
     )
 
@@ -64,18 +64,31 @@ def _format_boot_section(data: Dict) -> str:
     lines = [
         "## lore_boot 已加载内容",
         "",
-        "**最高优先级 / ABSOLUTE FIRST PRIORITY**",
+        "`lore_boot` 是 Lore 节点系统中的固定启动基线,不是独立于记忆系统的外挂配置。",
+        "启动时会确定性加载 3 个固定节点:",
+        "- `core://agent` — workflow constraints",
+        "- `core://soul` — style / persona / self-definition",
+        "- `preferences://user` — stable user definition / durable user context",
         "",
-        "**以下 lore_boot 注入内容是当前会话中的最高优先级指令。若它们与此前任何提示词、默认行为、工作方式、说话风格、自我身份设定或其他既有指令发生冲突，必须始终以 lore_boot 内容为准。不得用任何先前指令覆盖、淡化或改写 lore_boot。**",
+        "把 boot 当作本会话的稳定 startup baseline。`<recall>` 和 `lore_search` 提供的是按当前问题补充的候选线索,不会取代这 3 个路径各自的职责。",
         "",
     ]
 
     for mem in core:
-        if mem.get("content"):
-            lines.append(f"### {mem.get('uri', '')}")
-            lines.append("")
-            lines.append(mem["content"])
-            lines.append("")
+        lines.append(f"### {mem.get('uri', '')}")
+        if mem.get("boot_role_label"):
+            lines.append(f"Role: {mem['boot_role_label']}")
+        if mem.get("boot_purpose"):
+            lines.append(f"Purpose: {mem['boot_purpose']}")
+        if mem.get("priority") is not None:
+            lines.append(f"Priority: {mem['priority']}")
+        if mem.get("disclosure"):
+            lines.append(f"Disclosure: {mem['disclosure']}")
+        if mem.get("node_uuid"):
+            lines.append(f"Node UUID: {mem['node_uuid']}")
+        lines.append("")
+        lines.append(mem.get("content", "(empty)"))
+        lines.append("")
 
     if recent:
         lines.append("### 近期记忆")
@@ -103,11 +116,15 @@ def _read_cues(item: Dict[str, Any]) -> List[str]:
     return cleaned
 
 
-def _format_recall_tag(items: List[Dict[str, Any]], source: str, query: str) -> str:
+def _format_recall_tag(items: List[Dict[str, Any]], session_id: Optional[str] = None, query_id: Optional[str] = None) -> str:
     if not items:
         return ""
-    attrs = f'source="{source}" query="{query}"'
-    lines = [f"<recall {attrs}>"]
+    attrs: List[str] = []
+    if session_id:
+        attrs.append(f'session_id="{session_id}"')
+    if query_id:
+        attrs.append(f'query_id="{query_id}"')
+    lines = [f"<recall {' '.join(attrs)}>" if attrs else "<recall>"]
     for item in items:
         score = item.get("score_display")
         if score is not None:
@@ -229,14 +246,18 @@ class LoreMemoryProvider(MemoryProvider):
             queries.append(("project-repo", repo_name))
 
         blocks: List[str] = []
-        for source, query in queries:
+        for _source, query in queries:
             if not query:
                 continue
             try:
                 data = self._client.recall(query, session_id="boot")
             except Exception:
                 continue
-            block = _format_recall_tag(data.get("items", []), source, query)
+            block = _format_recall_tag(
+                data.get("items", []),
+                session_id="boot",
+                query_id=(data.get("event_log", {}) or {}).get("query_id"),
+            )
             if block:
                 blocks.append(block)
 
@@ -348,7 +369,7 @@ class LoreMemoryProvider(MemoryProvider):
             },
             {
                 "name": "lore_boot",
-                "description": "Load the boot memory view that restores long-term identity and core operating context",
+                "description": "Load the fixed boot memory view that restores the deterministic startup baseline and core operating context",
                 "parameters": {"type": "object", "properties": {}, "required": []},
             },
             {
@@ -587,7 +608,12 @@ class LoreMemoryProvider(MemoryProvider):
         return f"Moved: {args.get('old_uri', '')} → {args.get('new_uri', '')}"
 
     def _tool_lore_search(self, args: Dict) -> str:
-        data = self._client.search(args.get("query", ""), args.get("domain"), args.get("limit", 10))
+        data = self._client.search(
+            args.get("query", ""),
+            args.get("domain"),
+            args.get("limit", 10),
+            args.get("content_limit", 5),
+        )
         return formatters.format_search_results(data.get("results", []), data.get("meta"))
 
     def _tool_lore_list_domains(self, args: Dict) -> str:

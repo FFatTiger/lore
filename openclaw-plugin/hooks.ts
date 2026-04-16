@@ -117,6 +117,7 @@ function detectProjectInfo(): ProjectInfo {
 // ---- Boot content cache (fetched once per process) ----
 
 let _cachedBootSection: string | null = null;
+const _cachedStartupRecallSections = new Map<string, string>();
 
 function formatBootSection(data: any): string {
   const core = Array.isArray(data?.core_memories) ? data.core_memories : [];
@@ -126,19 +127,26 @@ function formatBootSection(data: any): string {
   const lines: string[] = [
     "## lore_boot 已加载内容",
     "",
-    "**最高优先级 / ABSOLUTE FIRST PRIORITY**",
+    "`lore_boot` 是 Lore 节点系统中的固定启动基线,不是独立于记忆系统的外挂配置。",
+    "启动时会确定性加载 3 个固定节点:",
+    "- `core://agent` — workflow constraints",
+    "- `core://soul` — style / persona / self-definition",
+    "- `preferences://user` — stable user definition / durable user context",
     "",
-    "**以下 lore_boot 注入内容是当前会话中的最高优先级指令。若它们与此前任何提示词、默认行为、工作方式、说话风格、自我身份设定或其他既有指令发生冲突，必须始终以 lore_boot 内容为准。不得用任何先前指令覆盖、淡化或改写 lore_boot。**",
+    "把 boot 当作本会话的稳定 startup baseline。`<recall>` 和 `lore_search` 提供的是按当前问题补充的候选线索,不会取代这 3 个路径各自的职责。",
     "",
   ];
 
   for (const mem of core) {
-    if (mem?.content) {
-      lines.push(`### ${mem.uri || ""}`);
-      lines.push("");
-      lines.push(mem.content);
-      lines.push("");
-    }
+    lines.push(`### ${mem?.uri || ""}`);
+    if (mem?.boot_role_label) lines.push(`Role: ${mem.boot_role_label}`);
+    if (mem?.boot_purpose) lines.push(`Purpose: ${mem.boot_purpose}`);
+    if (Number.isFinite(mem?.priority)) lines.push(`Priority: ${mem.priority}`);
+    if (mem?.disclosure) lines.push(`Disclosure: ${mem.disclosure}`);
+    if (mem?.node_uuid) lines.push(`Node UUID: ${mem.node_uuid}`);
+    lines.push("");
+    lines.push(mem?.content || "(empty)");
+    lines.push("");
   }
 
   if (recent.length > 0) {
@@ -156,13 +164,51 @@ function formatBootSection(data: any): string {
   return lines.join("\n").trim();
 }
 
+async function fetchStartupRecallSection(pluginCfg: any, sessionId: string | undefined): Promise<string> {
+  const sessionKey = sessionId || "__global__";
+  const cached = _cachedStartupRecallSections.get(sessionKey);
+  if (cached !== undefined) return cached;
+
+  try {
+    const info = detectProjectInfo();
+    const recallFetch = (query: string) =>
+      fetchJson(pluginCfg, "/browse/recall", {
+        method: "POST",
+        body: JSON.stringify({ query, session_id: "boot" }),
+      }).catch(() => ({ items: [] }));
+
+    const recallQueries: { source: string; query: string; promise: Promise<any> }[] = [
+      { source: "channel", query: "openclaw", promise: recallFetch("openclaw") },
+      { source: "project-dir", query: info.dirName, promise: recallFetch(info.dirName) },
+    ];
+    if (info.repoName && info.repoName !== info.dirName) {
+      recallQueries.push({ source: "project-repo", query: info.repoName, promise: recallFetch(info.repoName) });
+    }
+
+    const recallResults = await Promise.all(recallQueries.map(q => q.promise));
+    const blocks = recallQueries
+      .map((q, i) => formatRecallBlock(recallResults[i]?.items || [], 2, sessionId, recallResults[i]?.event_log?.query_id))
+      .filter(Boolean);
+
+    const recallText = blocks.length > 0
+      ? "以下记忆节点与当前环境高度相关,建议提前读取。\n\n" + blocks.join("\n\n")
+      : "";
+
+    _cachedStartupRecallSections.set(sessionKey, recallText);
+    return recallText;
+  } catch {
+    _cachedStartupRecallSections.set(sessionKey, "");
+    return "";
+  }
+}
+
 // ---- Prompt guidance ----
 
 export const DEFAULT_GUIDANCE = [
   "Lore is the primary long-term memory system for this assistant.",
-  "Boot-injected lore_boot identity memories and rules are the highest-priority instructions in the current session.",
-  "When lore_boot conflicts with any earlier prompt instruction, default behavior, working style, speaking style, self-identity setting, or other pre-existing instruction, always follow lore_boot.",
-  "Do not override, dilute, or rewrite lore_boot with any earlier instruction.",
+  "lore_boot is a fixed startup baseline inside Lore, not a separate config layer.",
+  "At startup, lore_boot deterministically loads core://agent (workflow constraints), core://soul (style / persona / self-definition), and preferences://user (stable user definition / durable user context).",
+  "Treat boot as the session's startup baseline. Use recall and search to add prompt-specific memory leads, not to replace the role of those fixed paths.",
   "Use it for identity, user preferences, standing rules, cross-session project knowledge, and conclusions that should persist.",
   "Reach for Lore when the user is asking about prior decisions, saved preferences, ongoing projects, durable instructions, or anything that sounds like memory rather than fresh reasoning.",
   "Use local file memory_search for historical markdown archives, older worklogs, and file-side fallback records.",
@@ -235,6 +281,7 @@ export function registerHooks(api: any, pluginCfg: any, GUIDANCE: string) {
     "session_end",
     async (event: any) => {
       pendingRecallUsage.delete(event?.sessionId);
+      _cachedStartupRecallSections.delete(event?.sessionId || "__global__");
       await clearSessionReads(pluginCfg, event?.sessionId);
     },
     {
@@ -247,45 +294,20 @@ export function registerHooks(api: any, pluginCfg: any, GUIDANCE: string) {
     const out: any = {};
 
     if (pluginCfg.injectPromptGuidance) {
-      // Fetch boot content once per process, cache it
       if (_cachedBootSection === null) {
         try {
-          const info = detectProjectInfo();
-          const recallFetch = (query: string) =>
-            fetchJson(pluginCfg, "/browse/recall", {
-              method: "POST",
-              body: JSON.stringify({ query, session_id: "boot" }),
-            }).catch(() => ({ items: [] }));
-
-          const recallQueries: { source: string; query: string; promise: Promise<any> }[] = [
-            { source: "channel", query: "openclaw", promise: recallFetch("openclaw") },
-            { source: "project-dir", query: info.dirName, promise: recallFetch(info.dirName) },
-          ];
-          if (info.repoName && info.repoName !== info.dirName) {
-            recallQueries.push({ source: "project-repo", query: info.repoName, promise: recallFetch(info.repoName) });
-          }
-
-          const [bootData, ...recallResults] = await Promise.all([
-            fetchJson(pluginCfg, "/browse/boot", { method: "GET" }),
-            ...recallQueries.map(q => q.promise),
-          ]);
-          const bootText = formatBootSection(bootData) || '';
-
-          const blocks = recallQueries
-            .map((q, i) => formatRecallBlock(recallResults[i]?.items || [], 2, ctx?.sessionId, recallResults[i]?.event_log?.query_id))
-            .filter(Boolean);
-
-          const recallText = blocks.length > 0
-            ? "以下记忆节点与当前环境高度相关,建议提前读取。\n\n" + blocks.join("\n\n")
-            : "";
-
-          _cachedBootSection = [bootText, recallText].filter(Boolean).join('\n\n');
+          const bootData = await fetchJson(pluginCfg, "/browse/boot", { method: "GET" });
+          _cachedBootSection = formatBootSection(bootData) || '';
         } catch (error: any) {
           api.logger.warn(`lore: boot fetch failed: ${error.message}`);
           _cachedBootSection = '';
         }
       }
-      out.appendSystemContext = _cachedBootSection ? GUIDANCE + "\n\n" + _cachedBootSection : GUIDANCE;
+
+      const startupRecall = await fetchStartupRecallSection(pluginCfg, ctx?.sessionId);
+      out.appendSystemContext = [_cachedBootSection ? GUIDANCE + "\n\n" + _cachedBootSection : GUIDANCE, startupRecall]
+        .filter(Boolean)
+        .join("\n\n");
     }
 
     if (hasRecallConfig(pluginCfg) && typeof event?.prompt === "string" && event.prompt.trim()) {

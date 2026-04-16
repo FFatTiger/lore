@@ -49,26 +49,32 @@ def format_boot_view(data: Dict) -> str:
     failed = data.get("failed", [])
     loaded = data.get("loaded", len(core_memories))
     total = data.get("total", len(core_memories))
-    
+
     lines = []
     lines.append("# Core Memories")
     lines.append(f"# Loaded: {loaded}/{total} memories")
     lines.append("")
-    
+
     if failed:
         lines.append("## Failed to load:")
         lines.extend(failed)
         lines.append("")
-    
+
     if core_memories:
-        lines.append("## Contents:")
+        lines.append("## Fixed boot baseline:")
         lines.append("")
-        lines.append("For full memory index, use: lore_list_domains and lore_get_node.")
-        lines.append("For recent memories, see below.")
+        lines.append("Lore boot deterministically loads three fixed startup nodes inside Lore:")
+        lines.append("- core://agent — workflow constraints")
+        lines.append("- core://soul — style / persona / self-definition")
+        lines.append("- preferences://user — stable user definition / durable user context")
         lines.append("")
-        
+
         for memory in core_memories:
             lines.append(f"### {memory.get('uri', '')}")
+            if memory.get("boot_role_label"):
+                lines.append(f"Role: {memory['boot_role_label']}")
+            if memory.get("boot_purpose"):
+                lines.append(f"Purpose: {memory['boot_purpose']}")
             if memory.get("priority") is not None:
                 lines.append(f"Priority: {memory['priority']}")
             if memory.get("disclosure"):
@@ -79,8 +85,8 @@ def format_boot_view(data: Dict) -> str:
             lines.append(memory.get("content", "(empty)"))
             lines.append("")
     else:
-        lines.append("(No core memories loaded. Run migration first.)")
-    
+        lines.append("(No core memories loaded.)")
+
     if recent_memories:
         lines.append("---")
         lines.append("")
@@ -95,7 +101,7 @@ def format_boot_view(data: Dict) -> str:
             lines.append(f"- {memory.get('uri', '')}{suffix}")
             if memory.get("disclosure"):
                 lines.append(f"  Disclosure: {memory['disclosure']}")
-    
+
     return "\n".join(lines).strip()
 
 

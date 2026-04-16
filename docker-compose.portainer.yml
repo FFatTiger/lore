@@ -25,7 +25,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-lore}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-lore}
       API_TOKEN: ${API_TOKEN:-}
-      CORE_MEMORY_URIS: ${CORE_MEMORY_URIS:-core://soul,preferences://user,core://agent}
+      # Boot is fixed server-side to core://agent, core://soul, preferences://user
       SNAPSHOT_DIR: /app/snapshots
       LORE_EMBEDDING_PROVIDER: ${LORE_EMBEDDING_PROVIDER:-openai_compatible}
       LORE_EMBEDDING_BASE_URL: ${LORE_EMBEDDING_BASE_URL:-}

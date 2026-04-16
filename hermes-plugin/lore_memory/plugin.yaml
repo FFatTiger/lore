@@ -1,6 +1,6 @@
 name: lore
 version: 1.0.0
-description: Lore long-term memory system — persistent identity, preferences, project knowledge, and cross-session recall
+description: Lore long-term memory system — fixed boot baseline, cross-session recall, and durable project context
 author: FFatTiger
 provides_tools:
   - lore_status

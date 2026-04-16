@@ -4,7 +4,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo, ReactNode } f
 import { useRouter, usePathname } from 'next/navigation';
 import { Sun, Moon, HardDrive } from 'lucide-react';
 import clsx from 'clsx';
-import { getDomains, AUTH_ERROR_EVENT } from '../lib/api';
+import { getDomains, getBootStatus, AUTH_ERROR_EVENT } from '../lib/api';
+import { getBootSetupRedirect, BOOT_STATUS_CHANGED_EVENT, type BootOverallState } from '@/lib/bootSetup';
 import { LanguageProvider, useT } from '../lib/i18n';
 import { ThemeProvider, useTheme } from '../lib/theme';
 import TokenAuth from './TokenAuth';
@@ -197,16 +198,28 @@ interface AppShellInnerProps {
 
 function AppShellInner({ children }: AppShellInnerProps): React.JSX.Element {
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname() || '';
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [backendError, setBackendError] = useState(false);
+  const [bootOverallState, setBootOverallState] = useState<BootOverallState | null>(null);
+  const [hasCheckedBoot, setHasCheckedBoot] = useState(false);
+  const [bootRefreshToken, setBootRefreshToken] = useState(0);
   const { t } = useT();
 
-  const handleAuthError = useCallback(() => setIsAuthenticated(false), []);
+  const handleAuthError = useCallback(() => {
+    setIsAuthenticated(false);
+    setBootOverallState(null);
+    setHasCheckedBoot(false);
+  }, []);
   const handleAuthenticated = useCallback(() => {
     setIsAuthenticated(true);
     setBackendError(false);
+    setBootOverallState(null);
+    setHasCheckedBoot(false);
+  }, []);
+  const handleBootStatusChanged = useCallback(() => {
+    setBootRefreshToken((prev) => prev + 1);
   }, []);
 
   useEffect(() => {
@@ -217,6 +230,8 @@ function AppShellInner({ children }: AppShellInnerProps): React.JSX.Element {
         if (mounted) {
           setIsAuthenticated(true);
           setBackendError(false);
+          setBootOverallState(null);
+          setHasCheckedBoot(false);
           setIsCheckingAuth(false);
         }
       } catch (e) {
@@ -226,14 +241,39 @@ function AppShellInner({ children }: AppShellInnerProps): React.JSX.Element {
           else if (err.response.status === 401) {
             setIsAuthenticated(false);
             setBackendError(false);
+            setBootOverallState(null);
+            setHasCheckedBoot(false);
           }
           setIsCheckingAuth(false);
         }
       }
     };
-    check();
+    void check();
     return () => { mounted = false; };
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let mounted = true;
+    const loadBootStatus = async () => {
+      try {
+        const next = await getBootStatus();
+        if (mounted) {
+          setBootOverallState(next.overall_state);
+        }
+      } catch {
+        if (mounted) {
+          setBootOverallState(null);
+        }
+      } finally {
+        if (mounted) {
+          setHasCheckedBoot(true);
+        }
+      }
+    };
+    void loadBootStatus();
+    return () => { mounted = false; };
+  }, [bootRefreshToken, isAuthenticated]);
 
   useEffect(() => {
     window.addEventListener(AUTH_ERROR_EVENT, handleAuthError);
@@ -241,12 +281,48 @@ function AppShellInner({ children }: AppShellInnerProps): React.JSX.Element {
   }, [handleAuthError]);
 
   useEffect(() => {
-    if (isAuthenticated && pathname === '/') {
-      router.replace('/memory');
-    }
-  }, [isAuthenticated, pathname, router]);
+    window.addEventListener(BOOT_STATUS_CHANGED_EVENT, handleBootStatusChanged);
+    return () => window.removeEventListener(BOOT_STATUS_CHANGED_EVENT, handleBootStatusChanged);
+  }, [handleBootStatusChanged]);
 
-  if (isCheckingAuth) {
+  const bootRedirect = useMemo(() => {
+    if (!isAuthenticated || !hasCheckedBoot) return null;
+    return getBootSetupRedirect(pathname, bootOverallState);
+  }, [bootOverallState, hasCheckedBoot, isAuthenticated, pathname]);
+
+  const homeFallbackRedirect = useMemo(() => {
+    if (!isAuthenticated || !hasCheckedBoot) return null;
+    if (bootRedirect) return null;
+    return pathname === '/' ? '/memory' : null;
+  }, [bootRedirect, hasCheckedBoot, isAuthenticated, pathname]);
+
+  useEffect(() => {
+    if (!bootRedirect || bootRedirect === pathname) return;
+    router.replace(bootRedirect);
+  }, [bootRedirect, pathname, router]);
+
+  useEffect(() => {
+    if (!homeFallbackRedirect || homeFallbackRedirect === pathname) return;
+    router.replace(homeFallbackRedirect);
+  }, [homeFallbackRedirect, pathname, router]);
+
+  if (isCheckingAuth || (isAuthenticated && !hasCheckedBoot)) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-bg-system">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-fill-tertiary border-t-sys-blue" />
+      </div>
+    );
+  }
+
+  if (bootRedirect && bootRedirect !== pathname) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-bg-system">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-fill-tertiary border-t-sys-blue" />
+      </div>
+    );
+  }
+
+  if (homeFallbackRedirect && homeFallbackRedirect !== pathname) {
     return (
       <div className="flex h-screen items-center justify-center bg-bg-system">
         <div className="h-6 w-6 animate-spin rounded-full border-2 border-fill-tertiary border-t-sys-blue" />

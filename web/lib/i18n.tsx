@@ -40,6 +40,16 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
     'Try Again': '重试',
     'Unable to connect': '连接失败',
     'Check that the backend service is running.': '请确认后端服务已启动。',
+    'Created': '已创建',
+    'Updated': '已更新',
+    'Unchanged': '未变更',
+    'Complete': '完成',
+    'Content': '内容',
+    'Remaining': '剩余',
+    'Available': '可用',
+    'Manual only': '仅手动填写',
+    'Refreshing…': '刷新中…',
+    'Generating…': '生成中…',
 
     // ── auth
     'Memory management console': '记忆管理控制台',
@@ -48,6 +58,46 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
     'Enter your token': '输入您的令牌',
     'Invalid token': '令牌无效',
     'Connection failed': '连接失败',
+
+    // ── setup
+    'Setup required': '需要初始化',
+    'First-run setup': '首次初始化',
+    'Initialize the three fixed startup memories before entering the normal Lore workflow.':
+      '先初始化 3 个固定启动记忆，再进入正常的 Lore 工作流。',
+    'Refresh status': '刷新状态',
+    'Open settings': '打开设置',
+    'Generate all drafts': '全部生成草稿',
+    'Save all': '全部保存',
+    'Startup nodes loaded': '已加载启动节点',
+    'Draft model': '草稿模型',
+    'Fixed boot baseline': '固定启动基线',
+    'These three fixed paths load at startup for every Lore instance.':
+      '这 3 个固定路径会在每个 Lore 实例启动时加载。',
+    'You can write these manually, or use the configured View LLM to draft a first pass and then edit it before saving.':
+      '你可以手动填写，也可以用已配置的 View LLM 先生成初稿，再编辑后保存。',
+    'Shared draft context': '共享草稿上下文',
+    'Optional shared context for all three draft generations': '给这 3 个草稿生成共享的可选上下文',
+    'Draft generation unavailable': '草稿生成不可用',
+    'You can still complete setup manually, or open Settings first and configure the default View LLM.':
+      '你仍然可以手动完成初始化，或者先打开设置配置默认 View LLM。',
+    'Missing': '缺失',
+    'Empty content': '内容为空',
+    'Initialized': '已初始化',
+    'Content length': '内容长度',
+    'Draft prompt': '草稿提示',
+    'Optional extra guidance for this node': '给这个节点补充可选提示',
+    'Write the final memory content here': '在这里填写最终要保存的记忆内容',
+    'Draft generated': '草稿已生成',
+    'Generate draft': '生成草稿',
+    'workflow constraints': '工作规则 / 协作约束',
+    'style / persona / self-definition': '风格 / 人格 / 自我定义',
+    'stable user definition': '稳定用户定义',
+    'Working rules, collaboration constraints, and execution protocol.':
+      '工作规则、协作约束与执行协议。',
+    'Agent style, persona, and self-cognition baseline.':
+      '代理的风格、人格与自我认知基线。',
+    'Stable user information, user preferences, and durable collaboration context.':
+      '稳定用户信息、用户偏好与可长期复用的协作上下文。',
 
     // ── recall workbench
     'Workbench': '工作台',
@@ -234,7 +284,6 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
     'Confirm rollback? This will reverse all changes from this dream.': '确认回滚？这将撤销此次梦境整理的所有修改。',
     'Viewed': '查看',
     'Modified': '修改',
-    'Created': '新增',
     'Deleted': '删除',
     'Date': '日期',
     'Duration': '耗时',

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireApiAuth, requireBearerAuth } from '../../../../server/auth';
+import { jsonContractError } from '../../../../server/lore/contracts';
 import { runDream, getDreamDiary, getDreamEntry, getDreamConfig, updateDreamConfig, rollbackDream } from '../../../../server/lore/dream/dreamDiary';
 import { initDreamScheduler } from '../../../../server/lore/dream/dreamScheduler';
 import {
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     const id = Number(searchParams.get('id') || 0);
     const sinceId = Number(searchParams.get('since_id') || 0);
     const entry = await getDreamEntry(id);
-    if (!entry) return NextResponse.json({ detail: 'Entry not found' }, { status: 404 });
+    if (!entry) return jsonContractError(Object.assign(new Error('Entry not found'), { status: 404 }), 'Entry not found');
 
     const encoder = new TextEncoder();
     let unsubscribe: (() => void) | null = null;
@@ -87,7 +88,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     if (action === 'entry') {
       const id = Number(searchParams.get('id'));
       const entry = await getDreamEntry(id);
-      if (!entry) return NextResponse.json({ detail: 'Entry not found' }, { status: 404 });
+      if (!entry) return jsonContractError(Object.assign(new Error('Entry not found'), { status: 404 }), 'Entry not found');
       return NextResponse.json(entry);
     }
     if (action === 'config') {
@@ -98,7 +99,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     const offset = Number(searchParams.get('offset') || 0);
     return NextResponse.json(await getDreamDiary({ limit, offset }));
   } catch (error) {
-    return NextResponse.json({ detail: (error as Error)?.message || 'Dream API failed' }, { status: Number((error as { status?: number })?.status || 500) });
+    return jsonContractError(error, 'Dream API failed');
   }
 }
 
@@ -120,6 +121,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const result = await runDream();
     return NextResponse.json(result);
   } catch (error) {
-    return NextResponse.json({ detail: (error as Error)?.message || 'Dream failed' }, { status: Number((error as { status?: number })?.status || 500) });
+    return jsonContractError(error, 'Dream failed');
   }
 }

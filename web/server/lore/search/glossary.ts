@@ -1,9 +1,8 @@
 import { sql } from '../../db';
 import type { ClientType } from '../../auth';
 import { ROOT_NODE_UUID } from '../core/constants';
-import { upsertGeneratedGlossaryEmbeddingsForPath } from './glossarySemantic';
-import { upsertGeneratedMemoryViewsForPath } from '../view/viewCrud';
 import { parseUri } from '../core/utils';
+import { scheduleGeneratedArtifactsRefresh as scheduleSharedGeneratedArtifactsRefresh } from '../core/generatedArtifacts';
 import { logMemoryEvent } from '../memory/writeEvents';
 
 // ---------------------------------------------------------------------------
@@ -59,19 +58,7 @@ async function listPathsByNodeUuid(nodeUuid: string): Promise<PathRow[]> {
 // ---------------------------------------------------------------------------
 
 export function scheduleGeneratedArtifactsRefresh(paths: PathRow[]): void {
-  for (const row of Array.isArray(paths) ? paths : []) {
-    const domain = String(row?.domain || '').trim();
-    const path = String(row?.path || '').trim();
-    if (!domain || !path) continue;
-    queueMicrotask(() => {
-      upsertGeneratedMemoryViewsForPath({ domain, path }).catch((error) => {
-        console.error('[memory_views] glossary refresh failed', domain, path, error);
-      });
-      upsertGeneratedGlossaryEmbeddingsForPath({ domain, path }).catch((error) => {
-        console.error('[glossary_embeddings] glossary refresh failed', domain, path, error);
-      });
-    });
-  }
+  scheduleSharedGeneratedArtifactsRefresh(paths, 'glossary refresh', { defaultDomain: null });
 }
 
 export async function getGlossary(): Promise<{ glossary: Array<{ keyword: string; node_uuid: string }> }> {

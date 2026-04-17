@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { normalizeClientType, requireBearerAuth } from '../../../../server/auth';
+import {
+  jsonContractError,
+  withContractWarnings,
+  withLegacyNodeCompat,
+} from '../../../../server/lore/contracts';
 import { getNodePayload } from '../../../../server/lore/memory/browse';
 import { createNode, deleteNodeByPath, updateNodeByPath } from '../../../../server/lore/memory/write';
 import { validateCreatePolicy, validateUpdatePolicy, validateDeletePolicy } from '../../../../server/lore/ops/policy';
@@ -24,11 +29,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const data = await getNodePayload({ domain, path, navOnly });
     return NextResponse.json(data);
   } catch (error) {
-    const status = Number((error as { status?: number })?.status || 500);
-    return NextResponse.json(
-      { detail: (error as Error)?.message || 'Failed to load node' },
-      { status },
-    );
+    return jsonContractError(error, 'Failed to load node');
   }
 }
 
@@ -50,7 +51,10 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
       sessionId: body?.session_id || null,
     });
     if (policyResult.errors.length > 0) {
-      return NextResponse.json({ detail: policyResult.errors.join('; '), policy_warnings: policyResult.warnings }, { status: 422 });
+      return NextResponse.json(
+        withContractWarnings({ detail: policyResult.errors.join('; '), code: 'validation_error' }, policyResult.warnings),
+        { status: 422 },
+      );
     }
     const data = await updateNodeByPath({
       domain,
@@ -59,9 +63,9 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
       priority: body?.priority,
       disclosure: Object.prototype.hasOwnProperty.call(body || {}, 'disclosure') ? body.disclosure : undefined,
     }, { source: 'api:PUT /browse/node', client_type: clientType });
-    return NextResponse.json({ ...data, policy_warnings: policyResult.warnings });
+    return NextResponse.json(withContractWarnings(withLegacyNodeCompat(data), policyResult.warnings));
   } catch (error) {
-    return NextResponse.json({ detail: (error as Error)?.message || 'Failed to update node' }, { status: Number((error as { status?: number })?.status || 500) });
+    return jsonContractError(error, 'Failed to update node');
   }
 }
 
@@ -69,7 +73,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const unauthorized = requireBearerAuth(request);
   if (unauthorized) return unauthorized;
 
-  const clientType = normalizeClientType(request.nextUrl.searchParams.get('client_type'));
+  const clientType = normalizeClientType(new URL(request.url).searchParams.get('client_type'));
 
   try {
     const body = await request.json();
@@ -78,7 +82,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       disclosure: body?.disclosure ?? null,
     });
     if (policyResult.errors.length > 0) {
-      return NextResponse.json({ detail: policyResult.errors.join('; '), policy_warnings: policyResult.warnings }, { status: 422 });
+      return NextResponse.json(
+        withContractWarnings({ detail: policyResult.errors.join('; '), code: 'validation_error' }, policyResult.warnings),
+        { status: 422 },
+      );
     }
     const data = await createNode({
       domain: (body?.domain || 'core').trim() || 'core',
@@ -88,9 +95,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       title: body?.title || '',
       disclosure: body?.disclosure ?? null,
     }, { source: 'api:POST /browse/node', client_type: clientType });
-    return NextResponse.json({ ...data, policy_warnings: policyResult.warnings });
+    return NextResponse.json(
+      withContractWarnings(
+        withLegacyNodeCompat(data, { content: String(body?.content || '') }),
+        policyResult.warnings,
+      ),
+    );
   } catch (error) {
-    return NextResponse.json({ detail: (error as Error)?.message || 'Failed to create node' }, { status: Number((error as { status?: number })?.status || 500) });
+    return jsonContractError(error, 'Failed to create node');
   }
 }
 
@@ -107,11 +119,14 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
     const sessionId = new URL(request.url).searchParams.get('session_id') || null;
     const policyResult = await validateDeletePolicy({ domain, path, sessionId });
     if (policyResult.errors.length > 0) {
-      return NextResponse.json({ detail: policyResult.errors.join('; '), policy_warnings: policyResult.warnings }, { status: 422 });
+      return NextResponse.json(
+        withContractWarnings({ detail: policyResult.errors.join('; '), code: 'validation_error' }, policyResult.warnings),
+        { status: 422 },
+      );
     }
     const deleteResult = await deleteNodeByPath({ domain, path }, { source: 'api:DELETE /browse/node', client_type: clientType });
-    return NextResponse.json({ ...deleteResult, policy_warnings: policyResult.warnings });
+    return NextResponse.json(withContractWarnings(deleteResult, policyResult.warnings));
   } catch (error) {
-    return NextResponse.json({ detail: (error as Error)?.message || 'Failed to delete node' }, { status: Number((error as { status?: number })?.status || 500) });
+    return jsonContractError(error, 'Failed to delete node');
   }
 }

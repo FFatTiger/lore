@@ -5,12 +5,11 @@ vi.mock('../../view/viewCrud', () => ({ listMemoryViewsByNode: vi.fn() }));
 
 import { sql } from '../../../db';
 import { listMemoryViewsByNode } from '../../view/viewCrud';
+import { buildBreadcrumbs, pickBestPath } from '../browsePaths';
 import {
   ROOT_NODE_UUID,
   listDomains,
   getNodePayload,
-  pickBestPath,
-  buildBreadcrumbs,
 } from '../browse';
 
 const mockSql = vi.mocked(sql);

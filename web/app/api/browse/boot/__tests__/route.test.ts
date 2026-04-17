@@ -108,6 +108,7 @@ describe('/api/browse/boot route', () => {
 
     expect(response.status).toBe(422);
     expect(body.detail).toBe('Unsupported boot URI');
+    expect(body.code).toBe('validation_error');
   });
 
   it('returns unauthorized when auth fails', async () => {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireBearerAuth } from '../../../server/auth';
+import { jsonContractError } from '../../../server/lore/contracts';
 import { clearAllReviewGroups } from '../../../server/lore/ops/review';
 
 export const runtime = 'nodejs';
@@ -11,6 +12,6 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
   try {
     return NextResponse.json(await clearAllReviewGroups());
   } catch (error) {
-    return NextResponse.json({ detail: (error as Error)?.message || 'Failed to clear review groups' }, { status: Number((error as { status?: number })?.status || 500) });
+    return jsonContractError(error, 'Failed to clear review groups');
   }
 }

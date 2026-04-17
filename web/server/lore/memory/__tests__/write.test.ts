@@ -45,10 +45,16 @@ import {
   updateNodeByPath,
   deleteNodeByPath,
   moveNode,
-  assertValidPathSegment,
-  assertValidPathSegments,
   parseUri,
 } from '../write';
+import { assertValidPathSegment, assertValidPathSegments } from '../writePathValidation';
+import { assertDeleteAllowed, assertMoveAllowed } from '../writeBootGuard';
+import { buildWriteEventBase } from '../writeEventPayload';
+import {
+  scheduleWriteArtifactsAfterMove,
+  scheduleWriteArtifactsDelete,
+  scheduleWriteArtifactsRefresh,
+} from '../writeArtifactScheduling';
 import { getBootNodeSpec } from '../boot';
 
 const mockGetPool = vi.mocked(getPool);
@@ -195,6 +201,178 @@ describe('parseUri', () => {
 });
 
 // ---------------------------------------------------------------------------
+// writeEventPayload
+// ---------------------------------------------------------------------------
+
+describe('writeEventPayload', () => {
+  it('builds event base with normalized defaults', () => {
+    expect(buildWriteEventBase({
+      node_uri: 'core://agent',
+      node_uuid: 'node-1',
+    })).toEqual({
+      node_uri: 'core://agent',
+      node_uuid: 'node-1',
+      domain: 'core',
+      path: '',
+      source: 'unknown',
+      session_id: null,
+      client_type: null,
+    });
+  });
+
+  it('preserves provided event context values', () => {
+    expect(buildWriteEventBase({
+      node_uri: 'core://agent/profile',
+      node_uuid: 'node-2',
+      domain: 'core',
+      path: 'agent/profile',
+      eventContext: {
+        source: 'mcp:lore_update_node',
+        session_id: 'session-1',
+        client_type: 'claudecode',
+      },
+    })).toEqual({
+      node_uri: 'core://agent/profile',
+      node_uuid: 'node-2',
+      domain: 'core',
+      path: 'agent/profile',
+      source: 'mcp:lore_update_node',
+      session_id: 'session-1',
+      client_type: 'claudecode',
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// writeArtifactScheduling
+// ---------------------------------------------------------------------------
+
+describe('writeArtifactScheduling', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('schedules refresh for a single write path', async () => {
+    scheduleWriteArtifactsRefresh({ domain: 'core', path: 'agent/profile' });
+    await Promise.resolve();
+
+    expect(upsertGeneratedMemoryViewsForPath).toHaveBeenCalledWith({ domain: 'core', path: 'agent/profile' });
+    expect(upsertGeneratedGlossaryEmbeddingsForPath).toHaveBeenCalledWith({ domain: 'core', path: 'agent/profile' });
+  });
+
+  it('schedules delete for a single write path', async () => {
+    scheduleWriteArtifactsDelete({ domain: 'core', path: 'agent/profile' });
+    await Promise.resolve();
+
+    expect(deleteGeneratedMemoryViewsByPrefix).toHaveBeenCalledWith({ domain: 'core', path: 'agent/profile' });
+    expect(deleteGeneratedGlossaryEmbeddingsByPrefix).toHaveBeenCalledWith({ domain: 'core', path: 'agent/profile' });
+  });
+
+  it('schedules delete and refresh after move', async () => {
+    scheduleWriteArtifactsAfterMove(
+      { domain: 'core', path: 'old/path' },
+      { domain: 'work', path: 'new/path' },
+      [{ path: 'new/path/child' }],
+    );
+    await Promise.resolve();
+
+    expect(deleteGeneratedMemoryViewsByPrefix).toHaveBeenCalledWith({ domain: 'core', path: 'old/path' });
+    expect(deleteGeneratedGlossaryEmbeddingsByPrefix).toHaveBeenCalledWith({ domain: 'core', path: 'old/path' });
+    expect(upsertGeneratedMemoryViewsForPath).toHaveBeenNthCalledWith(1, { domain: 'work', path: 'new/path' });
+    expect(upsertGeneratedMemoryViewsForPath).toHaveBeenNthCalledWith(2, { domain: 'work', path: 'new/path/child' });
+    expect(upsertGeneratedGlossaryEmbeddingsForPath).toHaveBeenNthCalledWith(1, { domain: 'work', path: 'new/path' });
+    expect(upsertGeneratedGlossaryEmbeddingsForPath).toHaveBeenNthCalledWith(2, { domain: 'work', path: 'new/path/child' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// writeBootGuard
+// ---------------------------------------------------------------------------
+
+describe('writeBootGuard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetBootNodeSpec.mockReset();
+    mockGetBootNodeSpec.mockReturnValue(null);
+  });
+
+  it('blocks deletion of fixed boot nodes outside rollback', () => {
+    mockGetBootNodeSpec.mockReturnValue({
+      uri: 'core://soul',
+      role: 'soul',
+      role_label: 'style / persona / self-definition',
+      purpose: 'Agent style, persona, and self-cognition baseline.',
+      dream_protection: 'protected',
+    } as any);
+
+    expect(() => assertDeleteAllowed('core', 'soul', {})).toThrow('Cannot delete fixed boot node core://soul');
+    try {
+      assertDeleteAllowed('core', 'soul', {});
+    } catch (err: any) {
+      expect(err.status).toBe(409);
+      expect(err.code).toBe('protected_boot_path');
+      expect(err.blocked_uri).toBe('core://soul');
+      expect(err.boot_role).toBe('soul');
+      expect(err.boot_role_label).toBe('style / persona / self-definition');
+    }
+  });
+
+  it('allows rollback deletion of fixed boot nodes', () => {
+    mockGetBootNodeSpec.mockReturnValue({
+      uri: 'core://soul',
+      role: 'soul',
+      role_label: 'style / persona / self-definition',
+      purpose: 'Agent style, persona, and self-cognition baseline.',
+      dream_protection: 'protected',
+    } as any);
+
+    expect(() => assertDeleteAllowed('core', 'soul', { source: 'dream:rollback' })).not.toThrow();
+  });
+
+  it('blocks moving fixed boot nodes outside rollback', () => {
+    mockGetBootNodeSpec.mockImplementation((uri: unknown) => String(uri) === 'core://soul'
+      ? {
+          uri: 'core://soul',
+          role: 'soul',
+          role_label: 'style / persona / self-definition',
+          purpose: 'Agent style, persona, and self-cognition baseline.',
+          dream_protection: 'protected',
+        } as any
+      : null);
+
+    expect(() => assertMoveAllowed('core://soul', 'core://soul_archive', {})).toThrow('Cannot move fixed boot node core://soul');
+  });
+
+  it('blocks moving onto fixed boot paths outside rollback', () => {
+    mockGetBootNodeSpec.mockImplementation((uri: unknown) => String(uri) === 'preferences://user'
+      ? {
+          uri: 'preferences://user',
+          role: 'user',
+          role_label: 'stable user definition',
+          purpose: 'Stable user information, user preferences, and durable collaboration context.',
+          dream_protection: 'protected',
+        } as any
+      : null);
+
+    expect(() => assertMoveAllowed('core://old_path', 'preferences://user', {})).toThrow('Cannot move a node onto fixed boot path preferences://user');
+  });
+
+  it('allows rollback move of fixed boot nodes', () => {
+    mockGetBootNodeSpec.mockImplementation((uri: unknown) => String(uri) === 'core://soul'
+      ? {
+          uri: 'core://soul',
+          role: 'soul',
+          role_label: 'style / persona / self-definition',
+          purpose: 'Agent style, persona, and self-cognition baseline.',
+          dream_protection: 'protected',
+        } as any
+      : null);
+
+    expect(() => assertMoveAllowed('core://soul', 'core://soul_archive', { source: 'dream:rollback' })).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // createNode
 // ---------------------------------------------------------------------------
 
@@ -219,6 +397,7 @@ describe('createNode', () => {
     const result = await createNode({ domain: 'core', content: 'hello' });
 
     expect(result.success).toBe(true);
+    expect(result.operation).toBe('create');
     expect(result.uri).toMatch(/^core:\/\//);
     expect(result.path).toBeTruthy();
     expect(result.node_uuid).toBeTruthy();
@@ -426,6 +605,9 @@ describe('updateNodeByPath', () => {
 
     const result = await updateNodeByPath({ domain: 'core', path: 'agent/prefs', content: 'new content' });
     expect(result.success).toBe(true);
+    expect(result.operation).toBe('update');
+    expect(result.uri).toBe('core://agent/prefs');
+    expect(result.path).toBe('agent/prefs');
     expect(result.node_uuid).toBe('node-uuid');
   });
 
@@ -659,6 +841,9 @@ describe('deleteNodeByPath', () => {
 
     const result = await deleteNodeByPath({ domain: 'core', path: 'to/delete' });
     expect(result.success).toBe(true);
+    expect(result.operation).toBe('delete');
+    expect(result.uri).toBe('core://to/delete');
+    expect(result.path).toBe('to/delete');
     expect(result.deleted_uri).toBe('core://to/delete');
   });
 
@@ -861,6 +1046,9 @@ describe('moveNode', () => {
 
     const result = await moveNode({ old_uri: 'core://old/path', new_uri: 'core://new/path' });
     expect(result.success).toBe(true);
+    expect(result.operation).toBe('move');
+    expect(result.uri).toBe('core://new/path');
+    expect(result.path).toBe('new/path');
     expect(result.old_uri).toBe('core://old/path');
     expect(result.new_uri).toBe('core://new/path');
     expect(result.node_uuid).toBe('move-uuid');

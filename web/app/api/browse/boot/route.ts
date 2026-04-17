@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { normalizeClientType, requireBearerAuth } from '@/server/auth';
+import { jsonContractError } from '@/server/lore/contracts';
 import { bootView } from '@/server/lore/memory/boot';
 import { saveBootNodes } from '@/server/lore/memory/bootSetup';
 
@@ -13,7 +14,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     return NextResponse.json(await bootView());
   } catch (error) {
-    return NextResponse.json({ detail: (error as Error)?.message || 'Failed to load boot view' }, { status: 500 });
+    return jsonContractError(error, 'Failed to load boot view');
   }
 }
 
@@ -35,9 +36,6 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
     );
     return NextResponse.json(data);
   } catch (error) {
-    return NextResponse.json(
-      { detail: (error as Error)?.message || 'Failed to save boot nodes' },
-      { status: Number((error as { status?: number })?.status || 500) },
-    );
+    return jsonContractError(error, 'Failed to save boot nodes');
   }
 }

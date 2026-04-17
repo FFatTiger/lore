@@ -9,10 +9,10 @@ import {
   fetchExactMemoryRows,
 } from '../view/memoryViewQueries';
 import { fetchGlossarySemanticRows } from './glossarySemantic';
-import { collectCandidates, runStrategy, DEFAULT_STRATEGY, STRATEGIES } from '../recall/recallScoring';
-import { getSettings as getSettingsBatch } from '../config/settings';
+import { collectCandidates, runStrategy, DEFAULT_STRATEGY } from '../recall/recallScoring';
+import { loadRecallScoringConfig } from '../recall/recallConfig';
 import type { EmbeddingConfig } from '../core/types';
-import type { ScoredResult, ScoringConfig } from '../recall/recallScoring';
+import type { ScoredResult } from '../recall/recallScoring';
 
 // ---- Types ----
 
@@ -50,57 +50,6 @@ export interface SearchMeta {
 export interface SearchResponse {
   results: SearchResult[];
   meta: SearchMeta;
-}
-
-// ---- Scoring config loader (reuses recall settings) ----
-
-const SCORING_KEYS = [
-  'recall.scoring.strategy',
-  'recall.scoring.rrf_k',
-  'recall.scoring.dense_floor',
-  'recall.scoring.gs_floor',
-  'recall.weights.w_exact',
-  'recall.weights.w_glossary_semantic',
-  'recall.weights.w_dense',
-  'recall.weights.w_lexical',
-  'recall.bonus.priority_base',
-  'recall.bonus.priority_step',
-  'recall.bonus.multi_view_step',
-  'recall.bonus.multi_view_cap',
-  'recall.recency.enabled',
-  'recall.recency.half_life_days',
-  'recall.recency.max_bonus',
-  'recall.recency.priority_exempt',
-  'views.prior.gist',
-  'views.prior.question',
-] as const;
-
-async function loadScoringConfig(): Promise<ScoringConfig & { strategy: string }> {
-  const s = await getSettingsBatch([...SCORING_KEYS]);
-  const rawStrategy = String(s['recall.scoring.strategy'] || DEFAULT_STRATEGY);
-  const strategy = STRATEGIES.includes(rawStrategy as typeof STRATEGIES[number]) ? rawStrategy : DEFAULT_STRATEGY;
-  return {
-    strategy,
-    rrf_k: Number(s['recall.scoring.rrf_k'] || 20),
-    dense_floor: Number(s['recall.scoring.dense_floor'] || 0.50),
-    gs_floor: Number(s['recall.scoring.gs_floor'] || 0.40),
-    w_exact: s['recall.weights.w_exact'] as number,
-    w_glossary_semantic: s['recall.weights.w_glossary_semantic'] as number,
-    w_dense: s['recall.weights.w_dense'] as number,
-    w_lexical: s['recall.weights.w_lexical'] as number,
-    priority_base: s['recall.bonus.priority_base'] as number,
-    priority_step: s['recall.bonus.priority_step'] as number,
-    multi_view_step: s['recall.bonus.multi_view_step'] as number,
-    multi_view_cap: s['recall.bonus.multi_view_cap'] as number,
-    recency_enabled: (s['recall.recency.enabled'] === true),
-    recency_half_life_days: Number(s['recall.recency.half_life_days'] || 180),
-    recency_max_bonus: Number(s['recall.recency.max_bonus'] || 0.04),
-    recency_priority_exempt: Number(s['recall.recency.priority_exempt'] ?? 1),
-    view_priors: {
-      gist: Number(s['views.prior.gist'] ?? 0.03),
-      question: Number(s['views.prior.question'] ?? 0.02),
-    },
-  };
 }
 
 // ---- Raw content lexical search (searches actual node content, not views) ----
@@ -240,7 +189,7 @@ export async function searchMemories({
 
   // 2. Run all 5 retrieval paths in parallel
   const [queryVector] = await embedTexts(resolvedEmbedding, [cleaned]);
-  const scoringConfig = await loadScoringConfig();
+  const scoringConfig = await loadRecallScoringConfig();
   scoringConfig.query_tokens = await countQueryTokens(cleaned);
 
   const [exactRows, gsRows, denseRows, viewLexicalRows, contentRows] = await Promise.all([

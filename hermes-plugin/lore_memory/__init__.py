@@ -581,8 +581,9 @@ class LoreMemoryProvider(MemoryProvider):
             title=effective_title, content=content, priority=priority,
             disclosure=disclosure, glossary=glossary
         )
-        node = data.get("node", {})
-        return f"Created: {node.get('uri', '')}\n\n{node.get('content', '')[:500]}"
+        created_path = "/".join(part for part in [effective_parent, effective_title] if part)
+        created_uri = data.get("uri") or self._client.build_uri(effective_domain, created_path)
+        return f"Created: {created_uri}\n\n{content[:500]}"
 
     def _tool_lore_update_node(self, args: Dict) -> str:
         uri = args.get("uri", "")
@@ -594,18 +595,24 @@ class LoreMemoryProvider(MemoryProvider):
             glossary_add=args.get("glossary_add"),
             glossary_remove=args.get("glossary_remove")
         )
-        node = data.get("node", {})
-        return f"Updated: {node.get('uri', '')}"
+        updated_uri = data.get("uri") or uri
+        return f"Updated: {updated_uri}"
 
     def _tool_lore_delete_node(self, args: Dict) -> str:
         uri = args.get("uri", "")
         domain, path = self._client.parse_uri(uri)
-        self._client.delete_node(domain, path, session_id=args.get("session_id") or self._session_id)
-        return f"Deleted: {uri}"
+        data = self._client.delete_node(domain, path, session_id=args.get("session_id") or self._session_id)
+        deleted_uri = data.get("deleted_uri") or data.get("uri") or uri
+        canonical_uri = data.get("uri") or deleted_uri
+        if canonical_uri != deleted_uri:
+            return f"Deleted: {deleted_uri} (canonical: {canonical_uri})"
+        return f"Deleted: {deleted_uri}"
 
     def _tool_lore_move_node(self, args: Dict) -> str:
-        self._client.move_node(args.get("old_uri", ""), args.get("new_uri", ""))
-        return f"Moved: {args.get('old_uri', '')} → {args.get('new_uri', '')}"
+        data = self._client.move_node(args.get("old_uri", ""), args.get("new_uri", ""))
+        old_uri = data.get("old_uri") or args.get("old_uri", "")
+        new_uri = data.get("new_uri") or data.get("uri") or args.get("new_uri", "")
+        return f"Moved: {old_uri} → {new_uri}"
 
     def _tool_lore_search(self, args: Dict) -> str:
         data = self._client.search(

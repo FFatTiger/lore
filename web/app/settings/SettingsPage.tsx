@@ -13,12 +13,7 @@ import {
   type SettingsData,
   type SectionGroup,
 } from '@/components/settings/SettingsSectionEditor';
-
-const EMBEDDING_REBUILD_KEYS = new Set([
-  'embedding.base_url',
-  'embedding.api_key',
-  'embedding.model',
-]);
+import { useSettingsFlow } from '@/components/settings/useSettingsFlow';
 
 interface ToastState {
   type: 'success' | 'error';
@@ -27,123 +22,34 @@ interface ToastState {
 
 export default function SettingsPage(): React.JSX.Element {
   const { t } = useT();
-  const [data, setData] = useState<SettingsData | null>(null);
-  const [draft, setDraft] = useState<Record<string, unknown>>({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [rebuilding, setRebuilding] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const { confirm: confirmDialog } = useConfirm();
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { data: next } = await api.get('/settings');
-      setData(next as SettingsData);
-      setDraft({});
-    } catch (e) {
-      const axiosErr = e as AxiosError<{ detail?: string }>;
-      setError(axiosErr.response?.data?.detail || axiosErr.message || 'Failed to load');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data,
+    draft,
+    loading,
+    saving,
+    rebuilding,
+    error,
+    dirtyKeys,
+    clearDraft,
+    handleChange,
+    handleReset,
+    handleRebuild,
+    handleSave,
+  } = useSettingsFlow({
+    t,
+    confirmDialog,
+    notify: useCallback((text: string, type: 'success' | 'error') => {
+      setToast({ type, text });
+    }, []),
+  });
 
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 3000);
     return () => clearTimeout(timer);
   }, [toast]);
-
-  const dirtyKeys = useMemo(() => Object.keys(draft), [draft]);
-
-  const handleChange = useCallback((key: string, newValue: unknown) => {
-    setDraft((prev) => {
-      if (!data) return prev;
-      const current = data.values[key];
-      if (newValue === current || (newValue === '' && current === '')) {
-        const { [key]: _, ...rest } = prev;
-        return rest;
-      }
-      return { ...prev, [key]: newValue };
-    });
-  }, [data]);
-
-  const handleReset = useCallback(async (key: string) => {
-    setSaving(true);
-    setError(null);
-    try {
-      const { data: next } = await api.post('/settings/reset', { keys: [key] });
-      setData(next as SettingsData);
-      setDraft((prev) => {
-        const { [key]: _, ...rest } = prev;
-        return rest;
-      });
-      setToast({ type: 'success', text: `Reset ${key}` });
-    } catch (e) {
-      const axiosErr = e as AxiosError<{ detail?: string }>;
-      setError(axiosErr.response?.data?.detail || axiosErr.message || 'Reset failed');
-    } finally {
-      setSaving(false);
-    }
-  }, []);
-
-  const embeddingChanged = useMemo(
-    () => dirtyKeys.some((key) => EMBEDDING_REBUILD_KEYS.has(key)),
-    [dirtyKeys],
-  );
-
-  const handleRebuild = useCallback(async () => {
-    setRebuilding(true);
-    setError(null);
-    try {
-      const response = await api.post('/browse/recall/rebuild');
-      const payload = response.data as Record<string, unknown>;
-      setToast({
-        type: 'success',
-        text: `${t('Rebuild completed')} (views: ${payload.updated_count ?? 0}, glossary: ${payload.glossary_embedding_updated_count ?? 0})`,
-      });
-    } catch (e) {
-      const axiosErr = e as AxiosError<{ detail?: string }>;
-      setError(axiosErr.response?.data?.detail || axiosErr.message || 'Rebuild failed');
-    } finally {
-      setRebuilding(false);
-    }
-  }, [t]);
-
-  const handleSave = useCallback(async () => {
-    if (!dirtyKeys.length) return;
-    if (embeddingChanged) {
-      const ok = await confirmDialog({
-        message: t('Changing the embedding model will invalidate all existing embeddings and trigger a full rebuild. Continue?'),
-        confirmLabel: t('Continue'),
-      });
-      if (!ok) return;
-    }
-
-    setSaving(true);
-    setError(null);
-    try {
-      const { data: next } = await api.put('/settings', { patch: draft });
-      setData(next as SettingsData);
-      setDraft({});
-      setToast({ type: 'success', text: `Saved ${dirtyKeys.length} change${dirtyKeys.length === 1 ? '' : 's'}` });
-      if (embeddingChanged) {
-        void handleRebuild();
-      }
-    } catch (e) {
-      const axiosErr = e as AxiosError<{ detail?: string }>;
-      setError(axiosErr.response?.data?.detail || axiosErr.message || 'Save failed');
-    } finally {
-      setSaving(false);
-    }
-  }, [confirmDialog, dirtyKeys, draft, embeddingChanged, handleRebuild, t]);
 
   const grouped = useMemo(() => groupSettingsSections(data), [data]);
 
@@ -186,7 +92,7 @@ export default function SettingsPage(): React.JSX.Element {
         right={
           <>
             {dirtyKeys.length > 0 && (
-              <Button variant="ghost" onClick={() => setDraft({})} disabled={saving}>
+              <Button variant="ghost" onClick={clearDraft} disabled={saving}>
                 {t('Discard')}
               </Button>
             )}
@@ -225,7 +131,7 @@ export default function SettingsPage(): React.JSX.Element {
                   draft={draft}
                   saving={saving}
                   onChange={handleChange}
-                  onReset={handleReset}
+                  onReset={(key) => void handleReset(key)}
                   right={sectionRight(section)}
                 />
               </Card>

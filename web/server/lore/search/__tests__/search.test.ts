@@ -37,7 +37,7 @@ vi.mock('../../config/settings', () => ({
     'recall.weights.w_exact': 0.3,
     'recall.weights.w_glossary_semantic': 0.25,
     'recall.weights.w_dense': 0.3,
-    'recall.weights.w_lexical': 0.05,
+    'recall.weights.w_lexical': 0.03,
     'recall.bonus.priority_base': 0.05,
     'recall.bonus.priority_step': 0.01,
     'recall.bonus.multi_view_step': 0.015,

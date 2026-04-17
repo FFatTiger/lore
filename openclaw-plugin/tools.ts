@@ -290,8 +290,7 @@ export function registerTools(api: any, pluginCfg: any) {
         const data = await fetchJson(pluginCfg, `/browse/node?${qs.toString()}`, { method: "PUT", body: JSON.stringify(body) });
         let glossaryResult: { added: string[]; removed: string[] } = { added: [], removed: [] };
         if (glossaryAdd.length > 0 || glossaryRemove.length > 0) {
-          const nodeData = await fetchJson(pluginCfg, `/browse/node?${qs.toString()}`, { method: "GET" });
-          const nodeUuid = String(nodeData?.node?.node_uuid || "").trim();
+          const nodeUuid = String(data?.node_uuid || "").trim();
           if (!nodeUuid) throw new Error(`Node UUID not found for ${domain}://${path}`);
           glossaryResult = await applyGlossaryMutations(pluginCfg, nodeUuid, { add: glossaryAdd, remove: glossaryRemove });
         }
@@ -299,7 +298,7 @@ export function registerTools(api: any, pluginCfg: any) {
         if (glossaryResult.added.length > 0) suffixParts.push(`glossary+ ${glossaryResult.added.join(", ")}`);
         if (glossaryResult.removed.length > 0) suffixParts.push(`glossary- ${glossaryResult.removed.join(", ")}`);
         const suffix = suffixParts.length > 0 ? `\n${suffixParts.join("\n")}` : "";
-        return textResult(`Updated ${domain}://${path}${suffix}`, { ok: true, result: data, glossary: glossaryResult });
+        return textResult(`Updated ${data?.uri || `${domain}://${path}`}${suffix}`, { ok: true, result: data, glossary: glossaryResult });
       } catch (error: any) {
         return textResult(`Lore update failed: ${error.message}`, { ok: false, error: error.message, domain, path, glossary_add: glossaryAdd, glossary_remove: glossaryRemove });
       }
@@ -329,7 +328,10 @@ export function registerTools(api: any, pluginCfg: any) {
           qs.set("session_id", params.session_id.trim());
         }
         const data = await fetchJson(pluginCfg, `/browse/node?${qs.toString()}`, { method: "DELETE" });
-        return textResult(`Deleted ${domain}://${path}`, { ok: true, result: data });
+        const deletedUri = String(data?.deleted_uri || data?.uri || `${domain}://${path}`).trim();
+        const canonicalUri = String(data?.uri || deletedUri).trim();
+        const suffix = canonicalUri && canonicalUri !== deletedUri ? ` (canonical: ${canonicalUri})` : "";
+        return textResult(`Deleted ${deletedUri}${suffix}`, { ok: true, result: data });
       } catch (error: any) {
         return textResult(`Lore delete failed: ${error.message}`, { ok: false, error: error.message, domain, path });
       }
@@ -356,7 +358,9 @@ export function registerTools(api: any, pluginCfg: any) {
       };
       try {
         const data = await fetchJson(pluginCfg, `/browse/move`, { method: "POST", body: JSON.stringify(body) });
-        return textResult(`Moved ${body.old_uri} → ${body.new_uri}`, { ok: true, result: data });
+        const oldUri = String(data?.old_uri || body.old_uri).trim();
+        const newUri = String(data?.new_uri || data?.uri || body.new_uri).trim();
+        return textResult(`Moved ${oldUri} → ${newUri}`, { ok: true, result: data });
       } catch (error: any) {
         return textResult(`Lore move failed: ${error.message}`, { ok: false, error: error.message, body });
       }

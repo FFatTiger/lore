@@ -142,7 +142,7 @@ class LoreClient:
         if disclosure:
             data["disclosure"] = disclosure
         result = self._request("POST", "/browse/node", data=data) or {}
-        node_uuid = result.get("node", {}).get("node_uuid")
+        node_uuid = result.get("node_uuid")
         if node_uuid and glossary:
             for keyword in glossary:
                 try:
@@ -177,8 +177,7 @@ class LoreClient:
         result = self._request("PUT", "/browse/node", params=params, data=data) or {}
         
         if (glossary_add or glossary_remove):
-            node_data = self.get_node(domain, path)
-            node_uuid = node_data.get("node", {}).get("node_uuid")
+            node_uuid = result.get("node_uuid")
             if node_uuid:
                 for keyword in glossary_add or []:
                     try:

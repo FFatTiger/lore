@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireBearerAuth } from '../../../../../server/auth';
+import { jsonContractError } from '../../../../../server/lore/contracts';
 import { clearSessionReads, listSessionReads, markSessionRead } from '../../../../../server/lore/memory/session';
 
 export const runtime = 'nodejs';
@@ -13,7 +14,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     return NextResponse.json(await listSessionReads(searchParams.get('session_id') || ''));
   } catch (error) {
-    return NextResponse.json({ detail: (error as Error)?.message || 'Failed to list session reads' }, { status: 500 });
+    return jsonContractError(error, 'Failed to list session reads');
   }
 }
 
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     return NextResponse.json(await markSessionRead(await request.json()));
   } catch (error) {
-    return NextResponse.json({ detail: (error as Error)?.message || 'Failed to mark session read' }, { status: Number((error as { status?: number })?.status || 500) });
+    return jsonContractError(error, 'Failed to mark session read');
   }
 }
 
@@ -35,6 +36,6 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
   try {
     return NextResponse.json(await clearSessionReads(searchParams.get('session_id') || ''));
   } catch (error) {
-    return NextResponse.json({ detail: (error as Error)?.message || 'Failed to clear session reads' }, { status: 500 });
+    return jsonContractError(error, 'Failed to clear session reads');
   }
 }

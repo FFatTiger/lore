@@ -117,7 +117,7 @@ export const SETTINGS_SCHEMA: SettingDef[] = [
     key: 'recall.weights.w_lexical',
     section: 'recall_weights',
     label: '词法（FTS）权重',
-    type: 'number', default: 0.05, min: 0, max: 1, step: 0.01,
+    type: 'number', default: 0.03, min: 0, max: 1, step: 0.01,
     description: '全文检索分词命中的权重',
   },
 

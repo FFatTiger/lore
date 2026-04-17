@@ -4,6 +4,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Mocks
 // ---------------------------------------------------------------------------
 
+vi.mock('@ai-sdk/anthropic', () => ({
+  createAnthropic: vi.fn(() => ({ messages: vi.fn() })),
+}));
+vi.mock('@ai-sdk/openai', () => ({
+  createOpenAI: vi.fn(() => ({ chat: vi.fn(), responses: vi.fn(), embedding: vi.fn() })),
+}));
 vi.mock('../../../db', () => ({ sql: vi.fn() }));
 vi.mock('../../config/settings', () => ({
   getSettings: vi.fn(),
@@ -41,6 +47,14 @@ vi.mock('../../recall/feedbackAnalytics', () => ({
 vi.mock('../../view/memoryViewQueries', () => ({
   listMemoryViewsByNode: vi.fn(),
 }));
+vi.mock('../../ops/policy', () => ({
+  validateCreatePolicy: vi.fn(),
+  validateUpdatePolicy: vi.fn(),
+  validateDeletePolicy: vi.fn(),
+}));
+vi.mock('../../memory/session', () => ({
+  markSessionRead: vi.fn(),
+}));
 vi.mock('node:fs', () => ({
   readFileSync: vi.fn(() => '# MCP Guidance\nlore_get_node is useful'),
 }));
@@ -59,6 +73,8 @@ import { addGlossaryKeyword, removeGlossaryKeyword, manageTriggers } from '../..
 import { getRecallStats } from '../../recall/recallAnalytics';
 import { getNodeWriteHistory } from '../../memory/writeEvents';
 import { getPathEffectiveness } from '../../recall/feedbackAnalytics';
+import { validateCreatePolicy, validateDeletePolicy, validateUpdatePolicy } from '../../ops/policy';
+import { markSessionRead } from '../../memory/session';
 import { listMemoryViewsByNode } from '../../view/memoryViewQueries';
 import {
   loadLlmConfig,
@@ -73,6 +89,7 @@ import {
   type LlmConfig,
   type HealthData,
 } from '../dreamAgent';
+import { processDreamToolCalls } from '../dreamLoopToolCalls';
 
 const originalFetch = global.fetch;
 
@@ -92,6 +109,10 @@ const mockManageTriggers = vi.mocked(manageTriggers);
 const mockGetRecallStats = vi.mocked(getRecallStats);
 const mockGetNodeWriteHistory = vi.mocked(getNodeWriteHistory);
 const mockGetPathEffectiveness = vi.mocked(getPathEffectiveness);
+const mockValidateCreatePolicy = vi.mocked(validateCreatePolicy);
+const mockValidateUpdatePolicy = vi.mocked(validateUpdatePolicy);
+const mockValidateDeletePolicy = vi.mocked(validateDeletePolicy);
+const mockMarkSessionRead = vi.mocked(markSessionRead);
 const mockListMemoryViewsByNode = vi.mocked(listMemoryViewsByNode);
 
 function makeHealthData(overrides: Partial<HealthData> = {}): HealthData {
@@ -239,6 +260,9 @@ describe('executeDreamTool', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetBootNodeSpec.mockReturnValue(null);
+    mockValidateCreatePolicy.mockResolvedValue({ errors: [], warnings: [] });
+    mockValidateUpdatePolicy.mockResolvedValue({ errors: [], warnings: [] });
+    mockValidateDeletePolicy.mockResolvedValue({ errors: [], warnings: [] });
   });
 
   it('dispatches get_node to getNodePayload', async () => {
@@ -313,9 +337,81 @@ describe('executeDreamTool', () => {
     expect(mockListMemoryViewsByNode).toHaveBeenCalledWith({ uri: 'core://test', limit: 5 });
   });
 
+  it('tracks session reads for get_node when session context is provided', async () => {
+    mockGetNodePayload.mockResolvedValue({
+      node: { uri: 'core://test', node_uuid: 'node-1' },
+      children: [],
+      breadcrumbs: [],
+    } as any);
+
+    await executeDreamTool('get_node', { uri: 'core://test' }, { source: 'dream:auto', session_id: 'dream:42' });
+
+    expect(mockMarkSessionRead).toHaveBeenCalledWith({
+      session_id: 'dream:42',
+      uri: 'core://test',
+      node_uuid: 'node-1',
+      source: 'dream:auto:get_node',
+    });
+  });
+
+  it('passes session context through to policy-aware update_node validation', async () => {
+    mockUpdateNodeByPath.mockResolvedValue({ success: true } as any);
+
+    await executeDreamTool('update_node', { uri: 'core://test', content: 'updated' }, { source: 'dream:auto', session_id: 'dream:7' });
+
+    expect(mockValidateUpdatePolicy).toHaveBeenCalledWith({
+      domain: 'core',
+      path: 'test',
+      priority: undefined,
+      disclosure: undefined,
+      sessionId: 'dream:7',
+    });
+    expect(mockUpdateNodeByPath).toHaveBeenCalledWith(
+      expect.objectContaining({ domain: 'core', path: 'test', content: 'updated' }),
+      { source: 'dream:auto', session_id: 'dream:7' },
+    );
+  });
+
+  it('returns canonical policy validation blocks for Dream writes', async () => {
+    mockValidateUpdatePolicy.mockResolvedValue({
+      errors: ['priority budget exceeded'],
+      warnings: ['read before modify first'],
+    });
+
+    const result = await executeDreamTool('update_node', { uri: 'core://test', content: 'updated' });
+
+    expect(result).toEqual({
+      error: 'priority budget exceeded',
+      detail: 'priority budget exceeded',
+      code: 'validation_error',
+      warnings: ['read before modify first'],
+      policy_warnings: ['read before modify first'],
+      status: 422,
+    });
+    expect(mockUpdateNodeByPath).not.toHaveBeenCalled();
+  });
+
+  it('attaches policy warnings to successful Dream writes', async () => {
+    mockValidateCreatePolicy.mockResolvedValue({ errors: [], warnings: ['disclosure is recommended'] });
+    mockCreateNode.mockResolvedValue({ success: true, operation: 'create', uri: 'core://parent/child', path: 'parent/child', node_uuid: 'new1' } as any);
+
+    const result = await executeDreamTool('create_node', { uri: 'core://parent/child', content: 'text', priority: 3 });
+
+    expect(result).toEqual({
+      success: true,
+      operation: 'create',
+      uri: 'core://parent/child',
+      path: 'parent/child',
+      node_uuid: 'new1',
+      warnings: ['disclosure is recommended'],
+      policy_warnings: ['disclosure is recommended'],
+    });
+  });
+
   it('dispatches create_node with parsed URI', async () => {
     mockCreateNode.mockResolvedValue({ uuid: 'new1' } as any);
     await executeDreamTool('create_node', { uri: 'core://parent/child', content: 'text', priority: 3 });
+    expect(mockValidateCreatePolicy).toHaveBeenCalledWith({ priority: 3, disclosure: null });
     expect(mockCreateNode).toHaveBeenCalledWith(
       expect.objectContaining({ domain: 'core', parentPath: 'parent', title: 'child', content: 'text', priority: 3 }),
       DREAM_EVENT_CONTEXT,
@@ -325,6 +421,13 @@ describe('executeDreamTool', () => {
   it('dispatches update_node', async () => {
     mockUpdateNodeByPath.mockResolvedValue({ success: true } as any);
     await executeDreamTool('update_node', { uri: 'core://test', content: 'updated' });
+    expect(mockValidateUpdatePolicy).toHaveBeenCalledWith({
+      domain: 'core',
+      path: 'test',
+      priority: undefined,
+      disclosure: undefined,
+      sessionId: null,
+    });
     expect(mockUpdateNodeByPath).toHaveBeenCalledWith(
       expect.objectContaining({ domain: 'core', path: 'test', content: 'updated' }),
       DREAM_EVENT_CONTEXT,
@@ -334,6 +437,7 @@ describe('executeDreamTool', () => {
   it('dispatches delete_node', async () => {
     mockDeleteNodeByPath.mockResolvedValue({ success: true } as any);
     await executeDreamTool('delete_node', { uri: 'core://test' });
+    expect(mockValidateDeletePolicy).toHaveBeenCalledWith({ domain: 'core', path: 'test', sessionId: null });
     expect(mockDeleteNodeByPath).toHaveBeenCalledWith({ domain: 'core', path: 'test' }, DREAM_EVENT_CONTEXT);
   });
 
@@ -358,6 +462,9 @@ describe('executeDreamTool', () => {
     const result = await executeDreamTool('update_node', { uri: 'core://agent', content: 'updated' });
     expect(result).toEqual({
       error: 'dream:auto cannot update protected boot node core://agent (workflow constraints)',
+      detail: 'dream:auto cannot update protected boot node core://agent (workflow constraints)',
+      code: 'protected_boot_path',
+      status: 409,
       blocked: true,
       operation: 'update_node',
       blocked_uri: 'core://agent',
@@ -390,6 +497,9 @@ describe('executeDreamTool', () => {
     });
     expect(result).toEqual({
       error: 'dream:auto cannot move protected boot node core://soul (style / persona / self-definition)',
+      detail: 'dream:auto cannot move protected boot node core://soul (style / persona / self-definition)',
+      code: 'protected_boot_path',
+      status: 409,
       blocked: true,
       operation: 'move_node',
       blocked_uri: 'core://soul',
@@ -422,6 +532,9 @@ describe('executeDreamTool', () => {
     });
     expect(result).toEqual({
       error: 'dream:auto cannot move a node onto protected boot path preferences://user (stable user definition)',
+      detail: 'dream:auto cannot move a node onto protected boot path preferences://user (stable user definition)',
+      code: 'protected_boot_path',
+      status: 409,
       blocked: true,
       operation: 'move_node',
       blocked_uri: 'preferences://user',
@@ -454,13 +567,275 @@ describe('executeDreamTool', () => {
 
   it('returns error for unknown tool', async () => {
     const result = await executeDreamTool('nonexistent', {});
-    expect(result).toEqual({ error: 'Unknown tool: nonexistent' });
+    expect(result).toEqual({
+      error: 'Unknown tool: nonexistent',
+      detail: 'Unknown tool: nonexistent',
+      code: 'unknown_tool',
+      status: 404,
+    });
   });
 
   it('catches errors and returns error object', async () => {
     mockGetNodePayload.mockRejectedValue(new Error('Not found'));
     const result = await executeDreamTool('get_node', { uri: 'core://missing' });
-    expect(result).toEqual({ error: 'Not found' });
+    expect(result).toEqual({ error: 'Not found', detail: 'Not found', status: 500 });
+  });
+});
+
+describe('processDreamToolCalls', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('records tool execution, appends messages, and emits protected boot block events', async () => {
+    const messages: Array<Record<string, unknown>> = [];
+    const toolCalls: Array<Record<string, unknown>> = [];
+    const events: Array<{ type: string; payload?: Record<string, unknown> }> = [];
+    const executeTool = vi
+      .fn()
+      .mockResolvedValueOnce({ items: ['core'] })
+      .mockResolvedValueOnce({
+        blocked: true,
+        code: 'protected_boot_path',
+        blocked_uri: 'core://agent',
+        boot_role: 'agent',
+        detail: 'blocked by boot protection',
+      });
+
+    await processDreamToolCalls({
+      turn: 2,
+      content: 'thinking',
+      rawToolCalls: [
+        { id: 'call-1', function: { name: 'list_domains', arguments: '{}' } },
+        { id: 'call-2', function: { name: 'update_node', arguments: '{"uri":"core://agent"}' } },
+      ],
+      messages: messages as any,
+      toolCalls: toolCalls as any,
+      onEvent: async (type, payload) => {
+        events.push({ type, payload });
+      },
+      executeTool,
+    });
+
+    expect(messages).toEqual([
+      {
+        role: 'assistant',
+        content: 'thinking',
+        tool_calls: [
+          { id: 'call-1', function: { name: 'list_domains', arguments: '{}' } },
+          { id: 'call-2', function: { name: 'update_node', arguments: '{"uri":"core://agent"}' } },
+        ],
+      },
+      {
+        role: 'tool',
+        tool_call_id: 'call-1',
+        content: JSON.stringify({ items: ['core'] }),
+      },
+      {
+        role: 'tool',
+        tool_call_id: 'call-2',
+        content: JSON.stringify({
+          blocked: true,
+          code: 'protected_boot_path',
+          blocked_uri: 'core://agent',
+          boot_role: 'agent',
+          detail: 'blocked by boot protection',
+        }),
+      },
+    ]);
+    expect(toolCalls).toEqual([
+      {
+        tool: 'list_domains',
+        args: {},
+        result_preview: JSON.stringify({ items: ['core'] }),
+      },
+      {
+        tool: 'update_node',
+        args: { uri: 'core://agent' },
+        result_preview: JSON.stringify({
+          blocked: true,
+          code: 'protected_boot_path',
+          blocked_uri: 'core://agent',
+          boot_role: 'agent',
+          detail: 'blocked by boot protection',
+        }),
+      },
+    ]);
+    expect(events).toEqual([
+      { type: 'tool_call_started', payload: { turn: 2, tool: 'list_domains', args: {} } },
+      {
+        type: 'tool_call_finished',
+        payload: {
+          turn: 2,
+          tool: 'list_domains',
+          ok: true,
+          blocked: false,
+          protected_blocked: false,
+          policy_blocked: false,
+          warnings: [],
+          policy_warnings: [],
+        },
+      },
+      { type: 'tool_call_started', payload: { turn: 2, tool: 'update_node', args: { uri: 'core://agent' } } },
+      {
+        type: 'protected_node_blocked',
+        payload: {
+          turn: 2,
+          tool: 'update_node',
+          blocked_uri: 'core://agent',
+          boot_role: 'agent',
+          reason: 'blocked by boot protection',
+        },
+      },
+      {
+        type: 'tool_call_finished',
+        payload: {
+          turn: 2,
+          tool: 'update_node',
+          ok: false,
+          blocked: true,
+          protected_blocked: true,
+          policy_blocked: false,
+          warnings: [],
+          policy_warnings: [],
+        },
+      },
+    ]);
+    expect(executeTool).toHaveBeenNthCalledWith(1, 'list_domains', {});
+    expect(executeTool).toHaveBeenNthCalledWith(2, 'update_node', { uri: 'core://agent' });
+  });
+
+  it('emits policy block and warning workflow events when policy validation fails', async () => {
+    const events: Array<{ type: string; payload?: Record<string, unknown> }> = [];
+
+    await processDreamToolCalls({
+      turn: 1,
+      content: 'thinking',
+      rawToolCalls: [{ id: 'call-1', function: { name: 'update_node', arguments: '{"uri":"core://test"}' } }],
+      messages: [] as any,
+      toolCalls: [] as any,
+      onEvent: async (type, payload) => {
+        events.push({ type, payload });
+      },
+      executeTool: vi.fn().mockResolvedValue({
+        error: 'priority budget exceeded',
+        detail: 'priority budget exceeded',
+        code: 'validation_error',
+        status: 422,
+        warnings: ['read before modify first'],
+        policy_warnings: ['read before modify first'],
+      }),
+    });
+
+    expect(events).toEqual([
+      { type: 'tool_call_started', payload: { turn: 1, tool: 'update_node', args: { uri: 'core://test' } } },
+      {
+        type: 'policy_validation_blocked',
+        payload: {
+          turn: 1,
+          tool: 'update_node',
+          reason: 'priority budget exceeded',
+          warnings: ['read before modify first'],
+          policy_warnings: ['read before modify first'],
+        },
+      },
+      {
+        type: 'policy_warning_emitted',
+        payload: {
+          turn: 1,
+          tool: 'update_node',
+          warnings: ['read before modify first'],
+          policy_warnings: ['read before modify first'],
+        },
+      },
+      {
+        type: 'tool_call_finished',
+        payload: {
+          turn: 1,
+          tool: 'update_node',
+          ok: false,
+          blocked: true,
+          protected_blocked: false,
+          policy_blocked: true,
+          warnings: ['read before modify first'],
+          policy_warnings: ['read before modify first'],
+        },
+      },
+    ]);
+  });
+
+  it('emits policy warning workflow events for successful writes with warnings', async () => {
+    const events: Array<{ type: string; payload?: Record<string, unknown> }> = [];
+
+    await processDreamToolCalls({
+      turn: 1,
+      content: 'thinking',
+      rawToolCalls: [{ id: 'call-1', function: { name: 'create_node', arguments: '{"content":"x","priority":2}' } }],
+      messages: [] as any,
+      toolCalls: [] as any,
+      onEvent: async (type, payload) => {
+        events.push({ type, payload });
+      },
+      executeTool: vi.fn().mockResolvedValue({
+        success: true,
+        operation: 'create',
+        uri: 'core://1',
+        path: '1',
+        node_uuid: 'node-1',
+        warnings: ['disclosure is recommended'],
+        policy_warnings: ['disclosure is recommended'],
+      }),
+    });
+
+    expect(events).toEqual([
+      { type: 'tool_call_started', payload: { turn: 1, tool: 'create_node', args: { content: 'x', priority: 2 } } },
+      {
+        type: 'policy_warning_emitted',
+        payload: {
+          turn: 1,
+          tool: 'create_node',
+          warnings: ['disclosure is recommended'],
+          policy_warnings: ['disclosure is recommended'],
+        },
+      },
+      {
+        type: 'tool_call_finished',
+        payload: {
+          turn: 1,
+          tool: 'create_node',
+          ok: true,
+          blocked: false,
+          protected_blocked: false,
+          policy_blocked: false,
+          warnings: ['disclosure is recommended'],
+          policy_warnings: ['disclosure is recommended'],
+        },
+      },
+    ]);
+  });
+
+  it('falls back to empty args when tool arguments are invalid JSON', async () => {
+    const executeTool = vi.fn().mockResolvedValue({ ok: true });
+    const messages: Array<Record<string, unknown>> = [];
+    const toolCalls: Array<Record<string, unknown>> = [];
+
+    await processDreamToolCalls({
+      turn: 1,
+      content: '',
+      rawToolCalls: [{ id: 'call-1', function: { name: 'list_domains', arguments: '{bad json' } }],
+      messages: messages as any,
+      toolCalls: toolCalls as any,
+      executeTool,
+    });
+
+    expect(executeTool).toHaveBeenCalledWith('list_domains', {});
+    expect(toolCalls).toEqual([
+      {
+        tool: 'list_domains',
+        args: {},
+        result_preview: JSON.stringify({ ok: true }),
+      },
+    ]);
   });
 });
 
@@ -567,6 +942,7 @@ describe('runDreamAgentLoop', () => {
       onEvent: async (type, payload) => {
         events.push({ type, payload });
       },
+      eventContext: { source: 'dream:auto', session_id: 'dream:99' },
     });
 
     expect(result.narrative).toBe('Final narrative');
@@ -579,7 +955,16 @@ describe('runDreamAgentLoop', () => {
       'assistant_note',
     ]);
     expect(events[1].payload).toMatchObject({ turn: 1, tool: 'list_domains' });
-    expect(events[2].payload).toMatchObject({ turn: 1, tool: 'list_domains', ok: true });
+    expect(events[2].payload).toMatchObject({
+      turn: 1,
+      tool: 'list_domains',
+      ok: true,
+      blocked: false,
+      protected_blocked: false,
+      policy_blocked: false,
+      warnings: [],
+      policy_warnings: [],
+    });
     expect(events[4].payload).toMatchObject({ message: 'Final narrative' });
   });
 
@@ -615,6 +1000,7 @@ describe('runDreamAgentLoop', () => {
       onEvent: async (type, payload) => {
         events.push({ type, payload });
       },
+      eventContext: { source: 'dream:auto', session_id: 'dream:11' },
     });
 
     expect(result.narrative).toBe('Blocked and moved on');
@@ -632,7 +1018,15 @@ describe('runDreamAgentLoop', () => {
       boot_role: 'agent',
       reason: 'dream:auto cannot update protected boot node core://agent (workflow constraints)',
     });
-    expect(events[3].payload).toMatchObject({ tool: 'update_node', ok: false, blocked: true });
+    expect(events[3].payload).toMatchObject({
+      tool: 'update_node',
+      ok: false,
+      blocked: true,
+      protected_blocked: true,
+      policy_blocked: false,
+      warnings: [],
+      policy_warnings: [],
+    });
     expect(mockUpdateNodeByPath).not.toHaveBeenCalled();
   });
 

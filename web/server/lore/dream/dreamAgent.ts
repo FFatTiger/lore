@@ -1,18 +1,19 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getSettings as getSettingsBatch } from '../config/settings';
-import { getNodePayload, listDomains } from '../memory/browse';
-import { searchMemories } from '../search/search';
-import { createNode, updateNodeByPath, deleteNodeByPath, moveNode } from '../memory/write';
-import { getBootNodeSpec, type BootNodeSpec } from '../memory/boot';
-import { addGlossaryKeyword, removeGlossaryKeyword, manageTriggers } from '../search/glossary';
-import { getRecallStats } from '../recall/recallAnalytics';
-import { getNodeWriteHistory } from '../memory/writeEvents';
-import { getPathEffectiveness } from '../recall/feedbackAnalytics';
-import { listMemoryViewsByNode } from '../view/memoryViewQueries';
+import { buildContractError, getErrorStatus } from '../contracts';
 import { resolveViewLlmConfig, type ResolvedViewLlmConfig } from '../llm/config';
 import { generateTextWithTools, type ProviderMessage, type ProviderToolDefinition } from '../llm/provider';
+import { parseUri } from '../core/utils';
+import {
+  buildProtectedBootBlockedResult,
+  getProtectedBootOperation,
+} from './dreamToolBootGuard';
+import { dispatchDreamTool } from './dreamToolDispatch';
+import { processDreamToolCalls } from './dreamLoopToolCalls';
+import type { DreamToolEventContext } from './dreamToolPolicy';
+
+export { parseUri };
 
 // ---------------------------------------------------------------------------
 // Types
@@ -38,6 +39,7 @@ export interface DreamAgentEventCallback {
 
 export interface DreamAgentRunOptions {
   onEvent?: DreamAgentEventCallback;
+  eventContext?: DreamToolEventContext;
 }
 
 interface ChatMessage extends ProviderMessage {}
@@ -60,21 +62,19 @@ interface RecentDiary {
   tool_calls: Array<{ tool: string; args: Record<string, unknown> }>;
 }
 
-interface ProtectedBootOperation {
-  operation: 'update_node' | 'delete_node' | 'move_node';
-  match: 'uri' | 'old_uri' | 'new_uri';
-  blocked_uri: string;
-  requested_old_uri?: string;
-  requested_new_uri?: string;
-  spec: BootNodeSpec;
-  reason?: string;
-}
-
 // ---------------------------------------------------------------------------
 // LLM chat with tool_calls support
 // ---------------------------------------------------------------------------
 
-export const DREAM_EVENT_CONTEXT = { source: 'dream:auto' };
+export const DREAM_EVENT_CONTEXT = { source: 'dream:auto' } as const satisfies DreamToolEventContext;
+
+function buildDreamEventContext(base: DreamToolEventContext | undefined): DreamToolEventContext {
+  return {
+    ...DREAM_EVENT_CONTEXT,
+    ...(base || {}),
+    source: base?.source || DREAM_EVENT_CONTEXT.source,
+  };
+}
 
 export async function loadLlmConfig(): Promise<LlmConfig | null> {
   return resolveViewLlmConfig();
@@ -117,163 +117,27 @@ export function buildDreamTools(): ToolDefinition[] {
   ];
 }
 
-export function parseUri(uri: string): { domain: string; path: string } {
-  const value = String(uri || '').trim();
-  if (value.includes('://')) {
-    const [d, p] = value.split('://', 2);
-    return { domain: d.trim() || 'core', path: p.replace(/^\/+|\/+$/g, '') };
-  }
-  return { domain: 'core', path: value.replace(/^\/+|\/+$/g, '') };
-}
-
-async function inspectNeighbors(uri: string): Promise<Record<string, unknown>> {
-  const { domain, path: currentPath } = parseUri(uri);
-  const current = await getNodePayload({ domain, path: currentPath });
-  const aliases = Array.isArray(current.node?.aliases) ? current.node.aliases : [];
-  const breadcrumbs = Array.isArray(current.breadcrumbs) ? current.breadcrumbs : [];
-  const children = Array.isArray(current.children) ? current.children : [];
-
-  const segments = currentPath.split('/').filter(Boolean);
-  if (segments.length === 0) {
-    return { uri: `${domain}://${currentPath}`, parent: null, siblings: [], children, aliases, breadcrumbs };
-  }
-
-  const parentPath = segments.slice(0, -1).join('/');
-  const parent = await getNodePayload({ domain, path: parentPath });
-  const siblings = (Array.isArray(parent.children) ? parent.children : []).filter((child) => child.uri !== uri);
-
-  return {
-    uri: `${domain}://${currentPath}`,
-    parent: parent.node,
-    siblings,
-    children,
-    aliases,
-    breadcrumbs,
-  };
-}
-
-function describeProtectedBootOperation(op: ProtectedBootOperation): string {
-  const role = op.spec.role_label;
-  switch (op.operation) {
-    case 'update_node':
-      return `dream:auto cannot update protected boot node ${op.blocked_uri} (${role})`;
-    case 'delete_node':
-      return `dream:auto cannot delete protected boot node ${op.blocked_uri} (${role})`;
-    case 'move_node':
-      if (op.match === 'new_uri') {
-        return `dream:auto cannot move a node onto protected boot path ${op.blocked_uri} (${role})`;
-      }
-      return `dream:auto cannot move protected boot node ${op.blocked_uri} (${role})`;
-  }
-}
-
-function getProtectedBootOperation(
+export async function executeDreamTool(
   name: string,
   args: Record<string, unknown>,
-): ProtectedBootOperation | null {
-  if (name === 'update_node' || name === 'delete_node') {
-    const spec = getBootNodeSpec(args.uri);
-    if (!spec) return null;
-    return {
-      operation: name,
-      match: 'uri',
-      blocked_uri: spec.uri,
-      spec,
-      reason: describeProtectedBootOperation({
-        operation: name,
-        match: 'uri',
-        blocked_uri: spec.uri,
-        spec,
-      }),
-    };
-  }
-
-  if (name === 'move_node') {
-    const oldSpec = getBootNodeSpec(args.old_uri);
-    if (oldSpec) {
-      return {
-        operation: 'move_node',
-        match: 'old_uri',
-        blocked_uri: oldSpec.uri,
-        requested_old_uri: String(args.old_uri || ''),
-        requested_new_uri: String(args.new_uri || ''),
-        spec: oldSpec,
-        reason: describeProtectedBootOperation({
-          operation: 'move_node',
-          match: 'old_uri',
-          blocked_uri: oldSpec.uri,
-          requested_old_uri: String(args.old_uri || ''),
-          requested_new_uri: String(args.new_uri || ''),
-          spec: oldSpec,
-        }),
-      };
-    }
-    const newSpec = getBootNodeSpec(args.new_uri);
-    if (!newSpec) return null;
-    return {
-      operation: 'move_node',
-      match: 'new_uri',
-      blocked_uri: newSpec.uri,
-      requested_old_uri: String(args.old_uri || ''),
-      requested_new_uri: String(args.new_uri || ''),
-      spec: newSpec,
-      reason: describeProtectedBootOperation({
-        operation: 'move_node',
-        match: 'new_uri',
-        blocked_uri: newSpec.uri,
-        requested_old_uri: String(args.old_uri || ''),
-        requested_new_uri: String(args.new_uri || ''),
-        spec: newSpec,
-      }),
-    };
-  }
-
-  return null;
-}
-
-export async function executeDreamTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+  eventContext: DreamToolEventContext = DREAM_EVENT_CONTEXT,
+): Promise<unknown> {
   try {
+    const context = buildDreamEventContext(eventContext);
     const protectedBootOp = getProtectedBootOperation(name, args);
     if (protectedBootOp) {
-      return {
-        error: protectedBootOp.reason,
-        blocked: true,
-        operation: protectedBootOp.operation,
-        blocked_uri: protectedBootOp.blocked_uri,
-        boot_role: protectedBootOp.spec.role,
-        boot_role_label: protectedBootOp.spec.role_label,
-        dream_protection: protectedBootOp.spec.dream_protection,
-        requested_old_uri: protectedBootOp.requested_old_uri,
-        requested_new_uri: protectedBootOp.requested_new_uri,
-      };
+      return buildProtectedBootBlockedResult(protectedBootOp);
     }
-    switch (name) {
-      case 'get_node': { const { domain, path: p } = parseUri(args.uri as string); return await getNodePayload({ domain, path: p }); }
-      case 'search': return await searchMemories({ query: args.query as string, limit: (args.limit as number) || 10,  });
-      case 'list_domains': return await listDomains();
-      case 'get_node_recall_detail': return await getRecallStats({ nodeUri: args.uri as string, days: (args.days as number) || 7, limit: (args.limit as number) || 10 });
-      case 'get_query_recall_detail': return await getRecallStats({ queryId: args.query_id as string || '', queryText: args.query_text as string || '', days: (args.days as number) || 7, limit: (args.limit as number) || 10 });
-      case 'get_node_write_history': return await getNodeWriteHistory({ nodeUri: args.uri as string, limit: (args.limit as number) || 20 });
-      case 'get_path_effectiveness_detail': return await getPathEffectiveness({ days: (args.days as number) || 7 });
-      case 'inspect_neighbors': return await inspectNeighbors(args.uri as string);
-      case 'inspect_views': return await listMemoryViewsByNode({ uri: args.uri as string, limit: (args.limit as number) || 12 });
-      case 'create_node': {
-        const { domain, path: p } = args.uri ? parseUri(args.uri as string) : { domain: 'core', path: '' };
-        const segments = p.split('/').filter(Boolean);
-        const title = segments.pop() || '';
-        const parentPath = segments.join('/');
-        return await createNode({ domain, parentPath, content: args.content as string, priority: (args.priority as number) || 2, title, disclosure: (args.disclosure as string) || null }, DREAM_EVENT_CONTEXT);
-      }
-      case 'update_node': { const { domain, path: p } = parseUri(args.uri as string); return await updateNodeByPath({ domain, path: p, content: args.content as string | undefined, priority: args.priority as number | undefined, disclosure: args.disclosure as string | undefined }, DREAM_EVENT_CONTEXT); }
-      case 'delete_node': { const { domain, path: p } = parseUri(args.uri as string); return await deleteNodeByPath({ domain, path: p }, DREAM_EVENT_CONTEXT); }
-      case 'move_node': return await moveNode({ old_uri: args.old_uri as string, new_uri: args.new_uri as string }, DREAM_EVENT_CONTEXT);
-      case 'add_glossary': return await addGlossaryKeyword({ keyword: args.keyword as string, node_uuid: args.node_uuid as string }, DREAM_EVENT_CONTEXT);
-      case 'remove_glossary': return await removeGlossaryKeyword({ keyword: args.keyword as string, node_uuid: args.node_uuid as string }, DREAM_EVENT_CONTEXT);
-      case 'manage_triggers': return await manageTriggers({ uri: args.uri as string, add: (args.add as string[]) || [], remove: (args.remove as string[]) || [] }, DREAM_EVENT_CONTEXT);
-      default: return { error: `Unknown tool: ${name}` };
-    }
+    return await dispatchDreamTool(name, args, context);
   } catch (err: unknown) {
-    return { error: (err as Error).message };
+    const status = getErrorStatus(err);
+    const envelope = buildContractError(err, 'Dream tool failed');
+    return {
+      error: envelope.detail,
+      detail: envelope.detail,
+      ...(envelope.code ? { code: envelope.code } : {}),
+      status,
+    };
   }
 }
 
@@ -384,153 +248,79 @@ ${guidance ? `## 记忆使用规则（完整版）\n\n${guidance}` : ''}
    - views 失真？→ 记录为 view 问题,谨慎改正文
    - retrieval path 命中差？→ 记录为 path 问题,不要拿节点背锅
    对症下药,不要一律降权
+`;
 
-## 日记格式
+  const recentQueries = Array.isArray((healthData.recallStats as any)?.recent_queries?.items)
+    ? (healthData.recallStats as any).recent_queries.items.map((item: Record<string, unknown>) => ({
+        query_text: item.query_text,
+        merged: Number(item.merged_count ?? item.merged ?? 0),
+        shown: Number(item.shown_count ?? item.shown ?? 0),
+        used: Number(item.used_count ?? item.used ?? 0),
+      }))
+    : [];
 
-完成操作后,用以下格式写中文日记:
-- 最终写给人看的日记尽量使用自然中文。除了 URI、节点路径、工具名、必须原样保留的关键词之外,不要夹杂 query、path、view、split、move、content 这类内部英文术语
-- 多写“读取节点”“检查召回表现”“查看最近修改”“移动节点”“更新正文”这类人能直接看懂的说法
+  const recentDiariesSection = recentDiaries.length
+    ? `\n\n## 最近日记（避免重复整理）\n${JSON.stringify(recentDiaries, null, 2)}`
+    : '';
 
-### 前次回顾
-（上次做梦改了什么？从数据看效果如何？有什么教训？）
-
-### 本次目标
-（这次聚焦解决什么问题？为什么选这几个？）
-
-### 操作记录
-| 节点 | 操作 | 理由 | 预期效果 |
-|---|---|---|---|
-
-### 下次重点
-（还有什么没处理？下次应该关注什么？）`;
-
-  const report = JSON.stringify({
-    health_summary: (healthData.health as Record<string, unknown>)?.classification_summary,
-    dead_nodes: ((healthData.deadWrites as Record<string, unknown>)?.dead_writes as Array<Record<string, unknown>> || []).slice(0, 15).map((n) => ({ uri: n.node_uri, diagnosis: n.diagnosis, score: n.avg_score_when_seen })),
-    noisy_nodes: ((healthData.health as Record<string, unknown>)?.nodes as Array<Record<string, unknown>> || []).filter((n) => n.classification === 'noisy').slice(0, 10).map((n) => ({ uri: n.node_uri, recall: n.recall_count, selected: n.selected_count })),
-    underperforming: ((healthData.health as Record<string, unknown>)?.nodes as Array<Record<string, unknown>> || []).filter((n) => n.classification === 'underperforming').slice(0, 10).map((n) => ({ uri: n.node_uri, selected: n.selected_count, used: n.used_in_answer_count })),
-    path_recommendations: (healthData.pathEffectiveness as Record<string, unknown>)?.recommendations || [],
-    orphan_count: healthData.orphanCount,
-  }, null, 2);
-
-  // Recall drilldown data: recent queries, path-level stats, noisy nodes from recall
-  const recallStats = healthData.recallStats as Record<string, unknown> || {};
-  const writeStats = healthData.writeStats as Record<string, unknown> || {};
-  const recentQueries = (((recallStats.recent_queries as Record<string, unknown> | undefined)?.items) as Array<Record<string, unknown>>) || [];
-  const drilldown = JSON.stringify({
-    activity_summary: {
-      recall_merged: (recallStats.summary as Record<string, unknown>)?.merged_count || 0,
-      recall_queries: (recallStats.summary as Record<string, unknown>)?.query_count || 0,
-      recall_shown: (recallStats.summary as Record<string, unknown>)?.shown_count || 0,
-      recall_used: (recallStats.summary as Record<string, unknown>)?.used_count || 0,
-      write_events: (writeStats.summary as Record<string, unknown>)?.total_events || 0,
-      write_distinct_nodes: (writeStats.summary as Record<string, unknown>)?.distinct_nodes || 0,
+  return `${rules}\n\n## 健康报告\n${JSON.stringify({
+    health_summary: healthData.health,
+    dead_writes: healthData.deadWrites,
+    path_effectiveness: healthData.pathEffectiveness,
+    recall_stats: {
+      ...(healthData.recallStats || {}),
+      recent_queries: recentQueries,
     },
-    recall_by_path: ((recallStats.by_path as Array<Record<string, unknown>>) || []).map((p) => ({
-      path: p.retrieval_path, total: p.total, selected: p.selected, used: p.used_in_answer,
-      avg_score: p.avg_final_rank_score,
-    })),
-    recall_noisy_nodes: ((recallStats.noisy_nodes as Array<Record<string, unknown>>) || []).slice(0, 10).map((n) => ({
-      uri: n.node_uri, total: n.total, selected: n.selected, avg_score: n.avg_final_rank_score,
-    })),
-    recent_queries: recentQueries.slice(0, 10).map((q) => ({
-      query: (q.query_text as string)?.slice(0, 100), merged: q.merged_count, shown: q.shown_count, used: q.used_count,
-    })),
-    path_effectiveness: ((healthData.pathEffectiveness as Record<string, unknown>)?.paths as Array<Record<string, unknown>> || []).map((p) => ({
-      path: p.retrieval_path, appearances: p.total_appearances, selected: p.selected_count, used: p.used_count,
-      selection_rate: p.selection_rate, usage_rate: p.usage_rate,
-    })),
-    write_hot_nodes: ((writeStats.hot_nodes as Array<Record<string, unknown>>) || []).slice(0, 10).map((n) => ({
-      uri: n.node_uri, total: n.total, creates: n.creates, updates: n.updates, deletes: n.deletes,
-    })),
-  }, null, 2);
-
-  // Recent diaries so the agent knows what was already done
-  let diarySection = '';
-  if (recentDiaries.length > 0) {
-    const diaryEntries = recentDiaries.map((d) => {
-      const toolSummary = (d.tool_calls || []).map((tc) => `${tc.tool}(${JSON.stringify(tc.args).slice(0, 80)})`).join(', ');
-      return `### ${d.started_at} [${d.status}]\n${d.narrative || '(无日记)'}\n\n工具调用: ${toolSummary || '(无)'}`;
-    }).join('\n\n---\n\n');
-    diarySection = `\n\n## 最近日记（避免重复整理）\n\n${diaryEntries}`;
-  }
-
-  return `${rules}\n\n## 今日健康报告\n\n\`\`\`json\n${report}\n\`\`\`\n\n## 近期召回与写入数据（Drill Down）\n\n\`\`\`json\n${drilldown}\n\`\`\`${diarySection}`;
+    write_stats: healthData.writeStats,
+    orphan_count: healthData.orphanCount,
+  }, null, 2)}${recentDiariesSection}\n\n## 输出要求\n- 最终写给人看的日记尽量使用自然中文。
+- 不要夹杂 query、path、view、split、move、content 这类内部英文术语；如果必须表达，用自然中文解释。`;
 }
 
-// ---------------------------------------------------------------------------
-// Agent loop
-// ---------------------------------------------------------------------------
-
 export async function runDreamAgentLoop(
-  llmConfig: LlmConfig,
+  config: LlmConfig,
   healthData: HealthData,
   recentDiaries: RecentDiary[] = [],
   options: DreamAgentRunOptions = {},
 ): Promise<DreamAgentResult> {
-  const tools = buildDreamTools();
+  const onEvent = options.onEvent;
+  const eventContext = buildDreamEventContext(options.eventContext);
   const systemPrompt = buildDreamSystemPrompt(healthData, recentDiaries);
-  const messages: ChatMessage[] = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: '开始做梦。阅读健康报告中的问题节点,进行整理,完成后写日记。' },
-  ];
-  const toolCallLog: ToolCallLogEntry[] = [];
-  let turn = 0;
+  const tools = buildDreamTools();
+  const messages: ChatMessage[] = [{ role: 'system', content: systemPrompt }];
+  const toolCalls: ToolCallLogEntry[] = [];
 
-  for (;;) {
-    turn++;
-    await options.onEvent?.('llm_turn_started', { turn });
-    const response = await chatWithTools(llmConfig, messages, tools) as Record<string, unknown>;
+  for (let turn = 0; turn < 12; turn += 1) {
+    await onEvent?.('llm_turn_started', { turn: turn + 1 });
+    const response = await chatWithTools(config, messages, tools);
+    const content = String(response.content || '');
+    const rawToolCalls = Array.isArray(response.tool_calls) ? response.tool_calls : [];
 
-    const responseContent = typeof response.content === 'string' ? response.content : null;
-    const responseTc = Array.isArray(response.tool_calls) ? response.tool_calls as ChatMessage['tool_calls'] : [];
-    if (!responseTc || responseTc.length === 0) {
-      const narrative = responseContent || '';
-      if (narrative) {
-        await options.onEvent?.('assistant_note', { turn, message: narrative.slice(0, 1000) });
+    if (rawToolCalls.length === 0) {
+      if (content.trim()) {
+        await onEvent?.('assistant_note', { turn: turn + 1, message: content.trim() });
       }
-      return { narrative, toolCalls: toolCallLog, turns: turn };
+      return {
+        narrative: content.trim(),
+        toolCalls,
+        turns: turn + 1,
+      };
     }
 
-    messages.push({ role: 'assistant', content: responseContent, tool_calls: responseTc });
-
-    for (const tc of responseTc) {
-      const fnName = tc.function?.name || '';
-      let args: Record<string, unknown> = {};
-      try { args = JSON.parse(tc.function?.arguments || '{}'); } catch {}
-
-      await options.onEvent?.('tool_call_started', { turn, tool: fnName, args });
-      console.log(`[dream] tool_call: ${fnName}`, JSON.stringify(args).slice(0, 200));
-      const result = await executeDreamTool(fnName, args);
-      const resultObject = result && typeof result === 'object' ? result as Record<string, unknown> : null;
-      const blocked = resultObject?.blocked === true;
-      const ok = !resultObject || !('error' in resultObject);
-      const resultStr = JSON.stringify(result).slice(0, 4000);
-
-      toolCallLog.push({ tool: fnName, args, result_preview: resultStr.slice(0, 500) });
-      if (blocked) {
-        await options.onEvent?.('protected_node_blocked', {
-          turn,
-          tool: fnName,
-          args,
-          blocked_uri: resultObject?.blocked_uri,
-          boot_role: resultObject?.boot_role,
-          boot_role_label: resultObject?.boot_role_label,
-          dream_protection: resultObject?.dream_protection,
-          reason: resultObject?.error,
-          requested_old_uri: resultObject?.requested_old_uri,
-          requested_new_uri: resultObject?.requested_new_uri,
-        });
-      }
-      await options.onEvent?.('tool_call_finished', {
-        turn,
-        tool: fnName,
-        args,
-        result_preview: resultStr.slice(0, 500),
-        ok,
-        blocked,
-      });
-      messages.push({ role: 'tool', tool_call_id: tc.id, content: resultStr });
-    }
+    await processDreamToolCalls({
+      turn: turn + 1,
+      content,
+      rawToolCalls,
+      messages,
+      toolCalls,
+      onEvent,
+      executeTool: (name, args) => executeDreamTool(name, args, eventContext),
+    });
   }
+
+  return {
+    narrative: 'Dream agent stopped after reaching the turn limit.',
+    toolCalls,
+    turns: 12,
+  };
 }

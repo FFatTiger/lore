@@ -201,6 +201,78 @@ describe('tool response formatting', () => {
     expect(result.content[0].text).toContain('Moved core://original');
   });
 
+  it('lore_create_node uses top-level receipt fields for glossary mutations', async () => {
+    (fetch as any)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: async () => JSON.stringify({ uri: 'core://agent/profile', node_uuid: 'uuid-create' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: async () => JSON.stringify({ ok: true }),
+      });
+
+    const result = await tools.lore_create_node.execute(null, {
+      domain: 'core',
+      parent_path: 'agent',
+      title: 'profile',
+      content: 'hello',
+      priority: 2,
+      glossary: ['memory'],
+    });
+
+    expect(result.details.ok).toBe(true);
+    expect(result.content[0].text).toContain('Created core://agent/profile');
+    expect((fetch as any).mock.calls).toHaveLength(2);
+    expect(JSON.parse((fetch as any).mock.calls[1][1].body)).toEqual({ keyword: 'memory', node_uuid: 'uuid-create' });
+  });
+
+  it('lore_update_node uses canonical receipt fields without refetching the node', async () => {
+    (fetch as any)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: async () => JSON.stringify({ uri: 'core://agent/profile-renamed', node_uuid: 'uuid-update' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: async () => JSON.stringify({ ok: true }),
+      });
+
+    const result = await tools.lore_update_node.execute(null, {
+      uri: 'core://agent/profile',
+      content: 'updated',
+      glossary_add: ['memory'],
+    });
+
+    expect(result.details.ok).toBe(true);
+    expect(result.content[0].text).toContain('Updated core://agent/profile-renamed');
+    expect((fetch as any).mock.calls).toHaveLength(2);
+    expect((fetch as any).mock.calls.map((call: any[]) => call[1].method)).not.toContain('GET');
+    expect(JSON.parse((fetch as any).mock.calls[1][1].body)).toEqual({ keyword: 'memory', node_uuid: 'uuid-update' });
+  });
+
+  it('lore_delete_node prefers canonical delete receipts', async () => {
+    mockFetch({ deleted_uri: 'core://legacy/node', uri: 'core://canonical/node' });
+    const result = await tools.lore_delete_node.execute(null, { uri: 'core://test/node' });
+    expect(result.details.ok).toBe(true);
+    expect(result.content[0].text).toContain('Deleted core://legacy/node (canonical: core://canonical/node)');
+  });
+
+  it('lore_move_node prefers canonical move receipts', async () => {
+    mockFetch({ old_uri: 'core://original', new_uri: 'core://canonical/moved' });
+    const result = await tools.lore_move_node.execute(null, { old_uri: 'core://original', new_uri: 'core://moved' });
+    expect(result.details.ok).toBe(true);
+    expect(result.content[0].text).toContain('Moved core://original → core://canonical/moved');
+  });
+
   it('lore_list_session_reads shows empty message for no reads', async () => {
     mockFetch([]);
     const result = await tools.lore_list_session_reads.execute(null, { session_id: 'sess-1' });

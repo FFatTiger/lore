@@ -1,10 +1,13 @@
 import { sql } from '../../db';
 import { clampLimit } from '../core/utils';
+import { getSettings } from '../config/settings';
 import {
   intervalDaysSql,
   asNumber,
   asObject,
 } from './recallEventLog';
+
+const LEGACY_CLIENT_TYPE_FILTER = '__legacy__';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -29,6 +32,115 @@ interface StatsWhereResult {
   filters: { query_id: string; query_text: string; node_uri: string; client_type: string };
 }
 
+interface DisplayThresholdAnalysis {
+  status: 'insufficient_data' | 'ready';
+  status_detail: 'insufficient_data' | 'ready_to_review' | 'ready_but_unsafe';
+  execution_status: 'blocked' | 'eligible' | 'not_applicable';
+  basis: string;
+  shown_candidate_count: number;
+  used_candidate_count: number;
+  unused_shown_candidate_count: number;
+  avg_shown_score: number | null;
+  avg_used_score: number | null;
+  avg_unused_shown_score: number | null;
+  used_p25_score: number | null;
+  used_p50_score: number | null;
+  unused_shown_p75_score: number | null;
+  separation_gap: number | null;
+  suggested_min_display_score: number | null;
+}
+
+function roundMetric(value: number | null, digits = 3): number | null {
+  return value === null ? null : Number(value.toFixed(digits));
+}
+
+function clampDisplayScore(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function thresholdExecutionStatus(
+  status: 'insufficient_data' | 'ready',
+  suggestedMinDisplayScore: number | null,
+  separationGap: number | null,
+): 'blocked' | 'eligible' | 'not_applicable' {
+  if (status !== 'ready' || suggestedMinDisplayScore === null) {
+    return 'not_applicable';
+  }
+  if (separationGap !== null && separationGap < 0) {
+    return 'blocked';
+  }
+  return 'eligible';
+}
+
+function thresholdStatusDetail(
+  status: 'insufficient_data' | 'ready',
+  executionStatus: 'blocked' | 'eligible' | 'not_applicable',
+  separationGap: number | null,
+): 'insufficient_data' | 'ready_to_review' | 'ready_but_unsafe' {
+  if (status !== 'ready') return 'insufficient_data';
+  if (executionStatus === 'blocked' || (separationGap !== null && separationGap < 0)) {
+    return 'ready_but_unsafe';
+  }
+  return 'ready_to_review';
+}
+
+function buildDisplayThresholdAnalysis(row: Record<string, unknown>): DisplayThresholdAnalysis {
+  const shownCandidateCount = Number(row.shown_candidates || 0);
+  const usedCandidateCount = Number(row.used_candidates || 0);
+  const unusedShownCandidateCount = Math.max(0, shownCandidateCount - usedCandidateCount);
+  const avgShownScore = asNumber(row.avg_shown_score);
+  const avgUsedScore = asNumber(row.avg_used_score);
+  const avgUnusedShownScore = asNumber(row.avg_unused_shown_score);
+  const usedP25Score = asNumber(row.used_p25_score);
+  const usedP50Score = asNumber(row.used_p50_score);
+  const unusedShownP75Score = asNumber(row.unused_shown_p75_score);
+  const separationGap =
+    usedP25Score !== null && unusedShownP75Score !== null
+      ? roundMetric(usedP25Score - unusedShownP75Score)
+      : null;
+
+  let status: 'insufficient_data' | 'ready' = 'insufficient_data';
+  let basis = 'insufficient_data';
+  let suggestedMinDisplayScore: number | null = null;
+
+  if (usedCandidateCount >= 3 && shownCandidateCount >= 5) {
+    status = 'ready';
+    if (usedP25Score !== null && unusedShownP75Score !== null) {
+      suggestedMinDisplayScore = roundMetric(clampDisplayScore((usedP25Score + unusedShownP75Score) / 2));
+      basis = 'midpoint_used_p25_unused_shown_p75';
+    } else if (usedP25Score !== null) {
+      suggestedMinDisplayScore = roundMetric(clampDisplayScore(usedP25Score - 0.03));
+      basis = 'used_p25_minus_margin';
+    } else if (avgUsedScore !== null) {
+      suggestedMinDisplayScore = roundMetric(clampDisplayScore(avgUsedScore - 0.05));
+      basis = 'avg_used_minus_margin';
+    } else {
+      status = 'insufficient_data';
+    }
+  }
+
+  const executionStatus = thresholdExecutionStatus(status, suggestedMinDisplayScore, separationGap);
+  const statusDetail = thresholdStatusDetail(status, executionStatus, separationGap);
+
+  return {
+    status,
+    status_detail: statusDetail,
+    execution_status: executionStatus,
+    basis,
+    shown_candidate_count: shownCandidateCount,
+    used_candidate_count: usedCandidateCount,
+    unused_shown_candidate_count: unusedShownCandidateCount,
+    avg_shown_score: roundMetric(avgShownScore),
+    avg_used_score: roundMetric(avgUsedScore),
+    avg_unused_shown_score: roundMetric(avgUnusedShownScore),
+    used_p25_score: roundMetric(usedP25Score),
+    used_p50_score: roundMetric(usedP50Score),
+    unused_shown_p75_score: roundMetric(unusedShownP75Score),
+    separation_gap: separationGap,
+    suggested_min_display_score: suggestedMinDisplayScore,
+  };
+}
+
 export function buildStatsWhere({
   days,
   queryId = '',
@@ -44,6 +156,7 @@ export function buildStatsWhere({
   const safeQueryText = sanitizeFilter(queryText, 240);
   const safeNodeUri = sanitizeFilter(nodeUri, 240);
   const safeClientType = sanitizeFilter(clientType, 120).toLowerCase();
+  const legacyClientType = safeClientType === LEGACY_CLIENT_TYPE_FILTER;
 
   if (safeQueryId) {
     params.push(safeQueryId);
@@ -59,13 +172,22 @@ export function buildStatsWhere({
   }
   if (safeClientType) {
     params.push(safeClientType);
-    clauses.push(`LOWER(COALESCE(metadata->>'client_type', '')) = $${params.length}`);
+    clauses.push(
+      legacyClientType
+        ? `LOWER(COALESCE(metadata->>'client_type', '')) = ''`
+        : `LOWER(COALESCE(metadata->>'client_type', '')) = $${params.length}`,
+    );
   }
 
   return {
     where: clauses.join(' AND '),
-    params,
-    filters: { query_id: safeQueryId, query_text: safeQueryText, node_uri: safeNodeUri, client_type: safeClientType },
+    params: legacyClientType ? params.slice(0, -1) : params,
+    filters: {
+      query_id: safeQueryId,
+      query_text: safeQueryText,
+      node_uri: safeNodeUri,
+      client_type: safeClientType,
+    },
   };
 }
 
@@ -356,12 +478,15 @@ export async function getRecallStats({
   const safeRecentQueriesLimit = clampLimit(recentQueriesLimit, 1, 100, 20);
   const safeRecentQueriesOffset = Math.max(0, Number(recentQueriesOffset) || 0);
   const { where: filterWhere, params: filterParams, filters } = buildStatsWhere({ days, queryId, queryText, nodeUri, clientType });
+  const { where: breakdownWhere, params: breakdownParams } = buildStatsWhere({ days, queryId, queryText, nodeUri, clientType: '' });
   const hasFilter = filters.query_id || filters.query_text || filters.node_uri || filters.client_type;
 
   const recentQueriesCountParams = [...filterParams];
   const recentQueriesListParams = [...filterParams, safeRecentQueriesLimit, safeRecentQueriesOffset];
+  let queryDetail: Record<string, unknown> | null = null;
+  let nodeDetail: Record<string, unknown> | null = null;
 
-  const [summary, byPath, byViewType, noisyNodes, recentQueriesCount, recentQueries, recentEvents] = await Promise.all([
+  const [summary, byPath, byViewType, noisyNodes, recentQueriesCount, recentQueries, recentEvents, displayThreshold, clientTypeBreakdown] = await Promise.all([
     sql(
       `
         SELECT
@@ -473,9 +598,113 @@ export async function getRecallStats({
       `,
       [...filterParams, safeLimit * 4],
     ),
+    sql(
+      `
+        WITH candidate_rows AS (
+          SELECT
+            COALESCE(metadata->>'query_id', id::text) AS query_id,
+            node_uri,
+            BOOL_OR(selected) AS selected,
+            BOOL_OR(used_in_answer) AS used_in_answer,
+            MAX(final_rank_score) AS final_rank_score
+          FROM recall_events
+          WHERE ${filterWhere}
+            AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = node_uri)
+          GROUP BY COALESCE(metadata->>'query_id', id::text), node_uri
+        )
+        SELECT
+          COUNT(*) FILTER (WHERE selected) AS shown_candidates,
+          COUNT(*) FILTER (WHERE used_in_answer) AS used_candidates,
+          AVG(final_rank_score) FILTER (WHERE selected) AS avg_shown_score,
+          AVG(final_rank_score) FILTER (WHERE used_in_answer) AS avg_used_score,
+          AVG(final_rank_score) FILTER (WHERE selected AND used_in_answer = FALSE) AS avg_unused_shown_score,
+          PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY final_rank_score) FILTER (WHERE used_in_answer) AS used_p25_score,
+          PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY final_rank_score) FILTER (WHERE used_in_answer) AS used_p50_score,
+          PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY final_rank_score) FILTER (WHERE selected AND used_in_answer = FALSE) AS unused_shown_p75_score
+        FROM candidate_rows
+      `,
+      filterParams,
+    ),
+    sql(
+      `
+        WITH candidate_rows AS (
+          SELECT
+            LOWER(COALESCE(metadata->>'client_type', '')) AS client_type,
+            COALESCE(metadata->>'query_id', id::text) AS query_id,
+            node_uri,
+            BOOL_OR(selected) AS selected,
+            BOOL_OR(used_in_answer) AS used_in_answer,
+            MAX(final_rank_score) AS final_rank_score
+          FROM recall_events
+          WHERE ${breakdownWhere}
+            AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = node_uri)
+          GROUP BY LOWER(COALESCE(metadata->>'client_type', '')), COALESCE(metadata->>'query_id', id::text), node_uri
+        )
+        SELECT
+          client_type,
+          COUNT(*) FILTER (WHERE selected) AS shown_candidates,
+          COUNT(*) FILTER (WHERE used_in_answer) AS used_candidates,
+          AVG(final_rank_score) FILTER (WHERE selected) AS avg_shown_score,
+          AVG(final_rank_score) FILTER (WHERE used_in_answer) AS avg_used_score,
+          AVG(final_rank_score) FILTER (WHERE selected AND used_in_answer = FALSE) AS avg_unused_shown_score,
+          PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY final_rank_score) FILTER (WHERE used_in_answer) AS used_p25_score,
+          PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY final_rank_score) FILTER (WHERE used_in_answer) AS used_p50_score,
+          PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY final_rank_score) FILTER (WHERE selected AND used_in_answer = FALSE) AS unused_shown_p75_score
+        FROM candidate_rows
+        GROUP BY client_type
+        ORDER BY COUNT(*) FILTER (WHERE selected) DESC, client_type ASC
+      `,
+      breakdownParams,
+    ),
   ]);
 
   const summaryRow = summary.rows[0] || {};
+  const displayThresholdRow = displayThreshold.rows[0] || {};
+  const displayThresholdAnalysisBase = buildDisplayThresholdAnalysis(displayThresholdRow);
+  const runtimeSettings = await getSettings(['recall.display.min_display_score']);
+  const runtimeMinDisplayScore = asNumber(runtimeSettings['recall.display.min_display_score']);
+  const displayThresholdExecutionStatus = thresholdExecutionStatus(
+    displayThresholdAnalysisBase.status,
+    displayThresholdAnalysisBase.suggested_min_display_score,
+    displayThresholdAnalysisBase.separation_gap,
+  );
+  const displayThresholdAnalysis = {
+    ...displayThresholdAnalysisBase,
+    current_min_display_score: roundMetric(runtimeMinDisplayScore),
+    threshold_gap:
+      displayThresholdAnalysisBase.suggested_min_display_score !== null && runtimeMinDisplayScore !== null
+        ? roundMetric(displayThresholdAnalysisBase.suggested_min_display_score - runtimeMinDisplayScore)
+        : null,
+    execution_status: displayThresholdExecutionStatus,
+    status_detail: thresholdStatusDetail(
+      displayThresholdAnalysisBase.status,
+      displayThresholdExecutionStatus,
+      displayThresholdAnalysisBase.separation_gap,
+    ),
+  };
+  const clientTypeBreakdownResult = clientTypeBreakdown as Awaited<ReturnType<typeof sql>>;
+  const clientTypeRows = clientTypeBreakdownResult.rows.map((row: Record<string, unknown>) => {
+    const analysisBase = buildDisplayThresholdAnalysis(row);
+    const executionStatus = thresholdExecutionStatus(
+      analysisBase.status,
+      analysisBase.suggested_min_display_score,
+      analysisBase.separation_gap,
+    );
+    return {
+      client_type: typeof row.client_type === 'string' && row.client_type.trim() ? row.client_type.trim() : null,
+      current_min_display_score: roundMetric(runtimeMinDisplayScore),
+      analysis: {
+        ...analysisBase,
+        current_min_display_score: roundMetric(runtimeMinDisplayScore),
+        threshold_gap:
+          analysisBase.suggested_min_display_score !== null && runtimeMinDisplayScore !== null
+            ? roundMetric(analysisBase.suggested_min_display_score - runtimeMinDisplayScore)
+            : null,
+        execution_status: executionStatus,
+        status_detail: thresholdStatusDetail(analysisBase.status, executionStatus, analysisBase.separation_gap),
+      },
+    };
+  });
   const recentQueriesTotal = Number(recentQueriesCount.rows[0]?.total || 0);
   const recentQueryRows = recentQueries.rows.map((row: Record<string, unknown>) => ({
     query_id: row.query_id,
@@ -488,7 +717,6 @@ export async function getRecallStats({
   }));
 
   // Query detail: when filtering by queryId, fetch per-node and per-path breakdowns
-  let queryDetail: Record<string, unknown> | null = null;
   if (filters.query_id) {
     const qEventsForMerge = await sql(
       `SELECT node_uri, retrieval_path, view_type, pre_rank_score, final_rank_score,
@@ -532,7 +760,6 @@ export async function getRecallStats({
   }
 
   // Node detail: when filtering by nodeUri, fetch per-query breakdowns
-  let nodeDetail: Record<string, unknown> | null = null;
   if (filters.node_uri) {
     const nQueries = await sql(
       `SELECT COALESCE(metadata->>'query_id', id::text) AS query_id, MIN(query_text) AS query_text,
@@ -563,6 +790,8 @@ export async function getRecallStats({
       query_count: Number(summaryRow.query_count || 0),
       last_event_at: summaryRow.last_event_at ? new Date(summaryRow.last_event_at).toISOString() : null,
     },
+    display_threshold_analysis: displayThresholdAnalysis,
+    client_type_threshold_analysis: clientTypeRows,
     by_path: byPath.rows.map((row: Record<string, unknown>) => ({
       retrieval_path: row.retrieval_path,
       total: Number(row.total || 0),

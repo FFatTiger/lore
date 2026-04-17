@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireBearerAuth } from '../../../../../server/auth';
+import { jsonContractError } from '../../../../../server/lore/contracts';
 import { approveReviewGroup, rollbackReviewGroup } from '../../../../../server/lore/ops/review';
 
 export const runtime = 'nodejs';
@@ -11,7 +12,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { nodeU
   try {
     return NextResponse.json(await approveReviewGroup(params.nodeUuid));
   } catch (error) {
-    return NextResponse.json({ detail: (error as Error)?.message || 'Failed to approve review group' }, { status: Number((error as { status?: number })?.status || 500) });
+    return jsonContractError(error, 'Failed to approve review group');
   }
 }
 
@@ -21,6 +22,6 @@ export async function POST(request: NextRequest, { params }: { params: { nodeUui
   try {
     return NextResponse.json(await rollbackReviewGroup(params.nodeUuid));
   } catch (error) {
-    return NextResponse.json({ detail: (error as Error)?.message || 'Failed to rollback review group' }, { status: Number((error as { status?: number })?.status || 500) });
+    return jsonContractError(error, 'Failed to rollback review group');
   }
 }

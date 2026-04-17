@@ -247,12 +247,13 @@ export function createMcpServer(context: McpServerContext = {}): InstanceType<ty
           disclosure: args?.disclosure ?? null,
         }, eventContext);
 
+        const targetUri = String(data?.uri || `${domain}://${parentPath}`).trim();
         const nodeUuid = String(data?.node_uuid || '').trim();
         const glossaryResult = nodeUuid && glossary.length > 0
           ? await applyGlossaryMutations(nodeUuid, { add: glossary }, eventContext)
           : { added: [] };
         const suffix = glossaryResult.added.length > 0 ? `\nGlossary: ${glossaryResult.added.join(', ')}` : '';
-        return ok(formatPolicyResult(`Created ${data?.uri || `${domain}://${parentPath}`}${suffix}`, policyResult.warnings));
+        return ok(formatPolicyResult(`Created ${targetUri}${suffix}`, policyResult.warnings));
       } catch (error) {
         return fail('Lore create failed', error);
       }
@@ -293,7 +294,7 @@ export function createMcpServer(context: McpServerContext = {}): InstanceType<ty
         if (Number.isFinite(args?.priority)) body.priority = args!.priority;
         if (typeof args?.disclosure === 'string') body.disclosure = args.disclosure;
 
-        await updateNodeByPath({ domain, path, ...body }, eventContext);
+        const result = await updateNodeByPath({ domain, path, ...body }, eventContext);
 
         const glossaryAdd = normalizeKeywordList(args?.glossary_add);
         const glossaryRemove = normalizeKeywordList(args?.glossary_remove);
@@ -309,7 +310,7 @@ export function createMcpServer(context: McpServerContext = {}): InstanceType<ty
         if (glossaryResult.added.length > 0) suffixParts.push(`glossary+ ${glossaryResult.added.join(', ')}`);
         if (glossaryResult.removed.length > 0) suffixParts.push(`glossary- ${glossaryResult.removed.join(', ')}`);
         const suffix = suffixParts.length > 0 ? `\n${suffixParts.join('\n')}` : '';
-        return ok(formatPolicyResult(`Updated ${domain}://${path}${suffix}`, policyResult.warnings));
+        return ok(formatPolicyResult(`Updated ${result.uri}${suffix}`, policyResult.warnings));
       } catch (error) {
         return fail('Lore update failed', error);
       }
@@ -334,11 +335,11 @@ export function createMcpServer(context: McpServerContext = {}): InstanceType<ty
         const policyResult = await validateDeletePolicy({ domain, path, sessionId: sid });
         if (policyResult.errors.length > 0) return fail('Lore delete blocked by policy', policyResult.errors.join('; '));
 
-        await deleteNodeByPath({ domain, path }, {
+        const result = await deleteNodeByPath({ domain, path }, {
           source: 'mcp:lore_delete_node',
           client_type: context.clientType ?? null,
         });
-        return ok(formatPolicyResult(`Deleted ${domain}://${path}`, policyResult.warnings));
+        return ok(formatPolicyResult(`Deleted ${result.deleted_uri}${result.uri !== result.deleted_uri ? ` (canonical: ${result.uri})` : ''}`, policyResult.warnings));
       } catch (error) {
         return fail('Lore delete failed', error);
       }

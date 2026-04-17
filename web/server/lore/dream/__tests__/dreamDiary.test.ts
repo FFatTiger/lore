@@ -52,12 +52,14 @@ import { getSettings, updateSettings } from '../../config/settings';
 import { deleteNodeByPath, updateNodeByPath, createNode, moveNode } from '../../memory/write';
 import { addGlossaryKeyword, removeGlossaryKeyword } from '../../search/glossary';
 import { listDreamWorkflowEvents } from '../dreamWorkflow';
+import { loadLlmConfig, runDreamAgentLoop } from '../dreamAgent';
 import {
   getDreamDiary,
   getDreamEntry,
   rollbackDream,
   getDreamConfig,
   updateDreamConfig,
+  runDream,
 } from '../dreamDiary';
 
 const mockSql = vi.mocked(sql);
@@ -70,6 +72,8 @@ const mockMoveNode = vi.mocked(moveNode);
 const mockAddGlossaryKeyword = vi.mocked(addGlossaryKeyword);
 const mockRemoveGlossaryKeyword = vi.mocked(removeGlossaryKeyword);
 const mockListDreamWorkflowEvents = vi.mocked(listDreamWorkflowEvents);
+const mockLoadLlmConfig = vi.mocked(loadLlmConfig);
+const mockRunDreamAgentLoop = vi.mocked(runDreamAgentLoop);
 
 function makeResult(rows: Record<string, unknown>[] = [], rowCount = rows.length) {
   return { rows, rowCount } as any;
@@ -273,9 +277,73 @@ describe('rollbackDream', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// getDreamConfig / updateDreamConfig
-// ---------------------------------------------------------------------------
+describe('runDream', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSql.mockReset();
+    mockLoadLlmConfig.mockResolvedValue({
+      provider: 'openai_compatible',
+      base_url: 'http://localhost:1234/v1',
+      api_key: 'test-key',
+      model: 'gpt-4o-mini',
+      timeout_ms: 5000,
+      temperature: 0.3,
+      api_version: '',
+    } as any);
+    mockRunDreamAgentLoop.mockResolvedValue({ narrative: 'done', toolCalls: [], turns: 1 } as any);
+    mockListDreamWorkflowEvents.mockResolvedValue([
+      { id: 1, diary_id: 1, event_type: 'policy_validation_blocked', payload: {}, created_at: '2024-01-01T00:00:10Z' },
+      { id: 2, diary_id: 1, event_type: 'policy_warning_emitted', payload: {}, created_at: '2024-01-01T00:00:11Z' },
+      { id: 3, diary_id: 1, event_type: 'protected_node_blocked', payload: {}, created_at: '2024-01-01T00:00:12Z' },
+    ] as any);
+  });
+
+  it('passes dream session context into the agent loop and summarizes policy governance events', async () => {
+    mockSql
+      .mockResolvedValueOnce(makeResult([{ id: 1 }]))
+      .mockResolvedValueOnce(makeResult([{ started_at: '2024-01-01T00:00:00Z', status: 'completed', narrative: 'old', tool_calls: [] }]))
+      .mockResolvedValueOnce(makeResult([{ event_type: 'move', total: 2 }]))
+      .mockResolvedValueOnce(makeResult());
+
+    const recallStats = { summary: { merged_count: 4, query_count: 2 } };
+    const writeStats = { summary: { total_events: 7 } };
+    const feedbackAnalytics = await import('../../recall/feedbackAnalytics');
+    const recallAnalytics = await import('../../recall/recallAnalytics');
+    const writeEvents = await import('../../memory/writeEvents');
+    const recall = await import('../../recall/recall');
+    const maintenance = await import('../../ops/maintenance');
+    vi.mocked(recall.ensureRecallIndex).mockResolvedValue({ source_count: 1, updated_count: 0, deleted_count: 0 } as any);
+    vi.mocked(feedbackAnalytics.getMemoryHealthReport).mockResolvedValue({ classification_summary: {} } as any);
+    vi.mocked(feedbackAnalytics.getDeadWrites).mockResolvedValue({ total_dead_writes: 0 } as any);
+    vi.mocked(feedbackAnalytics.getPathEffectiveness).mockResolvedValue({ recommendations: [] } as any);
+    vi.mocked(recallAnalytics.getRecallStats).mockResolvedValue(recallStats as any);
+    vi.mocked(writeEvents.getWriteEventStats).mockResolvedValue(writeStats as any);
+    vi.mocked(maintenance.listOrphans).mockResolvedValue([] as any);
+
+    const result = await runDream();
+
+    expect(result.status).toBe('completed');
+    expect(mockRunDreamAgentLoop).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.any(Array),
+      expect.objectContaining({
+        eventContext: { source: 'dream:auto', session_id: 'dream:1' },
+      }),
+    );
+
+    const updateCall = mockSql.mock.calls.find((call) => String(call[0]).includes('UPDATE dream_diary SET status = \'completed\''));
+    expect(updateCall).toBeTruthy();
+    const summary = JSON.parse(String(updateCall?.[1]?.[2]));
+    expect(summary.structure).toEqual({
+      moved: 2,
+      protected_blocks: 1,
+      policy_blocks: 1,
+      policy_warnings: 1,
+    });
+  });
+});
+
 
 describe('getDreamConfig', () => {
   beforeEach(() => {

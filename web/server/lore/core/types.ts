@@ -229,12 +229,6 @@ export interface McpToolResult {
   isError?: boolean;
 }
 
-// === Policy ===
-export interface PolicyResult {
-  ok: boolean;
-  warnings: string[];
-}
-
 // === Database helpers ===
 export type SqlFn = (text: string, params?: unknown[]) => Promise<QueryResult>;
 export type TransactionClient = PoolClient;

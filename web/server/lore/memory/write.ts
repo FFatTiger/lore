@@ -2,17 +2,27 @@ import crypto from 'crypto';
 import type { ClientType } from '../../auth';
 import { getPool } from '../../db';
 import { ROOT_NODE_UUID } from './browse';
-import { getBootNodeSpec } from './boot';
-import {
-  deleteGeneratedMemoryViewsByPrefix,
-  upsertGeneratedMemoryViewsForPath,
-} from '../view/viewCrud';
-import {
-  deleteGeneratedGlossaryEmbeddingsByPrefix,
-  upsertGeneratedGlossaryEmbeddingsForPath,
-} from '../search/glossarySemantic';
 import { logMemoryEvent } from './writeEvents';
-import type { TransactionClient, URI } from '../core/types';
+import { parseUri } from '../core/utils';
+import { assertValidPathSegment, assertValidPathSegments } from './writePathValidation';
+import { assertDeleteAllowed, assertMoveAllowed } from './writeBootGuard';
+import { buildWriteEventBase } from './writeEventPayload';
+import {
+  scheduleWriteArtifactsAfterMove,
+  scheduleWriteArtifactsDelete,
+  scheduleWriteArtifactsRefresh,
+} from './writeArtifactScheduling';
+import type { TransactionClient } from '../core/types';
+import {
+  buildCreateMutationReceipt,
+  buildDeleteMutationReceipt,
+  buildMoveMutationReceipt,
+  buildUpdateMutationReceipt,
+  type CreateMutationReceipt,
+  type DeleteMutationReceipt,
+  type MoveMutationReceipt,
+  type UpdateMutationReceipt,
+} from '../contracts';
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -56,142 +66,6 @@ async function getPathContext(
   return (result.rows[0] as PathContext) || null;
 }
 
-const PATH_SEGMENT_RE = /^[a-z0-9]+(?:_[a-z0-9]+)*$/;
-
-function scheduleGeneratedViewRefresh(domain: string, path: string): void {
-  const normalizedDomain = String(domain || 'core').trim() || 'core';
-  const normalizedPath = String(path || '')
-    .trim()
-    .replace(/^\/+|\/+$/g, '');
-  if (!normalizedPath) return;
-  queueMicrotask(() => {
-    upsertGeneratedMemoryViewsForPath({ domain: normalizedDomain, path: normalizedPath }).catch(
-      (error: unknown) => {
-        console.error('[memory_views] refresh failed', normalizedDomain, normalizedPath, error);
-      },
-    );
-    upsertGeneratedGlossaryEmbeddingsForPath({
-      domain: normalizedDomain,
-      path: normalizedPath,
-    }).catch((error: unknown) => {
-      console.error('[glossary_embeddings] refresh failed', normalizedDomain, normalizedPath, error);
-    });
-  });
-}
-
-function scheduleGeneratedViewDelete(domain: string, path: string): void {
-  const normalizedDomain = String(domain || 'core').trim() || 'core';
-  const normalizedPath = String(path || '')
-    .trim()
-    .replace(/^\/+|\/+$/g, '');
-  if (!normalizedPath) return;
-  queueMicrotask(() => {
-    deleteGeneratedMemoryViewsByPrefix({ domain: normalizedDomain, path: normalizedPath }).catch(
-      (error: unknown) => {
-        console.error('[memory_views] delete failed', normalizedDomain, normalizedPath, error);
-      },
-    );
-    deleteGeneratedGlossaryEmbeddingsByPrefix({
-      domain: normalizedDomain,
-      path: normalizedPath,
-    }).catch((error: unknown) => {
-      console.error('[glossary_embeddings] delete failed', normalizedDomain, normalizedPath, error);
-    });
-  });
-}
-
-function assertValidPathSegment(value: unknown, label = 'path segment'): string {
-  const segment = String(value || '').trim();
-  if (!segment) {
-    const error = Object.assign(new Error(`${label} is required`), { status: 422 });
-    throw error;
-  }
-  if (!PATH_SEGMENT_RE.test(segment)) {
-    const error = Object.assign(
-      new Error(
-        `${label} must use snake_case ASCII only (lowercase letters, digits, underscores; no Chinese, spaces, or hyphens)`,
-      ),
-      { status: 422 },
-    );
-    throw error;
-  }
-  return segment;
-}
-
-function assertValidPathSegments(path: unknown, label = 'path'): string[] {
-  const segments = String(path || '')
-    .split('/')
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-  if (!segments.length) {
-    const error = Object.assign(
-      new Error(`${label} must include at least one path segment`),
-      { status: 422 },
-    );
-    throw error;
-  }
-  for (const segment of segments) {
-    assertValidPathSegment(segment, label);
-  }
-  return segments;
-}
-
-function parseUri(uri: unknown): URI {
-  const value = String(uri || '').trim();
-  if (value.includes('://')) {
-    const [d, p] = value.split('://', 2);
-    return { domain: d.trim() || 'core', path: (p ?? '').replace(/^\/+|\/+$/g, '') };
-  }
-  return { domain: 'core', path: value.replace(/^\/+|\/+$/g, '') };
-}
-
-function isRollbackContext(eventContext: EventContext): boolean {
-  return eventContext.source === 'dream:rollback';
-}
-
-function throwProtectedBootError(message: string, blockedUri: string): never {
-  const spec = getBootNodeSpec(blockedUri);
-  const error = Object.assign(new Error(message), {
-    status: 409,
-    code: 'protected_boot_path',
-    blocked_uri: blockedUri,
-    boot_role: spec?.role,
-    boot_role_label: spec?.role_label,
-  });
-  throw error;
-}
-
-function assertDeleteAllowed(domain: string, path: string, eventContext: EventContext): void {
-  if (isRollbackContext(eventContext)) return;
-  const blockedUri = `${domain}://${path}`;
-  const spec = getBootNodeSpec(blockedUri);
-  if (!spec) return;
-  throwProtectedBootError(
-    `Cannot delete fixed boot node ${spec.uri} (${spec.role_label}). Fixed boot paths cannot be deleted.`,
-    spec.uri,
-  );
-}
-
-function assertMoveAllowed(oldUri: string, newUri: string, eventContext: EventContext): void {
-  if (isRollbackContext(eventContext)) return;
-
-  const oldSpec = getBootNodeSpec(oldUri);
-  if (oldSpec) {
-    throwProtectedBootError(
-      `Cannot move fixed boot node ${oldSpec.uri} (${oldSpec.role_label}). Fixed boot paths cannot be moved.`,
-      oldSpec.uri,
-    );
-  }
-
-  const newSpec = getBootNodeSpec(newUri);
-  if (newSpec) {
-    throwProtectedBootError(
-      `Cannot move a node onto fixed boot path ${newSpec.uri} (${newSpec.role_label}). Fixed boot paths are reserved.`,
-      newSpec.uri,
-    );
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Exported functions
 // ---------------------------------------------------------------------------
@@ -205,12 +79,7 @@ export interface CreateNodeOptions {
   disclosure?: string | null;
 }
 
-export interface CreateNodeResult {
-  success: true;
-  uri: string;
-  path: string;
-  node_uuid: string;
-}
+export type CreateNodeResult = CreateMutationReceipt;
 
 export async function createNode(
   {
@@ -280,21 +149,21 @@ export async function createNode(
     await logMemoryEvent({
       client,
       event_type: 'create',
-      node_uri: `${domain}://${path}`,
-      node_uuid: childUuid,
-      domain,
-      path,
-      source: eventContext.source || 'unknown',
-      session_id: eventContext.session_id || null,
-      client_type: eventContext.client_type || null,
+      ...buildWriteEventBase({
+        node_uri: `${domain}://${path}`,
+        node_uuid: childUuid,
+        domain,
+        path,
+        eventContext,
+      }),
       before_snapshot: null,
       after_snapshot: { content, priority, disclosure },
       details: { parent_path: parentPath, title: slug },
     });
 
     await client.query('COMMIT');
-    scheduleGeneratedViewRefresh(domain, path);
-    return { success: true, uri: `${domain}://${path}`, path, node_uuid: childUuid };
+    scheduleWriteArtifactsRefresh({ domain, path });
+    return buildCreateMutationReceipt({ uri: `${domain}://${path}`, path, node_uuid: childUuid });
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -311,10 +180,7 @@ export interface UpdateNodeByPathOptions {
   disclosure?: string | null;
 }
 
-export interface UpdateNodeResult {
-  success: true;
-  node_uuid: string;
-}
+export type UpdateNodeResult = UpdateMutationReceipt;
 
 export async function updateNodeByPath(
   { domain = 'core', path, content, priority, disclosure }: UpdateNodeByPathOptions,
@@ -384,13 +250,13 @@ export async function updateNodeByPath(
     await logMemoryEvent({
       client,
       event_type: 'update',
-      node_uri: `${domain}://${path}`,
-      node_uuid: ctx.child_uuid,
-      domain,
-      path,
-      source: eventContext.source || 'unknown',
-      session_id: eventContext.session_id || null,
-      client_type: eventContext.client_type || null,
+      ...buildWriteEventBase({
+        node_uri: `${domain}://${path}`,
+        node_uuid: ctx.child_uuid,
+        domain,
+        path,
+        eventContext,
+      }),
       before_snapshot: {
         content: beforeContent,
         priority: ctx.priority,
@@ -409,8 +275,8 @@ export async function updateNodeByPath(
     });
 
     await client.query('COMMIT');
-    scheduleGeneratedViewRefresh(domain, path);
-    return { success: true, node_uuid: ctx.child_uuid };
+    scheduleWriteArtifactsRefresh({ domain, path });
+    return buildUpdateMutationReceipt({ uri: `${domain}://${path}`, path, node_uuid: ctx.child_uuid });
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -424,10 +290,7 @@ export interface DeleteNodeByPathOptions {
   path: string;
 }
 
-export interface DeleteNodeResult {
-  success: true;
-  deleted_uri: string;
-}
+export type DeleteNodeResult = DeleteMutationReceipt;
 
 export async function deleteNodeByPath(
   { domain = 'core', path }: DeleteNodeByPathOptions,
@@ -501,13 +364,13 @@ export async function deleteNodeByPath(
     await logMemoryEvent({
       client,
       event_type: 'delete',
-      node_uri: `${domain}://${path}`,
-      node_uuid: baseCtx.child_uuid,
-      domain,
-      path,
-      source: eventContext.source || 'unknown',
-      session_id: eventContext.session_id || null,
-      client_type: eventContext.client_type || null,
+      ...buildWriteEventBase({
+        node_uri: `${domain}://${path}`,
+        node_uuid: baseCtx.child_uuid,
+        domain,
+        path,
+        eventContext,
+      }),
       before_snapshot: {
         content: beforeContent,
         priority: baseCtx.priority,
@@ -523,8 +386,8 @@ export async function deleteNodeByPath(
     });
 
     await client.query('COMMIT');
-    scheduleGeneratedViewDelete(domain, path);
-    return { success: true, deleted_uri: `${domain}://${path}` };
+    scheduleWriteArtifactsDelete({ domain, path });
+    return buildDeleteMutationReceipt({ uri: `${domain}://${path}`, path, node_uuid: baseCtx.child_uuid });
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -538,12 +401,7 @@ export interface MoveNodeOptions {
   new_uri: string;
 }
 
-export interface MoveNodeResult {
-  success: true;
-  old_uri: string;
-  new_uri: string;
-  node_uuid: string;
-}
+export type MoveNodeResult = MoveMutationReceipt;
 
 export async function moveNode(
   { old_uri, new_uri }: MoveNodeOptions,
@@ -588,13 +446,13 @@ export async function moveNode(
     await logMemoryEvent({
       client,
       event_type: 'move',
-      node_uri: new_uri,
-      node_uuid: oldCtx.child_uuid,
-      domain: target.domain,
-      path: target.path,
-      source: eventContext.source || 'unknown',
-      session_id: eventContext.session_id || null,
-      client_type: eventContext.client_type || null,
+      ...buildWriteEventBase({
+        node_uri: new_uri,
+        node_uuid: oldCtx.child_uuid,
+        domain: target.domain,
+        path: target.path,
+        eventContext,
+      }),
       before_snapshot: { uri: old_uri },
       after_snapshot: { uri: new_uri },
       details: { old_uri, new_uri, operation: 'move' },
@@ -609,13 +467,18 @@ export async function moveNode(
     await client.query('COMMIT');
 
     // Delete old views/glossary at old prefix, then refresh at new prefix
-    scheduleGeneratedViewDelete(old.domain, old.path);
-    scheduleGeneratedViewRefresh(target.domain, target.path);
-    for (const row of movedChildren.rows) {
-      scheduleGeneratedViewRefresh(target.domain, row.path as string);
-    }
+    scheduleWriteArtifactsAfterMove(
+      { domain: old.domain, path: old.path },
+      { domain: target.domain, path: target.path },
+      movedChildren.rows as Array<{ path: string }>,
+    );
 
-    return { success: true, old_uri, new_uri, node_uuid: oldCtx.child_uuid };
+    return buildMoveMutationReceipt({
+      old_uri,
+      new_uri,
+      path: target.path,
+      node_uuid: oldCtx.child_uuid,
+    });
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;

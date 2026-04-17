@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireBearerAuth } from '../../../../../server/auth';
+import { jsonContractError } from '../../../../../server/lore/contracts';
 import { markRecallEventsUsedInAnswer } from '../../../../../server/lore/recall/recallEventLog';
 
 export const runtime = 'nodejs';
@@ -20,6 +21,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       success: body?.success !== false,
     }));
   } catch (error) {
-    return NextResponse.json({ detail: (error as Error)?.message || 'Recall usage update failed' }, { status: Number((error as { status?: number })?.status || 500) });
+    return jsonContractError(error, 'Recall usage update failed');
   }
 }

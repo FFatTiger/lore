@@ -54,9 +54,15 @@ import {
   sanitizeLexicalRow,
   sanitizeExactRow,
   sanitizeGlossarySemanticRow,
+  sanitizeRecallQuery,
+  resolveRecallQuery,
   aggregateCandidates,
   getRecallRuntimeConfig,
 } from '../recall';
+import { startRecallEventLog } from '../recallEventDispatch';
+import { getSessionReadUris } from '../recallSessionReads';
+import { logRecallEvents } from '../recallEventLog';
+import { sql } from '../../../db';
 import { buildCandidateKey, extractCueTerms, getViewPrior, getMemoryViewRuntimeConfig } from '../../view/memoryViewQueries';
 import { getSettings as mockGetSettings } from '../../config/settings';
 import {
@@ -65,6 +71,9 @@ import {
 } from '../../view/embeddings';
 import { getBootUris } from '../../memory/boot';
 import { DEFAULT_STRATEGY, STRATEGIES } from '../recallScoring';
+
+const mockLogRecallEvents = vi.mocked(logRecallEvents);
+const mockSql = vi.mocked(sql);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -78,7 +87,7 @@ function makeSettingsMock(overrides: Record<string, unknown> = {}) {
       'recall.weights.w_exact': 0.3,
       'recall.weights.w_glossary_semantic': 0.25,
       'recall.weights.w_dense': 0.3,
-      'recall.weights.w_lexical': 0.05,
+      'recall.weights.w_lexical': 0.03,
       'recall.bonus.priority_base': 0.05,
       'recall.bonus.priority_step': 0.01,
       'recall.bonus.multi_view_step': 0.015,
@@ -242,6 +251,94 @@ describe('sanitizeGlossarySemanticRow', () => {
     };
     const result = sanitizeGlossarySemanticRow(row);
     expect(Array.isArray(result.cue_terms)).toBe(true);
+  });
+});
+
+describe('startRecallEventLog', () => {
+  beforeEach(() => {
+    mockLogRecallEvents.mockReset();
+    mockLogRecallEvents.mockReturnValue({
+      catch: vi.fn(),
+    } as any);
+  });
+
+  it('returns enabled event-log state and forwards recall payload', () => {
+    const catchMock = vi.fn();
+    mockLogRecallEvents.mockReturnValueOnce({ catch: catchMock } as any);
+
+    const result = startRecallEventLog({
+      queryText: 'hello recall',
+      exactRows: [{ uri: 'core://exact' }],
+      glossarySemanticRows: [{ uri: 'core://glossary' }],
+      denseRows: [{ uri: 'core://dense' }],
+      lexicalRows: [{ uri: 'core://lexical' }],
+      rankedCandidates: [{ uri: 'core://ranked', score: 0.9, score_display: 0.9, read: false, boot: false, matched_on: [], cues: [], priority: 1, exact_score: 0, glossary_semantic_score: 0, dense_score: 0, lexical_score: 0, score_breakdown: {} }],
+      displayedItems: [{ uri: 'core://displayed', score: 0.8, score_display: 0.8, read: false, boot: false, matched_on: [], cues: [], priority: 1, exact_score: 0, glossary_semantic_score: 0, dense_score: 0, lexical_score: 0, score_breakdown: {} }],
+      retrievalMeta: { strategy: 'raw_plus_lex_damp' },
+      sessionId: 'session-1',
+      clientType: 'claudecode',
+      errorLabel: '[recall_events] failed to log recall events',
+    });
+
+    expect(result.enabled).toBe(true);
+    expect(typeof result.query_id).toBe('string');
+    expect(result.query_id.length).toBeGreaterThan(0);
+    expect(mockLogRecallEvents).toHaveBeenCalledWith({
+      queryId: result.query_id,
+      queryText: 'hello recall',
+      exactRows: [{ uri: 'core://exact' }],
+      glossarySemanticRows: [{ uri: 'core://glossary' }],
+      denseRows: [{ uri: 'core://dense' }],
+      lexicalRows: [{ uri: 'core://lexical' }],
+      rankedCandidates: expect.any(Array),
+      displayedItems: expect.any(Array),
+      retrievalMeta: { strategy: 'raw_plus_lex_damp' },
+      sessionId: 'session-1',
+      clientType: 'claudecode',
+    });
+    expect(catchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('recall query helpers', () => {
+  it('sanitizes known metadata prefixes at the start of the query', () => {
+    const query = 'Conversation info (untrusted metadata): ```json {"channel":"general"}```\nSender (untrusted metadata): ```json {"name":"bot"}```\nactual user query';
+    expect(sanitizeRecallQuery(query)).toBe('actual user query');
+  });
+
+  it('does not strip similar text in the middle of user content', () => {
+    const query = 'please keep this literal text Conversation info (untrusted metadata): ```json {"x":1}``` inside';
+    expect(sanitizeRecallQuery(query)).toBe(query);
+  });
+
+  it('falls back to the original query when sanitization empties the string', () => {
+    const query = 'Sender (untrusted metadata): ```json {"name":"bot"}```';
+    expect(resolveRecallQuery(query)).toBe(query);
+  });
+});
+
+describe('getSessionReadUris', () => {
+  beforeEach(() => {
+    mockSql.mockReset();
+  });
+
+  it('returns empty set when session id is missing', async () => {
+    await expect(getSessionReadUris(null)).resolves.toEqual(new Set());
+    expect(mockSql).not.toHaveBeenCalled();
+  });
+
+  it('loads read URIs for the session', async () => {
+    mockSql.mockResolvedValueOnce({
+      rows: [{ uri: 'core://a' }, { uri: 'core://b' }, { uri: 'core://a' }],
+    } as any);
+
+    const result = await getSessionReadUris('session-1');
+
+    expect(mockSql).toHaveBeenCalledWith(
+      'SELECT uri FROM session_read_nodes WHERE session_id = $1',
+      ['session-1'],
+    );
+    expect([...result]).toEqual(['core://a', 'core://b']);
   });
 });
 
@@ -512,6 +609,11 @@ describe('loadScoringConfig (via getRecallRuntimeConfig)', () => {
       const config = await getRecallRuntimeConfig(null);
       expect(config.scoring.strategy).toBe(strategy);
     }
+  });
+
+  it('runtime config exposes lexical weight default at 0.03', async () => {
+    const config = await getRecallRuntimeConfig(null);
+    expect(config.normalized_linear.w_lexical).toBe(0.03);
   });
 
   it('runtime config has all required top-level keys', async () => {

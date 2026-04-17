@@ -88,7 +88,7 @@ const baseConfig = {
   w_exact: 0.30,
   w_glossary_semantic: 0.25,
   w_dense: 0.30,
-  w_lexical: 0.05,
+  w_lexical: 0.03,
   priority_base: 0.05,
   priority_step: 0.01,
   multi_view_step: 0.015,

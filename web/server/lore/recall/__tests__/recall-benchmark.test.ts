@@ -293,8 +293,8 @@ const strategyConfigs: StrategyConfig[] = [
   {
     name: 'I-RawPlusDamp',
     paramSets: [
-      { label: 'default', params: {} },
-      { label: 'w_lex_0.03', params: { w_lexical: 0.03 } },
+      { label: 'default', params: { w_lexical: 0.03 } },
+      { label: 'legacy_w_lex_0.05', params: { w_lexical: 0.05 } },
     ],
     needsQueryTokens: true,
     run: (rows, params) => rawPlusLexDampStrategy(rows, params),

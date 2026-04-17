@@ -143,6 +143,10 @@ export async function runDream(): Promise<DreamResult> {
         onEvent: async (eventType, payload) => {
           await appendDreamWorkflowEvent(diaryId, eventType, payload || {});
         },
+        eventContext: {
+          ...DREAM_EVENT_CONTEXT,
+          session_id: `dream:${diaryId}`,
+        },
       });
     } else {
       await appendDreamWorkflowEvent(diaryId, 'assistant_note', { message: 'LLM not configured — skipped agent loop' });
@@ -169,6 +173,8 @@ export async function runDream(): Promise<DreamResult> {
       ]),
     ) as Record<string, number>;
     const protectedBlocks = workflowEvents.filter((event) => event.event_type === 'protected_node_blocked').length;
+    const policyBlocks = workflowEvents.filter((event) => event.event_type === 'policy_validation_blocked').length;
+    const policyWarnings = workflowEvents.filter((event) => event.event_type === 'policy_warning_emitted').length;
 
     // Step 4: Save diary
     const indexResultTyped = indexResult as Record<string, unknown>;
@@ -180,6 +186,8 @@ export async function runDream(): Promise<DreamResult> {
       structure: {
         moved: Number(memoryChangeCounts.move || 0),
         protected_blocks: protectedBlocks,
+        policy_blocks: policyBlocks,
+        policy_warnings: policyWarnings,
       },
       activity: {
         recall_events: ((recallStats as unknown as Record<string, unknown>).summary as Record<string, unknown>)?.merged_count || 0,

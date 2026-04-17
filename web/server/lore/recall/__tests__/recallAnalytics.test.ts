@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../../db', () => ({ sql: vi.fn() }));
 import { sql } from '../../../db';
+import { clearCache } from '../../config/settings';
 import {
   sanitizeFilter,
   buildStatsWhere,
@@ -275,6 +276,7 @@ describe('reshapeEventsForDebugView', () => {
 describe('getRecallStats', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearCache();
     mockSql.mockResolvedValue(makeResult());
   });
 
@@ -353,20 +355,247 @@ describe('getRecallStats', () => {
     expect(stats.filters).toBeNull();
   });
 
-  it('maps by_path rows correctly', async () => {
+  it('includes display threshold analysis aggregated by merged candidate', async () => {
     let callCount = 0;
     mockSql.mockImplementation(async () => {
       callCount++;
-      if (callCount === 2) {
-        return makeResult([{ retrieval_path: 'exact', total: '3', selected: '2', used_in_answer: '1', avg_pre_rank_score: 0.7, avg_final_rank_score: 0.8 }]);
+      if (callCount === 8) {
+        return makeResult([{
+          shown_candidates: '6',
+          used_candidates: '3',
+          avg_shown_score: '0.68',
+          avg_used_score: '0.78',
+          avg_unused_shown_score: '0.55',
+          used_p25_score: '0.72',
+          used_p50_score: '0.80',
+          unused_shown_p75_score: '0.58',
+        }]);
+      }
+      if (callCount === 9) {
+        return makeResult([]);
+      }
+      if (callCount === 10) {
+        return makeResult([{ key: 'recall.display.min_display_score', value: 0.55 }]);
       }
       return makeResult([{ total_merged: '3', total_shown: '2', total_used: '1', query_count: '1', last_event_at: null }]);
     });
+
     const stats = await getRecallStats();
-    if (stats.by_path.length > 0) {
-      expect(stats.by_path[0]).toHaveProperty('retrieval_path');
-      expect(stats.by_path[0]).toHaveProperty('total');
-      expect(stats.by_path[0]).toHaveProperty('selected');
-    }
+
+    expect(stats.display_threshold_analysis).toEqual({
+      status: 'ready',
+      status_detail: 'ready_to_review',
+      execution_status: 'eligible',
+      basis: 'midpoint_used_p25_unused_shown_p75',
+      current_min_display_score: 0.55,
+      threshold_gap: 0.1,
+      shown_candidate_count: 6,
+      used_candidate_count: 3,
+      unused_shown_candidate_count: 3,
+      avg_shown_score: 0.68,
+      avg_used_score: 0.78,
+      avg_unused_shown_score: 0.55,
+      used_p25_score: 0.72,
+      used_p50_score: 0.8,
+      unused_shown_p75_score: 0.58,
+      separation_gap: 0.14,
+      suggested_min_display_score: 0.65,
+    });
+  });
+
+  it('marks negative separation as ready_but_unsafe and includes runtime gap', async () => {
+    let callCount = 0;
+    mockSql.mockImplementation(async () => {
+      callCount++;
+      if (callCount === 8) {
+        return makeResult([{
+          shown_candidates: '10',
+          used_candidates: '4',
+          avg_shown_score: '0.65',
+          avg_used_score: '0.61',
+          avg_unused_shown_score: '0.67',
+          used_p25_score: '0.58',
+          used_p50_score: '0.61',
+          unused_shown_p75_score: '0.64',
+        }]);
+      }
+      if (callCount === 9) {
+        return makeResult([]);
+      }
+      if (callCount === 10) {
+        return makeResult([{ key: 'recall.display.min_display_score', value: 0.55 }]);
+      }
+      return makeResult([{ total_merged: '4', total_shown: '3', total_used: '2', query_count: '1', last_event_at: null }]);
+    });
+
+    const stats = await getRecallStats();
+
+    expect(stats.display_threshold_analysis).toEqual({
+      status: 'ready',
+      status_detail: 'ready_but_unsafe',
+      execution_status: 'blocked',
+      basis: 'midpoint_used_p25_unused_shown_p75',
+      current_min_display_score: 0.55,
+      threshold_gap: 0.06,
+      shown_candidate_count: 10,
+      used_candidate_count: 4,
+      unused_shown_candidate_count: 6,
+      avg_shown_score: 0.65,
+      avg_used_score: 0.61,
+      avg_unused_shown_score: 0.67,
+      used_p25_score: 0.58,
+      used_p50_score: 0.61,
+      unused_shown_p75_score: 0.64,
+      separation_gap: -0.06,
+      suggested_min_display_score: 0.61,
+    });
+  });
+
+  it('builds client_type threshold analysis across sources', async () => {
+    let callCount = 0;
+    mockSql.mockImplementation(async () => {
+      callCount++;
+      if (callCount === 8) {
+        return makeResult([{
+          shown_candidates: '6',
+          used_candidates: '3',
+          avg_shown_score: '0.68',
+          avg_used_score: '0.78',
+          avg_unused_shown_score: '0.55',
+          used_p25_score: '0.72',
+          used_p50_score: '0.80',
+          unused_shown_p75_score: '0.58',
+        }]);
+      }
+      if (callCount === 9) {
+        return makeResult([
+          {
+            client_type: '',
+            shown_candidates: '8',
+            used_candidates: '3',
+            avg_shown_score: '0.60',
+            avg_used_score: '0.58',
+            avg_unused_shown_score: '0.63',
+            used_p25_score: '0.57',
+            used_p50_score: '0.58',
+            unused_shown_p75_score: '0.64',
+          },
+          {
+            client_type: 'hermes',
+            shown_candidates: '12',
+            used_candidates: '5',
+            avg_shown_score: '0.70',
+            avg_used_score: '0.74',
+            avg_unused_shown_score: '0.60',
+            used_p25_score: '0.69',
+            used_p50_score: '0.74',
+            unused_shown_p75_score: '0.61',
+          },
+        ]);
+      }
+      if (callCount === 10) {
+        return makeResult([{ key: 'recall.display.min_display_score', value: 0.55 }]);
+      }
+      return makeResult([{ total_merged: '3', total_shown: '2', total_used: '1', query_count: '1', last_event_at: null }]);
+    });
+
+    const stats = await getRecallStats();
+
+    expect(stats.client_type_threshold_analysis).toEqual([
+      {
+        client_type: null,
+        current_min_display_score: 0.55,
+        analysis: {
+          status: 'ready',
+          status_detail: 'ready_but_unsafe',
+          execution_status: 'blocked',
+          basis: 'midpoint_used_p25_unused_shown_p75',
+          current_min_display_score: 0.55,
+          threshold_gap: 0.055,
+          shown_candidate_count: 8,
+          used_candidate_count: 3,
+          unused_shown_candidate_count: 5,
+          avg_shown_score: 0.6,
+          avg_used_score: 0.58,
+          avg_unused_shown_score: 0.63,
+          used_p25_score: 0.57,
+          used_p50_score: 0.58,
+          unused_shown_p75_score: 0.64,
+          separation_gap: -0.07,
+          suggested_min_display_score: 0.605,
+        },
+      },
+      {
+        client_type: 'hermes',
+        current_min_display_score: 0.55,
+        analysis: {
+          status: 'ready',
+          status_detail: 'ready_to_review',
+          execution_status: 'eligible',
+          basis: 'midpoint_used_p25_unused_shown_p75',
+          current_min_display_score: 0.55,
+          threshold_gap: 0.1,
+          shown_candidate_count: 12,
+          used_candidate_count: 5,
+          unused_shown_candidate_count: 7,
+          avg_shown_score: 0.7,
+          avg_used_score: 0.74,
+          avg_unused_shown_score: 0.6,
+          used_p25_score: 0.69,
+          used_p50_score: 0.74,
+          unused_shown_p75_score: 0.61,
+          separation_gap: 0.08,
+          suggested_min_display_score: 0.65,
+        },
+      },
+    ]);
+  });
+
+  it('marks display threshold analysis as insufficient_data when shown/used counts are too small', async () => {
+    let callCount = 0;
+    mockSql.mockImplementation(async () => {
+      callCount++;
+      if (callCount === 8) {
+        return makeResult([{
+          shown_candidates: '4',
+          used_candidates: '2',
+          avg_shown_score: '0.66',
+          avg_used_score: '0.79',
+          avg_unused_shown_score: '0.52',
+          used_p25_score: '0.74',
+          used_p50_score: '0.79',
+          unused_shown_p75_score: '0.54',
+        }]);
+      }
+      if (callCount === 9) {
+        return makeResult([]);
+      }
+      if (callCount === 10) {
+        return makeResult([{ key: 'recall.display.min_display_score', value: 0.55 }]);
+      }
+      return makeResult([{ total_merged: '2', total_shown: '1', total_used: '1', query_count: '1', last_event_at: null }]);
+    });
+
+    const stats = await getRecallStats();
+
+    expect(stats.display_threshold_analysis).toEqual({
+      status: 'insufficient_data',
+      status_detail: 'insufficient_data',
+      execution_status: 'not_applicable',
+      basis: 'insufficient_data',
+      current_min_display_score: 0.55,
+      threshold_gap: null,
+      shown_candidate_count: 4,
+      used_candidate_count: 2,
+      unused_shown_candidate_count: 2,
+      avg_shown_score: 0.66,
+      avg_used_score: 0.79,
+      avg_unused_shown_score: 0.52,
+      used_p25_score: 0.74,
+      used_p50_score: 0.79,
+      unused_shown_p75_score: 0.54,
+      separation_gap: 0.2,
+      suggested_min_display_score: null,
+    });
   });
 });

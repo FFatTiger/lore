@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireBearerAuth } from '../../../../server/auth';
+import { jsonContractError } from '../../../../server/lore/contracts';
 import { searchMemories } from '../../../../server/lore/search/search';
 
 export const runtime = 'nodejs';
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       content_limit: Number(searchParams.get('content_limit') || 5),
     }));
   } catch (error) {
-    return NextResponse.json({ detail: (error as Error)?.message || 'Search failed' }, { status: 500 });
+    return jsonContractError(error, 'Search failed');
   }
 }
 
@@ -36,6 +37,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       content_limit: Number(body?.content_limit || 5),
     }));
   } catch (error) {
-    return NextResponse.json({ detail: (error as Error)?.message || 'Search failed' }, { status: 500 });
+    return jsonContractError(error, 'Search failed');
   }
 }

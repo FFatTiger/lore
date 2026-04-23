@@ -1,0 +1,11 @@
+{
+  "name": "lore",
+  "description": "Long-term Lore memory for AI agents — fixed boot baseline, recall injection, and MCP tools",
+  "version": "1.0.2",
+  "author": {
+    "name": "FFatTiger"
+  },
+  "homepage": "https://github.com/FFatTiger/lore",
+  "repository": "https://github.com/FFatTiger/lore",
+  "license": "MIT"
+}

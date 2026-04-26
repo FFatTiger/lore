@@ -1,6 +1,6 @@
 'use client';
 
-import React, { type ElementType, type Key, type ReactNode } from 'react';
+import React, { type Key, type ReactNode } from 'react';
 import clsx from 'clsx';
 import type { AccordionProps as LobeAccordionProps } from '@lobehub/ui/es/Accordion/type';
 import { Accordion as LobeAccordion, AccordionItem as LobeAccordionItem } from '@lobehub/ui/es/Accordion/index';
@@ -18,6 +18,10 @@ import type { InputPasswordProps as LobeInputPasswordProps, InputProps as LobeIn
 import LobeSelect from '@lobehub/ui/es/Select/Select';
 import LobeSegmented from '@lobehub/ui/es/Segmented/index';
 import LobeTag from '@lobehub/ui/es/Tag/Tag';
+import LobeEmpty from '@lobehub/ui/es/Empty/index';
+import LobeCopyButton from '@lobehub/ui/es/CopyButton/index';
+import LobeActionIcon from '@lobehub/ui/es/ActionIcon/index';
+import { Tooltip as LobeTooltip } from '@lobehub/ui';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'destructive';
 export type ButtonSize = 'sm' | 'md' | 'lg';
@@ -160,19 +164,30 @@ export function Notice({ tone = 'info', icon, title, children, className }: Noti
   );
 }
 
-interface EmptyStateProps {
+interface EmptyProps {
   text: string;
-  icon?: ElementType<{ size?: number; className?: string }>;
+  title?: ReactNode;
+  icon?: React.FC<any>;
+  emoji?: string;
+  action?: ReactNode;
+  className?: string;
 }
 
-export function EmptyState({ text, icon: Icon }: EmptyStateProps): React.JSX.Element {
+export function Empty({ text, title, icon: Icon, emoji, action, className }: EmptyProps): React.JSX.Element {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-separator-thin py-14 text-center">
-      {Icon && <Icon size={24} className="text-txt-quaternary" />}
-      <p className="text-[14px] text-txt-tertiary">{text}</p>
-    </div>
+    <LobeEmpty
+      action={action}
+      className={className}
+      description={text}
+      emoji={emoji}
+      icon={Icon}
+      title={title}
+    />
   );
 }
+
+/** @deprecated use Empty instead */
+export { Empty as EmptyState };
 
 export const inputClass = 'w-full rounded-lg border border-separator bg-bg-raised px-3 py-2 text-[13px] font-mono text-txt-primary placeholder:text-txt-quaternary shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] hover:border-separator hover:bg-bg-surface focus:border-sys-blue focus:bg-bg-elevated focus:ring-2 focus:ring-sys-blue/20 focus:outline-none';
 
@@ -292,5 +307,64 @@ export function SegmentedTabs({ value, onValueChange, options, className }: Segm
       variant="filled"
       onChange={(next) => onValueChange(String(next))}
     />
+  );
+}
+
+interface CopyButtonProps {
+  content: string;
+  className?: string;
+}
+
+export function CopyButton({ content, className }: CopyButtonProps): React.JSX.Element {
+  return <LobeCopyButton className={className} content={content} />;
+}
+
+type ActionIconSize = 'small' | 'middle' | 'large';
+type ActionIconVariant = 'borderless' | 'filled' | 'outlined';
+
+interface ActionIconProps {
+  icon: React.FC<any>;
+  title: string;
+  size?: ActionIconSize;
+  variant?: ActionIconVariant;
+  disabled?: boolean;
+  loading?: boolean;
+  onClick?: () => void;
+  className?: string;
+}
+
+const ACTION_ICON_SIZE_MAP: Record<ActionIconSize, string> = {
+  small: 'small',
+  middle: 'middle',
+  large: 'large',
+};
+
+export function ActionIcon({ icon: Icon, title, size = 'small', variant = 'borderless', disabled, loading, onClick, className }: ActionIconProps): React.JSX.Element {
+  return (
+    <LobeActionIcon
+      className={className}
+      disabled={disabled}
+      icon={Icon}
+      loading={loading}
+      size={ACTION_ICON_SIZE_MAP[size] as 'small' | 'middle' | 'large'}
+      title={title}
+      variant={variant}
+      onClick={onClick}
+    />
+  );
+}
+
+interface TooltipProps {
+  title: ReactNode;
+  children: ReactNode;
+  className?: string;
+  placement?: 'top' | 'bottom' | 'left' | 'right';
+}
+
+export function Tooltip({ title, children, className, placement = 'top' }: TooltipProps): React.JSX.Element {
+  return (
+    <LobeTooltip className={className} placement={placement} title={title}>
+      {children}
+    </LobeTooltip>
   );
 }

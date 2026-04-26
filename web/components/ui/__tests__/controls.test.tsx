@@ -67,7 +67,43 @@ vi.mock('@lobehub/ui/es/Tag/Tag', () => ({
   default: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
 }));
 
-import { AppAvatar, AppCheckbox, AppInput, Badge, Button, Disclosure, Notice, SegmentedTabs, StatCard } from '../controls';
+vi.mock('@lobehub/ui/es/Empty/index', () => ({
+  default: ({ description, title, action, icon: Icon, emoji }: { description?: React.ReactNode; title?: React.ReactNode; action?: React.ReactNode; icon?: React.ElementType; emoji?: string }) => (
+    <div data-lobe-empty="true">
+      {emoji && <span data-emoji={emoji} />}
+      {Icon && <span data-lobe-empty-icon="true"><Icon /></span>}
+      {title && <strong>{title}</strong>}
+      {description && <p>{description}</p>}
+      {action}
+    </div>
+  ),
+}));
+
+vi.mock('@lobehub/ui/es/CopyButton/index', () => ({
+  default: ({ content }: { content: string }) => <button data-lobe-copy="true" data-content={content}>Copy</button>,
+}));
+
+vi.mock('@lobehub/ui/es/ActionIcon/index', () => ({
+  default: ({ icon: Icon, title, size, variant, disabled, loading }: { icon: React.ElementType; title: string; size?: string; variant?: string; disabled?: boolean; loading?: boolean }) => (
+    <button data-lobe-action-icon="true" data-size={size} data-variant={variant} data-loading={loading} disabled={disabled} title={title}>
+      <Icon data-lobe-action-icon-icon="true" />
+    </button>
+  ),
+}));
+
+vi.mock('@lobehub/ui', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@lobehub/ui')>();
+  return {
+    ...original,
+    Tooltip: ({ title, children }: { title: React.ReactNode; children: React.ReactNode }) => (
+      <span data-lobe-tooltip="true" data-title={typeof title === 'string' ? title : undefined}>
+        {children}
+      </span>
+    ),
+  };
+});
+
+import { ActionIcon, AppAvatar, AppCheckbox, AppInput, Badge, Button, CopyButton, Disclosure, Empty, Notice, SegmentedTabs, StatCard, Tooltip } from '../controls';
 
 describe('ui controls Lobe wrappers', () => {
   it('maps secondary buttons to a green-tinted selected state for light-mode contrast', () => {
@@ -227,5 +263,78 @@ describe('ui controls Lobe wrappers', () => {
     expect(html).toContain('text-[12px]');
     expect(html).toContain('text-[30px]');
     expect(html).not.toContain('text-[26px]');
+  });
+
+  it('renders Empty through Lobe Empty with description', () => {
+    const html = renderToStaticMarkup(<Empty text="Nothing here" />);
+
+    expect(html).toContain('data-lobe-empty="true"');
+    expect(html).toContain('Nothing here');
+  });
+
+  it('renders EmptyState as a deprecated alias for Empty', async () => {
+    const { EmptyState } = await import('../controls');
+    const html = renderToStaticMarkup(<EmptyState text="Deprecated" />);
+
+    expect(html).toContain('data-lobe-empty="true"');
+    expect(html).toContain('Deprecated');
+  });
+
+  it('renders Empty with title and icon', () => {
+    const TestIcon = ({ size, className }: { size?: number; className?: string }) => <svg data-size={size} className={className} />;
+    const html = renderToStaticMarkup(<Empty text="No data" title="Empty" icon={TestIcon} />);
+
+    expect(html).toContain('<strong>Empty</strong>');
+    expect(html).toContain('No data');
+    expect(html).toContain('data-lobe-empty-icon="true"');
+  });
+
+  it('renders Empty with emoji and action', () => {
+    const html = renderToStaticMarkup(
+      <Empty text="No items" emoji="📭" action={<button data-test-action="true">Create</button>} />,
+    );
+
+    expect(html).toContain('data-emoji="📭"');
+    expect(html).toContain('data-test-action="true"');
+  });
+
+  it('renders CopyButton with content', () => {
+    const html = renderToStaticMarkup(<CopyButton content="https://example.com" />);
+
+    expect(html).toContain('data-lobe-copy="true"');
+    expect(html).toContain('data-content="https://example.com"');
+  });
+
+  it('renders ActionIcon with icon and title', () => {
+    const TestIcon = ({ size }: { size?: number }) => <svg data-test-icon-size={size} />;
+    const html = renderToStaticMarkup(<ActionIcon icon={TestIcon} title="Settings" />);
+
+    expect(html).toContain('data-lobe-action-icon="true"');
+    expect(html).toContain('data-size="small"');
+    expect(html).toContain('title="Settings"');
+  });
+
+  it('renders ActionIcon with custom size, variant, and loading state', () => {
+    const TestIcon = () => <svg />;
+    const html = renderToStaticMarkup(
+      <ActionIcon icon={TestIcon} title="Delete" size="middle" variant="filled" loading disabled />,
+    );
+
+    expect(html).toContain('data-size="middle"');
+    expect(html).toContain('data-variant="filled"');
+    expect(html).toContain('data-loading="true"');
+    expect(html).toContain('disabled=""');
+  });
+
+  it('renders Tooltip wrapping children', () => {
+    const html = renderToStaticMarkup(
+      <Tooltip title="Help text">
+        <button>Hover me</button>
+      </Tooltip>,
+    );
+
+    expect(html).toContain('data-lobe-tooltip="true"');
+    expect(html).toContain('data-title="Help text"');
+    expect(html).toContain('Hover me');
   });
 });

@@ -2,41 +2,8 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@lobehub/ui/es/Avatar/index', () => ({
-  default: ({ avatar, title }: { avatar?: React.ReactNode; title?: React.ReactNode }) => <div>{avatar || title}</div>,
-}));
-
-vi.mock('@lobehub/ui/es/Input/Input', () => ({
-  default: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input data-app-input="true" {...props} />,
-}));
-
-vi.mock('@lobehub/ui/es/Input/InputPassword', () => ({
-  default: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input data-app-password-input="true" type="password" {...props} />,
-}));
-
-vi.mock('@lobehub/ui/es/Input/TextArea', () => ({
-  default: (props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea data-app-text-area="true" {...props} />,
-}));
-
-vi.mock('@lobehub/ui/es/Select/Select', () => ({
-  default: ({ options = [], value }: { options?: Array<{ label: React.ReactNode; value: string }>; value?: string }) => (
-    <select value={value} readOnly>
-      {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-    </select>
-  ),
-}));
-
-vi.mock('@lobehub/ui/es/Accordion/index', () => ({
-  Accordion: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  AccordionItem: ({ children, title }: { children: React.ReactNode; title: React.ReactNode }) => <section><div>{title}</div>{children}</section>,
-}));
-
-vi.mock('@lobehub/ui/es/Segmented/index', () => ({
-  default: ({ options = [] }: { options?: Array<{ label: React.ReactNode; value: string }> }) => <div>{options.map((option) => option.label)}</div>,
-}));
-
-vi.mock('@lobehub/ui/es/Tag/Tag', () => ({
-  default: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+vi.mock('@/components/ui', () => ({
+  AppPasswordInput: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input data-app-password-input="true" type="password" {...props} />,
 }));
 
 vi.mock('../lib/i18n', () => ({

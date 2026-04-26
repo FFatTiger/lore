@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useT } from '../../lib/i18n';
-import { PageCanvas, PageTitle, Section, Button, Badge, StatCard, Table, AppSelect } from '../../components/ui';
+import { PageCanvas, PageTitle, Section, Button, Badge, StatCard, Table } from '../../components/ui';
 import { useConfirm } from '../../components/ConfirmDialog';
 import {
   useDreamPageController,
@@ -56,7 +56,6 @@ interface DreamDiaryListViewProps {
   selectedId: string;
   t: (key: string) => string;
   onRun: () => void;
-  onConfigChange: (field: keyof DreamConfig, value: boolean | number) => void;
   onSelect: (row: Record<string, unknown>) => void;
 }
 
@@ -69,7 +68,6 @@ function DreamDiaryListView({
   selectedId,
   t,
   onRun,
-  onConfigChange,
   onSelect,
 }: DreamDiaryListViewProps): React.JSX.Element {
   const lastEntry = entries[0];
@@ -107,26 +105,6 @@ function DreamDiaryListView({
         />
       </div>
 
-      <Section title={t('Schedule')} className="mb-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <label className="flex min-h-[44px] items-center gap-3 rounded-xl border border-separator-thin bg-bg-raised px-3 py-2 text-sm text-txt-primary hover:border-separator hover:bg-bg-surface">
-            <input
-              type="checkbox"
-              checked={config.enabled}
-              onChange={(e) => onConfigChange('enabled', e.target.checked)}
-              className="h-4 w-4 rounded border-separator-thin text-sys-blue accent-sys-blue"
-            />
-            <span>{t('Dream Diary')}</span>
-          </label>
-          <AppSelect
-            value={String(config.schedule_hour)}
-            onValueChange={(value) => onConfigChange('schedule_hour', Number(value))}
-            options={Array.from({ length: 24 }, (_, i) => ({ value: String(i), label: `${String(i).padStart(2, '0')}:00` }))}
-            className="w-full sm:w-[9rem]"
-          />
-        </div>
-      </Section>
-
       <Section title={t('Dream Diary')} subtitle={`${total}`} className="mt-5">
         {loading ? (
           <div className="text-center py-8 text-txt-tertiary">{t('Loading…')}</div>
@@ -159,7 +137,6 @@ export default function DreamPage(): React.JSX.Element {
     detailLoading,
     latestRollbackId,
     handleRun,
-    handleConfigChange,
     handleSelect,
     handleBack,
     handleRollback,
@@ -191,7 +168,6 @@ export default function DreamPage(): React.JSX.Element {
       selectedId={selectedId}
       t={t}
       onRun={() => void handleRun()}
-      onConfigChange={(field, value) => void handleConfigChange(field, value)}
       onSelect={handleSelect}
     />
   );

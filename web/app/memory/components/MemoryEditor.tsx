@@ -35,10 +35,10 @@ export default function MemoryEditor({
       <div className="grid gap-4 sm:grid-cols-[auto_1fr] items-start">
         <label className="block">
           <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Priority')}</span>
-          <input
+          <AppInput
             type="number" min="0" value={editPriority}
             onChange={(e: ChangeEvent<HTMLInputElement>) => setEditPriority(parseInt(e.target.value, 10) || 0)}
-            className="w-24 rounded-lg border border-separator-thin bg-bg-raised px-3 py-2 font-mono text-[14px] tabular-nums text-txt-primary focus:border-sys-blue/60 focus:outline-none"
+            className="w-24 font-mono text-[14px] tabular-nums"
           />
         </label>
         <label className="block">

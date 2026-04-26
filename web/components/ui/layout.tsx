@@ -2,6 +2,7 @@
 
 import React, { type ReactNode } from 'react';
 import clsx from 'clsx';
+import { Card as LobeCard } from 'antd';
 
 export type MaxWidth = '3xl' | '4xl' | '5xl' | '6xl' | '7xl' | 'full';
 
@@ -78,16 +79,16 @@ interface CardProps {
 
 export function Card({ children, className, padded = true, interactive = false }: CardProps): React.JSX.Element {
   return (
-    <div
+    <LobeCard
       className={clsx(
         'rounded-2xl border border-separator-thin bg-bg-elevated shadow-card',
-        padded && 'p-4 md:p-6',
+        padded ? '[&_.ant-card-body]:p-4 [&_.ant-card-body]:md:p-5' : '[&_.ant-card-body]:p-0',
         interactive && 'transition-all duration-200 ease-spring hover:border-separator hover:bg-bg-raised',
         className,
       )}
     >
       {children}
-    </div>
+    </LobeCard>
   );
 }
 

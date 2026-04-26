@@ -1,10 +1,9 @@
 'use client';
 
 import React, { useCallback, useContext, useMemo, useRef, useState, createContext, ReactNode } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
+import LobeModal from '@lobehub/ui/es/Modal/index';
 import { Toaster, toast as sonnerToast } from 'sonner';
 import clsx from 'clsx';
-import { Button } from './ui';
 import { useTheme } from '../lib/theme';
 import { useT } from '../lib/i18n';
 
@@ -35,58 +34,29 @@ interface DialogState extends ConfirmOptions {
   resolve: (value: boolean) => void;
 }
 
-function ConfirmModal({ dialog, onConfirm, onCancel }: { dialog: DialogState; onConfirm: () => void; onCancel: () => void }): React.JSX.Element {
+export function ConfirmModalForTest({ dialog, onConfirm, onCancel }: { dialog: DialogState; onConfirm: () => void; onCancel: () => void }): React.JSX.Element {
   const { t } = useT();
   const dismissible = dialog.dismissible !== false;
   return (
-    <Dialog.Root open onOpenChange={(open) => { if (!open && dismissible) onCancel(); }}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[90] bg-black/50 backdrop-blur-sm animate-in" />
-        <Dialog.Content
-          className="animate-in fixed left-1/2 top-1/2 z-[91] w-[calc(100vw-2rem)] max-w-[400px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-separator-thin bg-bg-elevated p-6 shadow-xl outline-none"
-          onEscapeKeyDown={(event) => {
-            if (!dismissible) {
-              event.preventDefault();
-              return;
-            }
-            onCancel();
-          }}
-          onPointerDownOutside={(event) => {
-            if (!dismissible) {
-              event.preventDefault();
-              return;
-            }
-            onCancel();
-          }}
-        >
-          {dialog.title ? (
-            <Dialog.Title className="mb-2 text-[17px] font-semibold tracking-tight text-txt-primary">
-              {dialog.title}
-            </Dialog.Title>
-          ) : null}
-          <Dialog.Description className="mb-6 text-[14px] leading-relaxed text-txt-secondary">
-            {dialog.message}
-          </Dialog.Description>
-          <div className="flex justify-end gap-2">
-            {!dialog.hideCancel ? (
-              <Dialog.Close asChild>
-                <Button variant="ghost" size="sm" onClick={onCancel}>
-                  {dialog.cancelLabel || t('Cancel')}
-                </Button>
-              </Dialog.Close>
-            ) : null}
-            <Button
-              variant={dialog.destructive ? 'destructive' : 'primary'}
-              size="sm"
-              onClick={onConfirm}
-              autoFocus
-            >
-              {dialog.confirmLabel || t('Confirm')}
-            </Button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <LobeModal
+      cancelButtonProps={dialog.hideCancel ? { style: { display: 'none' } } : undefined}
+      cancelText={dialog.cancelLabel || t('Cancel')}
+      centered
+      className="rounded-2xl border border-separator-thin bg-bg-elevated shadow-xl [&_.ant-modal-content]:rounded-2xl [&_.ant-modal-content]:border [&_.ant-modal-content]:border-separator-thin [&_.ant-modal-content]:bg-bg-elevated [&_.ant-modal-content]:shadow-xl"
+      closable={dismissible}
+      maskClosable={dismissible}
+      okButtonProps={{ danger: Boolean(dialog.destructive) }}
+      okText={dialog.confirmLabel || t('Confirm')}
+      onCancel={onCancel}
+      onOk={onConfirm}
+      open
+      title={dialog.title}
+      width={400}
+    >
+      <p className="text-[14px] leading-relaxed text-txt-secondary">
+        {dialog.message}
+      </p>
+    </LobeModal>
   );
 }
 
@@ -146,7 +116,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }): React.JS
           unstyled: true,
         }}
       />
-      {dialog ? <ConfirmModal dialog={dialog} onConfirm={handleConfirm} onCancel={handleCancel} /> : null}
+      {dialog ? <ConfirmModalForTest dialog={dialog} onConfirm={handleConfirm} onCancel={handleCancel} /> : null}
     </ConfirmContext.Provider>
   );
 }

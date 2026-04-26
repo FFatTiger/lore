@@ -489,11 +489,8 @@ describe('getRecallStats', () => {
 
     expect(stats.display_threshold_analysis).toEqual({
       status: 'ready',
-      status_detail: 'ready_to_review',
-      execution_status: 'eligible',
-      basis: 'midpoint_used_p25_unused_shown_p75',
+      basis: 'sample_metrics',
       current_min_display_score: 0.55,
-      threshold_gap: 0.1,
       shown_candidate_count: 6,
       used_candidate_count: 3,
       unused_shown_candidate_count: 3,
@@ -504,8 +501,11 @@ describe('getRecallStats', () => {
       used_p50_score: 0.8,
       unused_shown_p75_score: 0.58,
       separation_gap: 0.14,
-      suggested_min_display_score: 0.65,
     });
+    expect(stats.display_threshold_analysis).not.toHaveProperty('suggested_min_display_score');
+    expect(stats.display_threshold_analysis).not.toHaveProperty('threshold_gap');
+    expect(stats.display_threshold_analysis).not.toHaveProperty('status_detail');
+    expect(stats.display_threshold_analysis).not.toHaveProperty('execution_status');
   });
 
   it('marks negative separation as ready_but_unsafe and includes runtime gap', async () => {
@@ -537,11 +537,8 @@ describe('getRecallStats', () => {
 
     expect(stats.display_threshold_analysis).toEqual({
       status: 'ready',
-      status_detail: 'ready_but_unsafe',
-      execution_status: 'blocked',
-      basis: 'midpoint_used_p25_unused_shown_p75',
+      basis: 'sample_metrics',
       current_min_display_score: 0.55,
-      threshold_gap: 0.06,
       shown_candidate_count: 10,
       used_candidate_count: 4,
       unused_shown_candidate_count: 6,
@@ -552,7 +549,6 @@ describe('getRecallStats', () => {
       used_p50_score: 0.61,
       unused_shown_p75_score: 0.64,
       separation_gap: -0.06,
-      suggested_min_display_score: 0.61,
     });
   });
 
@@ -612,11 +608,8 @@ describe('getRecallStats', () => {
         current_min_display_score: 0.55,
         analysis: {
           status: 'ready',
-          status_detail: 'ready_but_unsafe',
-          execution_status: 'blocked',
-          basis: 'midpoint_used_p25_unused_shown_p75',
+          basis: 'sample_metrics',
           current_min_display_score: 0.55,
-          threshold_gap: 0.055,
           shown_candidate_count: 8,
           used_candidate_count: 3,
           unused_shown_candidate_count: 5,
@@ -627,7 +620,6 @@ describe('getRecallStats', () => {
           used_p50_score: 0.58,
           unused_shown_p75_score: 0.64,
           separation_gap: -0.07,
-          suggested_min_display_score: 0.605,
         },
       },
       {
@@ -635,11 +627,8 @@ describe('getRecallStats', () => {
         current_min_display_score: 0.55,
         analysis: {
           status: 'ready',
-          status_detail: 'ready_to_review',
-          execution_status: 'eligible',
-          basis: 'midpoint_used_p25_unused_shown_p75',
+          basis: 'sample_metrics',
           current_min_display_score: 0.55,
-          threshold_gap: 0.1,
           shown_candidate_count: 12,
           used_candidate_count: 5,
           unused_shown_candidate_count: 7,
@@ -650,7 +639,6 @@ describe('getRecallStats', () => {
           used_p50_score: 0.74,
           unused_shown_p75_score: 0.61,
           separation_gap: 0.08,
-          suggested_min_display_score: 0.65,
         },
       },
     ]);
@@ -685,11 +673,8 @@ describe('getRecallStats', () => {
 
     expect(stats.display_threshold_analysis).toEqual({
       status: 'insufficient_data',
-      status_detail: 'insufficient_data',
-      execution_status: 'not_applicable',
       basis: 'insufficient_data',
       current_min_display_score: 0.55,
-      threshold_gap: null,
       shown_candidate_count: 4,
       used_candidate_count: 2,
       unused_shown_candidate_count: 2,
@@ -700,7 +685,6 @@ describe('getRecallStats', () => {
       used_p50_score: 0.79,
       unused_shown_p75_score: 0.54,
       separation_gap: 0.2,
-      suggested_min_display_score: null,
     });
   });
 });

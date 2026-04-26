@@ -5,15 +5,16 @@ vi.mock('../../../../../server/auth', () => ({
   requireApiAuth: vi.fn(),
 }));
 vi.mock('../../../../../server/lore/dream/dreamDiary', () => ({
-  runDream: vi.fn(),
   getDreamDiary: vi.fn(),
   getDreamEntry: vi.fn(),
   getDreamConfig: vi.fn(),
   updateDreamConfig: vi.fn(),
   rollbackDream: vi.fn(),
 }));
-vi.mock('../../../../../server/lore/dream/dreamScheduler', () => ({
-  initDreamScheduler: vi.fn(),
+vi.mock('../../../../../server/lore/jobs/registry', () => ({
+  initJobScheduler: vi.fn(),
+  registerJob: vi.fn(),
+  runJobNow: vi.fn(),
 }));
 vi.mock('../../../../../server/lore/dream/dreamWorkflow', () => ({
   isDreamWorkflowTerminalEvent: vi.fn(),
@@ -23,18 +24,18 @@ vi.mock('../../../../../server/lore/dream/dreamWorkflow', () => ({
 
 import { requireBearerAuth, requireApiAuth } from '../../../../../server/auth';
 import {
-  runDream,
   getDreamDiary,
   getDreamEntry,
   getDreamConfig,
   updateDreamConfig,
   rollbackDream,
 } from '../../../../../server/lore/dream/dreamDiary';
+import { runJobNow } from '../../../../../server/lore/jobs/registry';
 import { GET, POST } from '../route';
 
 const mockRequireBearerAuth = vi.mocked(requireBearerAuth);
 const mockRequireApiAuth = vi.mocked(requireApiAuth);
-const mockRunDream = vi.mocked(runDream);
+const mockRunJobNow = vi.mocked(runJobNow);
 const mockGetDreamDiary = vi.mocked(getDreamDiary);
 const mockGetDreamEntry = vi.mocked(getDreamEntry);
 const mockGetDreamConfig = vi.mocked(getDreamConfig);
@@ -70,8 +71,24 @@ describe('/api/browse/dream route', () => {
     expect(body.code).toBe('validation_error');
   });
 
+  it('runs manual dream through the job runtime and returns the dream result body', async () => {
+    const dreamResult = { id: 42, status: 'completed', summary: { activity: { write_events: 1 } } };
+    mockRunJobNow.mockResolvedValueOnce({ job_id: 'dream', run_id: 7, result: dreamResult });
+
+    const response = await POST(new Request('http://localhost/api/browse/dream', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'run' }),
+    }) as any);
+    const body = await response.json();
+
+    expect(mockRunJobNow).toHaveBeenCalledWith('dream');
+    expect(response.status).toBe(200);
+    expect(body).toEqual(dreamResult);
+  });
+
   it('returns canonical conflict errors from dream run failures', async () => {
-    mockRunDream.mockRejectedValueOnce(Object.assign(new Error('Dream is already running'), { status: 409 }));
+    mockRunJobNow.mockRejectedValueOnce(Object.assign(new Error('Dream is already running'), { status: 409 }));
 
     const response = await POST(new Request('http://localhost/api/browse/dream', {
       method: 'POST',

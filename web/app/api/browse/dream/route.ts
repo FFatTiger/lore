@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireApiAuth, requireBearerAuth } from '../../../../server/auth';
 import { jsonContractError } from '../../../../server/lore/contracts';
-import { runDream, getDreamDiary, getDreamEntry, getDreamConfig, updateDreamConfig, rollbackDream } from '../../../../server/lore/dream/dreamDiary';
-import { initDreamScheduler } from '../../../../server/lore/dream/dreamScheduler';
+import { getDreamDiary, getDreamEntry, getDreamConfig, updateDreamConfig, rollbackDream } from '../../../../server/lore/dream/dreamDiary';
+import { runJobNow } from '../../../../server/lore/jobs/registry';
 import {
   isDreamWorkflowTerminalEvent,
   listDreamWorkflowEvents,
@@ -12,9 +12,6 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
-
-// Start scheduler on first module load (idempotent)
-initDreamScheduler();
 
 function sseEvent(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -118,8 +115,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json(await rollbackDream(body.id));
     }
     // Default: run dream
-    const result = await runDream();
-    return NextResponse.json(result);
+    const result = await runJobNow('dream');
+    return NextResponse.json(result.result);
   } catch (error) {
     return jsonContractError(error, 'Dream failed');
   }

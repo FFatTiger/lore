@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireBearerAuth } from '../../../server/auth';
+import { runJobNow } from '../../../server/lore/jobs/registry';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -101,24 +102,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     // Default: run backup
-    const { exportToLocal, exportToWebDAV, cleanupLocalBackups, cleanupWebDAVBackups } = await import('../../../server/lore/ops/backup');
-    const { getSettings } = await import('../../../server/lore/config/settings');
-    const cfg = await getSettings([
-      'backup.local.enabled', 'backup.webdav.enabled', 'backup.retention_count',
-    ]);
-    const retention = Number(cfg['backup.retention_count']) || 7;
-    const results: Record<string, unknown> = {};
-
-    if (cfg['backup.local.enabled'] !== false) {
-      results.local = await exportToLocal();
-      await cleanupLocalBackups(retention);
-    }
-    if (cfg['backup.webdav.enabled'] === true) {
-      results.webdav = await exportToWebDAV();
-      await cleanupWebDAVBackups(retention);
-    }
-
-    return NextResponse.json({ results });
+    const result = await runJobNow('backup');
+    return NextResponse.json({ results: result.result });
   } catch (error) {
     return NextResponse.json({ detail: (error as Error)?.message || 'Backup failed' }, { status: Number((error as { status?: number })?.status || 500) });
   }

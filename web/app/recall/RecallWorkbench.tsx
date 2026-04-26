@@ -4,7 +4,7 @@ import React, { useState, useCallback, KeyboardEvent, ChangeEvent, useMemo, useE
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '../../lib/api';
 import {
-  PageCanvas, PageTitle, Section, Button, EmptyState, inputClass, AppInput,
+  PageCanvas, PageTitle, Section, Button, EmptyState, AppCheckbox, AppInput, AppSelect, AppTextArea,
   fmt, asNumber,
 } from '../../components/ui';
 import RecallStages from '../../components/RecallStages';
@@ -177,7 +177,7 @@ export default function RecallWorkbench(): React.JSX.Element {
           }
         >
           <div className="p-4 md:p-5 space-y-3 md:space-y-4">
-            <textarea
+            <AppTextArea
               rows={2}
               value={debugForm.query}
               onChange={(e: ChangeEvent<HTMLTextAreaElement>) => patchForm({ query: e.target.value })}
@@ -191,15 +191,14 @@ export default function RecallWorkbench(): React.JSX.Element {
 
             <div className="flex items-center justify-between gap-4 border-t border-separator-hairline pt-3">
               <div className="flex items-center gap-4 text-[12px] text-txt-tertiary">
-                <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={debugForm.excludeBootFromResults}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => patchForm({ excludeBootFromResults: e.target.checked })}
-                    className="accent-sys-blue h-3.5 w-3.5"
-                  />
+                <AppCheckbox
+                  checked={debugForm.excludeBootFromResults}
+                  onValueChange={(checked) => patchForm({ excludeBootFromResults: checked })}
+                  className="text-[12px] text-txt-tertiary"
+                  size={14}
+                >
                   {t('Exclude boot')}
-                </label>
+                </AppCheckbox>
                 <button
                   onClick={() => setShowAdvanced((v) => !v)}
                   className="text-sys-blue hover:opacity-80"
@@ -217,11 +216,12 @@ export default function RecallWorkbench(): React.JSX.Element {
                 {/* Strategy selector — full width since label is long */}
                 <label className="block">
                   <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Scoring strategy')}</span>
-                  <select value={debugForm.strategy} onChange={(e: ChangeEvent<HTMLSelectElement>) => patchForm({ strategy: e.target.value })} className={inputClass + ' cursor-pointer'}>
-                    {STRATEGY_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{t(opt.label)}</option>
-                    ))}
-                  </select>
+                  <AppSelect
+                    value={debugForm.strategy}
+                    onValueChange={(value) => patchForm({ strategy: value })}
+                    options={STRATEGY_OPTIONS.map((opt) => ({ value: opt.value, label: t(opt.label) }))}
+                    className="font-sans"
+                  />
                 </label>
                 <div className="grid gap-x-6 gap-y-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
                   <label className="block">
@@ -239,15 +239,20 @@ export default function RecallWorkbench(): React.JSX.Element {
                   ).map(([key, label]) => (
                     <label key={key} className="block">
                       <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{label}</span>
-                      <input type="number" step="0.01" value={String(debugForm[key])} onChange={(e: ChangeEvent<HTMLInputElement>) => patchForm({ [key]: e.target.value } as Partial<DebugForm>)} className={inputClass + ' tabular-nums'} />
+                      <AppInput type="number" step="0.01" value={String(debugForm[key])} onChange={(e: ChangeEvent<HTMLInputElement>) => patchForm({ [key]: e.target.value } as Partial<DebugForm>)} className="font-mono tabular-nums" />
                     </label>
                   ))}
                   <label className="block">
                     <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Read mode')}</span>
-                    <select value={debugForm.readNodeDisplayMode} onChange={(e: ChangeEvent<HTMLSelectElement>) => patchForm({ readNodeDisplayMode: e.target.value })} className={inputClass + ' cursor-pointer'}>
-                      <option value="soft">{t('soft')}</option>
-                      <option value="hard">{t('hard')}</option>
-                    </select>
+                    <AppSelect
+                      value={debugForm.readNodeDisplayMode}
+                      onValueChange={(value) => patchForm({ readNodeDisplayMode: value })}
+                      options={[
+                        { value: 'soft', label: t('soft') },
+                        { value: 'hard', label: t('hard') },
+                      ]}
+                      className="font-sans"
+                    />
                   </label>
                 </div>
               </div>

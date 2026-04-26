@@ -2,6 +2,18 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
+vi.mock('@lobehub/ui/es/Button/index', () => ({
+  default: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>,
+}));
+
+vi.mock('@lobehub/ui/es/Alert/index', () => ({
+  default: ({ description }: { description?: React.ReactNode }) => <aside>{description}</aside>,
+}));
+
+vi.mock('@lobehub/ui/es/Input/InputPassword', () => ({
+  default: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input data-app-password-input="true" type="password" {...props} />,
+}));
+
 vi.mock('@lobehub/ui/es/Avatar/index', () => ({
   default: ({ avatar, title }: { avatar?: React.ReactNode; title?: React.ReactNode }) => <div>{avatar || title}</div>,
 }));
@@ -31,6 +43,10 @@ vi.mock('@lobehub/ui/es/Segmented/index', () => ({
   default: ({ options = [] }: { options?: Array<{ label: React.ReactNode; value: string }> }) => <div>{options.map((option) => option.label)}</div>,
 }));
 
+vi.mock('@lobehub/ui/es/Checkbox/index', () => ({
+  default: ({ children }: { children?: React.ReactNode }) => <div data-lobe-checkbox="true">{children}</div>,
+}));
+
 vi.mock('@lobehub/ui/es/Tag/Tag', () => ({
   default: ({ children }: { children: React.ReactNode }) => <span data-badge="true">{children}</span>,
 }));
@@ -43,7 +59,7 @@ import MemoryEditor from '../MemoryEditor';
 import MemoryViewsSection from '../MemoryViewsSection';
 
 describe('memory detail Lobe wrappers', () => {
-  it('renders disclosure editing through AppInput', () => {
+  it('renders priority and disclosure editing through AppInput', () => {
     const html = renderToStaticMarkup(
       <MemoryEditor
         editContent="body"
@@ -58,7 +74,8 @@ describe('memory detail Lobe wrappers', () => {
       />,
     );
 
-    expect(html).toContain('data-app-input="true"');
+    expect((html.match(/data-app-input="true"/g) || []).length).toBe(2);
+    expect(html).toContain('type="number"');
     expect(html).toContain('data-app-text-area="true"');
     expect(html).toContain('when useful');
   });

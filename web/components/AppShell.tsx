@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo, ReactNode } f
 import { useRouter, usePathname } from 'next/navigation';
 import { Sun, Moon } from 'lucide-react';
 import { ConfigProvider } from '@lobehub/ui';
+import LobeThemeProvider from '@lobehub/ui/es/ThemeProvider/index';
 import { motion } from 'motion/react';
 import clsx from 'clsx';
 import { getDomains, getSetupFlowStatus, AUTH_ERROR_EVENT } from '../lib/api';
@@ -30,6 +31,19 @@ const tabs: Tab[] = [
   { href: '/dream', label: 'Dream' },
   { href: '/settings', label: 'Settings' },
 ];
+
+export function navIndicatorClassName(isHovering: boolean): string {
+  return isHovering ? 'bg-fill-primary shadow-none' : 'bg-sys-blue/12 shadow-[inset_0_0_0_1px_rgba(64,156,255,0.18)]';
+}
+
+export function LobeThemeBridge({ children }: { children: ReactNode }): React.JSX.Element {
+  const { theme } = useTheme();
+  return (
+    <LobeThemeProvider appearance={theme === 'light' ? 'light' : 'dark'} enableCustomFonts={false} enableGlobalStyle={false}>
+      {children}
+    </LobeThemeProvider>
+  );
+}
 
 interface IndicatorState {
   x: number;
@@ -121,7 +135,7 @@ function NavDock(): React.JSX.Element {
               className={clsx(
                 'pointer-events-none absolute inset-y-0 rounded-full transition-all duration-300 ease-spring',
                 indicator.ready ? 'opacity-100' : 'opacity-0',
-                hoverHref ? 'bg-fill-primary shadow-none' : 'bg-bg-elevated shadow-none',
+                navIndicatorClassName(Boolean(hoverHref)),
               )}
               style={{ transform: `translateX(${indicator.x}px)`, width: `${indicator.w}px` }}
             />
@@ -422,11 +436,13 @@ export default function AppShell({ children }: AppShellProps): React.JSX.Element
   return (
     <ThemeProvider>
       <ConfigProvider motion={motion}>
-        <LanguageProvider>
-          <ConfirmProvider>
-            <AppShellInner>{children}</AppShellInner>
-          </ConfirmProvider>
-        </LanguageProvider>
+        <LobeThemeBridge>
+          <LanguageProvider>
+            <ConfirmProvider>
+              <AppShellInner>{children}</AppShellInner>
+            </ConfirmProvider>
+          </LanguageProvider>
+        </LobeThemeBridge>
       </ConfigProvider>
     </ThemeProvider>
   );

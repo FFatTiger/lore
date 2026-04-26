@@ -1,11 +1,10 @@
 'use client';
 
-import React, { useEffect, useMemo, useState, ReactNode, useCallback, type ChangeEvent } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, type ChangeEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import clsx from 'clsx';
 import { api } from '../../lib/api';
 import {
-  PageCanvas, PageTitle, Card, Section, Button, Badge, Table, StatCard, Notice, inputClass, AppInput, AppSelect, Disclosure, SegmentedTabs,
+  PageCanvas, PageTitle, Card, Section, Button, Badge, Table, StatCard, Notice, AppInput, AppSelect, Disclosure,
   fmt, trunc, asNumber,
 } from '../../components/ui';
 import RecallStages from '../../components/RecallStages';
@@ -64,26 +63,6 @@ function formatRangeLabel(offset: number, count: number, total: number): string 
   return `${offset + 1}–${offset + count}`;
 }
 
-function displayViewType(viewType: unknown, t: (key: string) => string): string {
-  const key = String(viewType ?? '').trim();
-  if (!key) return '—';
-  if (key === 'gist') return t('Gist');
-  if (key === 'question') return t('Question');
-  if (key === 'unknown') return t('Unknown view');
-  return key;
-}
-
-function displayRetrievalPath(path: unknown, t: (key: string) => string): string {
-  const key = String(path ?? '').trim();
-  if (!key) return '—';
-  if (key === 'exact') return t('Exact');
-  if (key === 'glossary_semantic') return t('Glossary');
-  if (key === 'dense') return t('Semantic');
-  if (key === 'lexical') return t('Lexical');
-  if (key === 'content') return t('Content');
-  return key;
-}
-
 export default function RecallDrilldown(): React.JSX.Element {
   const { t } = useT();
   const router = useRouter();
@@ -102,8 +81,6 @@ export default function RecallDrilldown(): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
-  const [aggTab, setAggTab] = useState('path');
-  const [auxOpen, setAuxOpen] = useState(false);
 
   const applyFilters = useCallback((patch: Partial<Filters>, mode: 'push' | 'replace' = 'replace') => {
     const next: Filters = { ...filters, ...patch };
@@ -169,24 +146,7 @@ export default function RecallDrilldown(): React.JSX.Element {
 
   const queryDetail = (stats?.query_detail as Record<string, unknown>) || null;
   const nodeDetail = (stats?.node_detail as Record<string, unknown>) || null;
-  const runtime = (stats?.runtime as Record<string, unknown>) || null;
-  const runtimeDisplay = (runtime?.display as Record<string, unknown>) || null;
-  const displayThresholdAnalysis = (stats?.display_threshold_analysis as Record<string, unknown>) || null;
   const clientTypeThresholdAnalysis = (stats?.client_type_threshold_analysis as RowData[]) || [];
-  const thresholdStatus = String(displayThresholdAnalysis?.status || 'insufficient_data');
-  const thresholdStatusDetail = String(displayThresholdAnalysis?.status_detail || 'insufficient_data');
-  const thresholdExecutionStatus = String(displayThresholdAnalysis?.execution_status || 'not_applicable');
-  const thresholdReady = thresholdStatus === 'ready';
-  const thresholdUnsafe = thresholdStatusDetail === 'ready_but_unsafe' || thresholdExecutionStatus === 'blocked';
-  const thresholdEligible = thresholdStatusDetail === 'ready_to_review' && thresholdExecutionStatus === 'eligible';
-  const thresholdBasisKey = `Threshold basis · ${String(displayThresholdAnalysis?.basis || 'insufficient_data').split('_').join(' ')}`;
-  const currentMinDisplayScore = runtimeDisplay?.min_display_score;
-  const suggestedMinDisplayScore = displayThresholdAnalysis?.suggested_min_display_score;
-  const currentMinDisplayScoreNumber = Number(currentMinDisplayScore);
-  const suggestedMinDisplayScoreNumber = Number(suggestedMinDisplayScore);
-  const thresholdDelta = Number.isFinite(currentMinDisplayScoreNumber) && Number.isFinite(suggestedMinDisplayScoreNumber)
-    ? suggestedMinDisplayScoreNumber - currentMinDisplayScoreNumber
-    : null;
 
   const recentQueryCols = useMemo(() => [
     { key: 'query_text', label: t('Query'), className: 'w-[60%]', render: (v: unknown) => (
@@ -208,32 +168,6 @@ export default function RecallDrilldown(): React.JSX.Element {
     { key: 'avg_final_rank_score', label: t('Avg'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-txt-secondary text-right">{fmt(v)}</span> },
     { key: '_drill', label: '', className: 'text-right', render: (_: unknown, row: RowData) => (
       <button onClick={(e) => { e.stopPropagation(); applyFilters({ queryId: String(row.query_id || ''), queryText: '', nodeUri: '' }, 'push'); }}
-        className="text-[11px] text-sys-blue hover:opacity-80">{t('Open')} →</button>
-    ) },
-  ], [applyFilters, t]);
-
-  const eventCols = useMemo(() => [
-    { key: 'created_at', label: t('When'), className: 'w-[8rem] text-right', render: (v: unknown) => <span className="block whitespace-nowrap text-[11px] text-right text-txt-tertiary">{v ? new Date(String(v)).toLocaleString() : '—'}</span> },
-    { key: 'query_text', label: t('Query'), className: 'w-[60%]', render: (v: unknown) => <div className="max-w-full text-[12.5px] text-txt-primary">{trunc(v, 100)}</div> },
-    { key: 'node_uri', label: t('Entry'), render: (v: unknown) => <div className="max-w-[18rem] break-all font-mono text-[11px] text-txt-primary">{String(v ?? '—')}</div> },
-    { key: 'retrieval_path', label: t('Path'), render: (v: unknown, row: RowData) => (
-      <div className="flex items-center gap-1.5 text-[11px]">
-        <Badge tone="default">{displayRetrievalPath(v, t)}</Badge>
-        {!!row.view_type && <span className="text-txt-tertiary">{displayViewType(row.view_type, t)}</span>}
-        {!!row.selected && <Badge tone="blue">{t('Shown')}</Badge>}
-        {!!row.used_in_answer && <Badge tone="green">{t('Used')}</Badge>}
-      </div>
-    ) },
-    { key: 'final_rank_score', label: t('Score'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-sys-blue text-right">{fmt(v)}</span> },
-  ], [t]);
-
-  const noisyNodeCols = useMemo(() => [
-    { key: 'node_uri', label: t('Entry'), render: (v: unknown) => <div className="max-w-[20rem] break-all font-mono text-[11.5px] text-txt-primary">{String(v ?? '—')}</div> },
-    { key: 'total', label: t('Events'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-txt-secondary text-right">{String(v ?? '—')}</span> },
-    { key: 'selected', label: t('Shown'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-sys-blue text-right">{String(v ?? '—')}</span> },
-    { key: 'avg_final_rank_score', label: t('Avg'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-txt-secondary text-right">{fmt(v)}</span> },
-    { key: '_drill', label: '', className: 'text-right', render: (_: unknown, row: RowData) => (
-      <button onClick={(e) => { e.stopPropagation(); applyFilters({ queryId: '', queryText: '', nodeUri: String(row.node_uri || '') }, 'push'); }}
         className="text-[11px] text-sys-blue hover:opacity-80">{t('Open')} →</button>
     ) },
   ], [applyFilters, t]);
@@ -261,10 +195,6 @@ export default function RecallDrilldown(): React.JSX.Element {
         used_p25_score: analysis.used_p25_score,
         unused_shown_p75_score: analysis.unused_shown_p75_score,
         separation_gap: analysis.separation_gap,
-        threshold_gap: analysis.threshold_gap,
-        suggested_min_display_score: analysis.suggested_min_display_score,
-        status_detail: analysis.status_detail,
-        execution_status: analysis.execution_status,
       };
     }), [clientTypeThresholdAnalysis, t]);
   const thresholdClientCols = useMemo(() => [
@@ -278,49 +208,12 @@ export default function RecallDrilldown(): React.JSX.Element {
         </div>
       ),
     },
-    {
-      key: 'status_detail',
-      label: t('Status'),
-      render: (value: unknown, row: RowData) => {
-        const unsafe = value === 'ready_but_unsafe' || row.execution_status === 'blocked';
-        const ready = value === 'ready_to_review';
-        return <Badge tone={unsafe ? 'orange' : ready ? 'green' : 'default'}>{unsafe ? t('Ready, unsafe') : ready ? t('Ready') : t('Insufficient')}</Badge>;
-      },
-    },
     { key: 'shown_candidate_count', label: t('Shown'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-right">{String(v ?? '—')}</span> },
     { key: 'used_candidate_count', label: t('Used'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-right">{String(v ?? '—')}</span> },
     { key: 'used_p25_score', label: t('Used p25'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-right">{fmt(v)}</span> },
     { key: 'unused_shown_p75_score', label: t('Unused p75'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-right">{fmt(v)}</span> },
     { key: 'separation_gap', label: t('Separation'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-right">{fmt(v)}</span> },
-    { key: 'suggested_min_display_score', label: t('Suggested'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-right">{fmt(v)}</span> },
   ], [t]);
-
-  function renderAgg(): ReactNode {
-    switch (aggTab) {
-      case 'path':
-        return (
-          <Table columns={[
-            { key: 'retrieval_path', label: t('Path'), render: (v: unknown) => <Badge tone="default">{displayRetrievalPath(v, t)}</Badge> },
-            { key: 'total', label: t('Events'), render: (v: unknown) => <span className="font-mono tabular-nums text-txt-secondary">{String(v ?? '—')}</span> },
-            { key: 'selected', label: t('Shown'), render: (v: unknown) => <span className="font-mono tabular-nums text-sys-blue">{String(v ?? '—')}</span> },
-            { key: 'avg_final_rank_score', label: t('Avg'), render: (v: unknown) => <span className="font-mono tabular-nums text-txt-secondary">{fmt(v)}</span> },
-          ]} rows={stats?.by_path as RowData[]} empty={t('No path statistics.')} />
-        );
-      case 'view':
-        return (
-          <Table columns={[
-            { key: 'view_type', label: t('View'), render: (v: unknown) => <Badge tone="default">{displayViewType(v, t)}</Badge> },
-            { key: 'total', label: t('Events'), render: (v: unknown) => <span className="font-mono tabular-nums text-txt-secondary">{String(v ?? '—')}</span> },
-            { key: 'selected', label: t('Shown'), render: (v: unknown) => <span className="font-mono tabular-nums text-sys-blue">{String(v ?? '—')}</span> },
-            { key: 'avg_final_rank_score', label: t('Avg'), render: (v: unknown) => <span className="font-mono tabular-nums text-txt-secondary">{fmt(v)}</span> },
-          ]} rows={stats?.by_view_type as RowData[]} empty={t('No view statistics.')} />
-        );
-      case 'noisy':
-        return <Table columns={noisyNodeCols} rows={stats?.noisy_nodes as RowData[]} empty={t('No noisy nodes.')} activeRowKey={filters.nodeUri} />;
-      default:
-        return null;
-    }
-  }
 
   return (
     <PageCanvas maxWidth="5xl">
@@ -351,42 +244,15 @@ export default function RecallDrilldown(): React.JSX.Element {
         ))}
       </div>
 
-      <div className="animate-in stagger-2 mb-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-        <StatCard
-          label={t('Current threshold')}
-          value={fmt(currentMinDisplayScore)}
-          tone="blue"
-          compact
-        />
-        <StatCard
-          label={t('Suggested threshold')}
-          value={fmt(suggestedMinDisplayScore)}
-          hint={!thresholdReady
-            ? t('Waiting for enough shown/used samples')
-            : thresholdUnsafe
-              ? t('Ready sample volume, blocked by overlap')
-              : t('Analytics-backed candidate midpoint')}
-          tone={!thresholdReady ? 'orange' : thresholdUnsafe ? 'orange' : 'green'}
-          compact
-        />
-        <StatCard
-          label={t('Threshold gap')}
-          value={thresholdDelta == null ? '—' : `${thresholdDelta >= 0 ? '+' : ''}${fmt(thresholdDelta)}`}
-          hint={t('Suggested minus current')}
-          tone={thresholdDelta == null ? 'default' : thresholdDelta > 0 ? 'orange' : thresholdDelta < 0 ? 'green' : 'default'}
-          compact
-        />
-        <StatCard
-          label={t('Separation gap')}
-          value={fmt(displayThresholdAnalysis?.separation_gap)}
-          hint={t('Used p25 minus unused shown p75')}
-          tone={!thresholdReady ? 'default' : thresholdUnsafe ? 'orange' : 'purple'}
-          compact
-        />
+      <div className="animate-in stagger-2 mb-5">
+        <Card>
+          <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.06em] text-txt-tertiary">{t('Display threshold analysis')}</div>
+          <Table columns={thresholdClientCols} rows={thresholdClientRows} empty={t('No source-specific threshold samples yet.')} activeRowKey={filters.clientType || undefined} />
+        </Card>
       </div>
 
       {/* filter bar */}
-      <div className="animate-in stagger-2 mb-5">
+      <div className="animate-in stagger-3 mb-5">
         <Disclosure
           open={filterOpen}
           onOpenChange={setFilterOpen}
@@ -400,11 +266,11 @@ export default function RecallDrilldown(): React.JSX.Element {
             <div className="p-5 grid gap-x-6 gap-y-4 md:grid-cols-5">
               <label className="block">
                 <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Days')}</span>
-                <input type="number" value={String(filters.days)} onChange={(e) => applyFilters({ days: e.target.value }, 'replace')} className={inputClass + ' tabular-nums'} />
+                <AppInput type="number" value={String(filters.days)} onChange={(e) => applyFilters({ days: e.target.value }, 'replace')} className="font-mono tabular-nums" />
               </label>
               <label className="block">
                 <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Limit')}</span>
-                <input type="number" value={String(filters.limit)} onChange={(e) => applyFilters({ limit: e.target.value }, 'replace')} className={inputClass + ' tabular-nums'} />
+                <AppInput type="number" value={String(filters.limit)} onChange={(e) => applyFilters({ limit: e.target.value }, 'replace')} className="font-mono tabular-nums" />
               </label>
               <label className="block">
                 <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Source')}</span>
@@ -436,63 +302,6 @@ export default function RecallDrilldown(): React.JSX.Element {
           {error}
         </Notice>
       )}
-
-      <div className="animate-in stagger-3 mb-5">
-        <Card>
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div className="space-y-2">
-              <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-txt-tertiary">{t('Display threshold analysis')}</div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge tone={!thresholdReady ? 'default' : thresholdUnsafe ? 'orange' : 'green'}>
-                  {!thresholdReady ? t('Insufficient data') : thresholdUnsafe ? t('Ready, unsafe to apply') : t('Ready to review')}
-                </Badge>
-                <span className="text-[12px] text-txt-secondary">{t('Basis')}: {t(thresholdBasisKey)}</span>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[12px] text-txt-secondary md:text-right">
-              <div>{t('Shown candidates')}: <span className="font-mono tabular-nums text-txt-primary">{String(displayThresholdAnalysis?.shown_candidate_count ?? '—')}</span></div>
-              <div>{t('Used candidates')}: <span className="font-mono tabular-nums text-txt-primary">{String(displayThresholdAnalysis?.used_candidate_count ?? '—')}</span></div>
-              <div>{t('Unused shown')}: <span className="font-mono tabular-nums text-txt-primary">{String(displayThresholdAnalysis?.unused_shown_candidate_count ?? '—')}</span></div>
-              <div>{t('Used p25')}: <span className="font-mono tabular-nums text-txt-primary">{fmt(displayThresholdAnalysis?.used_p25_score)}</span></div>
-              <div>{t('Unused shown p75')}: <span className="font-mono tabular-nums text-txt-primary">{fmt(displayThresholdAnalysis?.unused_shown_p75_score)}</span></div>
-              <div>{t('Used median')}: <span className="font-mono tabular-nums text-txt-primary">{fmt(displayThresholdAnalysis?.used_p50_score)}</span></div>
-            </div>
-          </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <div className="rounded-xl border border-separator-thin bg-bg-elevated px-4 py-3">
-              <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-txt-tertiary">{t('Current')}</div>
-              <div className="mt-1 font-mono text-[20px] font-semibold tabular-nums text-sys-blue">{fmt(currentMinDisplayScore)}</div>
-              <div className="mt-1 text-[12px] text-txt-tertiary">{t('Runtime min_display_score')}</div>
-            </div>
-            <div className="rounded-xl border border-separator-thin bg-bg-elevated px-4 py-3">
-              <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-txt-tertiary">{t('Suggested')}</div>
-              <div className="mt-1 font-mono text-[20px] font-semibold tabular-nums text-sys-green">{fmt(suggestedMinDisplayScore)}</div>
-              <div className="mt-1 text-[12px] text-txt-tertiary">{t('Analytics suggestion')}</div>
-            </div>
-            <div className="rounded-xl border border-separator-thin bg-bg-elevated px-4 py-3">
-              <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-txt-tertiary">{t('Difference')}</div>
-              <div className={clsx('mt-1 font-mono text-[20px] font-semibold tabular-nums', thresholdDelta == null ? 'text-txt-primary' : thresholdDelta > 0 ? 'text-sys-orange' : thresholdDelta < 0 ? 'text-sys-green' : 'text-txt-primary')}>
-                {thresholdDelta == null ? '—' : `${thresholdDelta >= 0 ? '+' : ''}${fmt(thresholdDelta)}`}
-              </div>
-              <div className="mt-1 text-[12px] text-txt-tertiary">{t('Suggested minus current')}</div>
-            </div>
-          </div>
-          {!thresholdReady && (
-            <Notice tone="warning" className="mt-4">
-              {t('Threshold guidance is waiting for enough shown and used candidates. Keep collecting recall events before changing the default display threshold.')}
-            </Notice>
-          )}
-          {thresholdUnsafe && (
-            <Notice tone="warning" className="mt-4" title={t('Ready sample volume, unsafe execution')}>
-              {t('This window has enough shown and used candidates to compute a suggestion, but the current score overlap is still unsafe. A negative separation gap means used low-tail candidates are scoring below unused shown high-tail candidates, so directly raising the runtime threshold would likely hide memories that were actually used.')}
-            </Notice>
-          )}
-          <div className="mt-4 border-t border-separator-thin pt-4">
-            <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.06em] text-txt-tertiary">{t('By source')}</div>
-            <Table columns={thresholdClientCols} rows={thresholdClientRows} empty={t('No source-specific threshold samples yet.')} activeRowKey={filters.clientType || undefined} />
-          </div>
-        </Card>
-      </div>
 
       {/* main content */}
       <div className="animate-in stagger-4">
@@ -566,36 +375,6 @@ export default function RecallDrilldown(): React.JSX.Element {
             </div>
           </Section>
         )}
-      </div>
-
-      {/* auxiliary data */}
-      <div className="animate-in stagger-5 mt-5">
-        <Disclosure
-          open={auxOpen}
-          onOpenChange={setAuxOpen}
-          trigger={
-            <span className="inline-flex items-center gap-1.5 text-[12.5px] text-txt-secondary hover:text-txt-primary">
-              {auxOpen ? `− ${t('Hide appendix')}` : `+ ${t('Show appendix')}`}
-            </span>
-          }
-        >
-          <div className="mt-3 space-y-5">
-            <Card padded={false}>
-              <div className="px-5 pt-4 pb-3 border-b border-separator-thin">
-                <SegmentedTabs
-                  value={aggTab}
-                  onValueChange={setAggTab}
-                  options={[['path', t('By path')], ['view', t('By view')], ['noisy', t('Noisy nodes')]].map(([value, label]) => ({ value, label }))}
-                />
-              </div>
-              <div className="p-5">{renderAgg()}</div>
-            </Card>
-            <div>
-              <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.06em] text-txt-tertiary">{t('Raw events')}</div>
-              <Table columns={eventCols} rows={stats?.recent_events as RowData[]} empty={t('No events yet.')} />
-            </div>
-          </div>
-        </Disclosure>
       </div>
     </PageCanvas>
   );

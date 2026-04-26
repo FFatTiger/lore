@@ -2,26 +2,11 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@lobehub/ui/es/Avatar/index', () => ({
-  default: ({ avatar, alt, className }: { avatar?: React.ReactNode; alt?: string; className?: string }) => (
-    <div data-app-avatar="true" data-alt={alt} className={className}>{avatar}</div>
-  ),
-}));
-
-vi.mock('./ui', () => ({
+vi.mock('../ui', () => ({
   AppAvatar: ({ avatar, alt, className }: { avatar?: React.ReactNode; alt?: string; className?: string }) => (
     <div data-app-avatar="true" data-alt={alt} className={className}>{avatar}</div>
   ),
   Badge: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
-}));
-
-vi.mock('@lobehub/ui/es/Accordion/index', () => ({
-  Accordion: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  AccordionItem: ({ children, title }: { children: React.ReactNode; title: React.ReactNode }) => <section><div>{title}</div>{children}</section>,
-}));
-
-vi.mock('@lobehub/ui/es/Segmented/index', () => ({
-  default: ({ options = [] }: { options?: Array<{ label: React.ReactNode; value: string }> }) => <div>{options.map((option) => option.label)}</div>,
 }));
 
 vi.mock('../lib/i18n', () => ({

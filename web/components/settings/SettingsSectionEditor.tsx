@@ -2,7 +2,7 @@
 
 import React, { ChangeEvent } from 'react';
 import clsx from 'clsx';
-import { Badge, Button, inputClass } from '@/components/ui';
+import { AppInput, AppPasswordInput, AppSelect, Badge, Button } from '@/components/ui';
 import { useT } from '@/lib/i18n';
 
 export type SettingSource = 'db' | 'default';
@@ -69,7 +69,7 @@ interface NumberInputProps {
 function NumberInput({ value, onChange, schema, disabled }: NumberInputProps): React.JSX.Element {
   const step = schema.step ?? (schema.type === 'integer' ? 1 : 0.01);
   return (
-    <input
+    <AppInput
       type="number"
       step={step}
       min={schema.min}
@@ -77,7 +77,7 @@ function NumberInput({ value, onChange, schema, disabled }: NumberInputProps): R
       value={value == null ? '' : String(value)}
       disabled={disabled}
       onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value === '' ? '' : Number(e.target.value))}
-      className="w-32 rounded-lg border border-separator-thin bg-bg-raised px-3 py-1.5 text-right text-[13px] font-mono tabular-nums text-txt-primary focus:border-sys-blue/60 focus:bg-bg-surface focus:outline-none disabled:opacity-40"
+      className="w-32 text-right font-mono text-[13px] tabular-nums"
     />
   );
 }
@@ -92,15 +92,15 @@ interface StringInputProps {
 
 function StringInput({ value, onChange, disabled, secret = false, secretConfigured = false }: StringInputProps): React.JSX.Element {
   const { t } = useT();
+  const InputComponent = secret ? AppPasswordInput : AppInput;
   return (
-    <input
-      type={secret ? 'password' : 'text'}
+    <InputComponent
       value={value == null ? '' : String(value)}
       disabled={disabled}
       placeholder={secret && secretConfigured ? t('Stored') : undefined}
       autoComplete="off"
       onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
-      className={`${inputClass} py-1.5`}
+      className="py-1.5"
     />
   );
 }
@@ -115,16 +115,16 @@ interface EnumInputProps {
 function EnumInput({ value, onChange, schema, disabled }: EnumInputProps): React.JSX.Element {
   const labels = schema.option_labels || {};
   return (
-    <select
-      value={value == null ? '' : String(value)}
+    <AppSelect
+      className="font-mono text-[13px]"
       disabled={disabled}
-      onChange={(e: ChangeEvent<HTMLSelectElement>) => onChange(e.target.value)}
-      className="rounded-lg border border-separator-thin bg-bg-raised px-3 py-1.5 text-[13px] font-mono text-txt-primary cursor-pointer focus:border-sys-blue/60 focus:bg-bg-surface focus:outline-none disabled:opacity-40 max-w-full"
-    >
-      {(schema.options || []).map((opt) => (
-        <option key={opt} value={opt}>{labels[opt] ? `${opt} — ${labels[opt]}` : opt}</option>
-      ))}
-    </select>
+      value={value == null ? '' : String(value)}
+      onValueChange={onChange}
+      options={(schema.options || []).map((opt) => ({
+        value: opt,
+        label: labels[opt] ? `${opt} — ${labels[opt]}` : opt,
+      }))}
+    />
   );
 }
 
@@ -148,7 +148,7 @@ function BooleanInput({ value, onChange, disabled }: BooleanInputProps): React.J
         className={clsx(
           'relative inline-flex h-6 w-11 shrink-0 rounded-full border transition-colors disabled:opacity-40',
           checked
-            ? 'border-sys-blue/30 bg-sys-blue/80'
+            ? '!bg-[rgba(0,122,255,0.15)] border-[rgba(0,122,255,0.35)]'
             : 'border-separator-thin bg-fill-primary',
         )}
       >

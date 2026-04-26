@@ -35,8 +35,6 @@ interface StatsWhereResult {
 
 interface DisplayThresholdAnalysis {
   status: 'insufficient_data' | 'ready';
-  status_detail: 'insufficient_data' | 'ready_to_review' | 'ready_but_unsafe';
-  execution_status: 'blocked' | 'eligible' | 'not_applicable';
   basis: string;
   shown_candidate_count: number;
   used_candidate_count: number;
@@ -48,41 +46,10 @@ interface DisplayThresholdAnalysis {
   used_p50_score: number | null;
   unused_shown_p75_score: number | null;
   separation_gap: number | null;
-  suggested_min_display_score: number | null;
 }
 
 function roundMetric(value: number | null, digits = 3): number | null {
   return value === null ? null : Number(value.toFixed(digits));
-}
-
-function clampDisplayScore(value: number): number {
-  return Math.max(0, Math.min(1, value));
-}
-
-function thresholdExecutionStatus(
-  status: 'insufficient_data' | 'ready',
-  suggestedMinDisplayScore: number | null,
-  separationGap: number | null,
-): 'blocked' | 'eligible' | 'not_applicable' {
-  if (status !== 'ready' || suggestedMinDisplayScore === null) {
-    return 'not_applicable';
-  }
-  if (separationGap !== null && separationGap < 0) {
-    return 'blocked';
-  }
-  return 'eligible';
-}
-
-function thresholdStatusDetail(
-  status: 'insufficient_data' | 'ready',
-  executionStatus: 'blocked' | 'eligible' | 'not_applicable',
-  separationGap: number | null,
-): 'insufficient_data' | 'ready_to_review' | 'ready_but_unsafe' {
-  if (status !== 'ready') return 'insufficient_data';
-  if (executionStatus === 'blocked' || (separationGap !== null && separationGap < 0)) {
-    return 'ready_but_unsafe';
-  }
-  return 'ready_to_review';
 }
 
 function buildDisplayThresholdAnalysis(row: Record<string, unknown>): DisplayThresholdAnalysis {
@@ -100,33 +67,13 @@ function buildDisplayThresholdAnalysis(row: Record<string, unknown>): DisplayThr
       ? roundMetric(usedP25Score - unusedShownP75Score)
       : null;
 
-  let status: 'insufficient_data' | 'ready' = 'insufficient_data';
-  let basis = 'insufficient_data';
-  let suggestedMinDisplayScore: number | null = null;
-
-  if (usedCandidateCount >= 3 && shownCandidateCount >= 5) {
-    status = 'ready';
-    if (usedP25Score !== null && unusedShownP75Score !== null) {
-      suggestedMinDisplayScore = roundMetric(clampDisplayScore((usedP25Score + unusedShownP75Score) / 2));
-      basis = 'midpoint_used_p25_unused_shown_p75';
-    } else if (usedP25Score !== null) {
-      suggestedMinDisplayScore = roundMetric(clampDisplayScore(usedP25Score - 0.03));
-      basis = 'used_p25_minus_margin';
-    } else if (avgUsedScore !== null) {
-      suggestedMinDisplayScore = roundMetric(clampDisplayScore(avgUsedScore - 0.05));
-      basis = 'avg_used_minus_margin';
-    } else {
-      status = 'insufficient_data';
-    }
-  }
-
-  const executionStatus = thresholdExecutionStatus(status, suggestedMinDisplayScore, separationGap);
-  const statusDetail = thresholdStatusDetail(status, executionStatus, separationGap);
+  const status: 'insufficient_data' | 'ready' = usedCandidateCount >= 3 && shownCandidateCount >= 5
+    ? 'ready'
+    : 'insufficient_data';
+  const basis = status === 'ready' ? 'sample_metrics' : 'insufficient_data';
 
   return {
     status,
-    status_detail: statusDetail,
-    execution_status: executionStatus,
     basis,
     shown_candidate_count: shownCandidateCount,
     used_candidate_count: usedCandidateCount,
@@ -138,7 +85,6 @@ function buildDisplayThresholdAnalysis(row: Record<string, unknown>): DisplayThr
     used_p50_score: roundMetric(usedP50Score),
     unused_shown_p75_score: roundMetric(unusedShownP75Score),
     separation_gap: separationGap,
-    suggested_min_display_score: suggestedMinDisplayScore,
   };
 }
 
@@ -900,45 +846,19 @@ export async function getRecallStats({
   const displayThresholdAnalysisBase = buildDisplayThresholdAnalysis(displayThresholdRow);
   const runtimeSettings = await getSettings(['recall.display.min_display_score']);
   const runtimeMinDisplayScore = asNumber(runtimeSettings['recall.display.min_display_score']);
-  const displayThresholdExecutionStatus = thresholdExecutionStatus(
-    displayThresholdAnalysisBase.status,
-    displayThresholdAnalysisBase.suggested_min_display_score,
-    displayThresholdAnalysisBase.separation_gap,
-  );
   const displayThresholdAnalysis = {
     ...displayThresholdAnalysisBase,
     current_min_display_score: roundMetric(runtimeMinDisplayScore),
-    threshold_gap:
-      displayThresholdAnalysisBase.suggested_min_display_score !== null && runtimeMinDisplayScore !== null
-        ? roundMetric(displayThresholdAnalysisBase.suggested_min_display_score - runtimeMinDisplayScore)
-        : null,
-    execution_status: displayThresholdExecutionStatus,
-    status_detail: thresholdStatusDetail(
-      displayThresholdAnalysisBase.status,
-      displayThresholdExecutionStatus,
-      displayThresholdAnalysisBase.separation_gap,
-    ),
   };
   const clientTypeBreakdownResult = clientTypeBreakdown as Awaited<ReturnType<typeof sql>>;
   const clientTypeRows = clientTypeBreakdownResult.rows.map((row: Record<string, unknown>) => {
     const analysisBase = buildDisplayThresholdAnalysis(row);
-    const executionStatus = thresholdExecutionStatus(
-      analysisBase.status,
-      analysisBase.suggested_min_display_score,
-      analysisBase.separation_gap,
-    );
     return {
       client_type: typeof row.client_type === 'string' && row.client_type.trim() ? row.client_type.trim() : null,
       current_min_display_score: roundMetric(runtimeMinDisplayScore),
       analysis: {
         ...analysisBase,
         current_min_display_score: roundMetric(runtimeMinDisplayScore),
-        threshold_gap:
-          analysisBase.suggested_min_display_score !== null && runtimeMinDisplayScore !== null
-            ? roundMetric(analysisBase.suggested_min_display_score - runtimeMinDisplayScore)
-            : null,
-        execution_status: executionStatus,
-        status_detail: thresholdStatusDetail(analysisBase.status, executionStatus, analysisBase.separation_gap),
       },
     };
   });

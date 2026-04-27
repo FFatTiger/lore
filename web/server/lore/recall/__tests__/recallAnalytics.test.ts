@@ -443,7 +443,7 @@ describe('getRecallStats', () => {
 
     await getRecallStats({ queryId: 'q-test', nodeUri: 'core://test-node' });
 
-    const aggregateCalls = mockSql.mock.calls.slice(0, 6);
+    const aggregateCalls = mockSql.mock.calls.slice(1, 7);
     expect(aggregateCalls).toHaveLength(6);
 
     for (const [query, params] of aggregateCalls) {
@@ -464,7 +464,7 @@ describe('getRecallStats', () => {
     let callCount = 0;
     mockSql.mockImplementation(async () => {
       callCount++;
-      if (callCount === 8) {
+      if (callCount === 9) {
         return makeResult([{
           shown_candidates: '6',
           used_candidates: '3',
@@ -476,10 +476,10 @@ describe('getRecallStats', () => {
           unused_shown_p75_score: '0.58',
         }]);
       }
-      if (callCount === 9) {
+      if (callCount === 10) {
         return makeResult([]);
       }
-      if (callCount === 10) {
+      if (callCount === 12) {
         return makeResult([{ key: 'recall.display.min_display_score', value: 0.55 }]);
       }
       return makeResult([{ total_merged: '3', total_shown: '2', total_used: '1', query_count: '1', last_event_at: null }]);
@@ -512,7 +512,7 @@ describe('getRecallStats', () => {
     let callCount = 0;
     mockSql.mockImplementation(async () => {
       callCount++;
-      if (callCount === 8) {
+      if (callCount === 9) {
         return makeResult([{
           shown_candidates: '10',
           used_candidates: '4',
@@ -524,10 +524,10 @@ describe('getRecallStats', () => {
           unused_shown_p75_score: '0.64',
         }]);
       }
-      if (callCount === 9) {
+      if (callCount === 10) {
         return makeResult([]);
       }
-      if (callCount === 10) {
+      if (callCount === 12) {
         return makeResult([{ key: 'recall.display.min_display_score', value: 0.55 }]);
       }
       return makeResult([{ total_merged: '4', total_shown: '3', total_used: '2', query_count: '1', last_event_at: null }]);
@@ -556,7 +556,7 @@ describe('getRecallStats', () => {
     let callCount = 0;
     mockSql.mockImplementation(async () => {
       callCount++;
-      if (callCount === 8) {
+      if (callCount === 9) {
         return makeResult([{
           shown_candidates: '6',
           used_candidates: '3',
@@ -568,7 +568,7 @@ describe('getRecallStats', () => {
           unused_shown_p75_score: '0.58',
         }]);
       }
-      if (callCount === 9) {
+      if (callCount === 10) {
         return makeResult([
           {
             client_type: '',
@@ -594,7 +594,7 @@ describe('getRecallStats', () => {
           },
         ]);
       }
-      if (callCount === 10) {
+      if (callCount === 12) {
         return makeResult([{ key: 'recall.display.min_display_score', value: 0.55 }]);
       }
       return makeResult([{ total_merged: '3', total_shown: '2', total_used: '1', query_count: '1', last_event_at: null }]);
@@ -648,7 +648,7 @@ describe('getRecallStats', () => {
     let callCount = 0;
     mockSql.mockImplementation(async () => {
       callCount++;
-      if (callCount === 8) {
+      if (callCount === 9) {
         return makeResult([{
           shown_candidates: '4',
           used_candidates: '2',
@@ -660,10 +660,10 @@ describe('getRecallStats', () => {
           unused_shown_p75_score: '0.54',
         }]);
       }
-      if (callCount === 9) {
+      if (callCount === 10) {
         return makeResult([]);
       }
-      if (callCount === 10) {
+      if (callCount === 12) {
         return makeResult([{ key: 'recall.display.min_display_score', value: 0.55 }]);
       }
       return makeResult([{ total_merged: '2', total_shown: '1', total_used: '1', query_count: '1', last_event_at: null }]);

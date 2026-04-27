@@ -664,23 +664,27 @@ export async function getRecallStats({
   const { where: breakdownWhere, params: breakdownParams } = buildStatsWhere({ days, queryId, queryText, nodeUri, clientType: '' });
   const hasFilter = filters.query_id || filters.query_text || filters.node_uri || filters.client_type;
 
-  const recentQueriesCountParams = [...filterParams];
+  await sql('SET LOCAL work_mem = \'64MB\'', []);
+
   const recentQueriesListParams = [...filterParams, safeRecentQueriesLimit, safeRecentQueriesOffset];
   let queryDetail: Record<string, unknown> | null = null;
   let nodeDetail: Record<string, unknown> | null = null;
 
-  const [summary, byPath, byViewType, noisyNodes, recentQueriesCount, recentQueries, recentEvents, displayThreshold, clientTypeBreakdown] = await Promise.all([
+  const [summary, byPath, byViewType, noisyNodes, recentQueriesCount, recentQueries, recentEvents, displayThreshold, clientTypeBreakdown, queryCount] = await Promise.all([
     sql(
       `
+        WITH node_summary AS (
+          SELECT node_uri, BOOL_OR(selected) AS selected, BOOL_OR(used_in_answer) AS used_in_answer
+          FROM recall_events
+          WHERE ${filterWhere}
+            AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = node_uri)
+          GROUP BY node_uri
+        )
         SELECT
-          COUNT(DISTINCT node_uri) AS total_merged,
-          COUNT(DISTINCT node_uri) FILTER (WHERE selected) AS total_shown,
-          COUNT(DISTINCT node_uri) FILTER (WHERE used_in_answer) AS total_used,
-          COUNT(DISTINCT COALESCE(metadata->>'query_id', id::text)) AS query_count,
-          MAX(created_at) AS last_event_at
-        FROM recall_events
-        WHERE ${filterWhere}
-          AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = node_uri)
+          COUNT(*) AS total_merged,
+          COUNT(*) FILTER (WHERE selected) AS total_shown,
+          COUNT(*) FILTER (WHERE used_in_answer) AS total_used
+        FROM node_summary
       `,
       filterParams,
     ),
@@ -738,32 +742,40 @@ export async function getRecallStats({
     ),
     sql(
       `
-        SELECT COUNT(*)::int AS total
-        FROM (
-          SELECT COALESCE(metadata->>'query_id', id::text) AS query_id
-          FROM recall_events
-          WHERE ${filterWhere}
-            AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = node_uri)
-          GROUP BY COALESCE(metadata->>'query_id', id::text)
-        ) grouped_queries
-      `,
-      recentQueriesCountParams,
-    ),
-    sql(
-      `
-        SELECT
-          COALESCE(metadata->>'query_id', id::text) AS query_id,
-          MIN(query_text) AS query_text,
-          COUNT(DISTINCT node_uri) AS merged_count,
-          COUNT(DISTINCT node_uri) FILTER (WHERE selected) AS shown_count,
-          COUNT(DISTINCT node_uri) FILTER (WHERE used_in_answer) AS used_count,
-          MIN(metadata->>'client_type') AS client_type,
-          MAX(created_at) AS created_at
+        SELECT COUNT(DISTINCT COALESCE(metadata->>'query_id', id::text))::int AS total
         FROM recall_events
         WHERE ${filterWhere}
           AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = node_uri)
-        GROUP BY COALESCE(metadata->>'query_id', id::text)
-        ORDER BY MAX(created_at) DESC, COALESCE(metadata->>'query_id', id::text) DESC
+      `,
+      filterParams,
+    ),
+    sql(
+      `
+        WITH per_query_node AS (
+          SELECT
+            COALESCE(metadata->>'query_id', id::text) AS query_id,
+            node_uri,
+            BOOL_OR(selected) AS selected,
+            BOOL_OR(used_in_answer) AS used_in_answer,
+            MIN(query_text) AS query_text,
+            MIN(metadata->>'client_type') AS client_type,
+            MAX(created_at) AS created_at
+          FROM recall_events
+          WHERE ${filterWhere}
+            AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = node_uri)
+          GROUP BY COALESCE(metadata->>'query_id', id::text), node_uri
+        )
+        SELECT
+          query_id,
+          MIN(query_text) AS query_text,
+          COUNT(*) AS merged_count,
+          COUNT(*) FILTER (WHERE selected) AS shown_count,
+          COUNT(*) FILTER (WHERE used_in_answer) AS used_count,
+          MIN(client_type) AS client_type,
+          MAX(created_at) AS created_at
+        FROM per_query_node
+        GROUP BY query_id
+        ORDER BY MAX(created_at) DESC, query_id DESC
         LIMIT $${filterParams.length + 1}
         OFFSET $${filterParams.length + 2}
       `,
@@ -839,9 +851,21 @@ export async function getRecallStats({
       `,
       breakdownParams,
     ),
+    sql(
+      `
+        SELECT
+          COUNT(DISTINCT COALESCE(metadata->>'query_id', id::text))::int AS query_count,
+          MAX(created_at) AS last_event_at
+        FROM recall_events
+        WHERE ${filterWhere}
+          AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = node_uri)
+      `,
+      filterParams,
+    ),
   ]);
 
   const summaryRow = summary.rows[0] || {};
+  const queryCountRow = queryCount.rows[0] || {};
   const displayThresholdRow = displayThreshold.rows[0] || {};
   const displayThresholdAnalysisBase = buildDisplayThresholdAnalysis(displayThresholdRow);
   const runtimeSettings = await getSettings(['recall.display.min_display_score']);
@@ -944,8 +968,8 @@ export async function getRecallStats({
       merged_count: Number(summaryRow.total_merged || 0),
       shown_count: Number(summaryRow.total_shown || 0),
       used_count: Number(summaryRow.total_used || 0),
-      query_count: Number(summaryRow.query_count || 0),
-      last_event_at: summaryRow.last_event_at ? new Date(summaryRow.last_event_at).toISOString() : null,
+      query_count: Number(queryCountRow.query_count || 0),
+      last_event_at: queryCountRow.last_event_at ? new Date(queryCountRow.last_event_at).toISOString() : null,
     },
     display_threshold_analysis: displayThresholdAnalysis,
     client_type_threshold_analysis: clientTypeRows,

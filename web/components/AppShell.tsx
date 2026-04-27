@@ -33,7 +33,7 @@ const tabs: Tab[] = [
 ];
 
 export function navIndicatorClassName(isHovering: boolean): string {
-  return isHovering ? 'bg-fill-primary shadow-none' : 'bg-sys-blue/12 shadow-[inset_0_0_0_1px_rgba(64,156,255,0.18)]';
+  return 'bg-fill-primary shadow-none';
 }
 
 export function LobeThemeBridge({ children }: { children: ReactNode }): React.JSX.Element {

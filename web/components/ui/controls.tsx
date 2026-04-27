@@ -21,6 +21,7 @@ import LobeTag from '@lobehub/ui/es/Tag/Tag';
 import LobeEmpty from '@lobehub/ui/es/Empty/index';
 import LobeCopyButton from '@lobehub/ui/es/CopyButton/index';
 import LobeActionIcon from '@lobehub/ui/es/ActionIcon/index';
+import { CodeDiff as LobeCodeDiff } from '@lobehub/ui/es/CodeDiff/index';
 import { Tooltip as LobeTooltip } from '@lobehub/ui';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'destructive';
@@ -40,10 +41,10 @@ const BUTTON_SIZE_MAP: Record<ButtonSize, LobeButtonProps['size']> = {
 };
 
 const BUTTON_VARIANT_CLASSNAMES: Record<ButtonVariant, string> = {
-  primary: 'bg-sys-blue text-white hover:bg-[#1E90FF]',
-  secondary: 'border border-sys-green/20 bg-sys-green/15 text-sys-green hover:bg-sys-green/20',
-  ghost: 'bg-transparent text-txt-secondary hover:bg-fill-quaternary hover:text-txt-primary',
-  destructive: 'bg-sys-red/15 !text-sys-red hover:bg-sys-red/25',
+  primary: '',
+  secondary: '',
+  ghost: '',
+  destructive: '',
 };
 
 export function Button({ variant = 'secondary', size = 'md', children, className, ...rest }: ButtonProps): React.JSX.Element {
@@ -53,11 +54,11 @@ export function Button({ variant = 'secondary', size = 'md', children, className
     : variant === 'ghost'
       ? 'text'
       : 'default';
-  const lobeVariant = variant === 'secondary' ? 'filled' : variant === 'ghost' ? 'text' : undefined;
+  const lobeVariant = variant === 'ghost' ? 'text' : undefined;
 
   return (
     <LobeButton
-      className={clsx('press inline-flex items-center justify-center gap-1.5 font-medium rounded-full whitespace-nowrap', BUTTON_VARIANT_CLASSNAMES[variant], className)}
+      className={clsx('press inline-flex items-center justify-center gap-1.5 font-medium rounded-full whitespace-nowrap', className)}
       danger={danger}
       size={BUTTON_SIZE_MAP[size]}
       type={type}
@@ -156,7 +157,7 @@ export function Notice({ tone = 'info', icon, title, children, className }: Noti
       className={className}
       description={children}
       icon={icon}
-      message={title}
+      title={title}
       showIcon={Boolean(icon)}
       type={NOTICE_TYPES[tone]}
       variant="filled"
@@ -177,7 +178,7 @@ export function Empty({ text, title, icon: Icon, emoji, action, className }: Emp
   return (
     <LobeEmpty
       action={action}
-      className={className}
+      className={clsx('flex flex-col items-center justify-center text-center', className)}
       description={text}
       emoji={emoji}
       icon={Icon}
@@ -366,5 +367,29 @@ export function Tooltip({ title, children, className, placement = 'top' }: Toolt
     <LobeTooltip className={className} placement={placement} title={title}>
       {children}
     </LobeTooltip>
+  );
+}
+
+interface CodeDiffProps {
+  oldContent: string;
+  newContent: string;
+  language?: string;
+  fileName?: string;
+  showHeader?: boolean;
+  viewMode?: 'split' | 'unified';
+  className?: string;
+}
+
+export function CodeDiff({ oldContent, newContent, language, fileName, showHeader = true, viewMode = 'split', className }: CodeDiffProps): React.JSX.Element {
+  return (
+    <LobeCodeDiff
+      className={className}
+      fileName={fileName}
+      language={language}
+      newContent={newContent}
+      oldContent={oldContent}
+      showHeader={showHeader}
+      viewMode={viewMode}
+    />
   );
 }

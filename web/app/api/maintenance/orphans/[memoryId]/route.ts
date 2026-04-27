@@ -5,11 +5,12 @@ import { getOrphanDetail, permanentlyDeleteDeprecatedMemory } from '../../../../
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: NextRequest, { params }: { params: { memoryId: string } }): Promise<NextResponse> {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ memoryId: string }> }): Promise<NextResponse> {
   const unauthorized = requireBearerAuth(request);
   if (unauthorized) return unauthorized;
 
-  const memoryId = Number(params.memoryId);
+  const { memoryId: rawId } = await params;
+  const memoryId = Number(rawId);
   try {
     const detail = await getOrphanDetail(memoryId);
     if (!detail) return NextResponse.json({ detail: `Memory ${memoryId} not found` }, { status: 404 });
@@ -19,11 +20,12 @@ export async function GET(request: NextRequest, { params }: { params: { memoryId
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { memoryId: string } }): Promise<NextResponse> {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ memoryId: string }> }): Promise<NextResponse> {
   const unauthorized = requireBearerAuth(request);
   if (unauthorized) return unauthorized;
 
-  const memoryId = Number(params.memoryId);
+  const { memoryId: rawId } = await params;
+  const memoryId = Number(rawId);
   try {
     return NextResponse.json(await permanentlyDeleteDeprecatedMemory(memoryId, { source: 'api:DELETE /maintenance/orphans' }));
   } catch (error) {

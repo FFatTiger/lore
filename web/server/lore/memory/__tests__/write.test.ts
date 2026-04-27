@@ -628,9 +628,9 @@ describe('updateNodeByPath', () => {
       { rows: pathContextRow ? [pathContextRow] : [], rowCount: pathContextRow ? 1 : 0 },
       // SELECT memory FOR UPDATE
       { rows: [{ id: 77, content: currentContent }], rowCount: 1 },
-      // UPDATE old memory deprecated
-      { rows: [], rowCount: 1 },
-      // INSERT new memory
+      // INSERT new memory (RETURNING id)
+      { rows: [{ id: 99 }], rowCount: 1 },
+      // UPDATE old memory deprecated + migrated_to
       { rows: [], rowCount: 1 },
       { rows: [], rowCount: 0 },                              // COMMIT
     ]);

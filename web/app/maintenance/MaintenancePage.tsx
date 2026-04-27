@@ -1,14 +1,12 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, MouseEvent } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
 import clsx from 'clsx';
-import DiffViewer from '../../components/DiffViewer';
 import { api } from '../../lib/api';
 import { PageCanvas, PageTitle, Button, Badge, EmptyState } from '../../components/ui';
 import { useT } from '../../lib/i18n';
-import { buildUrlWithSearchParams, readStringParam } from '../../lib/url-state';
 import { AxiosError } from 'axios';
 import { useConfirm } from '../../components/ConfirmDialog';
 
@@ -26,40 +24,23 @@ interface OrphanItem {
   migration_target?: MigrationTarget;
 }
 
-interface OrphanDetail {
-  content?: string;
-  migration_target?: MigrationTarget & { id?: string | number };
-  error?: string;
-}
-
 export default function MaintenancePage(): React.JSX.Element {
   const { t } = useT();
   const { confirm: confirmDialog } = useConfirm();
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const expandedId = readStringParam(searchParams, 'orphan');
   const [orphans, setOrphans] = useState<OrphanItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [detailData, setDetailData] = useState<Record<string | number, OrphanDetail>>({});
-  const [detailLoading, setDetailLoading] = useState<string | number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
   const [batchDeleting, setBatchDeleting] = useState(false);
 
   useEffect(() => { loadOrphans(); }, []);
-
-  const navigateToMaintenance = useCallback((orphanId: string | number | null, mode: 'push' | 'replace' = 'push') => {
-    const href = buildUrlWithSearchParams('/maintenance', searchParams, { orphan: orphanId }, { orphan: '' });
-    if (mode === 'replace') router.replace(href);
-    else router.push(href);
-  }, [router, searchParams]);
 
   const loadOrphans = async () => {
     setLoading(true); setError(null); setSelectedIds(new Set());
     try {
       const data = (await api.get('/maintenance/orphans')).data as OrphanItem[];
       setOrphans(data);
-      if (expandedId && !data.some((item) => String(item.id) === expandedId)) navigateToMaintenance(null, 'replace');
     }
     catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
@@ -83,47 +64,17 @@ export default function MaintenancePage(): React.JSX.Element {
     const fs = new Set(failed.map((id) => String(id)));
     setOrphans(prev => prev.filter(i => !toDelete.includes(i.id) || fs.has(String(i.id))));
     setSelectedIds(new Set(failed));
-    if (expandedId && toDelete.some((id) => String(id) === expandedId) && !fs.has(expandedId)) navigateToMaintenance(null, 'replace');
     setBatchDeleting(false);
   };
 
-  useEffect(() => {
-    if (!expandedId) return;
-    if (detailData[expandedId]) return;
-
-    let cancelled = false;
-    setDetailLoading(expandedId);
-    api.get(`/maintenance/orphans/${expandedId}`)
-      .then((res) => {
-        if (!cancelled) setDetailData((p) => ({ ...p, [expandedId]: res.data }));
-      })
-      .catch((err) => {
-        const axiosErr = err as AxiosError;
-        if (!cancelled) setDetailData((p) => ({ ...p, [expandedId]: { error: axiosErr.message } }));
-      })
-      .finally(() => {
-        if (!cancelled) setDetailLoading(null);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [detailData, expandedId]);
-
   const handleExpand = (id: string | number) => {
-    if (expandedId === String(id)) {
-      navigateToMaintenance(null, 'replace');
-      return;
-    }
-    navigateToMaintenance(id);
+    router.push(`/maintenance/orphans/${id}`);
   };
 
   const deprecated = orphans.filter(o => o.category === 'deprecated');
   const orphaned = orphans.filter(o => o.category === 'orphaned');
 
   const renderEntry = (item: OrphanItem) => {
-    const isExpanded = expandedId === String(item.id);
-    const detail = detailData[item.id];
     const isChecked = selectedIds.has(item.id);
     const cat = item.category === 'deprecated' ? { tone: 'orange' as const, label: t('Deprecated') } : { tone: 'red' as const, label: t('Orphaned') };
 
@@ -165,34 +116,10 @@ export default function MaintenancePage(): React.JSX.Element {
               {item.content_snippet}
             </p>
           </div>
-          <span className="text-[11px] text-txt-tertiary group-hover:text-sys-blue shrink-0 self-start">
-            {isExpanded ? '−' : '+'}
-          </span>
-        </div>
-        {isExpanded && (
-          <div className="animate-in border-t border-separator-hairline px-5 pb-5 pt-4 space-y-4">
-            {detailLoading === item.id ? (
-              <p className="text-[12px] text-txt-tertiary">{t('Loading…')}</p>
-            ) : detail?.error ? (
-              <p className="text-[13px] text-sys-red">{detail.error}</p>
-            ) : detail ? (
-              <>
-                <div>
-                  <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.06em] text-txt-tertiary">{t('Full text')}</div>
-                  <pre className="rounded-xl border border-separator-thin bg-bg-inset p-4 font-mono text-[12px] leading-relaxed text-txt-secondary whitespace-pre-wrap max-h-64 overflow-y-auto">{detail.content}</pre>
-                </div>
-                {detail.migration_target && (
-                  <div>
-                    <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.06em] text-txt-tertiary">{t('Diff')} → #{detail.migration_target.id}</div>
-                    <div className="rounded-xl border border-separator-thin bg-bg-inset p-4 max-h-96 overflow-y-auto">
-                      <DiffViewer oldText={detail.content || ''} newText={detail.migration_target.content || ''} />
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : null}
+          <div className="flex items-center gap-2 shrink-0 self-start">
+            <span className="text-[11px] text-sys-blue group-hover:opacity-80">{t('View')} →</span>
           </div>
-        )}
+        </div>
       </div>
     );
   };

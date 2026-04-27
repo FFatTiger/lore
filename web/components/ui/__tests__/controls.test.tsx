@@ -9,10 +9,10 @@ vi.mock('@lobehub/ui/es/Button/index', () => ({
 }));
 
 vi.mock('@lobehub/ui/es/Alert/index', () => ({
-  default: ({ message, description, type, showIcon, icon }: { message?: React.ReactNode; description?: React.ReactNode; type?: string; showIcon?: boolean; icon?: React.ReactNode }) => (
+  default: ({ title, description, type, showIcon, icon }: { title?: React.ReactNode; description?: React.ReactNode; type?: string; showIcon?: boolean; icon?: React.ReactNode }) => (
     <aside data-lobe-alert-type={type} data-lobe-alert-show-icon={showIcon}>
       {icon && <span data-lobe-alert-icon="">{icon}</span>}
-      {message && <strong>{message}</strong>}
+      {title && <strong>{title}</strong>}
       {description}
     </aside>
   ),
@@ -106,40 +106,36 @@ vi.mock('@lobehub/ui', async (importOriginal) => {
 import { ActionIcon, AppAvatar, AppCheckbox, AppInput, Badge, Button, CopyButton, Disclosure, Empty, Notice, SegmentedTabs, StatCard, Tooltip } from '../controls';
 
 describe('ui controls Lobe wrappers', () => {
-  it('maps secondary buttons to a green-tinted selected state for light-mode contrast', () => {
-    const html = renderToStaticMarkup(<Button variant="secondary">Selected</Button>);
-
-    expect(html).toContain('bg-sys-green/15');
-    expect(html).toContain('text-sys-green');
-    expect(html).toContain('border-sys-green/20');
-  });
-
-  it('keeps destructive buttons readable on red backgrounds', () => {
-    const html = renderToStaticMarkup(<Button variant="destructive">Delete</Button>);
-
-    expect(html).toContain('bg-sys-red/15');
-    expect(html).toContain('!text-sys-red');
-    expect(html).not.toContain('text-white');
-  });
-
-  it('renders primary buttons with blue background and type primary', () => {
+  it('maps primary buttons to Lobe type primary', () => {
     const html = renderToStaticMarkup(<Button variant="primary">Create</Button>);
 
-    expect(html).toContain('bg-sys-blue');
-    expect(html).toContain('text-white');
-    expect(html).toContain('hover:bg-[#1E90FF]');
     expect(html).toContain('data-lobe-button-type="primary"');
     expect(html).not.toContain('data-lobe-button-danger="true"');
+    expect(html).toContain('Create');
   });
 
-  it('renders ghost buttons as transparent text-only controls', () => {
+  it('maps secondary buttons to Lobe type default', () => {
+    const html = renderToStaticMarkup(<Button variant="secondary">Edit</Button>);
+
+    expect(html).toContain('data-lobe-button-type="default"');
+    expect(html).not.toContain('data-lobe-button-danger="true"');
+    expect(html).toContain('Edit');
+  });
+
+  it('maps ghost buttons to Lobe type text', () => {
     const html = renderToStaticMarkup(<Button variant="ghost">Cancel</Button>);
 
-    expect(html).toContain('bg-transparent');
-    expect(html).toContain('text-txt-secondary');
-    expect(html).toContain('hover:bg-fill-quaternary');
     expect(html).toContain('data-lobe-button-type="text"');
     expect(html).not.toContain('data-lobe-button-danger="true"');
+    expect(html).toContain('Cancel');
+  });
+
+  it('maps destructive buttons to Lobe primary + danger', () => {
+    const html = renderToStaticMarkup(<Button variant="destructive">Delete</Button>);
+
+    expect(html).toContain('data-lobe-button-type="primary"');
+    expect(html).toContain('data-lobe-button-danger="true"');
+    expect(html).toContain('Delete');
   });
 
   it('maps sm size to Lobe small, md to middle, lg to large', () => {
@@ -155,8 +151,8 @@ describe('ui controls Lobe wrappers', () => {
   it('defaults button variant to secondary and size to md', () => {
     const html = renderToStaticMarkup(<Button>Default</Button>);
 
-    expect(html).toContain('bg-sys-green/15');
     expect(html).toContain('data-lobe-button-size="middle"');
+    expect(html).toContain('data-lobe-button-type="default"');
   });
 
   it('renders text content inside all button variants', () => {

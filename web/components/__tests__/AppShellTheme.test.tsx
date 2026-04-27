@@ -56,8 +56,8 @@ describe('AppShell theme contrast', () => {
     expect(html).toContain('data-appearance="light"');
   });
 
-  it('uses a visible active navigation indicator instead of a white-on-white surface', () => {
-    expect(navIndicatorClassName(false)).toContain('bg-sys-blue/');
-    expect(navIndicatorClassName(false)).not.toContain('bg-bg-elevated');
+  it('uses a subtle fill background for active nav indicator', () => {
+    expect(navIndicatorClassName(false)).toContain('bg-fill-primary');
+    expect(navIndicatorClassName(true)).toContain('bg-fill-primary');
   });
 });

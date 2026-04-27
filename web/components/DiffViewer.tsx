@@ -7,9 +7,10 @@ import { useT } from '../lib/i18n';
 interface DiffViewerProps {
   oldText: string;
   newText: string;
+  noChangesHint?: string;
 }
 
-const DiffViewer = ({ oldText, newText }: DiffViewerProps): React.JSX.Element => {
+const DiffViewer = ({ oldText, newText, noChangesHint }: DiffViewerProps): React.JSX.Element => {
   const { t } = useT();
   const diff: Change[] = diffLines(oldText || '', newText || '');
   const hasChanges = (oldText || '') !== (newText || '');
@@ -17,7 +18,9 @@ const DiffViewer = ({ oldText, newText }: DiffViewerProps): React.JSX.Element =>
   return (
     <div className="w-full font-mono text-[12px] leading-relaxed">
       {!hasChanges && (
-        <p className="py-3 text-center text-[13px] text-txt-tertiary">{t('No textual changes.')}</p>
+        <p className="py-3 text-center text-[13px] text-txt-tertiary">
+          {noChangesHint || t('No textual changes.')}
+        </p>
       )}
       <div className="space-y-0.5">
         {diff.map((part, i) => {

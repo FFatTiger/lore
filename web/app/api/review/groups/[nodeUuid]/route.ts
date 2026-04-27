@@ -6,21 +6,23 @@ import { approveReviewGroup, rollbackReviewGroup } from '../../../../../server/l
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function DELETE(request: NextRequest, { params }: { params: { nodeUuid: string } }): Promise<NextResponse> {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ nodeUuid: string }> }): Promise<NextResponse> {
   const unauthorized = requireBearerAuth(request);
   if (unauthorized) return unauthorized;
   try {
-    return NextResponse.json(await approveReviewGroup(params.nodeUuid));
+    const { nodeUuid } = await params;
+    return NextResponse.json(await approveReviewGroup(nodeUuid));
   } catch (error) {
     return jsonContractError(error, 'Failed to approve review group');
   }
 }
 
-export async function POST(request: NextRequest, { params }: { params: { nodeUuid: string } }): Promise<NextResponse> {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ nodeUuid: string }> }): Promise<NextResponse> {
   const unauthorized = requireBearerAuth(request);
   if (unauthorized) return unauthorized;
   try {
-    return NextResponse.json(await rollbackReviewGroup(params.nodeUuid));
+    const { nodeUuid } = await params;
+    return NextResponse.json(await rollbackReviewGroup(nodeUuid));
   } catch (error) {
     return jsonContractError(error, 'Failed to rollback review group');
   }

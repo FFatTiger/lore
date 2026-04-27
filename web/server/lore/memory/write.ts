@@ -232,20 +232,22 @@ export async function updateNodeByPath(
       beforeContent = currentMemory?.content ?? null;
       if (currentMemory && currentMemory.content !== content) {
         contentChanged = true;
-        await client.query(
-          `
-            UPDATE memories
-            SET deprecated = TRUE, migrated_to = NULL
-            WHERE id = $1
-          `,
-          [currentMemory.id],
-        );
-        await client.query(
+        const newMemoryResult = await client.query(
           `
             INSERT INTO memories (node_uuid, content, deprecated, migrated_to, created_at)
             VALUES ($1, $2, FALSE, NULL, NOW())
+            RETURNING id
           `,
           [ctx.child_uuid, content],
+        );
+        const newMemoryId = (newMemoryResult.rows[0] as { id: number }).id;
+        await client.query(
+          `
+            UPDATE memories
+            SET deprecated = TRUE, migrated_to = $2
+            WHERE id = $1
+          `,
+          [currentMemory.id, newMemoryId],
         );
       }
     }

@@ -48,7 +48,6 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
     'Ready': '就绪',
     'Insufficient': '不足',
     'Unused p75': '未采用样本 p75',
-    'root': 'root',
     'None': '无',
     'Save failed': '保存失败',
     'Create failed': '创建失败',
@@ -372,8 +371,14 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
     'Deleting…': '删除中…',
     'All clear. No orphans to review.': '一切清爽，暂无孤立项。',
     'migrated to': '迁移至',
+    'Migrated to': '迁移至',
     'Diff': '差异',
     'Full text': '全文',
+    'Paths': '路径',
+    'Orphan Detail': '孤立详情',
+    'Content unchanged': '内容未变',
+    'Both versions have identical content. Only routes or metadata differ.': '两个版本内容相同，仅路径或元数据有差异。',
+    'Permanently delete this memory? This cannot be undone.': '永久删除此记忆？此操作无法撤销。',
     'Delete {n} memories?': '确认删除所选 {n} 条记忆？',
 
     // ── dream

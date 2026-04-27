@@ -245,10 +245,9 @@ export default function RecallDrilldown(): React.JSX.Element {
       </div>
 
       <div className="animate-in stagger-2 mb-5">
-        <Card>
-          <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.06em] text-txt-tertiary">{t('Display threshold analysis')}</div>
+        <Section title={t('Display threshold analysis')}>
           <Table columns={thresholdClientCols} rows={thresholdClientRows} empty={t('No source-specific threshold samples yet.')} activeRowKey={filters.clientType || undefined} />
-        </Card>
+        </Section>
       </div>
 
       {/* filter bar */}

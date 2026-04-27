@@ -876,97 +876,65 @@ describe('loadGuidanceFile', () => {
 // ---------------------------------------------------------------------------
 
 describe('buildDreamSystemPrompt', () => {
-  it('includes key boot memories and guidance instead of the old health report framing', () => {
+  it('establishes auditor identity and diagnostic framework', () => {
     const prompt = buildDreamSystemPrompt(makeInitialContext());
-    expect(prompt).toContain('## Key boot memories');
+    expect(prompt).toContain('你是 Lore 记忆系统的质检员');
+    expect(prompt).toContain('至少有一类查询，在明天比今天更有可能召回正确的结果');
     expect(prompt).toContain('Agent boot body');
     expect(prompt).toContain('Soul boot body');
     expect(prompt).toContain('User boot body');
-    expect(prompt).toContain('## Guidance');
-    expect(prompt).not.toContain('## Health report');
-    expect(prompt).not.toContain('health_summary');
+    expect(prompt).toContain('启动基线');
+    expect(prompt).toContain('记忆写入规则');
   });
 
-  it('includes key boot memories and action-first guidance-driven workflow', () => {
+  it('provides structured decision framework for interventions', () => {
     const prompt = buildDreamSystemPrompt(makeInitialContext());
-    expect(prompt).toContain('Read the guidance first and apply it to every write decision and to the final diary');
-    expect(prompt).toContain('Use the loaded boot baseline as always-available key memories throughout the review');
-    expect(prompt).toContain('Use the following protected boot nodes as fixed reference memories while you judge recall problems, choose write scope, and explain decisions in the diary');
-    expect(prompt).toContain('core://agent — workflow constraints');
-    expect(prompt).toContain('core://soul — style / persona / self-definition');
-    expect(prompt).toContain('preferences://user — stable user definition');
-    expect(prompt).toContain('## Key boot memories');
-    expect(prompt).toContain('## Guidance');
-    expect(prompt).toContain('## Today\'s working context');
-    expect(prompt).not.toContain('## Preloaded boot baseline');
-    expect(prompt).not.toContain('## Preloaded guidance');
-    expect(prompt).not.toContain('## Today\'s compact context');
+    expect(prompt).toContain('结构 / 边界');
+    expect(prompt).toContain('disclosure / glossary');
+    expect(prompt).toContain('最后才改内容');
+    expect(prompt).toContain('不要润色');
+    expect(prompt).toContain('受保护的启动基线节点');
+    expect(prompt).toContain('当前数据');
   });
 
-  it('includes read-before-write evidence workflow and diagnosis tools', () => {
+  it('filters out non-actionable changes with explicit guardrails', () => {
     const prompt = buildDreamSystemPrompt(makeInitialContext());
-    expect(prompt).toContain('Investigate each candidate just enough');
-    expect(prompt).toContain('get_node_recall_detail');
-    expect(prompt).toContain('inspect_neighbors');
-    expect(prompt).toContain('Before any write, read the target node in full');
+    expect(prompt).toContain('不为好看而改');
+    expect(prompt).toContain('不确定就不做');
+    expect(prompt).toContain('任何基于"可能是"');
   });
 
-  it('uses guidance to drive write shape and diary reasoning instead of simplistic shortcuts', () => {
+  it('replaces structured diary with decision record approach', () => {
     const prompt = buildDreamSystemPrompt(makeInitialContext());
-    expect(prompt).toContain('Let guidance determine whether the right result is a new node, an update to an existing node, a structure-first change, or a deferral');
-    expect(prompt).toContain('Make scope, boundary, disclosure, priority, structure, and diary-treatment decisions at guidance quality');
-    expect(prompt).toContain('Follow guidance for diary structure, evidence standard, and how to justify actions and deferrals');
-    expect(prompt).toContain('Within those sections, explain');
-    expect(prompt).toContain('which recall requests you reviewed');
-    expect(prompt).toContain('what you deferred and why');
+    expect(prompt).toContain('决策记录');
+    expect(prompt).toContain('需要固定章节');
+    expect(prompt).not.toContain('Which recall requests you reviewed');
+    expect(prompt).not.toContain('Maintenance-only changes');
   });
 
-  it('uses guidance to drive write shape and diary reasoning instead of simplistic shortcuts', () => {
+  it('downgrades diary from structured output to honest decision log', () => {
     const prompt = buildDreamSystemPrompt(makeInitialContext());
-    expect(prompt).toContain('Let guidance determine whether the right result is a new node, an update to an existing node, a structure-first change, or a deferral');
-    expect(prompt).toContain('Make scope, boundary, disclosure, priority, structure, and diary-treatment decisions at guidance quality');
-    expect(prompt).toContain('Follow guidance for diary structure, evidence standard, and how to justify actions and deferrals');
-    expect(prompt).toContain('Within those sections, explain');
-    expect(prompt).toContain('which recall requests you reviewed');
-    expect(prompt).toContain('what you deferred and why');
+    expect(prompt).toContain('如果你什么都没改，一句话就够');
+    expect(prompt).toContain('诚实比完整重要');
+    expect(prompt).toContain('不需要固定章节');
   });
 
-  it('reads recent_queries from the compact stats block', () => {
+  it('uses reviewed queries as the primary recall evidence (no longer duplicates recent queries)', () => {
     const prompt = buildDreamSystemPrompt(makeInitialContext({
-      recallStats: {
-        summary: {},
-        by_path: [],
-        noisy_nodes: [],
-        recent_queries: {
-          items: [{ query_id: 'q-1', query_text: 'long query text', merged_count: 3, shown_count: 2, used_count: 1 }],
-          total: 1,
-          limit: 20,
-          offset: 0,
-          has_more: false,
-        },
+      recallReview: {
+        summary: { reviewed_queries: 1, possible_missed_recalls: 1 },
+        reviewed_queries: [{ query_id: 'q-1', query_text: 'long query text', merged_count: 3, shown_count: 2, used_count: 1, flags: [], selected_uris: [], used_uris: [], unrecalled_session_reads: [], unshown_session_reads: [], missed_recall_signals: [] }],
       } as any,
     }));
     expect(prompt).toContain('long query text');
-    expect(prompt).toContain('"merged": 3');
-  });
-
-  it('tolerates missing recent_queries items', () => {
-    const prompt = buildDreamSystemPrompt(makeInitialContext({
-      recallStats: {
-        summary: {},
-        by_path: [],
-        noisy_nodes: [],
-        recent_queries: {} as any,
-      } as any,
-    }));
-    expect(prompt).toContain('"recent_queries": []');
+    expect(prompt).toContain('"shown"');
+    expect(prompt).not.toContain('近期查询概况');
   });
 
   it('includes recent diary section in today context when provided', () => {
     const prompt = buildDreamSystemPrompt(makeInitialContext({
       recentDiaries: [{ started_at: '2024-01-01T00:00:00Z', status: 'completed', narrative: 'Test diary', tool_calls: [] }],
     }));
-    expect(prompt).toContain('recent_diaries');
     expect(prompt).toContain('Test diary');
   });
 
@@ -991,29 +959,26 @@ describe('buildDreamSystemPrompt', () => {
         ],
       } as any,
     }));
-    expect(prompt).toContain('Review today\'s recall evidence');
-    expect(prompt).toContain('Extract durable memory from today\'s real usage');
-    expect(prompt).toContain('Handle the strongest missed recall candidates first');
     expect(prompt).toContain('why did boot not recall');
-    expect(prompt).toContain('possible_missed_recalls');
+    expect(prompt).toContain('质检员');
     expect(prompt).toContain('high_merge_low_use');
   });
 
-  it('keeps the prompt in English while requiring a Chinese diary', () => {
+  it('uses Chinese throughout the prompt with action-first mindset', () => {
     const prompt = buildDreamSystemPrompt(makeInitialContext());
-    expect(prompt).toContain('Write the final diary in natural Chinese');
-    expect(prompt).toContain('Use exactly five sections with Chinese titles corresponding to');
-    expect(prompt).toContain('Use the loaded boot baseline as always-available key memories throughout the review');
+    expect(prompt).toContain('诊断框架');
+    expect(prompt).toContain('决策记录');
+    expect(prompt).toContain('至少有一类查询');
     expect(prompt).not.toContain('Dream 的宪法层');
     expect(prompt).not.toContain('Lore guidance 与这三个固定节点一起构成 Dream 的 baseline calibration');
   });
 
   it('mentions fixed boot protection and ordered change priorities', () => {
     const prompt = buildDreamSystemPrompt(makeInitialContext());
-    expect(prompt).toContain('Keep every boot node listed above intact and use them as fixed key memories');
-    expect(prompt).toContain('Prefer this improvement order');
-    expect(prompt).toContain('structure / node boundary');
-    expect(prompt).toContain('Read more nodes than you modify');
+    expect(prompt).toContain('受保护的启动基线节点');
+    expect(prompt).toContain('只读参考，不可修改');
+    expect(prompt).toContain('结构 / 边界');
+    expect(prompt).toContain('最后才改内容');
   });
 });
 

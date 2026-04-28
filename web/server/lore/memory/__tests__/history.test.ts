@@ -306,14 +306,14 @@ describe('rollbackNodeToEvent', () => {
       expect.stringContaining('DELETE FROM glossary_keywords'),
       ['uuid-1'],
     );
-    expect(client.query).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO glossary_keywords'),
-      ['beta', 'uuid-1'],
-    );
-    expect(client.query).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO glossary_keywords'),
-      ['alpha', 'uuid-1'],
-    );
+    const insertCalls = client.query.mock.calls.filter(([query]) => String(query).includes('INSERT INTO glossary_keywords'));
+    expect(insertCalls).toEqual([
+      [expect.stringContaining('INSERT INTO glossary_keywords (keyword, node_uuid, created_at)'), ['beta', 'uuid-1']],
+      [expect.stringContaining('INSERT INTO glossary_keywords (keyword, node_uuid, created_at)'), ['alpha', 'uuid-1']],
+    ]);
+    for (const [query] of insertCalls) {
+      expect(String(query)).toContain('ON CONFLICT DO NOTHING');
+    }
     expect(client.query).toHaveBeenCalledWith('COMMIT');
   });
 

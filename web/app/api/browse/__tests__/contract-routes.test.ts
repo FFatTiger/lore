@@ -14,6 +14,10 @@ vi.mock('../../../../server/lore/memory/write', () => ({
   deleteNodeByPath: vi.fn(),
   moveNode: vi.fn(),
 }));
+vi.mock('../../../../server/lore/memory/history', () => ({
+  getNodeHistory: vi.fn(),
+  rollbackNodeToEvent: vi.fn(),
+}));
 vi.mock('../../../../server/lore/ops/policy', () => ({
   validateCreatePolicy: vi.fn(),
   validateUpdatePolicy: vi.fn(),
@@ -30,6 +34,7 @@ vi.mock('../../../../server/lore/search/glossary', () => ({
 
 import { normalizeClientType, requireBearerAuth } from '../../../../server/auth';
 import { getNodePayload, listDomains } from '../../../../server/lore/memory/browse';
+import { getNodeHistory, rollbackNodeToEvent } from '../../../../server/lore/memory/history';
 import { createNode, updateNodeByPath, deleteNodeByPath, moveNode } from '../../../../server/lore/memory/write';
 import { validateCreatePolicy, validateUpdatePolicy, validateDeletePolicy } from '../../../../server/lore/ops/policy';
 import { searchMemories } from '../../../../server/lore/search/search';
@@ -39,6 +44,7 @@ import * as searchRoute from '../search/route';
 import * as domainsRoute from '../domains/route';
 import * as moveRoute from '../move/route';
 import * as glossaryRoute from '../glossary/route';
+import * as historyRoute from '../history/route';
 import * as recallRoute from '../recall/route';
 import * as sessionReadRoute from '../session/read/route';
 import * as recallUsageRoute from '../recall/usage/route';
@@ -62,6 +68,8 @@ import { markRecallEventsUsedInAnswer } from '../../../../server/lore/recall/rec
 const mockRequireBearerAuth = vi.mocked(requireBearerAuth);
 const mockNormalizeClientType = vi.mocked(normalizeClientType);
 const mockGetNodePayload = vi.mocked(getNodePayload);
+const mockGetNodeHistory = vi.mocked(getNodeHistory);
+const mockRollbackNodeToEvent = vi.mocked(rollbackNodeToEvent);
 const mockListDomains = vi.mocked(listDomains);
 const mockCreateNode = vi.mocked(createNode);
 const mockUpdateNodeByPath = vi.mocked(updateNodeByPath);
@@ -283,5 +291,51 @@ describe('browse route contracts', () => {
     const usageBody = await usageResponse.json();
     expect(usageResponse.status).toBe(422);
     expect(usageBody.code).toBe('validation_error');
+  });
+
+  it('loads node history with domain path and limit', async () => {
+    const payload = { events: [{ event_id: 12, operation: 'update' }], next_cursor: null };
+    mockGetNodeHistory.mockResolvedValueOnce(payload as any);
+
+    const response = await historyRoute.GET(new Request('http://localhost/api/browse/history?domain=core&path=agent/profile&limit=25') as any);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mockGetNodeHistory).toHaveBeenCalledWith({ domain: 'core', path: 'agent/profile', limit: 25 });
+    expect(body).toEqual(payload);
+  });
+
+  it('rolls back node history events with provenance', async () => {
+    const receipt = { success: true, operation: 'rollback', uri: 'core://agent/profile' };
+    mockRollbackNodeToEvent.mockResolvedValueOnce(receipt as any);
+
+    const response = await historyRoute.POST(new Request('http://localhost/api/browse/history?domain=core&path=agent/profile&client_type=claudecode', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ event_id: 12, session_id: 'session-1' }),
+    }) as any);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mockRollbackNodeToEvent).toHaveBeenCalledWith(
+      { domain: 'core', path: 'agent/profile', eventId: 12 },
+      { source: 'api:POST /browse/history', session_id: 'session-1', client_type: 'claudecode' },
+    );
+    expect(body).toEqual(receipt);
+  });
+
+  it('returns canonical validation errors from history rollback', async () => {
+    mockRollbackNodeToEvent.mockRejectedValueOnce(Object.assign(new Error('Cannot rollback deleted node'), { status: 422 }));
+
+    const response = await historyRoute.POST(new Request('http://localhost/api/browse/history?domain=core&path=agent/profile&client_type=claudecode', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ event_id: 12, session_id: 'session-1' }),
+    }) as any);
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body.detail).toBe('Cannot rollback deleted node');
+    expect(body.code).toBe('validation_error');
   });
 });

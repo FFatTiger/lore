@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
+import * as Popover from '@radix-ui/react-popover';
 import { Button, PageTitle } from '../../../components/ui';
-import { PanelLeftOpen } from 'lucide-react';
+import { MoreHorizontal, PanelLeftOpen } from 'lucide-react';
 import PriorityBadge from './PriorityBadge';
 import type { BrowseData, MemoryNode } from '../useMemoryBrowserController';
 
@@ -45,15 +46,8 @@ export default function MemoryNodeHeader({
   navigateTo,
   t,
 }: MemoryNodeHeaderProps): React.JSX.Element {
+  const [actionsOpen, setActionsOpen] = useState(false);
   const headerBreadcrumbs = data.breadcrumbs || [];
-  const fallbackDescription = node.disclosure
-    ? null
-    : isRoot
-      ? t('Agent memory graph')
-      : data.children?.length > 0
-        ? `${data.children.length} ${t(isRoot ? 'Clusters' : 'Children')}`
-        : null;
-
   const titleText = path ? path.split('/').pop() || t('root') : t('root');
 
   return (
@@ -88,8 +82,8 @@ export default function MemoryNodeHeader({
         </span>
       }
       titleText={titleText}
-      truncateTitle
-      description={!node.disclosure ? fallbackDescription : undefined}
+      truncateTitle={false}
+      compact
       right={
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           {!sidebarOpen && (
@@ -102,22 +96,54 @@ export default function MemoryNodeHeader({
               <Button variant="ghost" size="sm" onClick={startEditing}>
                 {t('Edit')}
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setCreating(true)}>
-                {t('New')}
-              </Button>
-              {!isRoot && (
-                <Button variant="ghost" size="sm" onClick={() => setMoving(true)}>
-                  {t('Move')}
-                </Button>
-              )}
-              <Button variant="ghost" size="sm" onClick={() => void handleRebuildViews()} disabled={rebuildingViews}>
-                {rebuildingViews ? t('Rebuilding…') : t('Rebuild')}
-              </Button>
-              {!isRoot && (
-                <Button variant="destructive" size="sm" onClick={() => void handleDelete()}>
-                  {t('Delete')}
-                </Button>
-              )}
+              <Popover.Root open={actionsOpen} onOpenChange={setActionsOpen}>
+                <Popover.Trigger asChild>
+                  <Button variant="ghost" size="sm" aria-label={t('More')}>
+                    <MoreHorizontal size={15} />
+                  </Button>
+                </Popover.Trigger>
+                <Popover.Portal>
+                  <Popover.Content
+                    align="end"
+                    sideOffset={8}
+                    className="z-50 min-w-36 rounded-xl border border-separator-thin bg-bg-elevated p-1.5 shadow-dock"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => { setActionsOpen(false); setCreating(true); }}
+                      className="flex w-full items-center rounded-lg px-3 py-2 text-left text-[13px] text-txt-secondary hover:bg-bg-raised hover:text-txt-primary"
+                    >
+                      {t('New')}
+                    </button>
+                    {!isRoot && (
+                      <button
+                        type="button"
+                        onClick={() => { setActionsOpen(false); setMoving(true); }}
+                        className="flex w-full items-center rounded-lg px-3 py-2 text-left text-[13px] text-txt-secondary hover:bg-bg-raised hover:text-txt-primary"
+                      >
+                        {t('Move')}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => { setActionsOpen(false); void handleRebuildViews(); }}
+                      disabled={rebuildingViews}
+                      className="flex w-full items-center rounded-lg px-3 py-2 text-left text-[13px] text-txt-secondary hover:bg-bg-raised hover:text-txt-primary disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {rebuildingViews ? t('Rebuilding…') : t('Rebuild')}
+                    </button>
+                    {!isRoot && (
+                      <button
+                        type="button"
+                        onClick={() => { setActionsOpen(false); void handleDelete(); }}
+                        className="flex w-full items-center rounded-lg px-3 py-2 text-left text-[13px] text-sys-red hover:bg-sys-red/10"
+                      >
+                        {t('Delete')}
+                      </button>
+                    )}
+                  </Popover.Content>
+                </Popover.Portal>
+              </Popover.Root>
             </>
           )}
         </div>

@@ -38,9 +38,10 @@ interface PageTitleProps {
   right?: ReactNode;
   titleText?: string;
   truncateTitle?: boolean;
+  compact?: boolean;
 }
 
-export function PageTitle({ eyebrow, title, description, right, titleText, truncateTitle = false }: PageTitleProps): React.JSX.Element {
+export function PageTitle({ eyebrow, title, description, right, titleText, truncateTitle = false, compact = false }: PageTitleProps): React.JSX.Element {
   const resolvedTitleText = titleText ?? (typeof title === 'string' || typeof title === 'number' ? String(title) : undefined);
   return (
     <div className="mb-6 md:mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4 md:gap-6 animate-in">
@@ -52,7 +53,9 @@ export function PageTitle({ eyebrow, title, description, right, titleText, trunc
         )}
         <h1
           className={clsx(
-            'font-display text-[26px] sm:text-[32px] md:text-[42px] font-bold leading-[1.1] tracking-[-0.02em] text-txt-primary min-w-0',
+            compact
+              ? 'font-display text-[26px] sm:text-[30px] md:text-[34px] font-semibold leading-[1.16] tracking-[-0.02em] text-txt-primary min-w-0'
+              : 'font-display text-[26px] sm:text-[32px] md:text-[42px] font-bold leading-[1.1] tracking-[-0.02em] text-txt-primary min-w-0',
             truncateTitle && 'overflow-hidden whitespace-nowrap text-ellipsis',
           )}
           title={truncateTitle ? resolvedTitleText : undefined}

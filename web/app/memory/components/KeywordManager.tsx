@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, KeyboardEvent, ChangeEvent } from 'react';
 import type { InputRef } from 'antd';
 import { X } from 'lucide-react';
-import { AppInput, Badge } from '../../../components/ui';
+import { AppInput } from '../../../components/ui';
 import { api } from '../../../lib/api';
 import { useT } from '../../../lib/i18n';
 import { useConfirm } from '../../../components/ConfirmDialog';
@@ -20,7 +20,10 @@ const KeywordManager = ({ keywords, nodeUuid, onUpdate }: KeywordManagerProps): 
   const { toast } = useConfirm();
   const [adding, setAdding] = useState(false);
   const [newKeyword, setNewKeyword] = useState('');
+  const [expanded, setExpanded] = useState(false);
   const inputRef = useRef<InputRef>(null);
+  const visibleKeywords = expanded ? keywords : keywords.slice(0, 3);
+  const hiddenCount = Math.max(0, keywords.length - visibleKeywords.length);
 
   useEffect(() => { if (adding && inputRef.current) inputRef.current.focus(); }, [adding]);
 
@@ -55,14 +58,23 @@ const KeywordManager = ({ keywords, nodeUuid, onUpdate }: KeywordManagerProps): 
   return (
     <div className="flex items-center gap-2 flex-wrap">
       <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-txt-tertiary">{t('Glossary')}</span>
-      {keywords.map((kw) => (
-        <Badge key={kw} tone="yellow" className="glossary-tag">
-          {kw}
-          <button onClick={() => handleRemove(kw)} className="ml-0.5 opacity-60 hover:opacity-100" aria-label={t('Remove')}>
-            <X size={10} />
+      {visibleKeywords.map((kw) => (
+        <span key={kw} className="inline-flex items-center gap-0.5 font-mono text-[10.5px] text-txt-tertiary">
+          #{kw}
+          <button onClick={() => handleRemove(kw)} className="opacity-35 hover:opacity-100" aria-label={t('Remove')}>
+            <X size={9} />
           </button>
-        </Badge>
+        </span>
       ))}
+      {hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="font-mono text-[10.5px] text-txt-quaternary hover:text-sys-blue"
+        >
+          +{hiddenCount}
+        </button>
+      )}
       {adding ? (
         <AppInput
           ref={inputRef} type="text" value={newKeyword}
@@ -75,7 +87,7 @@ const KeywordManager = ({ keywords, nodeUuid, onUpdate }: KeywordManagerProps): 
       ) : (
         <button
           onClick={() => setAdding(true)}
-          className="rounded-md border border-dashed border-separator px-2 py-0.5 text-[11px] text-txt-tertiary hover:border-sys-blue/50 hover:text-sys-blue transition-colors"
+          className="rounded-md border border-dashed border-separator-thin px-1.5 py-[1px] text-[10.5px] text-txt-quaternary transition-colors hover:border-sys-blue/40 hover:text-sys-blue"
         >
           + {t('Add')}
         </button>

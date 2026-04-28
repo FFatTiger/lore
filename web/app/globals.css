@@ -234,9 +234,9 @@ button, a, [role="button"] { cursor: pointer; }
 .prose code:not(pre code) {
   font-family: var(--font-mono);
   background: var(--fill-tertiary);
-  color: var(--sys-blue);
-  padding: 0.1em 0.4em;
-  border-radius: 6px;
+  color: var(--text-primary);
+  padding: 0.12em 0.35em;
+  border-radius: 4px;
   font-size: 0.88em;
 }
 .prose a { color: var(--sys-blue); text-decoration: none; }
@@ -264,20 +264,19 @@ button, a, [role="button"] { cursor: pointer; }
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  padding: 0.2em 0.55em;
-  background: rgba(255, 214, 10, 0.14);
-  color: #f4d24b;
-  border: 1px solid rgba(255, 214, 10, 0.28);
-  border-radius: 6px;
+  padding: 0.12em 0.45em;
+  background: var(--fill-tertiary);
+  color: var(--text-secondary);
+  border: 0;
+  border-radius: 5px;
   font-size: 11px;
   font-family: var(--font-mono);
 }
 :root[data-theme="light"] .glossary-tag {
-  background: rgba(184, 134, 11, 0.12);
-  color: #8a6500;
-  border-color: rgba(184, 134, 11, 0.2);
+  background: #F3F4F6;
+  color: #374151;
 }
-.glossary-tag:hover { background: rgba(255, 214, 10, 0.20); }
+.glossary-tag:hover { background: var(--fill-secondary); }
 
 .disclosure-box {
   display: flex;

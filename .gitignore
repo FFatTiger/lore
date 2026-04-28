@@ -35,6 +35,7 @@ snapshots/
 
 # Superpowers specs/plans (local-only)
 docs/superpowers/
+.worktrees/
 
 # Claude Code Connect
 .cc-connect/

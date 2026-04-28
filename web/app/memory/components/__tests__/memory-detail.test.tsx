@@ -28,7 +28,7 @@ vi.mock('@lobehub/ui/es/Input/TextArea', () => ({
 
 vi.mock('@lobehub/ui/es/Select/Select', () => ({
   default: ({ options = [], value }: { options?: Array<{ label: React.ReactNode; value: string }>; value?: string }) => (
-    <select value={value} readOnly>
+    <select value={value}>
       {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
     </select>
   ),
@@ -81,7 +81,7 @@ describe('memory detail Lobe wrappers', () => {
     expect(html).toContain('when useful');
   });
 
-  it('renders history action for real non-root nodes', () => {
+  it('does not render history action in the node header', () => {
     const html = renderToStaticMarkup(
       <MemoryNodeHeader
         node={{ content: 'body', priority: 1 }}
@@ -101,12 +101,11 @@ describe('memory detail Lobe wrappers', () => {
         rebuildingViews={false}
         handleDelete={async () => undefined}
         navigateTo={() => undefined}
-        navigateToHistory={() => undefined}
         t={(key) => key}
       />,
     );
 
-    expect(html).toContain('History');
+    expect(html).not.toContain('History');
   });
 
   it('renders LLM model metadata through Badge', () => {

@@ -21,9 +21,10 @@ interface MemoryChildrenListProps {
   domain: string;
   isRoot: boolean;
   navigateTo: (path: string, domain?: string) => void;
+  navigateToHistory?: (path: string, domain?: string) => void;
 }
 
-export default function MemoryChildrenList({ childItems, domain, isRoot, navigateTo }: MemoryChildrenListProps): React.JSX.Element | null {
+export default function MemoryChildrenList({ childItems, domain, isRoot, navigateTo, navigateToHistory }: MemoryChildrenListProps): React.JSX.Element | null {
   const { t } = useT();
   if (!childItems?.length) return null;
 
@@ -54,6 +55,7 @@ export default function MemoryChildrenList({ childItems, domain, isRoot, navigat
                     fallbackSource={child.last_updated_source}
                     fallbackUpdatedAt={child.last_updated_at}
                     size="sm"
+                    onOpenHistory={navigateToHistory ? () => navigateToHistory(child.path, child.domain || domain) : undefined}
                   />
                 )}
               </div>

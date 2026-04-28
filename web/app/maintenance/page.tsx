@@ -1,5 +1,5 @@
-import MaintenancePage from './MaintenancePage';
+import { redirect } from 'next/navigation';
 
 export default function Maintenance() {
-  return <MaintenancePage />;
+  redirect('/memory');
 }

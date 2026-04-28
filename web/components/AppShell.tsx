@@ -27,7 +27,6 @@ const tabs: Tab[] = [
   { href: '/memory', label: 'Memory' },
   { href: '/recall', label: 'Recall', match: (p) => p === '/recall' },
   { href: '/recall/drilldown', label: 'Analytics', match: (p) => p === '/recall/drilldown' },
-  { href: '/maintenance', label: 'Cleanup' },
   { href: '/dream', label: 'Dream' },
   { href: '/settings', label: 'Settings' },
 ];

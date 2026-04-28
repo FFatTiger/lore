@@ -103,6 +103,7 @@ async function resolveCurrentNode(domain: string, path: string): Promise<MemoryR
 }
 
 function formatEventRow(row: Record<string, unknown>): FormattedEvent {
+  const details = (row.details as Record<string, unknown>) || {};
   return {
     id: Number(row.id),
     event_type: row.event_type as string,
@@ -110,9 +111,10 @@ function formatEventRow(row: Record<string, unknown>): FormattedEvent {
     node_uuid: (row.node_uuid as string | null) || null,
     source: row.source as string,
     session_id: (row.session_id as string | null) || null,
+    client_type: null,
     before_snapshot: (row.before_snapshot as Record<string, unknown> | null) || null,
     after_snapshot: (row.after_snapshot as Record<string, unknown> | null) || null,
-    details: (row.details as Record<string, unknown>) || {},
+    details,
     created_at: row.created_at ? new Date(row.created_at as string).toISOString() : null,
   };
 }
@@ -136,7 +138,8 @@ async function loadTargetEvent(eventId: number): Promise<FormattedEvent> {
 function snapshotString(snapshot: Record<string, unknown>, field: 'content' | 'disclosure'): string | null | undefined {
   if (!(field in snapshot)) return undefined;
   const value = snapshot[field];
-  return value == null ? null : String(value);
+  if (value === null) return null;
+  return typeof value === 'string' ? value : undefined;
 }
 
 function snapshotPriority(snapshot: Record<string, unknown>): number | undefined {
@@ -249,6 +252,7 @@ export async function rollbackNodeToEvent(
   }
 
   const targetContent = snapshotString(targetSnapshot, 'content');
+  const hasTargetContent = typeof targetContent === 'string';
   const targetDisclosure = snapshotString(targetSnapshot, 'disclosure');
   const targetPriority = snapshotPriority(targetSnapshot);
   const hasGlossaryKeywords = Array.isArray(targetSnapshot.glossary_keywords);
@@ -258,7 +262,7 @@ export async function rollbackNodeToEvent(
   try {
     await client.query('BEGIN');
 
-    if (targetContent !== undefined) {
+    if (hasTargetContent) {
       const currentMemoryResult = await client.query(
         `SELECT id, content
          FROM memories
@@ -301,7 +305,7 @@ export async function rollbackNodeToEvent(
       await replaceGlossaryKeywords(client, node.node_uuid, targetSnapshot.glossary_keywords as unknown[]);
     }
 
-    const afterContent = targetContent !== undefined ? targetContent : node.content;
+    const afterContent = hasTargetContent ? targetContent : node.content;
     const afterDisclosure = targetDisclosure !== undefined ? targetDisclosure : node.disclosure;
     const afterPriority = targetPriority !== undefined ? targetPriority : node.priority;
 

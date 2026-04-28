@@ -1,9 +1,8 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
-import * as Popover from '@radix-ui/react-popover';
+import React, { useCallback, useMemo } from 'react';
 import clsx from 'clsx';
-import { AppAvatar, Badge } from './ui';
+import { AppAvatar, Tooltip } from './ui';
 import { useT } from '../lib/i18n';
 import {
   clientTypeAssetPath,
@@ -35,6 +34,7 @@ interface UpdaterDisplayProps {
   size?: 'sm' | 'md';
   showTimestamp?: boolean;
   className?: string;
+  onOpenHistory?: () => void;
 }
 
 const AVATAR_SURFACE = 'bg-bg-elevated';
@@ -129,10 +129,6 @@ function formatUpdatedAt(updatedAt: string | null, t: (key: string) => string): 
   return new Date(updatedAt).toLocaleString();
 }
 
-function formatEventCount(eventCount: number, t: (key: string) => string): string {
-  return eventCount === 1 ? t('1 update') : `${eventCount} ${t('updates')}`;
-}
-
 export function ChannelAvatar({
   clientType,
   size,
@@ -194,9 +190,9 @@ export default function UpdaterDisplay({
   size = 'sm',
   showTimestamp = false,
   className,
+  onOpenHistory,
 }: UpdaterDisplayProps): React.JSX.Element | null {
   const { t } = useT();
-  const [open, setOpen] = useState(false);
   const resolvedUpdaters = useMemo(() => resolveUpdaters({
     updaters,
     fallbackClientType,
@@ -208,7 +204,6 @@ export default function UpdaterDisplay({
 
   const {
     avatar,
-    popupAvatar,
     fontSize,
     stackPrimary,
     stackSecondary,
@@ -222,16 +217,26 @@ export default function UpdaterDisplay({
   const overflowCount = Math.max(0, resolvedUpdaters.length - visibleUpdaters.length);
   const latestUpdater = resolvedUpdaters[0];
   const showStack = visibleUpdaters.length > 1;
+  const canOpenHistory = Boolean(onOpenHistory);
 
-  return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        <span
-          className={clsx('relative inline-flex items-center gap-2', className)}
-          onMouseEnter={() => setOpen(true)}
-          onMouseLeave={() => setOpen(false)}
-        >
-          <span className="inline-flex cursor-pointer items-center" role="button" tabIndex={0} aria-haspopup="dialog" aria-expanded={open}>
+  const openHistory = useCallback((event: React.MouseEvent | React.KeyboardEvent) => {
+    if (!onOpenHistory) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onOpenHistory();
+  }, [onOpenHistory]);
+
+  const trigger = (
+    <span
+      className={clsx('relative inline-flex items-center gap-2', canOpenHistory && 'cursor-pointer', className)}
+      onClick={canOpenHistory ? openHistory : undefined}
+      onKeyDown={canOpenHistory ? (event) => {
+        if (event.key === 'Enter' || event.key === ' ') openHistory(event);
+      } : undefined}
+      role={canOpenHistory ? 'button' : undefined}
+      tabIndex={canOpenHistory ? 0 : undefined}
+    >
+      <span className="inline-flex cursor-pointer items-center">
             {showStack ? (
               <span className="relative inline-block shrink-0" style={{ width: stackWidth, height: stackHeight }}>
                 <span className="absolute left-0 top-0 z-10">
@@ -252,56 +257,14 @@ export default function UpdaterDisplay({
                 +{overflowCount}
               </span>
             )}
-          </span>
-          {showTimestamp && latestUpdater.updated_at && (
-            <span className="text-[11px] text-txt-quaternary">
-              {formatUpdatedAt(latestUpdater.updated_at, t)}
-            </span>
-          )}
+      </span>
+      {showTimestamp && latestUpdater.updated_at && (
+        <span className="text-[11px] text-txt-quaternary">
+          {formatUpdatedAt(latestUpdater.updated_at, t)}
         </span>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          sideOffset={8}
-          collisionPadding={16}
-          className="animate-scale z-[110] w-72 max-w-[calc(100vw-2rem)] rounded-2xl border border-separator-thin bg-bg-elevated shadow-card shadow-2xl shadow-black/60 backdrop-blur-xl outline-none"
-          onMouseEnter={() => setOpen(true)}
-          onMouseLeave={() => setOpen(false)}
-        >
-          <div className="flex items-center gap-2 border-b border-separator-thin px-4 py-3">
-            <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-txt-tertiary">
-              {resolvedUpdaters.length > 1 ? t('Updaters') : t('Updater')}
-            </span>
-            <span className="text-[12px] text-txt-tertiary">
-              {formatUpdatedAt(latestUpdater.updated_at, t)}
-            </span>
-          </div>
-          <div className="p-1.5">
-            {resolvedUpdaters.map((updater, index) => (
-              <div
-                key={`${updater.client_type || 'legacy'}:${updater.source || 'unknown'}:${updater.updated_at || index}`}
-                className="flex items-start gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-fill-quaternary"
-              >
-                <ChannelAvatar clientType={updater.client_type} size={popupAvatar} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[13px] font-medium text-txt-primary">
-                      {t(clientTypeLabel(updater.client_type))}
-                    </span>
-                    <Badge tone={clientTypeTone(updater.client_type)}>{formatEventCount(updater.event_count, t)}</Badge>
-                  </div>
-                  <div className="mt-1 break-all font-mono text-[11px] text-txt-tertiary">
-                    {updater.source || t('Unknown source')}
-                  </div>
-                  <div className="mt-1 text-[11px] text-txt-quaternary">
-                    {formatUpdatedAt(updater.updated_at, t)}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+      )}
+    </span>
   );
+
+  return canOpenHistory ? <Tooltip title={t('View history changes')}>{trigger}</Tooltip> : trigger;
 }

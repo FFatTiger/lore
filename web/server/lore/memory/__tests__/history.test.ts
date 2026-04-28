@@ -337,4 +337,42 @@ describe('rollbackNodeToEvent', () => {
     ]);
     expect(client.query).toHaveBeenCalledWith('COMMIT');
   });
+
+  it('does not replace content when target snapshot content is null', async () => {
+    const client = makeClient();
+    mockGetPool.mockReturnValue({ connect: vi.fn().mockResolvedValue(client) } as never);
+    mockSql.mockResolvedValueOnce({ rows: [event({
+      id: 42,
+      node_uuid: 'uuid-1',
+      after_snapshot: { content: null, priority: 1 },
+    })] });
+
+    await rollbackNodeToEvent({ path: 'agent/prefs', eventId: 42 });
+
+    expect(client.query).not.toHaveBeenCalledWith(expect.stringContaining('INSERT INTO memories'), expect.anything());
+    expect(client.query).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE edges'),
+      ['core', 'agent/prefs', 1, null, false],
+    );
+    expect(mockLogMemoryEvent).toHaveBeenCalledWith(expect.objectContaining({
+      after_snapshot: { content: 'current content', disclosure: 'current disclosure', priority: 1 },
+    }));
+  });
+
+  it('does not replace content when target snapshot content is non-string metadata', async () => {
+    const client = makeClient();
+    mockGetPool.mockReturnValue({ connect: vi.fn().mockResolvedValue(client) } as never);
+    mockSql.mockResolvedValueOnce({ rows: [event({
+      id: 42,
+      node_uuid: 'uuid-1',
+      after_snapshot: { content: { unchanged: true }, disclosure: 'target disclosure' },
+    })] });
+
+    await rollbackNodeToEvent({ path: 'agent/prefs', eventId: 42 });
+
+    expect(client.query).not.toHaveBeenCalledWith(expect.stringContaining('INSERT INTO memories'), expect.anything());
+    expect(mockLogMemoryEvent).toHaveBeenCalledWith(expect.objectContaining({
+      after_snapshot: { content: 'current content', disclosure: 'target disclosure', priority: 2 },
+    }));
+  });
 });

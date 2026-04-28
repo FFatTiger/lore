@@ -11,6 +11,7 @@ interface MemoryNodeMetaProps {
   editing: boolean;
   refreshData: () => Promise<void>;
   navigateTo: (newPath: string, newDomain?: string) => void;
+  navigateToHistory: () => void;
   t: (key: string) => string;
 }
 
@@ -19,6 +20,7 @@ export default function MemoryNodeMeta({
   editing,
   refreshData,
   navigateTo,
+  navigateToHistory,
   t,
 }: MemoryNodeMetaProps): React.JSX.Element | null {
   if (editing) return null;
@@ -53,6 +55,7 @@ export default function MemoryNodeMeta({
             fallbackUpdatedAt={node.last_updated_at}
             size="md"
             showTimestamp
+            onOpenHistory={navigateToHistory}
           />
         </div>
       )}

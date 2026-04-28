@@ -66,6 +66,7 @@ export interface FormattedEvent {
   node_uuid: string | null;
   source: string;
   session_id: string | null;
+  client_type: ClientType | null;
   before_snapshot: Record<string, unknown> | null;
   after_snapshot: Record<string, unknown> | null;
   details: Record<string, unknown>;
@@ -163,7 +164,12 @@ function sanitizeFilter(value: unknown, maxChars = 240): string {
   return text ? text.slice(0, maxChars) : '';
 }
 
+function eventClientType(details: Record<string, unknown>): ClientType | null {
+  return normalizeClientType(details.client_type);
+}
+
 function formatEventRow(row: Record<string, unknown>): FormattedEvent {
+  const details = (row.details as Record<string, unknown>) || {};
   return {
     id: Number(row.id),
     event_type: row.event_type as string,
@@ -171,9 +177,10 @@ function formatEventRow(row: Record<string, unknown>): FormattedEvent {
     node_uuid: (row.node_uuid as string | null) || null,
     source: row.source as string,
     session_id: (row.session_id as string | null) || null,
+    client_type: eventClientType(details),
     before_snapshot: (row.before_snapshot as Record<string, unknown> | null) || null,
     after_snapshot: (row.after_snapshot as Record<string, unknown> | null) || null,
-    details: (row.details as Record<string, unknown>) || {},
+    details,
     created_at: row.created_at ? new Date(row.created_at as string).toISOString() : null,
   };
 }

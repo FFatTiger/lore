@@ -56,6 +56,7 @@ export default function MemoryBrowser(): React.JSX.Element {
     handleSave,
     handleDelete,
     handleRebuildViews,
+    navigateToHistory,
   } = useMemoryBrowserController({ confirmDialog: confirm, t, toast });
   const hasEmptyState = !data.children?.length && !node?.content && !node?.memory_views?.length;
 
@@ -112,6 +113,7 @@ export default function MemoryBrowser(): React.JSX.Element {
                       rebuildingViews={rebuildingViews}
                       handleDelete={handleDelete}
                       navigateTo={navigateTo}
+                      navigateToHistory={navigateToHistory}
                       t={t}
                     />
                     <MemoryNodeMeta

@@ -22,6 +22,7 @@ interface MemoryNodeHeaderProps {
   rebuildingViews: boolean;
   handleDelete: () => Promise<void>;
   navigateTo: (newPath: string, newDomain?: string) => void;
+  navigateToHistory: () => void;
   t: (key: string) => string;
 }
 
@@ -43,6 +44,7 @@ export default function MemoryNodeHeader({
   rebuildingViews,
   handleDelete,
   navigateTo,
+  navigateToHistory,
   t,
 }: MemoryNodeHeaderProps): React.JSX.Element {
   const headerBreadcrumbs = data.breadcrumbs || [];
@@ -105,6 +107,11 @@ export default function MemoryNodeHeader({
               <Button variant="ghost" size="sm" onClick={() => setCreating(true)}>
                 {t('New')}
               </Button>
+              {!isRoot && (
+                <Button variant="ghost" size="sm" onClick={navigateToHistory}>
+                  {t('History')}
+                </Button>
+              )}
               {!isRoot && (
                 <Button variant="ghost" size="sm" onClick={() => setMoving(true)}>
                   {t('Move')}

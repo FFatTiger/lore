@@ -56,6 +56,7 @@ vi.mock('../../../../../lib/i18n', () => ({
 }));
 
 import MemoryEditor from '../MemoryEditor';
+import MemoryNodeHeader from '../MemoryNodeHeader';
 import MemoryViewsSection from '../MemoryViewsSection';
 
 describe('memory detail Lobe wrappers', () => {
@@ -78,6 +79,34 @@ describe('memory detail Lobe wrappers', () => {
     expect(html).toContain('type="number"');
     expect(html).toContain('data-app-text-area="true"');
     expect(html).toContain('when useful');
+  });
+
+  it('renders history action for real non-root nodes', () => {
+    const html = renderToStaticMarkup(
+      <MemoryNodeHeader
+        node={{ content: 'body', priority: 1 }}
+        data={{ node: null, children: [], breadcrumbs: [{ label: 'Memory', path: '' }, { label: 'agent', path: 'agent' }] }}
+        domain="core"
+        path="agent"
+        isRoot={false}
+        editing={false}
+        moving={false}
+        creating={false}
+        sidebarOpen
+        setSidebarOpen={() => undefined}
+        startEditing={() => undefined}
+        setCreating={() => undefined}
+        setMoving={() => undefined}
+        handleRebuildViews={async () => undefined}
+        rebuildingViews={false}
+        handleDelete={async () => undefined}
+        navigateTo={() => undefined}
+        navigateToHistory={() => undefined}
+        t={(key) => key}
+      />,
+    );
+
+    expect(html).toContain('History');
   });
 
   it('renders LLM model metadata through Badge', () => {

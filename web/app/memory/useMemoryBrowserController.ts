@@ -117,6 +117,7 @@ interface UseMemoryBrowserControllerResult {
   setMoving: (value: boolean) => void;
   setCreating: (value: boolean) => void;
   navigateTo: (newPath: string, newDomain?: string) => void;
+  navigateToHistory: () => void;
   refreshData: () => Promise<void>;
   startEditing: () => void;
   cancelEditing: () => void;
@@ -199,6 +200,16 @@ export function useMemoryBrowserController({ confirmDialog, t, toast }: UseMemor
     router.push(href);
     if (typeof window !== 'undefined' && window.innerWidth < 768) setSidebarOpen(false);
   }, [domain, router, searchParams]);
+
+  const navigateToHistory = useCallback(() => {
+    const href = buildUrlWithSearchParams(
+      '/memory/history',
+      searchParams,
+      { domain, path },
+      { path: '' },
+    );
+    router.push(href);
+  }, [domain, path, router, searchParams]);
 
   const refreshData = useCallback(async () => {
     const route = currentRouteRef.current;
@@ -298,6 +309,7 @@ export function useMemoryBrowserController({ confirmDialog, t, toast }: UseMemor
     setMoving,
     setCreating,
     navigateTo,
+    navigateToHistory,
     refreshData,
     startEditing,
     cancelEditing,

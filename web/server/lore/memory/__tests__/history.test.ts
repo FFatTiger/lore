@@ -308,12 +308,33 @@ describe('rollbackNodeToEvent', () => {
     );
     expect(client.query).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO glossary_keywords'),
-      ['uuid-1', 'beta'],
+      ['beta', 'uuid-1'],
     );
     expect(client.query).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO glossary_keywords'),
-      ['uuid-1', 'alpha'],
+      ['alpha', 'uuid-1'],
     );
+    expect(client.query).toHaveBeenCalledWith('COMMIT');
+  });
+
+  it('normalizes and dedupes target snapshot glossary keywords before insert', async () => {
+    const client = makeClient();
+    mockGetPool.mockReturnValue({ connect: vi.fn().mockResolvedValue(client) } as never);
+    mockSql.mockResolvedValueOnce({ rows: [event({
+      id: 42,
+      node_uuid: 'uuid-1',
+      after_snapshot: {
+        glossary_keywords: [' beta ', '', 'alpha', 'beta', 'alpha'],
+      },
+    })] });
+
+    await rollbackNodeToEvent({ path: 'agent/prefs', eventId: 42 });
+
+    const insertCalls = client.query.mock.calls.filter(([query]) => String(query).includes('INSERT INTO glossary_keywords'));
+    expect(insertCalls).toEqual([
+      [expect.stringContaining('ON CONFLICT DO NOTHING'), ['beta', 'uuid-1']],
+      [expect.stringContaining('ON CONFLICT DO NOTHING'), ['alpha', 'uuid-1']],
+    ]);
     expect(client.query).toHaveBeenCalledWith('COMMIT');
   });
 });

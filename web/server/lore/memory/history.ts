@@ -3,6 +3,7 @@ import { getPool, sql } from '../../db';
 import type { UpdateMutationReceipt } from '../contracts';
 import type { TransactionClient } from '../core/types';
 import { getGlossaryKeywords, getMemoryByPath, type MemoryRow } from './browseNodeData';
+import { normalizeGlossaryKeywords } from '../search/glossary';
 import { buildWriteEventBase } from './writeEventPayload';
 import { scheduleWriteArtifactsRefresh } from './writeArtifactScheduling';
 import { getNodeWriteHistory, logMemoryEvent, type FormattedEvent } from './writeEvents';
@@ -150,12 +151,10 @@ async function replaceGlossaryKeywords(
   keywords: unknown[],
 ): Promise<void> {
   await client.query(`DELETE FROM glossary_keywords WHERE node_uuid = $1`, [nodeUuid]);
-  for (const keyword of keywords) {
-    const value = String(keyword || '').trim();
-    if (!value) continue;
+  for (const keyword of normalizeGlossaryKeywords(keywords, 64)) {
     await client.query(
-      `INSERT INTO glossary_keywords (node_uuid, keyword, created_at) VALUES ($1, $2, NOW())`,
-      [nodeUuid, value],
+      `INSERT INTO glossary_keywords (keyword, node_uuid, created_at) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING`,
+      [keyword, nodeUuid],
     );
   }
 }

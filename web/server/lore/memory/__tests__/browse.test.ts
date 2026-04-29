@@ -705,7 +705,7 @@ describe('getNodePayload', () => {
     expect(updaterSummaryQuery).toBeDefined();
     expect(String(updaterSummaryQuery![0])).toContain('COUNT(*) AS event_count');
     expect(String(updaterSummaryQuery![0])).toContain('GROUP BY node_uuid');
-    expect(String(updaterSummaryQuery![0])).toContain("LOWER(BTRIM(COALESCE(details->>'client_type', ''))) IN ('claudecode', 'openclaw', 'hermes', 'mcp', 'admin')");
+    expect(String(updaterSummaryQuery![0])).toContain("LOWER(BTRIM(COALESCE(details->>'client_type', ''))) IN ('claudecode', 'openclaw', 'hermes', 'codex', 'mcp', 'admin')");
     expect(String(updaterSummaryQuery![0])).toContain('ORDER BY node_uuid ASC, MAX(created_at) DESC, COUNT(*) DESC, source ASC');
     expect(result.node.updaters).toEqual([
       {

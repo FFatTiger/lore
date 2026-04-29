@@ -268,6 +268,24 @@ describe('generateBootDrafts', () => {
     expect(userPrompt).toContain('"client_type": "openclaw"');
   });
 
+  it('includes Codex-specific draft instructions for runtime-specific agent nodes', async () => {
+    mockGenerateText.mockResolvedValueOnce({
+      content: '{"uri":"core://agent/codex","content":"使用 Codex 特有的运行时规则。"}',
+      raw: {},
+    });
+
+    await generateBootDrafts({
+      uris: ['core://agent/codex'],
+    });
+
+    const systemPrompt = String(mockGenerateText.mock.calls[0]?.[1]?.[0]?.content || '');
+    const userPrompt = String(mockGenerateText.mock.calls[0]?.[1]?.[1]?.content || '');
+    expect(systemPrompt).toContain('This boot node is specific to the codex runtime.');
+    expect(systemPrompt).toContain('Codex-specific runtime defaults');
+    expect(userPrompt).toContain('"uri": "core://agent/codex"');
+    expect(userPrompt).toContain('"client_type": "codex"');
+  });
+
   it('returns per-node failures without aborting the whole batch', async () => {
     mockGenerateText
       .mockResolvedValueOnce({ content: 'not json', raw: {} })

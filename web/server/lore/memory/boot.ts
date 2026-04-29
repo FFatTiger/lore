@@ -8,7 +8,7 @@ export type BootNodeRole = 'agent' | 'soul' | 'user';
 export type BootNodeState = 'missing' | 'empty' | 'initialized';
 export type BootOverallState = 'uninitialized' | 'partial' | 'complete';
 export type BootNodeScope = 'global' | 'client';
-export type BootClientType = Extract<ClientType, 'claudecode' | 'openclaw' | 'hermes'>;
+export type BootClientType = Extract<ClientType, 'claudecode' | 'openclaw' | 'hermes' | 'codex'>;
 
 export interface BootNodeSpec {
   id: string;
@@ -174,6 +174,19 @@ const CLIENT_BOOT_NODES: readonly BootNodeSpec[] = [
     setup_title: 'Hermes boot memory',
     setup_description: 'Write the Hermes-specific agent rules that load together with core://agent.',
   },
+  {
+    id: 'agent-codex',
+    uri: 'core://agent/codex',
+    role: 'agent',
+    role_label: 'codex runtime constraints',
+    purpose: 'Codex-specific plugins, hooks, MCP behavior, and runtime workflow constraints.',
+    dream_protection: 'protected',
+    scope: 'client',
+    client_type: 'codex',
+    setup_slug: 'agent-codex',
+    setup_title: 'Codex boot memory',
+    setup_description: 'Write the Codex-specific agent rules that load together with core://agent.',
+  },
 ] as const;
 
 export const FIXED_BOOT_NODES: readonly BootNodeSpec[] = [
@@ -207,7 +220,7 @@ function deriveOverallState(nodes: BootStatusNode[]): BootOverallState {
 }
 
 function isRuntimeBootClientType(value: ClientType | null | undefined): value is BootClientType {
-  return value === 'claudecode' || value === 'openclaw' || value === 'hermes';
+  return value === 'claudecode' || value === 'openclaw' || value === 'hermes' || value === 'codex';
 }
 
 function shouldIncludeAllClientBootNodes(options: BootViewOptions): boolean {

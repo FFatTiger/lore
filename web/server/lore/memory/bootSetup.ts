@@ -102,6 +102,10 @@ const CLIENT_DRAFT_INSTRUCTIONS: Record<BootClientType, string[]> = {
     'Focus on Hermes-specific memory-provider behavior, runtime conventions, and tool usage constraints.',
     'Describe what only applies inside Hermes rather than repeating generic agent rules.',
   ],
+  codex: [
+    'Focus on Codex-specific runtime defaults, plugin behavior, hooks, MCP usage, and coding workflow expectations.',
+    'Describe what only applies inside Codex rather than repeating generic agent rules.',
+  ],
 };
 
 function asStatusError(message: string, status: number): Error & { status: number } {

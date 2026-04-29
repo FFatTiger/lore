@@ -17,6 +17,7 @@ Monorepo，三个 package：
 │   └── lib/               #   前端工具函数
 ├── openclaw-plugin/       # OpenClaw 集成插件
 ├── claudecode-plugin/     # Claude Code 插件（CI 发布到 plugin 分支）
+├── codex-plugin/          # Codex 插件源目录（CI 发布到 plugin 分支的 .agents/plugins + plugins/lore 布局）
 ├── postgres/              # 自定义 PostgreSQL 镜像（pgvector + zhparser）
 └── docker-compose.yml
 ```
@@ -113,8 +114,10 @@ import { parseUri } from './utils';
 ```bash
 cd web
 # 手动修改 package.json 中的 version
-# 确保 plugin 版本同步更新
+# 确保 claudecode-plugin、codex-plugin、openclaw-plugin 版本同步更新
 ```
+
+发布版本时需要同步 `web/package.json`、`claudecode-plugin/.claude-plugin/plugin.json`、`codex-plugin/.codex-plugin/plugin.json`、`openclaw-plugin/openclaw.plugin.json` 和 `openclaw-plugin/package.json`。
 
 ## 5. 分支与 PR 规范
 
@@ -235,6 +238,7 @@ npm run test:watch  # watch 模式
 Push 到 `main` 且修改了以下路径之一：
 - `web/**`
 - `claudecode-plugin/**`
+- `codex-plugin/**`
 - `.github/workflows/docker-build.yml`
 
 ---

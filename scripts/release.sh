@@ -43,6 +43,9 @@ fi
 "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" claudecode-plugin/.claude-plugin/plugin.json
 "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" claudecode-plugin/.claude-plugin/marketplace.json
 
+# Codex plugin
+"${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" codex-plugin/.codex-plugin/plugin.json
+
 # OpenClaw plugin
 "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" openclaw-plugin/openclaw.plugin.json
 "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" openclaw-plugin/package.json
@@ -50,7 +53,7 @@ fi
 # Verify
 echo ""
 echo "Updated files:"
-grep -n "\"version\"" web/package.json claudecode-plugin/.claude-plugin/plugin.json claudecode-plugin/.claude-plugin/marketplace.json openclaw-plugin/openclaw.plugin.json openclaw-plugin/package.json
+grep -n "\"version\"" web/package.json claudecode-plugin/.claude-plugin/plugin.json claudecode-plugin/.claude-plugin/marketplace.json codex-plugin/.codex-plugin/plugin.json openclaw-plugin/openclaw.plugin.json openclaw-plugin/package.json
 grep -n "version:" web/server/mcpServer.ts | head -1
 echo ""
 

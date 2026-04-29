@@ -210,6 +210,36 @@ The plugin auto-registers:
 To update: `claude plugins update lore@lore`
 To uninstall: `claude plugins uninstall lore@lore`
 
+## Codex Integration
+
+Lore ships a Codex plugin source tree under `codex-plugin/`. CI publishes it to the `plugin` branch using the official Codex marketplace layout:
+
+- `.agents/plugins/marketplace.json`
+- `plugins/lore/.codex-plugin/plugin.json`
+- `plugins/lore/.mcp.json`
+- `plugins/lore/skills/`
+
+```bash
+export LORE_BASE_URL=http://127.0.0.1:18901
+codex plugin marketplace add FFatTiger/lore --ref plugin
+```
+
+Restart Codex, open the plugin directory, select the Lore marketplace, and enable Lore.
+
+Codex hooks are optional and explicit. The official Codex hook locations are `~/.codex/hooks.json`, `~/.codex/config.toml`, `<repo>/.codex/hooks.json`, and `<repo>/.codex/config.toml`; Lore does not assume plugin installation auto-loads hooks.
+
+```bash
+cd codex-plugin
+./scripts/install-hooks.sh
+```
+
+When `API_TOKEN` is enabled on the Lore server, configure Codex's Streamable HTTP MCP bearer token support:
+
+```bash
+export LORE_API_TOKEN="$API_TOKEN"
+codex mcp add lore --url "$LORE_BASE_URL/api/mcp?client_type=codex" --bearer-token-env-var LORE_API_TOKEN
+```
+
 ## OpenClaw Plugin
 
 Copy or symlink `openclaw-plugin/` into your OpenClaw plugin path, then configure in `openclaw.json`:
@@ -422,6 +452,19 @@ Runtime configuration is managed through the Settings UI at `/settings`, organiz
 │   │   └── rules-inject.ts        #   Boot + guidance on session start
 │   └── rules/
 │       └── lore-guidance.md        #   Agent guidance rules
+├── codex-plugin/                   # Codex plugin source, published to `plugins/lore` on `plugin` branch
+│   ├── .agents/plugins/
+│   │   └── marketplace.json        #   Codex marketplace catalog
+│   ├── .codex-plugin/
+│   │   └── plugin.json             #   Codex plugin manifest
+│   ├── .mcp.json                   #   MCP server config using client_type=codex
+│   ├── skills/
+│   │   └── lore-memory/            #   Codex skill
+│   ├── hooks/                      #   Optional Codex hook helpers
+│   ├── rules/
+│   │   └── lore-guidance.md        #   Codex-specific guidance rules
+│   └── scripts/
+│       └── install-hooks.sh        #   Explicit Codex hooks installer
 ├── hermes-plugin/                  # Hermes Agent integration plugin
 │   └── lore_memory/                #   MemoryProvider implementation
 │       ├── __init__.py             #   Plugin entry + tool schemas

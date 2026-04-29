@@ -1,10 +1,12 @@
-name: Publish Claude Code Plugin
+name: Publish Agent Plugins
 
 on:
   push:
     branches: [main]
     paths:
       - 'claudecode-plugin/**'
+      - 'codex-plugin/**'
+      - '.github/workflows/publish-plugin.yml'
 
 jobs:
   publish:
@@ -18,27 +20,48 @@ jobs:
 
       - name: Publish to plugin branch
         run: |
+          set -euo pipefail
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          VERSION=$(jq -r .version claudecode-plugin/.claude-plugin/plugin.json)
+          CLAUDE_VERSION=$(jq -r .version claudecode-plugin/.claude-plugin/plugin.json)
+          CODEX_VERSION=$(jq -r .version codex-plugin/.codex-plugin/plugin.json)
+          if [ "$CLAUDE_VERSION" != "$CODEX_VERSION" ]; then
+            echo "Plugin version mismatch: Claude=$CLAUDE_VERSION Codex=$CODEX_VERSION"
+            exit 1
+          fi
+          VERSION="$CLAUDE_VERSION"
 
-          # Save plugin files to temp
-          cp -r claudecode-plugin /tmp/plugin-staging
+          rm -rf /tmp/lore-plugin-staging
+          mkdir -p /tmp/lore-plugin-staging
+          cp -a claudecode-plugin /tmp/lore-plugin-staging/claudecode-plugin
+          cp -a codex-plugin /tmp/lore-plugin-staging/codex-plugin
 
-          # Switch to plugin branch (create orphan if new)
           git fetch origin plugin 2>/dev/null && git checkout plugin || git checkout --orphan plugin
 
-          # Clean working tree
           git rm -rf . 2>/dev/null || true
-          rm -rf *
+          find . -mindepth 1 ! -name .git -exec rm -rf {} +
 
-          # Copy plugin files to root
-          cp -r /tmp/plugin-staging/* .
-          cp -r /tmp/plugin-staging/.claude-plugin .
-          cp /tmp/plugin-staging/.mcp.json .
+          cp -a /tmp/lore-plugin-staging/claudecode-plugin/.claude-plugin .
+          cp -a /tmp/lore-plugin-staging/claudecode-plugin/.mcp.json .
+          cp -a /tmp/lore-plugin-staging/claudecode-plugin/hooks .
+          cp -a /tmp/lore-plugin-staging/claudecode-plugin/rules .
 
-          # Commit and push
+          mkdir -p plugins/lore
+          cp -a /tmp/lore-plugin-staging/codex-plugin/.agents .
+          cp -a /tmp/lore-plugin-staging/codex-plugin/.codex-plugin plugins/lore/.codex-plugin
+          cp -a /tmp/lore-plugin-staging/codex-plugin/.mcp.json plugins/lore/.mcp.json
+          for entry in README.md skills hooks rules scripts assets; do
+            if [ -e "/tmp/lore-plugin-staging/codex-plugin/$entry" ]; then
+              cp -a "/tmp/lore-plugin-staging/codex-plugin/$entry" "plugins/lore/$entry"
+            fi
+          done
+
+          jq -e '.plugins[0].source.path == "./plugins/lore"' .agents/plugins/marketplace.json
+          jq -e '.mcpServers.lore.url | contains("client_type=codex")' plugins/lore/.mcp.json
+          jq -e '.name == "lore"' plugins/lore/.codex-plugin/plugin.json
+
           git add -A
           if ! git diff --staged --quiet; then
             git commit -m "plugin v${VERSION}"

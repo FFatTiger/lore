@@ -300,6 +300,7 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
     'uri…': 'uri…',
     'Hide filters': '收起筛选',
     'Show filters': '展开筛选',
+    'Adjust filters': '调整筛选',
     'Reset filters': '重置筛选',
     'Recent queries': '最近查询',
     'No queries recorded yet.': '尚无查询记录。',

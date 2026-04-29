@@ -1,10 +1,14 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const navigationState = vi.hoisted(() => ({
+  searchParams: new URLSearchParams(),
+}));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => navigationState.searchParams,
 }));
 
 vi.mock('../../../lib/api', () => ({
@@ -62,6 +66,10 @@ vi.mock('../../../components/ui', () => ({
 import RecallDrilldown from '../RecallDrilldown';
 
 describe('RecallDrilldown threshold analysis', () => {
+  beforeEach(() => {
+    navigationState.searchParams = new URLSearchParams();
+  });
+
   it('renders threshold analysis as the source table without summary cards or detail panels', () => {
     const html = renderToStaticMarkup(<RecallDrilldown />);
 
@@ -79,15 +87,17 @@ describe('RecallDrilldown threshold analysis', () => {
     const html = renderToStaticMarkup(<RecallDrilldown />);
 
     expect(html.indexOf('Display threshold analysis')).toBeGreaterThanOrEqual(0);
-    expect(html.indexOf('Show filters')).toBeGreaterThanOrEqual(0);
-    expect(html.indexOf('Display threshold analysis')).toBeLessThan(html.indexOf('Show filters'));
+    expect(html.indexOf('Adjust filters')).toBeGreaterThanOrEqual(0);
+    expect(html.indexOf('Adjust filters')).toBeLessThan(html.indexOf('Loading…'));
+    expect(html).not.toContain('Show filters');
+    expect(html).not.toContain('Hide filters');
   });
 
-  it('renders numeric filters through AppInput', () => {
+  it('keeps filter inputs out of the page body until filters are opened', () => {
     const html = renderToStaticMarkup(<RecallDrilldown />);
 
-    expect((html.match(/data-app-input="true"/g) || []).length).toBe(4);
-    expect(html).toContain('type="number"');
+    expect((html.match(/data-app-input="true"/g) || []).length).toBe(0);
+    expect(html).toContain('Adjust filters');
   });
 
   it('does not render appendix controls or content', () => {
@@ -99,5 +109,15 @@ describe('RecallDrilldown threshold analysis', () => {
     expect(html).not.toContain('By view');
     expect(html).not.toContain('Noisy nodes');
     expect(html).not.toContain('Raw events');
+  });
+
+  it('hides overview and threshold cards when a query detail is open', () => {
+    navigationState.searchParams = new URLSearchParams('query_id=q1');
+    const html = renderToStaticMarkup(<RecallDrilldown />);
+
+    expect(html).not.toContain('data-stat-card="true"');
+    expect(html).not.toContain('Display threshold analysis');
+    expect(html).toContain('Adjust filters');
+    expect(html).toContain('Loading…');
   });
 });

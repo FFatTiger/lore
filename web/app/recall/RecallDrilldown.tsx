@@ -2,9 +2,10 @@
 
 import React, { useEffect, useMemo, useState, useCallback, type ChangeEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { RefreshCw, SlidersHorizontal } from 'lucide-react';
 import { api } from '../../lib/api';
 import {
-  PageCanvas, PageTitle, Card, Section, Button, Badge, Table, StatCard, Notice, AppInput, AppSelect, Disclosure,
+  PageCanvas, PageTitle, Section, Button, Table, StatCard, Notice, AppInput, AppSelect,
   fmt, trunc, asNumber,
 } from '../../components/ui';
 import RecallStages from '../../components/RecallStages';
@@ -146,6 +147,7 @@ export default function RecallDrilldown(): React.JSX.Element {
 
   const queryDetail = (stats?.query_detail as Record<string, unknown>) || null;
   const nodeDetail = (stats?.node_detail as Record<string, unknown>) || null;
+  const isDetailRoute = Boolean(filters.queryId || filters.nodeUri);
   const clientTypeThresholdAnalysis = (stats?.client_type_threshold_analysis as RowData[]) || [];
 
   const recentQueryCols = useMemo(() => [
@@ -215,6 +217,41 @@ export default function RecallDrilldown(): React.JSX.Element {
     { key: 'separation_gap', label: t('Separation'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-right">{fmt(v)}</span> },
   ], [t]);
 
+  const filterPanel = (
+    <div className="absolute right-0 top-full z-20 mt-2 w-[min(92vw,56rem)] rounded-xl border border-separator-thin bg-bg-elevated p-4 shadow-card">
+      <div className="grid gap-x-4 gap-y-3 md:grid-cols-5">
+        <label className="block">
+          <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Days')}</span>
+          <AppInput type="number" value={String(filters.days)} onChange={(e) => applyFilters({ days: e.target.value }, 'replace')} className="font-mono tabular-nums" />
+        </label>
+        <label className="block">
+          <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Limit')}</span>
+          <AppInput type="number" value={String(filters.limit)} onChange={(e) => applyFilters({ limit: e.target.value }, 'replace')} className="font-mono tabular-nums" />
+        </label>
+        <label className="block">
+          <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Source')}</span>
+          <AppSelect
+            value={filters.clientType}
+            onValueChange={(value) => applyFilters({ clientType: value }, 'replace')}
+            options={[{ value: '', label: t('All sources') }, ...sourceOptions]}
+            className="font-sans"
+          />
+        </label>
+        <label className="block">
+          <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Query text')}</span>
+          <AppInput value={filters.queryText} onChange={(e: ChangeEvent<HTMLInputElement>) => applyFilters({ queryText: e.target.value, queryId: '' }, 'replace')} placeholder={t('Fragment…')} />
+        </label>
+        <label className="block">
+          <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Node URI')}</span>
+          <AppInput value={filters.nodeUri} onChange={(e: ChangeEvent<HTMLInputElement>) => applyFilters({ nodeUri: e.target.value, queryId: '' }, 'replace')} placeholder={t('uri…')} />
+        </label>
+      </div>
+      <div className="mt-3 flex justify-end">
+        <button onClick={() => applyFilters(DEFAULT_FILTERS, 'replace')} className="text-[12px] text-sys-blue hover:opacity-80">{t('Reset filters')}</button>
+      </div>
+    </div>
+  );
+
   return (
     <PageCanvas maxWidth="5xl">
       <PageTitle
@@ -224,77 +261,48 @@ export default function RecallDrilldown(): React.JSX.Element {
         truncateTitle
         description={`${t('Recent queries')} · ${filters.days} ${t('days')}`}
         right={
-          <Button variant="ghost" onClick={() => loadStats(filters)} disabled={loading}>
-            {loading ? t('Loading…') : t('Refresh')}
-          </Button>
+          <>
+            <div className="relative">
+              <Button
+                variant="ghost"
+                onClick={() => setFilterOpen((open) => !open)}
+                aria-expanded={filterOpen}
+              >
+                <SlidersHorizontal size={14} aria-hidden="true" />
+                {t('Adjust filters')}
+              </Button>
+              {filterOpen && filterPanel}
+            </div>
+            <Button variant="ghost" onClick={() => loadStats(filters)} disabled={loading}>
+              <RefreshCw size={14} className={loading ? 'animate-spin' : undefined} aria-hidden="true" />
+              {loading ? t('Loading…') : t('Refresh')}
+            </Button>
+          </>
         }
       />
 
-      {/* overview stats */}
-      <div className="animate-in stagger-1 mb-5 grid grid-cols-2 md:grid-cols-4 gap-3">
-        {(
-          [
-            [t('Merged'), (stats?.summary as Record<string, unknown>)?.merged_count, 'default'],
-            [t('Shown'), (stats?.summary as Record<string, unknown>)?.shown_count, 'blue'],
-            [t('Queries'), (stats?.summary as Record<string, unknown>)?.query_count, 'purple'],
-            [t('Used'), (stats?.summary as Record<string, unknown>)?.used_count, 'green'],
-          ] as [string, unknown, 'default' | 'blue' | 'purple' | 'green'][]
-        ).map(([label, value, tone]) => (
-          <StatCard key={label} label={label} value={String(value ?? '—')} tone={tone} compact />
-        ))}
-      </div>
+      {!isDetailRoute && (
+        <>
+          <div className="animate-in stagger-1 mb-5 grid grid-cols-2 md:grid-cols-4 gap-3">
+            {(
+              [
+                [t('Merged'), (stats?.summary as Record<string, unknown>)?.merged_count, 'default'],
+                [t('Shown'), (stats?.summary as Record<string, unknown>)?.shown_count, 'blue'],
+                [t('Queries'), (stats?.summary as Record<string, unknown>)?.query_count, 'purple'],
+                [t('Used'), (stats?.summary as Record<string, unknown>)?.used_count, 'green'],
+              ] as [string, unknown, 'default' | 'blue' | 'purple' | 'green'][]
+            ).map(([label, value, tone]) => (
+              <StatCard key={label} label={label} value={String(value ?? '—')} tone={tone} compact />
+            ))}
+          </div>
 
-      <div className="animate-in stagger-2 mb-5">
-        <Section title={t('Display threshold analysis')}>
-          <Table columns={thresholdClientCols} rows={thresholdClientRows} empty={t('No source-specific threshold samples yet.')} activeRowKey={filters.clientType || undefined} />
-        </Section>
-      </div>
-
-      {/* filter bar */}
-      <div className="animate-in stagger-3 mb-5">
-        <Disclosure
-          open={filterOpen}
-          onOpenChange={setFilterOpen}
-          trigger={
-            <span className="inline-flex items-center gap-1.5 text-[12.5px] text-sys-blue hover:opacity-80">
-              {filterOpen ? `− ${t('Hide filters')}` : `+ ${t('Show filters')}`}
-            </span>
-          }
-        >
-          <Card className="mt-3" padded={false}>
-            <div className="p-5 grid gap-x-6 gap-y-4 md:grid-cols-5">
-              <label className="block">
-                <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Days')}</span>
-                <AppInput type="number" value={String(filters.days)} onChange={(e) => applyFilters({ days: e.target.value }, 'replace')} className="font-mono tabular-nums" />
-              </label>
-              <label className="block">
-                <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Limit')}</span>
-                <AppInput type="number" value={String(filters.limit)} onChange={(e) => applyFilters({ limit: e.target.value }, 'replace')} className="font-mono tabular-nums" />
-              </label>
-              <label className="block">
-                <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Source')}</span>
-                <AppSelect
-                  value={filters.clientType}
-                  onValueChange={(value) => applyFilters({ clientType: value }, 'replace')}
-                  options={[{ value: '', label: t('All sources') }, ...sourceOptions]}
-                  className="font-sans"
-                />
-              </label>
-              <label className="block">
-                <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Query text')}</span>
-                <AppInput value={filters.queryText} onChange={(e: ChangeEvent<HTMLInputElement>) => applyFilters({ queryText: e.target.value, queryId: '' }, 'replace')} placeholder={t('Fragment…')} />
-              </label>
-              <label className="block">
-                <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Node URI')}</span>
-                <AppInput value={filters.nodeUri} onChange={(e: ChangeEvent<HTMLInputElement>) => applyFilters({ nodeUri: e.target.value, queryId: '' }, 'replace')} placeholder={t('uri…')} />
-              </label>
-            </div>
-            <div className="px-5 pb-4 flex justify-end">
-              <button onClick={() => applyFilters(DEFAULT_FILTERS, 'replace')} className="text-[12px] text-sys-blue hover:opacity-80">{t('Reset filters')}</button>
-            </div>
-          </Card>
-        </Disclosure>
-      </div>
+          <div className="animate-in stagger-2 mb-5">
+            <Section title={t('Display threshold analysis')}>
+              <Table columns={thresholdClientCols} rows={thresholdClientRows} empty={t('No source-specific threshold samples yet.')} activeRowKey={filters.clientType || undefined} />
+            </Section>
+          </div>
+        </>
+      )}
 
       {error && (
         <Notice tone="danger" className="animate-scale mb-4">

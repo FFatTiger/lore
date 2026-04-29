@@ -18,6 +18,7 @@ Monorepo，三个 package：
 ├── openclaw-plugin/       # OpenClaw 集成插件
 ├── claudecode-plugin/     # Claude Code 插件（CI 发布到 plugin 分支）
 ├── codex-plugin/          # Codex 插件源目录（CI 发布到 plugin 分支的 .agents/plugins + plugins/lore 布局）
+├── pi-extension/          # Pi agent 扩展（本地安装，client_type=pi）
 ├── postgres/              # 自定义 PostgreSQL 镜像（pgvector + zhparser）
 └── docker-compose.yml
 ```

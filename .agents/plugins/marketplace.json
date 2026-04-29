@@ -1,0 +1,20 @@
+{
+  "name": "lore",
+  "interface": {
+    "displayName": "Lore"
+  },
+  "plugins": [
+    {
+      "name": "lore",
+      "source": {
+        "source": "local",
+        "path": "./plugins/lore"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

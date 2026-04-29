@@ -132,6 +132,8 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
     'Write the OpenClaw-specific agent rules that load together with core://agent.': '填写会与 core://agent 一起加载的 OpenClaw 专属 agent 规则。',
     'Hermes boot memory': 'Hermes 启动记忆',
     'Write the Hermes-specific agent rules that load together with core://agent.': '填写会与 core://agent 一起加载的 Hermes 专属 agent 规则。',
+    'Codex boot memory': 'Codex 启动记忆',
+    'Write the Codex-specific agent rules that load together with core://agent.': '填写会与 core://agent 一起加载的 Codex 专属 agent 规则。',
     'Lore needs boot initialization before you can enter the normal workspace.':
       '进入正常工作区之前，需要先完成 Lore 的 boot 初始化。',
     'Refresh status': '刷新状态',
@@ -172,6 +174,7 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
     'claude code runtime constraints': 'Claude Code 运行时约束',
     'openclaw runtime constraints': 'OpenClaw 运行时约束',
     'hermes runtime constraints': 'Hermes 运行时约束',
+    'codex runtime constraints': 'Codex 运行时约束',
     'style / persona / self-definition': '风格 / 人格 / 自我定义',
     'stable user definition': '稳定用户定义',
     'Working rules, collaboration constraints, and execution protocol.':
@@ -182,6 +185,8 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
       'OpenClaw 专属工具、插件行为与运行时工作流约束。',
     'Hermes-specific memory-provider behavior, tools, and runtime workflow constraints.':
       'Hermes 专属 memory provider 行为、工具与运行时工作流约束。',
+    'Codex-specific plugins, hooks, MCP behavior, and runtime workflow constraints.':
+      'Codex 专属插件、hook、MCP 行为与运行时工作流约束。',
     'Agent style, persona, and self-cognition baseline.':
       '代理的风格、人格与自我认知基线。',
     'Stable user information, user preferences, and durable collaboration context.':

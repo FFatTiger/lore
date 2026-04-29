@@ -22,7 +22,7 @@ vi.mock('../../../components/UpdaterDisplay', () => ({
 }));
 
 vi.mock('../../../components/clientTypeMeta', () => ({
-  KNOWN_CLIENT_TYPES: ['claudecode'],
+  KNOWN_CLIENT_TYPES: ['claudecode', 'codex'],
   clientTypeLabel: (value: unknown) => String(value || 'Legacy'),
 }));
 

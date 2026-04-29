@@ -26,6 +26,12 @@ const CLIENT_TYPE_META: Record<string, ClientTypeMeta> = {
     assetPath: '/channel-icons/hermes.svg',
     initials: 'H',
   },
+  codex: {
+    label: 'Codex',
+    tone: 'soft',
+    assetPath: '/channel-icons/codex.svg',
+    initials: 'CX',
+  },
   mcp: {
     label: 'MCP',
     tone: 'orange',

@@ -20,8 +20,8 @@ const mockBootView = vi.mocked(bootView);
 const mockResolveViewLlmConfig = vi.mocked(resolveViewLlmConfig);
 
 const BASE_BOOT_VIEW = {
-  loaded: 4,
-  total: 4,
+  loaded: 5,
+  total: 5,
   failed: [],
   core_memories: [],
   recent_memories: [],
@@ -102,6 +102,25 @@ const BASE_BOOT_VIEW = {
       disclosure: null,
       node_uuid: 'openclaw-uuid',
     },
+    {
+      id: 'agent-codex',
+      uri: 'core://agent/codex',
+      role: 'agent' as const,
+      role_label: 'codex runtime constraints',
+      purpose: 'Codex-specific plugins, hooks, MCP behavior, and runtime workflow constraints.',
+      dream_protection: 'protected' as const,
+      scope: 'client' as const,
+      client_type: 'codex' as const,
+      setup_slug: 'agent-codex',
+      setup_title: 'Codex boot memory',
+      setup_description: 'Write the Codex-specific agent rules that load together with core://agent.',
+      state: 'initialized' as const,
+      content: 'Codex memory',
+      content_length: 12,
+      priority: 1,
+      disclosure: null,
+      node_uuid: 'codex-uuid',
+    },
   ],
   overall_state: 'partial' as const,
   remaining_count: 2,
@@ -128,6 +147,7 @@ describe('buildSetupFlowStatus', () => {
       { id: 'boot:soul', path: '/setup/boot/soul', label: 'Soul boot memory', description: 'Write the fixed persona baseline that Lore carries into every session.', complete: false, role: 'soul', uri: 'core://soul', scope: 'global', client_type: null, setup_slug: 'soul' },
       { id: 'boot:user', path: '/setup/boot/user', label: 'User boot memory', description: 'Write the stable user profile Lore should remember across future sessions.', complete: false, role: 'user', uri: 'preferences://user', scope: 'global', client_type: null, setup_slug: 'user' },
       { id: 'boot:agent-openclaw', path: '/setup/boot/agent-openclaw', label: 'OpenClaw boot memory', description: 'Write the OpenClaw-specific agent rules that load together with core://agent.', complete: true, role: 'agent', uri: 'core://agent/openclaw', scope: 'client', client_type: 'openclaw', setup_slug: 'agent-openclaw' },
+      { id: 'boot:agent-codex', path: '/setup/boot/agent-codex', label: 'Codex boot memory', description: 'Write the Codex-specific agent rules that load together with core://agent.', complete: true, role: 'agent', uri: 'core://agent/codex', scope: 'client', client_type: 'codex', setup_slug: 'agent-codex' },
     ]);
   });
 

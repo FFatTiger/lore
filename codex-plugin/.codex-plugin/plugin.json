@@ -1,0 +1,31 @@
+{
+  "name": "lore",
+  "version": "1.0.2",
+  "description": "Long-term Lore memory for Codex via MCP tools and optional hook-based prompt context.",
+  "author": {
+    "name": "FFatTiger"
+  },
+  "homepage": "https://github.com/FFatTiger/lore",
+  "repository": "https://github.com/FFatTiger/lore",
+  "license": "MIT",
+  "keywords": ["memory", "mcp", "codex", "recall"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Lore",
+    "shortDescription": "Long-term memory and recall tools for Codex",
+    "longDescription": "Connect Codex to Lore's fixed boot baseline, durable memory graph, recall search, and memory write tools through MCP. Optional Codex hooks can inject boot and recall context when installed explicitly.",
+    "developerName": "FFatTiger",
+    "category": "Productivity",
+    "capabilities": ["MCP", "Skills"],
+    "websiteURL": "https://github.com/FFatTiger/lore",
+    "privacyPolicyURL": "https://github.com/FFatTiger/lore",
+    "termsOfServiceURL": "https://github.com/FFatTiger/lore",
+    "defaultPrompt": [
+      "Load my Lore boot memory.",
+      "Search Lore for context before editing.",
+      "Remember this project decision in Lore."
+    ],
+    "brandColor": "#111827"
+  }
+}

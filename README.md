@@ -221,15 +221,15 @@ Lore ships a Codex plugin source tree under `codex-plugin/`. CI publishes it to 
 
 ```bash
 export LORE_BASE_URL=http://127.0.0.1:18901
-codex plugin marketplace add FFatTiger/lore --ref plugin
+cd codex-plugin
+./scripts/install.sh
 ```
 
-Restart Codex, open the plugin directory, select the Lore marketplace, and enable Lore.
+The installer stages the Codex marketplace layout locally, registers the marketplace, enables `lore@lore`, configures MCP, and installs the optional Codex hooks. Restart Codex after it finishes.
 
 Codex hooks are optional and explicit. The official Codex hook locations are `~/.codex/hooks.json`, `~/.codex/config.toml`, `<repo>/.codex/hooks.json`, and `<repo>/.codex/config.toml`; Lore does not assume plugin installation auto-loads hooks.
 
 ```bash
-cd codex-plugin
 ./scripts/install-hooks.sh
 ```
 
@@ -237,7 +237,7 @@ When `API_TOKEN` is enabled on the Lore server, configure Codex's Streamable HTT
 
 ```bash
 export LORE_API_TOKEN="$API_TOKEN"
-codex mcp add lore --url "$LORE_BASE_URL/api/mcp?client_type=codex" --bearer-token-env-var LORE_API_TOKEN
+./scripts/install.sh
 ```
 
 ## OpenClaw Plugin

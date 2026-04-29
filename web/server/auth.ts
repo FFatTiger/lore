@@ -1,7 +1,7 @@
 import { timingSafeEqual } from 'crypto';
 import { NextResponse } from 'next/server';
 
-export const CLIENT_TYPES = ['claudecode', 'openclaw', 'hermes', 'codex', 'mcp', 'admin'] as const;
+export const CLIENT_TYPES = ['claudecode', 'openclaw', 'hermes', 'codex', 'pi', 'mcp', 'admin'] as const;
 export type ClientType = typeof CLIENT_TYPES[number];
 
 const CLIENT_TYPE_SET = new Set<string>(CLIENT_TYPES);

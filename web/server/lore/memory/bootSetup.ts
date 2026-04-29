@@ -106,6 +106,11 @@ const CLIENT_DRAFT_INSTRUCTIONS: Record<BootClientType, string[]> = {
     'Focus on Codex-specific runtime defaults, plugin behavior, hooks, MCP usage, and coding workflow expectations.',
     'Describe what only applies inside Codex rather than repeating generic agent rules.',
   ],
+  pi: [
+    'Pi-specific runtime defaults: Pi extensions live under ~/.pi/agent/extensions or project .pi/extensions and can inject context with before_agent_start.',
+    'Mention that the Lore Pi extension registers tools through pi.registerTool and tags Lore API writes and recalls with client_type=pi.',
+    'Mention that /reload reloads discovered Pi extensions after local extension changes.',
+  ],
 };
 
 function asStatusError(message: string, status: number): Error & { status: number } {

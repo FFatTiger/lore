@@ -286,6 +286,24 @@ describe('generateBootDrafts', () => {
     expect(userPrompt).toContain('"client_type": "codex"');
   });
 
+  it('includes Pi-specific draft instructions for runtime-specific agent nodes', async () => {
+    mockGenerateText.mockResolvedValueOnce({
+      content: '{"uri":"core://agent/pi","content":"使用 Pi 特有的扩展和 prompt 注入规则。"}',
+      raw: {},
+    });
+
+    await generateBootDrafts({
+      uris: ['core://agent/pi'],
+    });
+
+    const systemPrompt = String(mockGenerateText.mock.calls[0]?.[1]?.[0]?.content || '');
+    const userPrompt = String(mockGenerateText.mock.calls[0]?.[1]?.[1]?.content || '');
+    expect(systemPrompt).toContain('This boot node is specific to the pi runtime.');
+    expect(systemPrompt).toContain('Pi-specific runtime defaults');
+    expect(userPrompt).toContain('"uri": "core://agent/pi"');
+    expect(userPrompt).toContain('"client_type": "pi"');
+  });
+
   it('returns per-node failures without aborting the whole batch', async () => {
     mockGenerateText
       .mockResolvedValueOnce({ content: 'not json', raw: {} })

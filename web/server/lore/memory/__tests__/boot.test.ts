@@ -33,6 +33,7 @@ describe('boot helpers', () => {
       'core://agent/openclaw',
       'core://agent/hermes',
       'core://agent/codex',
+      'core://agent/pi',
     ]);
     expect(getRuntimeBootUris('codex')).toEqual([
       'core://agent',

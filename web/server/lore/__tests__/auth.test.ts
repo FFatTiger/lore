@@ -23,6 +23,7 @@ describe('normalizeClientType', () => {
     expect(normalizeClientType('ClaudeCode')).toBe('claudecode');
     expect(normalizeClientType('openclaw')).toBe('openclaw');
     expect(normalizeClientType(' hermes ')).toBe('hermes');
+    expect(normalizeClientType('Codex')).toBe('codex');
     expect(normalizeClientType('mcp')).toBe('mcp');
     expect(normalizeClientType('Admin')).toBe('admin');
   });

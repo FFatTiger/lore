@@ -1,20 +1,21 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+<svg height="1em" style="flex:none;line-height:1" viewBox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Pi">
+  <title>Pi</title>
+  <circle cx="12" cy="12" r="11" fill="#D4984A"/>
   <path fill="#fff" fill-rule="evenodd" d="
-    M165.29 165.29
-    H517.36
-    V400
-    H400
-    V517.36
-    H282.65
-    V634.72
-    H165.29
+    M4 4
+    H16
+    V12
+    H12
+    V16
+    H8
+    V20
+    H4
     Z
-    M282.65 282.65
-    V400
-    H400
-    V282.65
+    M8 8
+    V12
+    H12
+    V8
     Z
   "/>
-  <path fill="#fff" d="M517.36 400 H634.72 V634.72 H517.36 Z"/>
+  <path fill="#fff" d="M16 12 H20 V20 H16 Z"/>
 </svg>

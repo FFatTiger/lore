@@ -162,11 +162,14 @@ function formatRecallTag(items: any[], sessionId?: string, queryId?: string): st
 }
 
 async function fetchInitialRecalls(info: ProjectInfo): Promise<string> {
+  const channelName = "claudecode";
   const queries: { source: string; query: string }[] = [
-    { source: "channel", query: "claudecode" },
-    { source: "project-dir", query: info.dirName },
+    { source: "channel", query: channelName },
   ];
-  if (info.repoName && info.repoName !== info.dirName) {
+  if (info.dirName !== channelName) {
+    queries.push({ source: "project-dir", query: info.dirName });
+  }
+  if (info.repoName && info.repoName !== info.dirName && info.repoName !== channelName) {
     queries.push({ source: "project-repo", query: info.repoName });
   }
 

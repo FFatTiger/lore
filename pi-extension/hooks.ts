@@ -174,11 +174,14 @@ async function fetchStartupRecallSection(pluginCfg: any, sessionId: string | und
         body: JSON.stringify({ query, session_id: 'boot' }),
       }).catch(() => ({ items: [] }));
 
+    const channelName = 'pi';
     const recallQueries: { source: string; query: string; promise: Promise<any> }[] = [
-      { source: 'channel', query: 'pi', promise: recallFetch('pi') },
-      { source: 'project-dir', query: info.dirName, promise: recallFetch(info.dirName) },
+      { source: 'channel', query: channelName, promise: recallFetch(channelName) },
     ];
-    if (info.repoName && info.repoName !== info.dirName) {
+    if (info.dirName !== channelName) {
+      recallQueries.push({ source: 'project-dir', query: info.dirName, promise: recallFetch(info.dirName) });
+    }
+    if (info.repoName && info.repoName !== info.dirName && info.repoName !== channelName) {
       recallQueries.push({ source: 'project-repo', query: info.repoName, promise: recallFetch(info.repoName) });
     }
 

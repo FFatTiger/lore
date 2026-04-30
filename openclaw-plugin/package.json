@@ -1,6 +1,6 @@
 {
   "name": "@local/lore",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "description": "Lore memory plugin for OpenClaw with fixed boot baseline and recall hooks",
   "type": "module",
   "scripts": {

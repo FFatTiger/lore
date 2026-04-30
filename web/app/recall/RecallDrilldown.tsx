@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useEffect, useMemo, useState, useCallback, type ChangeEvent } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { RefreshCw, SlidersHorizontal } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { api } from '../../lib/api';
 import {
   PageCanvas, PageTitle, Section, Button, Table, StatCard, Notice, AppInput, AppSelect,
@@ -81,7 +81,6 @@ export default function RecallDrilldown(): React.JSX.Element {
   }), [searchParams]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [filterOpen, setFilterOpen] = useState(false);
 
   const applyFilters = useCallback((patch: Partial<Filters>, mode: 'push' | 'replace' = 'replace') => {
     const next: Filters = { ...filters, ...patch };
@@ -217,38 +216,33 @@ export default function RecallDrilldown(): React.JSX.Element {
     { key: 'separation_gap', label: t('Separation'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-right">{fmt(v)}</span> },
   ], [t]);
 
-  const filterPanel = (
-    <div className="absolute right-0 top-full z-20 mt-2 w-[min(92vw,56rem)] rounded-xl border border-separator-thin bg-bg-elevated p-4 shadow-card">
-      <div className="grid gap-x-4 gap-y-3 md:grid-cols-5">
-        <label className="block">
-          <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Days')}</span>
-          <AppInput type="number" value={String(filters.days)} onChange={(e) => applyFilters({ days: e.target.value }, 'replace')} className="font-mono tabular-nums" />
-        </label>
-        <label className="block">
-          <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Limit')}</span>
-          <AppInput type="number" value={String(filters.limit)} onChange={(e) => applyFilters({ limit: e.target.value }, 'replace')} className="font-mono tabular-nums" />
-        </label>
-        <label className="block">
-          <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Source')}</span>
-          <AppSelect
-            value={filters.clientType}
-            onValueChange={(value) => applyFilters({ clientType: value }, 'replace')}
-            options={[{ value: '', label: t('All sources') }, ...sourceOptions]}
-            className="font-sans"
-          />
-        </label>
-        <label className="block">
-          <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Query text')}</span>
-          <AppInput value={filters.queryText} onChange={(e: ChangeEvent<HTMLInputElement>) => applyFilters({ queryText: e.target.value, queryId: '' }, 'replace')} placeholder={t('Fragment…')} />
-        </label>
-        <label className="block">
-          <span className="block mb-1 text-[11px] font-medium text-txt-tertiary">{t('Node URI')}</span>
-          <AppInput value={filters.nodeUri} onChange={(e: ChangeEvent<HTMLInputElement>) => applyFilters({ nodeUri: e.target.value, queryId: '' }, 'replace')} placeholder={t('uri…')} />
-        </label>
-      </div>
-      <div className="mt-3 flex justify-end">
-        <button onClick={() => applyFilters(DEFAULT_FILTERS, 'replace')} className="text-[12px] text-sys-blue hover:opacity-80">{t('Reset filters')}</button>
-      </div>
+  const filterControlClass = 'press inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium text-txt-secondary transition-colors hover:bg-fill-quaternary focus-within:bg-fill-quaternary';
+  const titleFilters = (
+    <div className="flex flex-wrap items-center gap-1">
+      <label className={filterControlClass}>
+        <span>{t('Days')}</span>
+        <AppInput
+          variant="borderless"
+          type="number"
+          min={1}
+          value={String(filters.days)}
+          onChange={(e) => applyFilters({ days: e.target.value }, 'replace')}
+          className="!h-5 !w-10 !bg-transparent !p-0 text-right font-mono text-[13px] font-semibold tabular-nums text-txt-primary [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        />
+      </label>
+      <label className={filterControlClass}>
+        <span>{t('Source')}</span>
+        <AppSelect
+          variant="borderless"
+          size="small"
+          value={filters.clientType}
+          onValueChange={(value) => applyFilters({ clientType: value }, 'replace')}
+          options={[{ value: '', label: t('All sources') }, ...sourceOptions]}
+          placeholder={t('All sources')}
+          style={{ width: 'max-content' }}
+          className="text-[13px] font-semibold text-txt-primary [&_.ant-select-selector]:!bg-transparent [&_.ant-select-selector]:!px-0 [&_.ant-select-selection-item]:!font-semibold"
+        />
+      </label>
     </div>
   );
 
@@ -262,17 +256,7 @@ export default function RecallDrilldown(): React.JSX.Element {
         description={`${t('Recent queries')} · ${filters.days} ${t('days')}`}
         right={
           <>
-            <div className="relative">
-              <Button
-                variant="ghost"
-                onClick={() => setFilterOpen((open) => !open)}
-                aria-expanded={filterOpen}
-              >
-                <SlidersHorizontal size={14} aria-hidden="true" />
-                {t('Adjust filters')}
-              </Button>
-              {filterOpen && filterPanel}
-            </div>
+            {titleFilters}
             <Button variant="ghost" onClick={() => loadStats(filters)} disabled={loading}>
               <RefreshCw size={14} className={loading ? 'animate-spin' : undefined} aria-hidden="true" />
               {loading ? t('Loading…') : t('Refresh')}

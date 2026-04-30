@@ -16,6 +16,7 @@ import LobeInputPassword from '@lobehub/ui/es/Input/InputPassword';
 import LobeTextArea from '@lobehub/ui/es/Input/TextArea';
 import type { InputPasswordProps as LobeInputPasswordProps, InputProps as LobeInputProps, TextAreaProps as LobeTextAreaProps } from '@lobehub/ui/es/Input/type';
 import LobeSelect from '@lobehub/ui/es/Select/Select';
+import type { SelectProps as LobeSelectProps } from '@lobehub/ui/es/Select/type';
 import LobeSegmented from '@lobehub/ui/es/Segmented/index';
 import LobeTag from '@lobehub/ui/es/Tag/Tag';
 import LobeEmpty from '@lobehub/ui/es/Empty/index';
@@ -228,18 +229,22 @@ interface AppSelectProps {
   placeholder?: ReactNode;
   className?: string;
   disabled?: boolean;
+  size?: LobeSelectProps['size'];
+  style?: LobeSelectProps['style'];
+  variant?: LobeSelectProps['variant'];
 }
 
-export function AppSelect({ value, onValueChange, options, placeholder, className, disabled = false }: AppSelectProps): React.JSX.Element {
+export function AppSelect({ value, onValueChange, options, placeholder, className, disabled = false, size, style, variant = 'filled' }: AppSelectProps): React.JSX.Element {
   return (
     <LobeSelect
       className={className}
       disabled={disabled}
       options={options.map((option) => ({ label: option.label, value: option.value }))}
       placeholder={placeholder || '—'}
-      style={{ width: '100%' }}
+      size={size}
+      style={{ width: '100%', ...style }}
       value={value === '' ? undefined : value}
-      variant="filled"
+      variant={variant}
       onChange={(next: string | number | null | undefined) => onValueChange(String(next ?? ''))}
     />
   );

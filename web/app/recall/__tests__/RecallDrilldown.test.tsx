@@ -46,7 +46,12 @@ vi.mock('../../../components/ui', () => ({
   Disclosure: ({ children, trigger }: { children: React.ReactNode; trigger: React.ReactNode }) => <div>{trigger}{children}</div>,
   SegmentedTabs: () => <div data-segmented-tabs="true" />,
   AppInput: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input data-app-input="true" {...props} />,
-  AppSelect: () => <select />,
+  AppSelect: ({ options, placeholder }: { options: Array<{ value: string; label: React.ReactNode }>; placeholder?: React.ReactNode }) => (
+    <select data-app-select="true">
+      {placeholder && <option value="">{placeholder}</option>}
+      {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+    </select>
+  ),
   Table: ({ columns, rows, empty }: { columns: Array<{ key: string; label: React.ReactNode; render?: (value: unknown, row: Record<string, unknown>) => React.ReactNode }>; rows?: Record<string, unknown>[]; empty?: string }) => {
     const keys = columns.map((column) => column.key);
     if (new Set(keys).size !== keys.length) throw new Error(`duplicate column keys: ${keys.join(',')}`);
@@ -83,21 +88,17 @@ describe('RecallDrilldown threshold analysis', () => {
     expect(thresholdSection).not.toContain('Shown candidates');
   });
 
-  it('renders threshold analysis before the filter controls', () => {
+  it('renders only the day and source filters in the page header', () => {
     const html = renderToStaticMarkup(<RecallDrilldown />);
 
-    expect(html.indexOf('Display threshold analysis')).toBeGreaterThanOrEqual(0);
-    expect(html.indexOf('Adjust filters')).toBeGreaterThanOrEqual(0);
-    expect(html.indexOf('Adjust filters')).toBeLessThan(html.indexOf('Loading…'));
-    expect(html).not.toContain('Show filters');
-    expect(html).not.toContain('Hide filters');
-  });
-
-  it('keeps filter inputs out of the page body until filters are opened', () => {
-    const html = renderToStaticMarkup(<RecallDrilldown />);
-
-    expect((html.match(/data-app-input="true"/g) || []).length).toBe(0);
-    expect(html).toContain('Adjust filters');
+    expect((html.match(/data-app-input="true"/g) || []).length).toBe(1);
+    expect((html.match(/data-app-select="true"/g) || []).length).toBe(1);
+    expect(html).toContain('Days');
+    expect(html).toContain('All sources');
+    expect(html).not.toContain('Adjust filters');
+    expect(html).not.toContain('Limit');
+    expect(html).not.toContain('Query text');
+    expect(html).not.toContain('Node URI');
   });
 
   it('does not render appendix controls or content', () => {
@@ -117,7 +118,8 @@ describe('RecallDrilldown threshold analysis', () => {
 
     expect(html).not.toContain('data-stat-card="true"');
     expect(html).not.toContain('Display threshold analysis');
-    expect(html).toContain('Adjust filters');
+    expect(html).toContain('Days');
+    expect(html).toContain('All sources');
     expect(html).toContain('Loading…');
   });
 });

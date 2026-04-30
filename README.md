@@ -16,7 +16,7 @@
 |:-:|
 | ![Settings](docs/screenshots/settings.jpg) |
 
-## The idea
+## Design philosophy
 
 Lore is a long-term memory system for AI agents. It gives an agent a durable memory graph, a fixed startup baseline, per-prompt recall, explicit read tracking, and cautious write tools.
 
@@ -36,21 +36,50 @@ Lore is built for agents that need continuity across sessions, tools, and runtim
 
 ### 1. Start the server
 
-```bash
-git clone https://github.com/FFatTiger/lore.git
-cd lore
-cp .env.example .env
+Create a `docker-compose.yml` with the production images:
+
+```yaml
+services:
+  postgres:
+    image: fffattiger/pgvector-zhparser:pg16
+    platform: linux/amd64
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: lore
+      POSTGRES_USER: lore
+      POSTGRES_PASSWORD: replace-this
+    ports:
+      - "5432:5432"
+    volumes:
+      - lore_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lore -d lore"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    image: fffattiger/lore:latest
+    platform: linux/amd64
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://lore:replace-this@postgres:5432/lore
+      API_TOKEN: replace-this-if-exposed
+      SNAPSHOT_DIR: /app/snapshots
+    ports:
+      - "18901:18901"
+    volumes:
+      - lore_snapshots:/app/snapshots
+
+volumes:
+  lore_postgres_data:
+  lore_snapshots:
 ```
 
-Edit `.env` first:
-
-```env
-POSTGRES_PASSWORD=replace-this
-API_TOKEN=replace-this-if-exposed
-WEB_PORT=18901
-```
-
-Then start Lore:
+Start Lore:
 
 ```bash
 docker compose up -d
@@ -106,6 +135,18 @@ Open `/settings` after setup for:
 - write policy settings
 
 View LLM is optional for basic memory and recall. Embedding is required for semantic recall and index rebuilds.
+
+### Source build fallback
+
+For local development or custom builds:
+
+```bash
+git clone https://github.com/FFatTiger/lore.git
+cd lore
+cp .env.example .env
+# edit .env first
+docker compose up -d --build
+```
 
 ## Connect agents
 

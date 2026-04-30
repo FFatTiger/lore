@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: ${LORE_POSTGRES_IMAGE:-pgvector/pgvector:pg16}
+    image: ${LORE_POSTGRES_IMAGE:-fffattiger/pgvector-zhparser:pg16}
     build:
       context: ./postgres
     container_name: ${LORE_POSTGRES_CONTAINER:-lore-postgres}
@@ -20,7 +20,7 @@ services:
       retries: 10
 
   web:
-    image: ${LORE_FRONTEND_IMAGE:-fffattiger/lore:ssr-20260326-1022-amd64}
+    image: ${LORE_FRONTEND_IMAGE:-fffattiger/lore:latest}
     build:
       context: ./web
     restart: unless-stopped

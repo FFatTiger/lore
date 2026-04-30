@@ -16,7 +16,7 @@
 |:-:|
 | ![Settings](docs/screenshots/settings.jpg) |
 
-## 项目观念
+## 设计理念
 
 Lore 是给 AI agent 用的长期记忆系统。它提供持久记忆图谱、固定启动基线、每轮 prompt 前召回、显式读取追踪和谨慎写入工具。
 
@@ -36,18 +36,47 @@ Lore 面向需要跨会话、跨工具、跨运行时连续性的 agent。
 
 ### 1. 启动服务器
 
-```bash
-git clone https://github.com/FFatTiger/lore.git
-cd lore
-cp .env.example .env
-```
+创建一个 `docker-compose.yml`，直接使用生产镜像：
 
-先改 `.env`：
+```yaml
+services:
+  postgres:
+    image: fffattiger/pgvector-zhparser:pg16
+    platform: linux/amd64
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: lore
+      POSTGRES_USER: lore
+      POSTGRES_PASSWORD: replace-this
+    ports:
+      - "5432:5432"
+    volumes:
+      - lore_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lore -d lore"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
-```env
-POSTGRES_PASSWORD=replace-this
-API_TOKEN=replace-this-if-exposed
-WEB_PORT=18901
+  web:
+    image: fffattiger/lore:latest
+    platform: linux/amd64
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://lore:replace-this@postgres:5432/lore
+      API_TOKEN: replace-this-if-exposed
+      SNAPSHOT_DIR: /app/snapshots
+    ports:
+      - "18901:18901"
+    volumes:
+      - lore_snapshots:/app/snapshots
+
+volumes:
+  lore_postgres_data:
+  lore_snapshots:
 ```
 
 启动 Lore：
@@ -106,6 +135,18 @@ http://127.0.0.1:18901/setup
 - 写入策略
 
 基础记忆和 recall 需要 Embedding。View LLM 只影响视图精炼和 Dream。
+
+### 源码构建 fallback
+
+本地开发或自定义构建使用源码方式：
+
+```bash
+git clone https://github.com/FFatTiger/lore.git
+cd lore
+cp .env.example .env
+# 先编辑 .env
+docker compose up -d --build
+```
 
 ## 接入 agent
 

@@ -32,6 +32,12 @@ interface StatsWhereResult {
   filters: { query_id: string; query_text: string; client_type: string };
 }
 
+interface CandidateWhereResult {
+  joinSql: string;
+  where: string;
+  params: unknown[];
+}
+
 interface DisplayThresholdAnalysis {
   status: 'insufficient_data' | 'ready';
   basis: string;
@@ -111,10 +117,10 @@ export function buildStatsWhere({
   }
   if (safeClientType) {
     if (safeClientType === LEGACY_CLIENT_TYPE_FILTER) {
-      clauses.push(`LOWER(COALESCE(client_type, '')) = ''`);
+      clauses.push(`COALESCE(client_type, '') = ''`);
     } else {
       params.push(safeClientType);
-      clauses.push(`LOWER(COALESCE(client_type, '')) = $${params.length}`);
+      clauses.push(`client_type = $${params.length}`);
     }
   }
 
@@ -134,10 +140,11 @@ function buildCandidateWhere({
   queryId = '',
   queryText = '',
   clientType = '',
-}: StatsWhereArgs = {}, { includeClientType = true }: { includeClientType?: boolean } = {}) {
+}: StatsWhereArgs = {}, { includeClientType = true }: { includeClientType?: boolean } = {}): CandidateWhereResult {
   const safeDays = intervalDaysSql(days);
   const clauses = [`c.created_at >= NOW() - ($1::int * INTERVAL '1 day')`];
   const params: unknown[] = [safeDays];
+  let needsQueryJoin = false;
 
   const safeQueryId = sanitizeFilter(queryId, 120);
   const safeQueryText = sanitizeFilter(queryText, 240);
@@ -148,19 +155,24 @@ function buildCandidateWhere({
     clauses.push(`c.query_id = $${params.length}`);
   }
   if (safeQueryText) {
+    needsQueryJoin = true;
     params.push(`%${safeQueryText}%`);
     clauses.push(`q.query_text ILIKE $${params.length}`);
   }
   if (includeClientType && safeClientType) {
     if (safeClientType === LEGACY_CLIENT_TYPE_FILTER) {
-      clauses.push(`LOWER(COALESCE(c.client_type, '')) = ''`);
+      clauses.push(`COALESCE(c.client_type, '') = ''`);
     } else {
       params.push(safeClientType);
-      clauses.push(`LOWER(COALESCE(c.client_type, '')) = $${params.length}`);
+      clauses.push(`c.client_type = $${params.length}`);
     }
   }
 
-  return { where: clauses.join(' AND '), params };
+  return {
+    joinSql: needsQueryJoin ? 'JOIN recall_queries q ON q.query_id = c.query_id' : '',
+    where: clauses.join(' AND '),
+    params,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -684,8 +696,8 @@ export async function getRecallStats({
   const safeRecentQueriesLimit = clampLimit(recentQueriesLimit, 1, 100, 20);
   const safeRecentQueriesOffset = Math.max(0, Number(recentQueriesOffset) || 0);
   const { where: filterWhere, params: filterParams, filters } = buildStatsWhere({ days, queryId, queryText, clientType });
-  const { where: candidateWhere, params: candidateParams } = buildCandidateWhere({ days, queryId, queryText, clientType });
-  const { where: breakdownWhere, params: breakdownParams } = buildCandidateWhere({ days, queryId, queryText, clientType: '' }, { includeClientType: false });
+  const { joinSql: candidateJoinSql, where: candidateWhere, params: candidateParams } = buildCandidateWhere({ days, queryId, queryText, clientType });
+  const { joinSql: breakdownJoinSql, where: breakdownWhere, params: breakdownParams } = buildCandidateWhere({ days, queryId, queryText, clientType: '' }, { includeClientType: false });
   const hasFilter = filters.query_id || filters.query_text || filters.client_type;
 
   await sql('SET LOCAL work_mem = \'64MB\'', []);
@@ -748,7 +760,7 @@ export async function getRecallStats({
           PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY c.final_rank_score)
             FILTER (WHERE c.selected = TRUE AND c.used_in_answer = FALSE AND c.final_rank_score IS NOT NULL) AS unused_shown_p75_score
         FROM recall_query_candidates c
-        JOIN recall_queries q ON q.query_id = c.query_id
+        ${candidateJoinSql}
         WHERE ${candidateWhere}
       `,
       candidateParams,
@@ -769,7 +781,7 @@ export async function getRecallStats({
           PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY c.final_rank_score)
             FILTER (WHERE c.selected = TRUE AND c.used_in_answer = FALSE AND c.final_rank_score IS NOT NULL) AS unused_shown_p75_score
         FROM recall_query_candidates c
-        JOIN recall_queries q ON q.query_id = c.query_id
+        ${breakdownJoinSql}
         WHERE ${breakdownWhere}
         GROUP BY LOWER(COALESCE(c.client_type, ''))
         ORDER BY COUNT(*) FILTER (WHERE c.selected = TRUE) DESC, client_type ASC
@@ -828,7 +840,7 @@ export async function getRecallStats({
           SELECT c.node_uri, c.final_rank_score, c.selected, c.used_in_answer,
             c.ranked_position, c.displayed_position, c.client_type, c.created_at
           FROM recall_query_candidates c
-          JOIN recall_queries q ON q.query_id = c.query_id
+          ${candidateJoinSql}
           WHERE ${candidateWhere}
           ORDER BY c.ranked_position NULLS LAST, c.final_rank_score DESC NULLS LAST, c.node_uri ASC
         `,

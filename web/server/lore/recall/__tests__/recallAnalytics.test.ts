@@ -440,7 +440,7 @@ describe('getRecallStats', () => {
     expect(sqlText).toContain('FROM recall_queries');
     expect(sqlText).toContain('FROM recall_query_candidates');
     expect(sqlText).toContain('query_id = $2');
-    expect(sqlText).toContain('LOWER(COALESCE(client_type, \'\'))');
+    expect(sqlText).toContain('client_type = $3');
     expect(sqlText).not.toContain("metadata->>'query_id'");
   });
 
@@ -463,6 +463,30 @@ describe('getRecallStats', () => {
     const sqlText = mockSql.mock.calls.map(([query]) => String(query)).join('\n');
     expect(sqlText).toContain('FROM recall_query_candidates');
     expect(sqlText).not.toContain('WITH candidate_rows AS');
+  });
+
+  it('does not join recall_queries for candidate metrics unless query text filtering needs it', async () => {
+    mockSql.mockResolvedValue(makeResult([{ total_merged: '0', total_shown: '0', total_used: '0', query_count: '0', last_event_at: null }]));
+
+    await getRecallStats({ clientType: 'codex' });
+
+    const candidateQueries = mockSql.mock.calls
+      .map(([query]) => String(query))
+      .filter((sqlText) => sqlText.includes('FROM recall_query_candidates'));
+    expect(candidateQueries.length).toBeGreaterThan(0);
+    expect(candidateQueries.every((sqlText) => !sqlText.includes('JOIN recall_queries q'))).toBe(true);
+    expect(candidateQueries.some((sqlText) => sqlText.includes('c.client_type = $2'))).toBe(true);
+  });
+
+  it('joins recall_queries for candidate metrics when query text filtering is active', async () => {
+    mockSql.mockResolvedValue(makeResult([{ total_merged: '0', total_shown: '0', total_used: '0', query_count: '0', last_event_at: null }]));
+
+    await getRecallStats({ queryText: 'needle' });
+
+    const candidateQueries = mockSql.mock.calls
+      .map(([query]) => String(query))
+      .filter((sqlText) => sqlText.includes('FROM recall_query_candidates'));
+    expect(candidateQueries.some((sqlText) => sqlText.includes('JOIN recall_queries q ON q.query_id = c.query_id'))).toBe(true);
   });
 
   it('does not include filters when no filter is active', async () => {

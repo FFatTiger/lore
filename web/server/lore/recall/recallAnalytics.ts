@@ -6,6 +6,7 @@ import {
   intervalDaysSql,
   asNumber,
   asObject,
+  truncateText,
 } from './recallEventLog';
 
 const LEGACY_CLIENT_TYPE_FILTER = '__legacy__';
@@ -485,6 +486,109 @@ interface DreamRecallReviewResult {
     unrecalled_session_reads: number;
     unshown_session_reads: number;
     possible_missed_recalls: number;
+  };
+}
+
+interface DreamQueryRecallDetailArgs {
+  days?: number;
+  queryId?: string;
+  queryText?: string;
+  limit?: number;
+}
+
+function buildDreamQueryWhere({
+  days,
+  queryId = '',
+  queryText = '',
+}: DreamQueryRecallDetailArgs): { where: string; params: unknown[]; filters: { query_id: string; query_text: string } } {
+  const safeDays = intervalDaysSql(days);
+  const safeQueryId = sanitizeFilter(queryId, 120);
+  const safeQueryText = sanitizeFilter(queryText, 240);
+  const clauses = [`q.created_at >= NOW() - ($1::int * INTERVAL '1 day')`];
+  const params: unknown[] = [safeDays];
+
+  if (safeQueryId) {
+    params.push(safeQueryId);
+    clauses.push(`q.query_id = $${params.length}`);
+  }
+  if (safeQueryText) {
+    params.push(`%${safeQueryText}%`);
+    clauses.push(`q.query_text ILIKE $${params.length}`);
+  }
+
+  return {
+    where: clauses.join(' AND '),
+    params,
+    filters: { query_id: safeQueryId, query_text: safeQueryText },
+  };
+}
+
+export async function getDreamQueryRecallDetail({
+  days = 7,
+  queryId = '',
+  queryText = '',
+  limit = 50,
+}: DreamQueryRecallDetailArgs = {}) {
+  const safeDays = intervalDaysSql(days);
+  const safeLimit = clampLimit(limit, 1, 100, 50);
+  const { where, params, filters } = buildDreamQueryWhere({ days, queryId, queryText });
+
+  const queryResult = await sql(
+    `
+      SELECT
+        q.query_id,
+        q.query_text,
+        q.session_id,
+        q.client_type,
+        q.merged_count,
+        q.shown_count,
+        q.used_count,
+        q.created_at
+      FROM recall_queries q
+      WHERE ${where}
+      ORDER BY q.created_at DESC, q.query_id DESC
+      LIMIT 1
+    `,
+    params,
+  );
+
+  const queryRow = queryResult.rows[0] as Record<string, unknown> | undefined;
+  if (!queryRow) {
+    return {
+      window_days: safeDays,
+      filters,
+      query_detail: null,
+      status: 'not_found',
+      note: 'No recall query matched the provided query_id/query_text in this window.',
+    };
+  }
+
+  const selectedQueryId = String(queryRow.query_id || '');
+  const candidateResult = await sql(
+    `
+      SELECT c.node_uri
+      FROM recall_query_candidates c
+      WHERE c.query_id = $1
+        AND c.selected = TRUE
+      ORDER BY c.displayed_position NULLS LAST,
+        c.ranked_position NULLS LAST,
+        c.final_rank_score DESC NULLS LAST,
+        c.node_uri ASC
+      LIMIT $2
+    `,
+    [selectedQueryId, safeLimit],
+  );
+
+  return {
+    query_id: selectedQueryId,
+    query_text: truncateText(queryRow.query_text, 1200),
+    session_id: typeof queryRow.session_id === 'string' && queryRow.session_id.trim() ? queryRow.session_id.trim() : null,
+    client_type: typeof queryRow.client_type === 'string' && queryRow.client_type.trim() ? queryRow.client_type.trim() : null,
+    created_at: queryRow.created_at ? new Date(queryRow.created_at as string).toISOString() : null,
+    merged_count: Number(queryRow.merged_count || 0),
+    shown_count: Number(queryRow.shown_count || 0),
+    used_count: Number(queryRow.used_count || 0),
+    shown_node_uris: candidateResult.rows.map((row: Record<string, unknown>) => String(row.node_uri || '')).filter(Boolean),
   };
 }
 

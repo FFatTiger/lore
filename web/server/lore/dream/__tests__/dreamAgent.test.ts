@@ -37,6 +37,7 @@ vi.mock('../../search/glossary', () => ({
 }));
 vi.mock('../../recall/recallAnalytics', () => ({
   getRecallStats: vi.fn(),
+  getDreamQueryRecallDetail: vi.fn(),
 }));
 vi.mock('../../memory/writeEvents', () => ({
   getNodeWriteHistory: vi.fn(),
@@ -70,7 +71,7 @@ import { searchMemories } from '../../search/search';
 import { createNode, updateNodeByPath, deleteNodeByPath, moveNode } from '../../memory/write';
 import { getBootNodeSpec } from '../../memory/boot';
 import { addGlossaryKeyword, removeGlossaryKeyword, manageTriggers } from '../../search/glossary';
-import { getRecallStats } from '../../recall/recallAnalytics';
+import { getDreamQueryRecallDetail, getRecallStats } from '../../recall/recallAnalytics';
 import { getNodeWriteHistory } from '../../memory/writeEvents';
 import { getPathEffectiveness } from '../../recall/feedbackAnalytics';
 import { validateCreatePolicy, validateDeletePolicy, validateUpdatePolicy } from '../../ops/policy';
@@ -107,6 +108,7 @@ const mockAddGlossaryKeyword = vi.mocked(addGlossaryKeyword);
 const mockRemoveGlossaryKeyword = vi.mocked(removeGlossaryKeyword);
 const mockManageTriggers = vi.mocked(manageTriggers);
 const mockGetRecallStats = vi.mocked(getRecallStats);
+const mockGetDreamQueryRecallDetail = vi.mocked(getDreamQueryRecallDetail);
 const mockGetNodeWriteHistory = vi.mocked(getNodeWriteHistory);
 const mockGetPathEffectiveness = vi.mocked(getPathEffectiveness);
 const mockValidateCreatePolicy = vi.mocked(validateCreatePolicy);
@@ -305,10 +307,11 @@ describe('executeDreamTool', () => {
     expect(mockListDomains).toHaveBeenCalled();
   });
 
-  it('dispatches get_query_recall_detail to getRecallStats with query filters', async () => {
-    mockGetRecallStats.mockResolvedValue({ summary: { query_count: 1 } } as any);
+  it('dispatches get_query_recall_detail to dream-focused query detail', async () => {
+    mockGetDreamQueryRecallDetail.mockResolvedValue({ query_detail: { query_id: 'q1' } } as any);
     await executeDreamTool('get_query_recall_detail', { query_id: 'q1', query_text: 'hello', days: 7, limit: 4 });
-    expect(mockGetRecallStats).toHaveBeenCalledWith({ queryId: 'q1', queryText: 'hello', days: 7, limit: 4 });
+    expect(mockGetDreamQueryRecallDetail).toHaveBeenCalledWith({ queryId: 'q1', queryText: 'hello', days: 7, limit: 4 });
+    expect(mockGetRecallStats).not.toHaveBeenCalled();
   });
 
   it('dispatches get_node_write_history', async () => {
@@ -853,6 +856,7 @@ describe('processDreamToolCalls', () => {
       },
     ]);
   });
+
 });
 
 describe('loadGuidanceFile', () => {

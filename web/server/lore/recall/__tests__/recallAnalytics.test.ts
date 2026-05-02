@@ -10,6 +10,7 @@ import {
   reshapeEventsForDebugView,
   getRecallStats,
   getDreamRecallReview,
+  getDreamQueryRecallDetail,
 } from '../recallAnalytics';
 
 const mockSql = vi.mocked(sql);
@@ -371,6 +372,57 @@ describe('getDreamRecallReview', () => {
       expect.objectContaining({ type: 'retrieved_not_selected', uri: 'core://agent' }),
       expect.objectContaining({ type: 'manual_read_after_weak_recall_proxy' }),
     ]);
+  });
+});
+
+describe('getDreamQueryRecallDetail', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSql.mockReset();
+  });
+
+  it('returns only dream-needed query fields and shown node URIs', async () => {
+    mockSql
+      .mockResolvedValueOnce(makeResult([
+        {
+          query_id: 'q-detail',
+          query_text: 'why did dream fail',
+          session_id: 's1',
+          client_type: 'codex',
+          merged_count: 42,
+          shown_count: 2,
+          used_count: 1,
+          created_at: '2026-05-03T00:48:53Z',
+        },
+      ]))
+      .mockResolvedValueOnce(makeResult([
+        { node_uri: 'core://used' },
+        { node_uri: 'core://shown' },
+      ]));
+
+    const detail = await getDreamQueryRecallDetail({ days: 1, queryId: 'q-detail', limit: 20 });
+
+    expect(detail).toMatchObject({
+      query_id: 'q-detail',
+      query_text: 'why did dream fail',
+      session_id: 's1',
+      client_type: 'codex',
+      merged_count: 42,
+      shown_count: 2,
+      used_count: 1,
+      shown_node_uris: ['core://used', 'core://shown'],
+    });
+    expect(detail).not.toHaveProperty('query_detail');
+    expect(detail).not.toHaveProperty('recent_events');
+    expect(detail).not.toHaveProperty('candidates');
+    expect(detail).not.toHaveProperty('path_breakdown');
+
+    const sqlText = mockSql.mock.calls.map((call) => String(call[0])).join('\n');
+    expect(sqlText).toContain('FROM recall_queries q');
+    expect(sqlText).toContain('FROM recall_query_candidates c');
+    expect(sqlText).toContain('c.selected = TRUE');
+    expect(sqlText).not.toContain('FROM recall_events');
+    expect(sqlText).not.toContain("metadata->>'query_id'");
   });
 });
 

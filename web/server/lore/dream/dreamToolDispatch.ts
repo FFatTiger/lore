@@ -1,7 +1,7 @@
 import { getNodePayload, listDomains } from '../memory/browse';
 import { createNode, deleteNodeByPath, moveNode, updateNodeByPath } from '../memory/write';
 import { getPathEffectiveness } from '../recall/feedbackAnalytics';
-import { getRecallStats } from '../recall/recallAnalytics';
+import { getDreamQueryRecallDetail } from '../recall/recallAnalytics';
 import { searchMemories } from '../search/search';
 import { addGlossaryKeyword, manageTriggers, removeGlossaryKeyword } from '../search/glossary';
 import { listMemoryViewsByNode } from '../view/memoryViewQueries';
@@ -68,7 +68,7 @@ export async function dispatchDreamTool(
     case 'list_domains':
       return await listDomains();
     case 'get_query_recall_detail':
-      return await getRecallStats({
+      return await getDreamQueryRecallDetail({
         queryId: (args.query_id as string) || '',
         queryText: (args.query_text as string) || '',
         days: (args.days as number) || 7,

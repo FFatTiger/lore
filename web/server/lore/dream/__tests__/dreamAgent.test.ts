@@ -38,6 +38,10 @@ vi.mock('../../search/glossary', () => ({
 vi.mock('../../recall/recallAnalytics', () => ({
   getRecallStats: vi.fn(),
   getDreamQueryRecallDetail: vi.fn(),
+  getDreamQueryCandidates: vi.fn(),
+  getDreamQueryPathBreakdown: vi.fn(),
+  getDreamQueryNodePaths: vi.fn(),
+  getDreamQueryEventSamples: vi.fn(),
 }));
 vi.mock('../../memory/writeEvents', () => ({
   getNodeWriteHistory: vi.fn(),
@@ -71,7 +75,14 @@ import { searchMemories } from '../../search/search';
 import { createNode, updateNodeByPath, deleteNodeByPath, moveNode } from '../../memory/write';
 import { getBootNodeSpec } from '../../memory/boot';
 import { addGlossaryKeyword, removeGlossaryKeyword, manageTriggers } from '../../search/glossary';
-import { getDreamQueryRecallDetail, getRecallStats } from '../../recall/recallAnalytics';
+import {
+  getDreamQueryCandidates,
+  getDreamQueryEventSamples,
+  getDreamQueryNodePaths,
+  getDreamQueryPathBreakdown,
+  getDreamQueryRecallDetail,
+  getRecallStats,
+} from '../../recall/recallAnalytics';
 import { getNodeWriteHistory } from '../../memory/writeEvents';
 import { getPathEffectiveness } from '../../recall/feedbackAnalytics';
 import { validateCreatePolicy, validateDeletePolicy, validateUpdatePolicy } from '../../ops/policy';
@@ -109,6 +120,10 @@ const mockRemoveGlossaryKeyword = vi.mocked(removeGlossaryKeyword);
 const mockManageTriggers = vi.mocked(manageTriggers);
 const mockGetRecallStats = vi.mocked(getRecallStats);
 const mockGetDreamQueryRecallDetail = vi.mocked(getDreamQueryRecallDetail);
+const mockGetDreamQueryCandidates = vi.mocked(getDreamQueryCandidates);
+const mockGetDreamQueryPathBreakdown = vi.mocked(getDreamQueryPathBreakdown);
+const mockGetDreamQueryNodePaths = vi.mocked(getDreamQueryNodePaths);
+const mockGetDreamQueryEventSamples = vi.mocked(getDreamQueryEventSamples);
 const mockGetNodeWriteHistory = vi.mocked(getNodeWriteHistory);
 const mockGetPathEffectiveness = vi.mocked(getPathEffectiveness);
 const mockValidateCreatePolicy = vi.mocked(validateCreatePolicy);
@@ -232,6 +247,10 @@ describe('buildDreamTools', () => {
     expect(names).toContain('list_domains');
     expect(names).not.toContain('get_node_recall_detail');
     expect(names).toContain('get_query_recall_detail');
+    expect(names).toContain('get_query_candidates');
+    expect(names).toContain('get_query_path_breakdown');
+    expect(names).toContain('get_query_node_paths');
+    expect(names).toContain('get_query_event_samples');
     expect(names).toContain('get_node_write_history');
     expect(names).toContain('get_path_effectiveness_detail');
     expect(names).toContain('inspect_neighbors');
@@ -312,6 +331,23 @@ describe('executeDreamTool', () => {
     await executeDreamTool('get_query_recall_detail', { query_id: 'q1', query_text: 'hello', days: 7, limit: 4 });
     expect(mockGetDreamQueryRecallDetail).toHaveBeenCalledWith({ queryId: 'q1', queryText: 'hello', days: 7, limit: 4 });
     expect(mockGetRecallStats).not.toHaveBeenCalled();
+  });
+
+  it('dispatches query drilldown tools to focused analytics helpers', async () => {
+    mockGetDreamQueryCandidates.mockResolvedValue({ candidates: [] } as any);
+    mockGetDreamQueryPathBreakdown.mockResolvedValue({ paths: [] } as any);
+    mockGetDreamQueryNodePaths.mockResolvedValue({ paths: [] } as any);
+    mockGetDreamQueryEventSamples.mockResolvedValue({ events: [] } as any);
+
+    await executeDreamTool('get_query_candidates', { query_id: 'q1', limit: 8, selected_only: true, used_only: false });
+    await executeDreamTool('get_query_path_breakdown', { query_id: 'q1' });
+    await executeDreamTool('get_query_node_paths', { query_id: 'q1', node_uri: 'core://a' });
+    await executeDreamTool('get_query_event_samples', { query_id: 'q1', node_uri: 'core://a', retrieval_path: 'dense', limit: 3, include_metadata: true });
+
+    expect(mockGetDreamQueryCandidates).toHaveBeenCalledWith({ queryId: 'q1', limit: 8, selectedOnly: true, usedOnly: false });
+    expect(mockGetDreamQueryPathBreakdown).toHaveBeenCalledWith({ queryId: 'q1' });
+    expect(mockGetDreamQueryNodePaths).toHaveBeenCalledWith({ queryId: 'q1', nodeUri: 'core://a' });
+    expect(mockGetDreamQueryEventSamples).toHaveBeenCalledWith({ queryId: 'q1', nodeUri: 'core://a', retrievalPath: 'dense', limit: 3, includeMetadata: true });
   });
 
   it('dispatches get_node_write_history', async () => {

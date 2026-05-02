@@ -496,6 +496,30 @@ interface DreamQueryRecallDetailArgs {
   limit?: number;
 }
 
+interface DreamQueryCandidatesArgs {
+  queryId?: string;
+  limit?: number;
+  selectedOnly?: boolean;
+  usedOnly?: boolean;
+}
+
+interface DreamQueryPathArgs {
+  queryId?: string;
+}
+
+interface DreamQueryNodePathArgs {
+  queryId?: string;
+  nodeUri?: string;
+}
+
+interface DreamQueryEventSamplesArgs {
+  queryId?: string;
+  nodeUri?: string;
+  retrievalPath?: string;
+  limit?: number;
+  includeMetadata?: boolean;
+}
+
 function buildDreamQueryWhere({
   days,
   queryId = '',
@@ -520,6 +544,30 @@ function buildDreamQueryWhere({
     where: clauses.join(' AND '),
     params,
     filters: { query_id: safeQueryId, query_text: safeQueryText },
+  };
+}
+
+function formatQueryPathBreakdownRow(row: Record<string, unknown>) {
+  return {
+    retrieval_path: row.retrieval_path ?? null,
+    view_type: row.view_type ?? null,
+    total: Number(row.total || 0),
+    selected: Number(row.selected || 0),
+    used_in_answer: Number(row.used_in_answer || 0),
+    avg_pre_rank_score: asNumber(row.avg_pre_rank_score),
+    avg_final_rank_score: asNumber(row.avg_final_rank_score),
+  };
+}
+
+function formatQueryNodePathRow(row: Record<string, unknown>) {
+  return {
+    retrieval_path: row.retrieval_path ?? null,
+    view_type: row.view_type ?? null,
+    events: Number(row.events || 0),
+    selected_events: Number(row.selected_events || 0),
+    used_events: Number(row.used_events || 0),
+    avg_pre_rank_score: asNumber(row.avg_pre_rank_score),
+    avg_final_rank_score: asNumber(row.avg_final_rank_score),
   };
 }
 
@@ -589,6 +637,184 @@ export async function getDreamQueryRecallDetail({
     shown_count: Number(queryRow.shown_count || 0),
     used_count: Number(queryRow.used_count || 0),
     shown_node_uris: candidateResult.rows.map((row: Record<string, unknown>) => String(row.node_uri || '')).filter(Boolean),
+  };
+}
+
+export async function getDreamQueryCandidates({
+  queryId = '',
+  limit = 50,
+  selectedOnly = false,
+  usedOnly = false,
+}: DreamQueryCandidatesArgs = {}) {
+  const safeQueryId = sanitizeFilter(queryId, 120);
+  const safeLimit = clampLimit(limit, 1, 100, 50);
+  if (!safeQueryId) return { query_id: '', candidates: [] };
+
+  const clauses = ['c.query_id = $1'];
+  if (selectedOnly) clauses.push('c.selected = TRUE');
+  if (usedOnly) clauses.push('c.used_in_answer = TRUE');
+
+  const result = await sql(
+    `
+      SELECT
+        c.node_uri,
+        c.final_rank_score,
+        c.selected,
+        c.used_in_answer,
+        c.ranked_position,
+        c.displayed_position
+      FROM recall_query_candidates c
+      WHERE ${clauses.join(' AND ')}
+      ORDER BY c.ranked_position NULLS LAST,
+        c.displayed_position NULLS LAST,
+        c.final_rank_score DESC NULLS LAST,
+        c.node_uri ASC
+      LIMIT $2
+    `,
+    [safeQueryId, safeLimit],
+  );
+
+  return {
+    query_id: safeQueryId,
+    candidates: result.rows.map((row: Record<string, unknown>) => ({
+      node_uri: String(row.node_uri || ''),
+      final_rank_score: asNumber(row.final_rank_score),
+      selected: row.selected === true,
+      used_in_answer: row.used_in_answer === true,
+      ranked_position: asNumber(row.ranked_position),
+      displayed_position: asNumber(row.displayed_position),
+    })),
+  };
+}
+
+export async function getDreamQueryPathBreakdown({ queryId = '' }: DreamQueryPathArgs = {}) {
+  const safeQueryId = sanitizeFilter(queryId, 120);
+  if (!safeQueryId) return { query_id: '', paths: [] };
+
+  const result = await sql(
+    `
+      SELECT
+        e.retrieval_path,
+        e.view_type,
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE e.selected)::int AS selected,
+        COUNT(*) FILTER (WHERE e.used_in_answer)::int AS used_in_answer,
+        AVG(e.pre_rank_score) AS avg_pre_rank_score,
+        AVG(e.final_rank_score) AS avg_final_rank_score
+      FROM recall_events e
+      WHERE e.query_id = $1
+      GROUP BY e.retrieval_path, e.view_type
+      ORDER BY total DESC, e.retrieval_path ASC, e.view_type ASC
+    `,
+    [safeQueryId],
+  );
+
+  return {
+    query_id: safeQueryId,
+    paths: result.rows.map((row: Record<string, unknown>) => formatQueryPathBreakdownRow(row)),
+  };
+}
+
+export async function getDreamQueryNodePaths({
+  queryId = '',
+  nodeUri = '',
+}: DreamQueryNodePathArgs = {}) {
+  const safeQueryId = sanitizeFilter(queryId, 120);
+  const safeNodeUri = sanitizeFilter(nodeUri, 240);
+  if (!safeQueryId || !safeNodeUri) return { query_id: safeQueryId, node_uri: safeNodeUri, paths: [] };
+
+  const result = await sql(
+    `
+      SELECT
+        e.retrieval_path,
+        e.view_type,
+        COUNT(*)::int AS events,
+        COUNT(*) FILTER (WHERE e.selected)::int AS selected_events,
+        COUNT(*) FILTER (WHERE e.used_in_answer)::int AS used_events,
+        AVG(e.pre_rank_score) AS avg_pre_rank_score,
+        AVG(e.final_rank_score) AS avg_final_rank_score
+      FROM recall_events e
+      WHERE e.query_id = $1
+        AND e.node_uri = $2
+      GROUP BY e.retrieval_path, e.view_type
+      ORDER BY events DESC, e.retrieval_path ASC, e.view_type ASC
+    `,
+    [safeQueryId, safeNodeUri],
+  );
+
+  return {
+    query_id: safeQueryId,
+    node_uri: safeNodeUri,
+    paths: result.rows.map((row: Record<string, unknown>) => formatQueryNodePathRow(row)),
+  };
+}
+
+export async function getDreamQueryEventSamples({
+  queryId = '',
+  nodeUri = '',
+  retrievalPath = '',
+  limit = 10,
+  includeMetadata = false,
+}: DreamQueryEventSamplesArgs = {}) {
+  const safeQueryId = sanitizeFilter(queryId, 120);
+  const safeNodeUri = sanitizeFilter(nodeUri, 240);
+  const safeRetrievalPath = sanitizeFilter(retrievalPath, 80);
+  const safeLimit = clampLimit(limit, 1, 50, 10);
+  if (!safeQueryId) return { query_id: '', events: [] };
+
+  const clauses = ['e.query_id = $1'];
+  const params: unknown[] = [safeQueryId];
+  if (safeNodeUri) {
+    params.push(safeNodeUri);
+    clauses.push(`e.node_uri = $${params.length}`);
+  }
+  if (safeRetrievalPath) {
+    params.push(safeRetrievalPath);
+    clauses.push(`e.retrieval_path = $${params.length}`);
+  }
+  params.push(safeLimit);
+
+  const result = await sql(
+    `
+      SELECT
+        e.id,
+        e.node_uri,
+        e.retrieval_path,
+        e.view_type,
+        e.pre_rank_score,
+        e.final_rank_score,
+        e.selected,
+        e.used_in_answer,
+        e.ranked_position,
+        e.displayed_position,
+        e.metadata,
+        e.created_at
+      FROM recall_events e
+      WHERE ${clauses.join(' AND ')}
+      ORDER BY e.created_at DESC, e.id DESC
+      LIMIT $${params.length}
+    `,
+    params,
+  );
+
+  return {
+    query_id: safeQueryId,
+    ...(safeNodeUri ? { node_uri: safeNodeUri } : {}),
+    ...(safeRetrievalPath ? { retrieval_path: safeRetrievalPath } : {}),
+    events: result.rows.map((row: Record<string, unknown>) => ({
+      id: Number(row.id),
+      node_uri: String(row.node_uri || ''),
+      retrieval_path: row.retrieval_path ?? null,
+      view_type: row.view_type ?? null,
+      pre_rank_score: asNumber(row.pre_rank_score),
+      final_rank_score: asNumber(row.final_rank_score),
+      selected: row.selected === true,
+      used_in_answer: row.used_in_answer === true,
+      ranked_position: asNumber(row.ranked_position),
+      displayed_position: asNumber(row.displayed_position),
+      created_at: row.created_at ? new Date(row.created_at as string).toISOString() : null,
+      ...(includeMetadata ? { metadata: asObject(row.metadata) } : {}),
+    })),
   };
 }
 

@@ -1,7 +1,13 @@
 import { getNodePayload, listDomains } from '../memory/browse';
 import { createNode, deleteNodeByPath, moveNode, updateNodeByPath } from '../memory/write';
 import { getPathEffectiveness } from '../recall/feedbackAnalytics';
-import { getDreamQueryRecallDetail } from '../recall/recallAnalytics';
+import {
+  getDreamQueryCandidates,
+  getDreamQueryEventSamples,
+  getDreamQueryNodePaths,
+  getDreamQueryPathBreakdown,
+  getDreamQueryRecallDetail,
+} from '../recall/recallAnalytics';
 import { searchMemories } from '../search/search';
 import { addGlossaryKeyword, manageTriggers, removeGlossaryKeyword } from '../search/glossary';
 import { listMemoryViewsByNode } from '../view/memoryViewQueries';
@@ -73,6 +79,30 @@ export async function dispatchDreamTool(
         queryText: (args.query_text as string) || '',
         days: (args.days as number) || 7,
         limit: (args.limit as number) || 10,
+      });
+    case 'get_query_candidates':
+      return await getDreamQueryCandidates({
+        queryId: (args.query_id as string) || '',
+        limit: (args.limit as number) || 50,
+        selectedOnly: args.selected_only === true,
+        usedOnly: args.used_only === true,
+      });
+    case 'get_query_path_breakdown':
+      return await getDreamQueryPathBreakdown({
+        queryId: (args.query_id as string) || '',
+      });
+    case 'get_query_node_paths':
+      return await getDreamQueryNodePaths({
+        queryId: (args.query_id as string) || '',
+        nodeUri: (args.node_uri as string) || '',
+      });
+    case 'get_query_event_samples':
+      return await getDreamQueryEventSamples({
+        queryId: (args.query_id as string) || '',
+        nodeUri: (args.node_uri as string) || '',
+        retrievalPath: (args.retrieval_path as string) || '',
+        limit: (args.limit as number) || 10,
+        includeMetadata: args.include_metadata === true,
       });
     case 'get_node_write_history':
       return await getNodeWriteHistory({ nodeUri: args.uri as string, limit: (args.limit as number) || 20 });

@@ -11,6 +11,10 @@ import {
   getRecallStats,
   getDreamRecallReview,
   getDreamQueryRecallDetail,
+  getDreamQueryCandidates,
+  getDreamQueryPathBreakdown,
+  getDreamQueryNodePaths,
+  getDreamQueryEventSamples,
 } from '../recallAnalytics';
 
 const mockSql = vi.mocked(sql);
@@ -423,6 +427,106 @@ describe('getDreamQueryRecallDetail', () => {
     expect(sqlText).toContain('c.selected = TRUE');
     expect(sqlText).not.toContain('FROM recall_events');
     expect(sqlText).not.toContain("metadata->>'query_id'");
+  });
+});
+
+describe('dream query drilldown analytics', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSql.mockReset();
+  });
+
+  it('loads query candidates from candidate rollups with optional selected and used filters', async () => {
+    mockSql.mockResolvedValueOnce(makeResult([
+      { node_uri: 'core://a', final_rank_score: 0.8, selected: true, used_in_answer: false, ranked_position: 1, displayed_position: 1 },
+    ]));
+
+    const result = await getDreamQueryCandidates({ queryId: 'q1', limit: 8, selectedOnly: true, usedOnly: true });
+
+    expect(result).toEqual({
+      query_id: 'q1',
+      candidates: [
+        { node_uri: 'core://a', final_rank_score: 0.8, selected: true, used_in_answer: false, ranked_position: 1, displayed_position: 1 },
+      ],
+    });
+    const sqlText = String(mockSql.mock.calls[0][0]);
+    expect(sqlText).toContain('FROM recall_query_candidates c');
+    expect(sqlText).toContain('c.selected = TRUE');
+    expect(sqlText).toContain('c.used_in_answer = TRUE');
+    expect(sqlText).not.toContain('FROM recall_events');
+  });
+
+  it('loads query path breakdown from aggregated recall events', async () => {
+    mockSql.mockResolvedValueOnce(makeResult([
+      { retrieval_path: 'dense', view_type: 'gist', total: '4', selected: '2', used_in_answer: '1', avg_final_rank_score: '0.7' },
+    ]));
+
+    const result = await getDreamQueryPathBreakdown({ queryId: 'q1' });
+
+    expect(result).toEqual({
+      query_id: 'q1',
+      paths: [
+        expect.objectContaining({ retrieval_path: 'dense', view_type: 'gist', total: 4, selected: 2, used_in_answer: 1, avg_final_rank_score: 0.7 }),
+      ],
+    });
+    const sqlText = String(mockSql.mock.calls[0][0]);
+    expect(sqlText).toContain('FROM recall_events e');
+    expect(sqlText).toContain('GROUP BY e.retrieval_path, e.view_type');
+  });
+
+  it('loads node-specific query paths from aggregated recall events', async () => {
+    mockSql.mockResolvedValueOnce(makeResult([
+      { retrieval_path: 'lexical', view_type: 'question', events: '3', selected_events: '0', used_events: '0', avg_pre_rank_score: '0.4', avg_final_rank_score: '0.55' },
+    ]));
+
+    const result = await getDreamQueryNodePaths({ queryId: 'q1', nodeUri: 'core://a' });
+
+    expect(result).toEqual({
+      query_id: 'q1',
+      node_uri: 'core://a',
+      paths: [
+        expect.objectContaining({ retrieval_path: 'lexical', view_type: 'question', events: 3, selected_events: 0, used_events: 0, avg_pre_rank_score: 0.4, avg_final_rank_score: 0.55 }),
+      ],
+    });
+    const sqlText = String(mockSql.mock.calls[0][0]);
+    expect(sqlText).toContain('e.node_uri = $2');
+  });
+
+  it('loads small event samples without metadata unless requested', async () => {
+    mockSql.mockResolvedValueOnce(makeResult([
+      { id: 1, node_uri: 'core://a', retrieval_path: 'dense', view_type: 'gist', pre_rank_score: '0.4', final_rank_score: '0.6', selected: true, used_in_answer: false, ranked_position: 2, displayed_position: 1, metadata: { raw: 'hidden' }, created_at: '2026-05-03T00:00:00Z' },
+    ]));
+
+    const result = await getDreamQueryEventSamples({ queryId: 'q1', nodeUri: 'core://a', retrievalPath: 'dense', limit: 3 });
+
+    expect(result.events[0]).toEqual({
+      id: 1,
+      node_uri: 'core://a',
+      retrieval_path: 'dense',
+      view_type: 'gist',
+      pre_rank_score: 0.4,
+      final_rank_score: 0.6,
+      selected: true,
+      used_in_answer: false,
+      ranked_position: 2,
+      displayed_position: 1,
+      created_at: '2026-05-03T00:00:00.000Z',
+    });
+    expect(result.events[0]).not.toHaveProperty('metadata');
+    const sqlText = String(mockSql.mock.calls[0][0]);
+    expect(sqlText).toContain('e.query_id = $1');
+    expect(sqlText).toContain('e.node_uri = $2');
+    expect(sqlText).toContain('e.retrieval_path = $3');
+  });
+
+  it('includes event metadata only when explicitly requested', async () => {
+    mockSql.mockResolvedValueOnce(makeResult([
+      { id: 1, node_uri: 'core://a', retrieval_path: 'dense', view_type: 'gist', pre_rank_score: null, final_rank_score: null, selected: false, used_in_answer: false, ranked_position: null, displayed_position: null, metadata: { raw: 'visible' }, created_at: null },
+    ]));
+
+    const result = await getDreamQueryEventSamples({ queryId: 'q1', includeMetadata: true });
+
+    expect(result.events[0]).toHaveProperty('metadata', { raw: 'visible' });
   });
 });
 

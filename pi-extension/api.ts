@@ -3,10 +3,15 @@ const DEFAULT_TIMEOUT_MS = 30000;
 const DEFAULT_DOMAIN = 'core';
 const CLIENT_TYPE = 'pi';
 
+function pickBaseUrl(cfg: any) {
+  const raw = typeof cfg.baseUrl === 'string' && cfg.baseUrl.trim() ? cfg.baseUrl : (process.env.LORE_BASE_URL || DEFAULT_BASE_URL);
+  return raw.trim().replace(/\/$/, '');
+}
+
 export function pickPluginConfig(pi: any) {
   const cfg = pi?.pluginConfig ?? {};
   return {
-    baseUrl: typeof cfg.baseUrl === 'string' && cfg.baseUrl.trim() ? cfg.baseUrl.trim().replace(/\/$/, '') : DEFAULT_BASE_URL,
+    baseUrl: pickBaseUrl(cfg),
     apiToken: typeof cfg.apiToken === 'string' && cfg.apiToken.trim() ? cfg.apiToken.trim() : (process.env.LORE_API_TOKEN || process.env.API_TOKEN || ''),
     timeoutMs: Number.isFinite(cfg.timeoutMs) ? Number(cfg.timeoutMs) : DEFAULT_TIMEOUT_MS,
     defaultDomain: typeof cfg.defaultDomain === 'string' && cfg.defaultDomain.trim() ? cfg.defaultDomain.trim() : DEFAULT_DOMAIN,

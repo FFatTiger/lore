@@ -324,6 +324,12 @@ describe('getDreamRecallReview', () => {
       expect.objectContaining({ type: 'high_merge_low_use' }),
       expect.objectContaining({ type: 'never_retrieved', uri: 'core://manual_only' }),
     ]);
+
+    const sqlText = mockSql.mock.calls.map((call) => String(call[0])).join('\n');
+    expect(sqlText).toContain('FROM recall_queries q');
+    expect(sqlText).toContain('FROM recall_query_candidates c');
+    expect(sqlText).not.toContain('FROM recall_events');
+    expect(sqlText).not.toContain("metadata->>'query_id'");
   });
 
   it('flags retrieved-not-selected and manual-read-after-weak-recall proxy signals', async () => {

@@ -504,19 +504,23 @@ export async function getDreamRecallReview({
   const reviewedQueriesResult = await sql(
     `
       SELECT
-        COALESCE(metadata->>'query_id', id::text) AS query_id,
-        MIN(query_text) AS query_text,
-        MIN(NULLIF(metadata->>'session_id', '')) AS session_id,
-        MIN(NULLIF(metadata->>'client_type', '')) AS client_type,
-        COUNT(DISTINCT node_uri) AS merged_count,
-        COUNT(DISTINCT node_uri) FILTER (WHERE selected) AS shown_count,
-        COUNT(DISTINCT node_uri) FILTER (WHERE used_in_answer) AS used_count,
-        MAX(created_at) AS created_at
-      FROM recall_events
-      WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')
-        AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = node_uri)
-      GROUP BY COALESCE(metadata->>'query_id', id::text)
-      ORDER BY MAX(created_at) DESC, COALESCE(metadata->>'query_id', id::text) DESC
+        q.query_id,
+        q.query_text,
+        q.session_id,
+        q.client_type,
+        q.merged_count,
+        q.shown_count,
+        q.used_count,
+        q.created_at
+      FROM recall_queries q
+      WHERE q.created_at >= NOW() - ($1::int * INTERVAL '1 day')
+        AND EXISTS (
+          SELECT 1
+          FROM recall_query_candidates c
+          JOIN paths p ON (p.domain || '://' || p.path) = c.node_uri
+          WHERE c.query_id = q.query_id
+        )
+      ORDER BY q.created_at DESC, q.query_id DESC
       LIMIT $2
       OFFSET $3
     `,
@@ -532,17 +536,15 @@ export async function getDreamRecallReview({
     const candidateResult = await sql(
       `
         SELECT
-          COALESCE(metadata->>'query_id', id::text) AS query_id,
-          node_uri,
-          BOOL_OR(selected) AS selected,
-          BOOL_OR(used_in_answer) AS used_in_answer
-        FROM recall_events
-        WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')
-          AND COALESCE(metadata->>'query_id', id::text) = ANY($2::text[])
-          AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = node_uri)
-        GROUP BY COALESCE(metadata->>'query_id', id::text), node_uri
+          c.query_id,
+          c.node_uri,
+          c.selected,
+          c.used_in_answer
+        FROM recall_query_candidates c
+        WHERE c.query_id = ANY($1::text[])
+          AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = c.node_uri)
       `,
-      [safeDays, queryIds],
+      [queryIds],
     );
     candidateRows = candidateResult.rows as Array<Record<string, unknown>>;
   }

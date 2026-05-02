@@ -17,11 +17,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const recentQueriesOffset = Number(searchParams.get('recent_queries_offset') || 0);
   const queryId = searchParams.get('query_id') || '';
   const queryText = searchParams.get('query_text') || '';
-  const nodeUri = searchParams.get('node_uri') || '';
   const clientType = searchParams.get('client_type') || '';
 
   try {
-    const stats = await getRecallStats({ days, limit, recentQueriesLimit, recentQueriesOffset, queryId, queryText, nodeUri, clientType });
+    const stats = await getRecallStats({ days, limit, recentQueriesLimit, recentQueriesOffset, queryId, queryText, clientType });
     return NextResponse.json({
       ...stats,
       runtime: await getRecallRuntimeConfig(),

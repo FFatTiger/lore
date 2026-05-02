@@ -46,11 +46,16 @@ import * as moveRoute from '../move/route';
 import * as glossaryRoute from '../glossary/route';
 import * as historyRoute from '../history/route';
 import * as recallRoute from '../recall/route';
+import * as recallStatsRoute from '../recall/stats/route';
 import * as sessionReadRoute from '../session/read/route';
 import * as recallUsageRoute from '../recall/usage/route';
 
 vi.mock('../../../../server/lore/recall/recall', () => ({
   recallMemories: vi.fn(),
+  getRecallRuntimeConfig: vi.fn(),
+}));
+vi.mock('../../../../server/lore/recall/recallAnalytics', () => ({
+  getRecallStats: vi.fn(),
 }));
 vi.mock('../../../../server/lore/memory/session', () => ({
   listSessionReads: vi.fn(),
@@ -61,7 +66,8 @@ vi.mock('../../../../server/lore/recall/recallEventLog', () => ({
   markRecallEventsUsedInAnswer: vi.fn(),
 }));
 
-import { recallMemories } from '../../../../server/lore/recall/recall';
+import { getRecallRuntimeConfig, recallMemories } from '../../../../server/lore/recall/recall';
+import { getRecallStats } from '../../../../server/lore/recall/recallAnalytics';
 import { listSessionReads, markSessionRead, clearSessionReads } from '../../../../server/lore/memory/session';
 import { markRecallEventsUsedInAnswer } from '../../../../server/lore/recall/recallEventLog';
 
@@ -83,6 +89,8 @@ const mockGetGlossary = vi.mocked(getGlossary);
 const mockAddGlossaryKeyword = vi.mocked(addGlossaryKeyword);
 const mockRemoveGlossaryKeyword = vi.mocked(removeGlossaryKeyword);
 const mockRecallMemories = vi.mocked(recallMemories);
+const mockGetRecallRuntimeConfig = vi.mocked(getRecallRuntimeConfig);
+const mockGetRecallStats = vi.mocked(getRecallStats);
 const mockListSessionReads = vi.mocked(listSessionReads);
 const mockMarkSessionRead = vi.mocked(markSessionRead);
 const mockClearSessionReads = vi.mocked(clearSessionReads);
@@ -96,6 +104,7 @@ describe('browse route contracts', () => {
     mockValidateCreatePolicy.mockResolvedValue({ errors: [], warnings: [] } as any);
     mockValidateUpdatePolicy.mockResolvedValue({ errors: [], warnings: [] } as any);
     mockValidateDeletePolicy.mockResolvedValue({ errors: [], warnings: [] } as any);
+    mockGetRecallRuntimeConfig.mockResolvedValue({} as any);
   });
 
   it('adds canonical and legacy warning envelopes to create validation failures', async () => {
@@ -291,6 +300,25 @@ describe('browse route contracts', () => {
     const usageBody = await usageResponse.json();
     expect(usageResponse.status).toBe(422);
     expect(usageBody.code).toBe('validation_error');
+  });
+
+  it('loads recall stats without dormant nodeUri plumbing', async () => {
+    mockGetRecallStats.mockResolvedValueOnce({ summary: { query_count: 0 } } as any);
+    mockGetRecallRuntimeConfig.mockResolvedValueOnce({ display: { min_score: 0.5 } } as any);
+
+    const response = await recallStatsRoute.GET(new Request('http://localhost/api/browse/recall/stats?days=3&query_id=q1&node_uri=core://ignored&client_type=codex') as any);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.summary).toEqual({ query_count: 0 });
+    expect(mockGetRecallStats).toHaveBeenCalledWith(expect.objectContaining({
+      days: 3,
+      queryId: 'q1',
+      clientType: 'codex',
+    }));
+    expect(mockGetRecallStats).toHaveBeenCalledWith(expect.not.objectContaining({
+      nodeUri: expect.anything(),
+    }));
   });
 
   it('loads node history with domain path and limit', async () => {

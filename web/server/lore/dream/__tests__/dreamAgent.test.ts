@@ -228,7 +228,7 @@ describe('buildDreamTools', () => {
     expect(names).toContain('get_node');
     expect(names).toContain('search');
     expect(names).toContain('list_domains');
-    expect(names).toContain('get_node_recall_detail');
+    expect(names).not.toContain('get_node_recall_detail');
     expect(names).toContain('get_query_recall_detail');
     expect(names).toContain('get_node_write_history');
     expect(names).toContain('get_path_effectiveness_detail');
@@ -303,12 +303,6 @@ describe('executeDreamTool', () => {
     mockListDomains.mockResolvedValue(['core'] as any);
     await executeDreamTool('list_domains', {});
     expect(mockListDomains).toHaveBeenCalled();
-  });
-
-  it('dispatches get_node_recall_detail to getRecallStats with node filter', async () => {
-    mockGetRecallStats.mockResolvedValue({ summary: { shown_count: 1 } } as any);
-    await executeDreamTool('get_node_recall_detail', { uri: 'core://test', days: 14, limit: 6 });
-    expect(mockGetRecallStats).toHaveBeenCalledWith({ nodeUri: 'core://test', days: 14, limit: 6 });
   });
 
   it('dispatches get_query_recall_detail to getRecallStats with query filters', async () => {

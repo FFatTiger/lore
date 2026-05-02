@@ -53,12 +53,12 @@ describe('buildStatsWhere', () => {
     const result = buildStatsWhere({ days: 7 });
     expect(result.where).toContain("created_at >= NOW() - ($1::int * INTERVAL '1 day')");
     expect(result.params).toEqual([7]);
-    expect(result.filters).toEqual({ query_id: '', query_text: '', node_uri: '', client_type: '' });
+    expect(result.filters).toEqual({ query_id: '', query_text: '', client_type: '' });
   });
 
   it('adds queryId clause', () => {
     const result = buildStatsWhere({ days: 7, queryId: 'q-123' });
-    expect(result.where).toContain("metadata->>'query_id' = $2");
+    expect(result.where).toContain('query_id = $2');
     expect(result.params).toEqual([7, 'q-123']);
     expect(result.filters.query_id).toBe('q-123');
   });
@@ -69,14 +69,8 @@ describe('buildStatsWhere', () => {
     expect(result.params[1]).toBe('%search%');
   });
 
-  it('adds nodeUri clause', () => {
-    const result = buildStatsWhere({ days: 7, nodeUri: 'core://node1' });
-    expect(result.where).toContain('node_uri = $2');
-    expect(result.params[1]).toBe('core://node1');
-  });
-
   it('combines multiple filters', () => {
-    const result = buildStatsWhere({ days: 14, queryId: 'q1', queryText: 'foo', nodeUri: 'core://x' });
+    const result = buildStatsWhere({ days: 14, queryId: 'q1', queryText: 'foo', clientType: 'codex' });
     expect(result.params).toHaveLength(4);
     expect(result.where).toContain('$2');
     expect(result.where).toContain('$3');
@@ -428,30 +422,47 @@ describe('getRecallStats', () => {
     expect(stats.query_detail).toBeDefined();
   });
 
-  it('includes node_detail when nodeUri is provided', async () => {
+  it('ignores dormant nodeUri filters and does not return node_detail', async () => {
     const summaryRow = { total_merged: '3', total_shown: '1', total_used: '0', query_count: '2', last_event_at: '2025-01-01T00:00:00Z' };
     mockSql.mockResolvedValue(makeResult([summaryRow]));
-    const stats = await getRecallStats({ nodeUri: 'core://test-node' });
-    expect(stats.filters).toBeDefined();
-    expect(stats.filters?.node_uri).toBe('core://test-node');
-    expect(stats.node_detail).toBeDefined();
+    const stats = await getRecallStats({ nodeUri: 'core://test-node' } as any);
+    expect(stats.filters).toBeNull();
+    expect(stats).not.toHaveProperty('node_detail');
   });
 
-  it('applies active filters to aggregate queries, not just recent events', async () => {
+  it('applies active query filters to rollup aggregate queries', async () => {
     const summaryRow = { total_merged: '3', total_shown: '1', total_used: '0', query_count: '2', last_event_at: '2025-01-01T00:00:00Z' };
     mockSql.mockResolvedValue(makeResult([summaryRow]));
 
-    await getRecallStats({ queryId: 'q-test', nodeUri: 'core://test-node' });
+    await getRecallStats({ queryId: 'q-test', clientType: 'codex' });
 
-    const aggregateCalls = mockSql.mock.calls.slice(1, 7);
-    expect(aggregateCalls).toHaveLength(6);
+    const sqlText = mockSql.mock.calls.map(([query]) => String(query)).join('\n');
+    expect(sqlText).toContain('FROM recall_queries');
+    expect(sqlText).toContain('FROM recall_query_candidates');
+    expect(sqlText).toContain('query_id = $2');
+    expect(sqlText).toContain('LOWER(COALESCE(client_type, \'\'))');
+    expect(sqlText).not.toContain("metadata->>'query_id'");
+  });
 
-    for (const [query, params] of aggregateCalls) {
-      const sqlText = String(query);
-      expect(sqlText).toContain("metadata->>'query_id'");
-      expect(sqlText).toContain('node_uri =');
-      expect(params).toEqual(expect.arrayContaining([7, 'q-test', 'core://test-node']));
-    }
+  it('loads homepage summary from recall_queries', async () => {
+    mockSql.mockResolvedValue(makeResult([{ total_merged: '10', total_shown: '5', total_used: '2', query_count: '3', last_event_at: null }]));
+
+    await getRecallStats();
+
+    const sqlText = mockSql.mock.calls.map(([query]) => String(query)).join('\n');
+    expect(sqlText).toContain('FROM recall_queries');
+    expect(sqlText).toContain('SUM(merged_count)');
+    expect(sqlText).not.toContain('COUNT(DISTINCT node_uri) AS merged_count');
+  });
+
+  it('loads display threshold samples from recall_query_candidates', async () => {
+    mockSql.mockResolvedValue(makeResult([{ total_merged: '0', total_shown: '0', total_used: '0', query_count: '0', last_event_at: null }]));
+
+    await getRecallStats();
+
+    const sqlText = mockSql.mock.calls.map(([query]) => String(query)).join('\n');
+    expect(sqlText).toContain('FROM recall_query_candidates');
+    expect(sqlText).not.toContain('WITH candidate_rows AS');
   });
 
   it('does not include filters when no filter is active', async () => {
@@ -461,10 +472,12 @@ describe('getRecallStats', () => {
   });
 
   it('includes display threshold analysis aggregated by merged candidate', async () => {
-    let callCount = 0;
-    mockSql.mockImplementation(async () => {
-      callCount++;
-      if (callCount === 9) {
+    mockSql.mockImplementation(async (query: string) => {
+      const sqlText = String(query);
+      if (sqlText.includes('SELECT key, value FROM app_settings')) {
+        return makeResult([{ key: 'recall.display.min_display_score', value: 0.55 }]);
+      }
+      if (sqlText.includes('FROM recall_query_candidates') && !sqlText.includes('GROUP BY')) {
         return makeResult([{
           shown_candidates: '6',
           used_candidates: '3',
@@ -476,11 +489,8 @@ describe('getRecallStats', () => {
           unused_shown_p75_score: '0.58',
         }]);
       }
-      if (callCount === 10) {
+      if (sqlText.includes('FROM recall_query_candidates') && sqlText.includes('GROUP BY')) {
         return makeResult([]);
-      }
-      if (callCount === 12) {
-        return makeResult([{ key: 'recall.display.min_display_score', value: 0.55 }]);
       }
       return makeResult([{ total_merged: '3', total_shown: '2', total_used: '1', query_count: '1', last_event_at: null }]);
     });
@@ -509,10 +519,12 @@ describe('getRecallStats', () => {
   });
 
   it('marks negative separation as ready_but_unsafe and includes runtime gap', async () => {
-    let callCount = 0;
-    mockSql.mockImplementation(async () => {
-      callCount++;
-      if (callCount === 9) {
+    mockSql.mockImplementation(async (query: string) => {
+      const sqlText = String(query);
+      if (sqlText.includes('SELECT key, value FROM app_settings')) {
+        return makeResult([{ key: 'recall.display.min_display_score', value: 0.55 }]);
+      }
+      if (sqlText.includes('FROM recall_query_candidates') && !sqlText.includes('GROUP BY')) {
         return makeResult([{
           shown_candidates: '10',
           used_candidates: '4',
@@ -524,11 +536,8 @@ describe('getRecallStats', () => {
           unused_shown_p75_score: '0.64',
         }]);
       }
-      if (callCount === 10) {
+      if (sqlText.includes('FROM recall_query_candidates') && sqlText.includes('GROUP BY')) {
         return makeResult([]);
-      }
-      if (callCount === 12) {
-        return makeResult([{ key: 'recall.display.min_display_score', value: 0.55 }]);
       }
       return makeResult([{ total_merged: '4', total_shown: '3', total_used: '2', query_count: '1', last_event_at: null }]);
     });
@@ -553,10 +562,12 @@ describe('getRecallStats', () => {
   });
 
   it('builds client_type threshold analysis across sources', async () => {
-    let callCount = 0;
-    mockSql.mockImplementation(async () => {
-      callCount++;
-      if (callCount === 9) {
+    mockSql.mockImplementation(async (query: string) => {
+      const sqlText = String(query);
+      if (sqlText.includes('SELECT key, value FROM app_settings')) {
+        return makeResult([{ key: 'recall.display.min_display_score', value: 0.55 }]);
+      }
+      if (sqlText.includes('FROM recall_query_candidates') && !sqlText.includes('GROUP BY')) {
         return makeResult([{
           shown_candidates: '6',
           used_candidates: '3',
@@ -568,7 +579,7 @@ describe('getRecallStats', () => {
           unused_shown_p75_score: '0.58',
         }]);
       }
-      if (callCount === 10) {
+      if (sqlText.includes('FROM recall_query_candidates') && sqlText.includes('GROUP BY')) {
         return makeResult([
           {
             client_type: '',
@@ -593,9 +604,6 @@ describe('getRecallStats', () => {
             unused_shown_p75_score: '0.61',
           },
         ]);
-      }
-      if (callCount === 12) {
-        return makeResult([{ key: 'recall.display.min_display_score', value: 0.55 }]);
       }
       return makeResult([{ total_merged: '3', total_shown: '2', total_used: '1', query_count: '1', last_event_at: null }]);
     });
@@ -645,10 +653,12 @@ describe('getRecallStats', () => {
   });
 
   it('marks display threshold analysis as insufficient_data when shown/used counts are too small', async () => {
-    let callCount = 0;
-    mockSql.mockImplementation(async () => {
-      callCount++;
-      if (callCount === 9) {
+    mockSql.mockImplementation(async (query: string) => {
+      const sqlText = String(query);
+      if (sqlText.includes('SELECT key, value FROM app_settings')) {
+        return makeResult([{ key: 'recall.display.min_display_score', value: 0.55 }]);
+      }
+      if (sqlText.includes('FROM recall_query_candidates') && !sqlText.includes('GROUP BY')) {
         return makeResult([{
           shown_candidates: '4',
           used_candidates: '2',
@@ -660,11 +670,8 @@ describe('getRecallStats', () => {
           unused_shown_p75_score: '0.54',
         }]);
       }
-      if (callCount === 10) {
+      if (sqlText.includes('FROM recall_query_candidates') && sqlText.includes('GROUP BY')) {
         return makeResult([]);
-      }
-      if (callCount === 12) {
-        return makeResult([{ key: 'recall.display.min_display_score', value: 0.55 }]);
       }
       return makeResult([{ total_merged: '2', total_shown: '1', total_used: '1', query_count: '1', last_event_at: null }]);
     });

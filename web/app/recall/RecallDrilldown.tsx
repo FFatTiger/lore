@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { RefreshCw } from 'lucide-react';
 import { api } from '../../lib/api';
 import {
-  PageCanvas, PageTitle, Section, Button, TextButton, Table, StatCard, Notice, FilterNumberField, AppSelect, FilterPill,
+  PageCanvas, PageTitle, Section, Button, Table, StatCard, Notice, FilterNumberField, AppSelect, FilterPill,
   fmt, trunc, asNumber,
 } from '../../components/ui';
 import RecallStages from '../../components/RecallStages';
@@ -22,7 +22,6 @@ interface Filters {
   recentQueriesOffset: number;
   queryText: string;
   queryId: string;
-  nodeUri: string;
   clientType: string;
 }
 
@@ -33,7 +32,6 @@ const DEFAULT_FILTERS: Filters = {
   recentQueriesOffset: 0,
   queryText: '',
   queryId: '',
-  nodeUri: '',
   clientType: '',
 };
 
@@ -76,7 +74,6 @@ export default function RecallDrilldown(): React.JSX.Element {
     recentQueriesOffset: readNumberParam(searchParams, 'recent_queries_offset', 0, { min: 0 }),
     queryText: readStringParam(searchParams, 'query_text'),
     queryId: readStringParam(searchParams, 'query_id'),
-    nodeUri: readStringParam(searchParams, 'node_uri'),
     clientType: readStringParam(searchParams, 'client_type'),
   }), [searchParams]);
   const [loading, setLoading] = useState(true);
@@ -88,7 +85,6 @@ export default function RecallDrilldown(): React.JSX.Element {
       patch.days !== undefined
       || patch.queryText !== undefined
       || patch.queryId !== undefined
-      || patch.nodeUri !== undefined
       || patch.clientType !== undefined
       || patch.recentQueriesLimit !== undefined
     ) {
@@ -101,7 +97,6 @@ export default function RecallDrilldown(): React.JSX.Element {
       recent_queries_offset: next.recentQueriesOffset,
       query_id: next.queryId,
       query_text: next.queryText,
-      node_uri: next.nodeUri,
       client_type: next.clientType,
     }, {
       days: DEFAULT_FILTERS.days,
@@ -110,7 +105,6 @@ export default function RecallDrilldown(): React.JSX.Element {
       recent_queries_offset: DEFAULT_FILTERS.recentQueriesOffset,
       query_id: DEFAULT_FILTERS.queryId,
       query_text: DEFAULT_FILTERS.queryText,
-      node_uri: DEFAULT_FILTERS.nodeUri,
       client_type: DEFAULT_FILTERS.clientType,
     });
     if (mode === 'push') router.push(href);
@@ -128,7 +122,6 @@ export default function RecallDrilldown(): React.JSX.Element {
           recent_queries_offset: Math.max(0, Number(f.recentQueriesOffset) || 0),
           query_id: f.queryId || undefined,
           query_text: f.queryText || undefined,
-          node_uri: f.nodeUri || undefined,
           client_type: f.clientType || undefined,
         },
       });
@@ -142,11 +135,10 @@ export default function RecallDrilldown(): React.JSX.Element {
 
   useEffect(() => {
     loadStats(filters);
-  }, [filters.days, filters.limit, filters.recentQueriesLimit, filters.recentQueriesOffset, filters.queryId, filters.queryText, filters.nodeUri, filters.clientType]);
+  }, [filters.days, filters.limit, filters.recentQueriesLimit, filters.recentQueriesOffset, filters.queryId, filters.queryText, filters.clientType]);
 
   const queryDetail = (stats?.query_detail as Record<string, unknown>) || null;
-  const nodeDetail = (stats?.node_detail as Record<string, unknown>) || null;
-  const isDetailRoute = Boolean(filters.queryId || filters.nodeUri);
+  const isDetailRoute = Boolean(filters.queryId);
   const clientTypeThresholdAnalysis = (stats?.client_type_threshold_analysis as RowData[]) || [];
 
   const recentQueryCols = useMemo(() => [
@@ -160,22 +152,6 @@ export default function RecallDrilldown(): React.JSX.Element {
       <span className="block whitespace-nowrap text-[12px] text-right text-txt-tertiary">{v ? new Date(String(v)).toLocaleString() : '—'}</span>
     ) },
   ], [t]);
-
-  const nodeQueryCols = useMemo(() => [
-    { key: 'query_text', label: t('Query'), className: 'w-[60%]', render: (v: unknown) => <div className="max-w-full text-[13px] text-txt-primary">{trunc(v, 160)}</div> },
-    { key: 'total', label: t('Events'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-txt-secondary text-right">{String(v ?? '—')}</span> },
-    { key: 'selected', label: t('Shown'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-sys-blue text-right">{String(v ?? '—')}</span> },
-    { key: 'used_in_answer', label: t('Used'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-sys-green text-right">{String(v ?? '—')}</span> },
-    { key: 'avg_final_rank_score', label: t('Avg'), className: 'text-right', render: (v: unknown) => <span className="block font-mono tabular-nums text-txt-secondary text-right">{fmt(v)}</span> },
-    { key: '_drill', label: '', className: 'text-right', render: (_: unknown, row: RowData) => (
-      <TextButton
-       
-        onClick={(e) => { e.stopPropagation(); applyFilters({ queryId: String(row.query_id || ''), queryText: '', nodeUri: '' }, 'push'); }}
-      >
-        {t('Open')} →
-      </TextButton>
-    ) },
-  ], [applyFilters, t]);
 
   const recentQueriesBlock = (stats?.recent_queries as RecentQueriesBlock) || { items: [], total: 0, limit: asNumber(filters.recentQueriesLimit, 20), offset: filters.recentQueriesOffset, has_more: false };
   const recentQueries = recentQueriesBlock.items || [];
@@ -315,7 +291,7 @@ export default function RecallDrilldown(): React.JSX.Element {
               </span>
             }
             right={
-              <Button variant="ghost" onClick={() => applyFilters({ queryId: '', queryText: '', nodeUri: '' }, 'replace')}>
+              <Button variant="ghost" onClick={() => applyFilters({ queryId: '', queryText: '' }, 'replace')}>
                 ← {t('Back')}
               </Button>
             }
@@ -326,18 +302,6 @@ export default function RecallDrilldown(): React.JSX.Element {
               hideMergedBreakdownColumn
             />
           </Section>
-        ) : nodeDetail ? (
-          <Section
-            title={<code className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[15px] text-txt-primary" title={String(nodeDetail.node_uri ?? '')}>{String(nodeDetail.node_uri ?? '')}</code>}
-            subtitle={`${nodeDetail.merged_count} ${t('Merged')} · ${nodeDetail.shown_count} ${t('Shown')}`}
-            right={
-              <Button variant="ghost" onClick={() => applyFilters({ queryId: '', queryText: '', nodeUri: '' }, 'replace')}>
-                ← {t('Back')}
-              </Button>
-            }
-          >
-            <Table columns={nodeQueryCols} rows={(nodeDetail.queries as RowData[]) || []} empty={t('No queries for this node.')} activeRowKey={filters.queryId} />
-          </Section>
         ) : (
           <Section
             title={t('Recent queries')}
@@ -347,7 +311,7 @@ export default function RecallDrilldown(): React.JSX.Element {
               columns={recentQueryCols}
               rows={recentQueries}
               empty={t('No queries recorded yet.')}
-              onRowClick={(row) => applyFilters({ queryId: String(row.query_id || ''), queryText: '', nodeUri: '' }, 'push')}
+              onRowClick={(row) => applyFilters({ queryId: String(row.query_id || ''), queryText: '' }, 'push')}
               activeRowKey={filters.queryId}
             />
             <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

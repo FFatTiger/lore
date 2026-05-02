@@ -23,14 +23,13 @@ interface StatsWhereArgs {
   days?: unknown;
   queryId?: string;
   queryText?: string;
-  nodeUri?: string;
   clientType?: string;
 }
 
 interface StatsWhereResult {
   where: string;
   params: unknown[];
-  filters: { query_id: string; query_text: string; node_uri: string; client_type: string };
+  filters: { query_id: string; query_text: string; client_type: string };
 }
 
 interface DisplayThresholdAnalysis {
@@ -92,7 +91,6 @@ export function buildStatsWhere({
   days,
   queryId = '',
   queryText = '',
-  nodeUri = '',
   clientType = '',
 }: StatsWhereArgs = {}): StatsWhereResult {
   const safeDays = intervalDaysSql(days);
@@ -101,41 +99,68 @@ export function buildStatsWhere({
 
   const safeQueryId = sanitizeFilter(queryId, 120);
   const safeQueryText = sanitizeFilter(queryText, 240);
-  const safeNodeUri = sanitizeFilter(nodeUri, 240);
   const safeClientType = sanitizeFilter(clientType, 120).toLowerCase();
-  const legacyClientType = safeClientType === LEGACY_CLIENT_TYPE_FILTER;
 
   if (safeQueryId) {
     params.push(safeQueryId);
-    clauses.push(`metadata->>'query_id' = $${params.length}`);
+    clauses.push(`query_id = $${params.length}`);
   }
   if (safeQueryText) {
     params.push(`%${safeQueryText}%`);
     clauses.push(`query_text ILIKE $${params.length}`);
   }
-  if (safeNodeUri) {
-    params.push(safeNodeUri);
-    clauses.push(`node_uri = $${params.length}`);
-  }
   if (safeClientType) {
-    params.push(safeClientType);
-    clauses.push(
-      legacyClientType
-        ? `LOWER(COALESCE(metadata->>'client_type', '')) = ''`
-        : `LOWER(COALESCE(metadata->>'client_type', '')) = $${params.length}`,
-    );
+    if (safeClientType === LEGACY_CLIENT_TYPE_FILTER) {
+      clauses.push(`LOWER(COALESCE(client_type, '')) = ''`);
+    } else {
+      params.push(safeClientType);
+      clauses.push(`LOWER(COALESCE(client_type, '')) = $${params.length}`);
+    }
   }
 
   return {
     where: clauses.join(' AND '),
-    params: legacyClientType ? params.slice(0, -1) : params,
+    params,
     filters: {
       query_id: safeQueryId,
       query_text: safeQueryText,
-      node_uri: safeNodeUri,
       client_type: safeClientType,
     },
   };
+}
+
+function buildCandidateWhere({
+  days,
+  queryId = '',
+  queryText = '',
+  clientType = '',
+}: StatsWhereArgs = {}, { includeClientType = true }: { includeClientType?: boolean } = {}) {
+  const safeDays = intervalDaysSql(days);
+  const clauses = [`c.created_at >= NOW() - ($1::int * INTERVAL '1 day')`];
+  const params: unknown[] = [safeDays];
+
+  const safeQueryId = sanitizeFilter(queryId, 120);
+  const safeQueryText = sanitizeFilter(queryText, 240);
+  const safeClientType = sanitizeFilter(clientType, 120).toLowerCase();
+
+  if (safeQueryId) {
+    params.push(safeQueryId);
+    clauses.push(`c.query_id = $${params.length}`);
+  }
+  if (safeQueryText) {
+    params.push(`%${safeQueryText}%`);
+    clauses.push(`q.query_text ILIKE $${params.length}`);
+  }
+  if (includeClientType && safeClientType) {
+    if (safeClientType === LEGACY_CLIENT_TYPE_FILTER) {
+      clauses.push(`LOWER(COALESCE(c.client_type, '')) = ''`);
+    } else {
+      params.push(safeClientType);
+      clauses.push(`LOWER(COALESCE(c.client_type, '')) = $${params.length}`);
+    }
+  }
+
+  return { where: clauses.join(' AND '), params };
 }
 
 // ---------------------------------------------------------------------------
@@ -406,7 +431,6 @@ interface RecallStatsArgs {
   recentQueriesOffset?: number;
   queryId?: string;
   queryText?: string;
-  nodeUri?: string;
   clientType?: string;
 }
 
@@ -653,129 +677,57 @@ export async function getRecallStats({
   recentQueriesOffset = 0,
   queryId = '',
   queryText = '',
-  nodeUri = '',
   clientType = '',
 }: RecallStatsArgs = {}) {
   const safeDays = intervalDaysSql(days);
   const safeLimit = Math.max(3, Math.min(50, Number(limit) || 12));
   const safeRecentQueriesLimit = clampLimit(recentQueriesLimit, 1, 100, 20);
   const safeRecentQueriesOffset = Math.max(0, Number(recentQueriesOffset) || 0);
-  const { where: filterWhere, params: filterParams, filters } = buildStatsWhere({ days, queryId, queryText, nodeUri, clientType });
-  const { where: breakdownWhere, params: breakdownParams } = buildStatsWhere({ days, queryId, queryText, nodeUri, clientType: '' });
-  const hasFilter = filters.query_id || filters.query_text || filters.node_uri || filters.client_type;
+  const { where: filterWhere, params: filterParams, filters } = buildStatsWhere({ days, queryId, queryText, clientType });
+  const { where: candidateWhere, params: candidateParams } = buildCandidateWhere({ days, queryId, queryText, clientType });
+  const { where: breakdownWhere, params: breakdownParams } = buildCandidateWhere({ days, queryId, queryText, clientType: '' }, { includeClientType: false });
+  const hasFilter = filters.query_id || filters.query_text || filters.client_type;
 
   await sql('SET LOCAL work_mem = \'64MB\'', []);
 
   const recentQueriesListParams = [...filterParams, safeRecentQueriesLimit, safeRecentQueriesOffset];
   let queryDetail: Record<string, unknown> | null = null;
-  let nodeDetail: Record<string, unknown> | null = null;
 
-  const [summary, byPath, byViewType, noisyNodes, recentQueriesCount, recentQueries, recentEvents, displayThreshold, clientTypeBreakdown, queryCount] = await Promise.all([
-    sql(
-      `
-        WITH node_summary AS (
-          SELECT node_uri, BOOL_OR(selected) AS selected, BOOL_OR(used_in_answer) AS used_in_answer
-          FROM recall_events
-          WHERE ${filterWhere}
-            AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = node_uri)
-          GROUP BY node_uri
-        )
-        SELECT
-          COUNT(*) AS total_merged,
-          COUNT(*) FILTER (WHERE selected) AS total_shown,
-          COUNT(*) FILTER (WHERE used_in_answer) AS total_used
-        FROM node_summary
-      `,
-      filterParams,
-    ),
+  const [summary, recentQueriesCount, recentQueries, displayThreshold, clientTypeBreakdown] = await Promise.all([
     sql(
       `
         SELECT
-          retrieval_path,
-          COUNT(*) AS total,
-          COUNT(*) FILTER (WHERE selected) AS selected,
-          COUNT(*) FILTER (WHERE used_in_answer) AS used_in_answer,
-          AVG(pre_rank_score) AS avg_pre_rank_score,
-          AVG(final_rank_score) AS avg_final_rank_score
-        FROM recall_events
-        WHERE ${filterWhere}
-          AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = node_uri)
-        GROUP BY retrieval_path
-        ORDER BY selected DESC, total DESC, retrieval_path ASC
-      `,
-      filterParams,
-    ),
-    sql(
-      `
-        SELECT
-          COALESCE(view_type, 'unknown') AS view_type,
-          COUNT(*) AS total,
-          COUNT(*) FILTER (WHERE selected) AS selected,
-          COUNT(*) FILTER (WHERE used_in_answer) AS used_in_answer,
-          AVG(pre_rank_score) AS avg_pre_rank_score,
-          AVG(final_rank_score) AS avg_final_rank_score
-        FROM recall_events
-        WHERE ${filterWhere}
-          AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = node_uri)
-        GROUP BY COALESCE(view_type, 'unknown')
-        ORDER BY selected DESC, total DESC, view_type ASC
-      `,
-      filterParams,
-    ),
-    sql(
-      `
-        SELECT
-          node_uri,
-          COUNT(*) AS total,
-          COUNT(*) FILTER (WHERE selected) AS selected,
-          AVG(final_rank_score) AS avg_final_rank_score,
+          COALESCE(SUM(merged_count), 0)::int AS total_merged,
+          COALESCE(SUM(shown_count), 0)::int AS total_shown,
+          COALESCE(SUM(used_count), 0)::int AS total_used,
+          COUNT(*)::int AS query_count,
           MAX(created_at) AS last_event_at
-        FROM recall_events
+        FROM recall_queries
         WHERE ${filterWhere}
-          AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = node_uri)
-        GROUP BY node_uri
-        HAVING COUNT(*) >= 2
-        ORDER BY (COUNT(*) - COUNT(*) FILTER (WHERE selected)) DESC, COUNT(*) DESC, node_uri ASC
-        LIMIT $${filterParams.length + 1}
-      `,
-      [...filterParams, safeLimit],
-    ),
-    sql(
-      `
-        SELECT COUNT(DISTINCT COALESCE(metadata->>'query_id', id::text))::int AS total
-        FROM recall_events
-        WHERE ${filterWhere}
-          AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = node_uri)
       `,
       filterParams,
     ),
     sql(
       `
-        WITH per_query_node AS (
-          SELECT
-            COALESCE(metadata->>'query_id', id::text) AS query_id,
-            node_uri,
-            BOOL_OR(selected) AS selected,
-            BOOL_OR(used_in_answer) AS used_in_answer,
-            MIN(query_text) AS query_text,
-            MIN(metadata->>'client_type') AS client_type,
-            MAX(created_at) AS created_at
-          FROM recall_events
-          WHERE ${filterWhere}
-            AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = node_uri)
-          GROUP BY COALESCE(metadata->>'query_id', id::text), node_uri
-        )
+        SELECT COUNT(*)::int AS total
+        FROM recall_queries
+        WHERE ${filterWhere}
+      `,
+      filterParams,
+    ),
+    sql(
+      `
         SELECT
           query_id,
-          MIN(query_text) AS query_text,
-          COUNT(*) AS merged_count,
-          COUNT(*) FILTER (WHERE selected) AS shown_count,
-          COUNT(*) FILTER (WHERE used_in_answer) AS used_count,
-          MIN(client_type) AS client_type,
-          MAX(created_at) AS created_at
-        FROM per_query_node
-        GROUP BY query_id
-        ORDER BY MAX(created_at) DESC, query_id DESC
+          query_text,
+          merged_count,
+          shown_count,
+          used_count,
+          client_type,
+          created_at
+        FROM recall_queries
+        WHERE ${filterWhere}
+        ORDER BY created_at DESC, query_id DESC
         LIMIT $${filterParams.length + 1}
         OFFSET $${filterParams.length + 2}
       `,
@@ -783,89 +735,50 @@ export async function getRecallStats({
     ),
     sql(
       `
-        SELECT id, query_text, node_uri, retrieval_path, view_type,
-          pre_rank_score, final_rank_score, selected, used_in_answer, metadata,
-          metadata->>'client_type' AS client_type, created_at
-        FROM recall_events
-        WHERE ${filterWhere}
-        ORDER BY created_at DESC, id DESC
-        LIMIT $${filterParams.length + 1}
+        SELECT
+          COUNT(*) FILTER (WHERE c.selected = TRUE) AS shown_candidates,
+          COUNT(*) FILTER (WHERE c.used_in_answer = TRUE) AS used_candidates,
+          AVG(c.final_rank_score) FILTER (WHERE c.selected = TRUE) AS avg_shown_score,
+          AVG(c.final_rank_score) FILTER (WHERE c.used_in_answer = TRUE) AS avg_used_score,
+          AVG(c.final_rank_score) FILTER (WHERE c.selected = TRUE AND c.used_in_answer = FALSE) AS avg_unused_shown_score,
+          PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY c.final_rank_score)
+            FILTER (WHERE c.used_in_answer = TRUE AND c.final_rank_score IS NOT NULL) AS used_p25_score,
+          PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY c.final_rank_score)
+            FILTER (WHERE c.used_in_answer = TRUE AND c.final_rank_score IS NOT NULL) AS used_p50_score,
+          PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY c.final_rank_score)
+            FILTER (WHERE c.selected = TRUE AND c.used_in_answer = FALSE AND c.final_rank_score IS NOT NULL) AS unused_shown_p75_score
+        FROM recall_query_candidates c
+        JOIN recall_queries q ON q.query_id = c.query_id
+        WHERE ${candidateWhere}
       `,
-      [...filterParams, safeLimit * 4],
+      candidateParams,
     ),
     sql(
       `
-        WITH candidate_rows AS (
-          SELECT
-            COALESCE(metadata->>'query_id', id::text) AS query_id,
-            node_uri,
-            BOOL_OR(selected) AS selected,
-            BOOL_OR(used_in_answer) AS used_in_answer,
-            MAX(final_rank_score) AS final_rank_score
-          FROM recall_events
-          WHERE ${filterWhere}
-            AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = node_uri)
-          GROUP BY COALESCE(metadata->>'query_id', id::text), node_uri
-        )
         SELECT
-          COUNT(*) FILTER (WHERE selected) AS shown_candidates,
-          COUNT(*) FILTER (WHERE used_in_answer) AS used_candidates,
-          AVG(final_rank_score) FILTER (WHERE selected) AS avg_shown_score,
-          AVG(final_rank_score) FILTER (WHERE used_in_answer) AS avg_used_score,
-          AVG(final_rank_score) FILTER (WHERE selected AND used_in_answer = FALSE) AS avg_unused_shown_score,
-          PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY final_rank_score) FILTER (WHERE used_in_answer) AS used_p25_score,
-          PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY final_rank_score) FILTER (WHERE used_in_answer) AS used_p50_score,
-          PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY final_rank_score) FILTER (WHERE selected AND used_in_answer = FALSE) AS unused_shown_p75_score
-        FROM candidate_rows
-      `,
-      filterParams,
-    ),
-    sql(
-      `
-        WITH candidate_rows AS (
-          SELECT
-            LOWER(COALESCE(metadata->>'client_type', '')) AS client_type,
-            COALESCE(metadata->>'query_id', id::text) AS query_id,
-            node_uri,
-            BOOL_OR(selected) AS selected,
-            BOOL_OR(used_in_answer) AS used_in_answer,
-            MAX(final_rank_score) AS final_rank_score
-          FROM recall_events
-          WHERE ${breakdownWhere}
-            AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = node_uri)
-          GROUP BY LOWER(COALESCE(metadata->>'client_type', '')), COALESCE(metadata->>'query_id', id::text), node_uri
-        )
-        SELECT
-          client_type,
-          COUNT(*) FILTER (WHERE selected) AS shown_candidates,
-          COUNT(*) FILTER (WHERE used_in_answer) AS used_candidates,
-          AVG(final_rank_score) FILTER (WHERE selected) AS avg_shown_score,
-          AVG(final_rank_score) FILTER (WHERE used_in_answer) AS avg_used_score,
-          AVG(final_rank_score) FILTER (WHERE selected AND used_in_answer = FALSE) AS avg_unused_shown_score,
-          PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY final_rank_score) FILTER (WHERE used_in_answer) AS used_p25_score,
-          PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY final_rank_score) FILTER (WHERE used_in_answer) AS used_p50_score,
-          PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY final_rank_score) FILTER (WHERE selected AND used_in_answer = FALSE) AS unused_shown_p75_score
-        FROM candidate_rows
-        GROUP BY client_type
-        ORDER BY COUNT(*) FILTER (WHERE selected) DESC, client_type ASC
+          LOWER(COALESCE(c.client_type, '')) AS client_type,
+          COUNT(*) FILTER (WHERE c.selected = TRUE) AS shown_candidates,
+          COUNT(*) FILTER (WHERE c.used_in_answer = TRUE) AS used_candidates,
+          AVG(c.final_rank_score) FILTER (WHERE c.selected = TRUE) AS avg_shown_score,
+          AVG(c.final_rank_score) FILTER (WHERE c.used_in_answer = TRUE) AS avg_used_score,
+          AVG(c.final_rank_score) FILTER (WHERE c.selected = TRUE AND c.used_in_answer = FALSE) AS avg_unused_shown_score,
+          PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY c.final_rank_score)
+            FILTER (WHERE c.used_in_answer = TRUE AND c.final_rank_score IS NOT NULL) AS used_p25_score,
+          PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY c.final_rank_score)
+            FILTER (WHERE c.used_in_answer = TRUE AND c.final_rank_score IS NOT NULL) AS used_p50_score,
+          PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY c.final_rank_score)
+            FILTER (WHERE c.selected = TRUE AND c.used_in_answer = FALSE AND c.final_rank_score IS NOT NULL) AS unused_shown_p75_score
+        FROM recall_query_candidates c
+        JOIN recall_queries q ON q.query_id = c.query_id
+        WHERE ${breakdownWhere}
+        GROUP BY LOWER(COALESCE(c.client_type, ''))
+        ORDER BY COUNT(*) FILTER (WHERE c.selected = TRUE) DESC, client_type ASC
       `,
       breakdownParams,
-    ),
-    sql(
-      `
-        SELECT
-          COUNT(DISTINCT COALESCE(metadata->>'query_id', id::text))::int AS query_count,
-          MAX(created_at) AS last_event_at
-        FROM recall_events
-        WHERE ${filterWhere}
-          AND EXISTS (SELECT 1 FROM paths p WHERE (p.domain || '://' || p.path) = node_uri)
-      `,
-      filterParams,
     ),
   ]);
 
   const summaryRow = summary.rows[0] || {};
-  const queryCountRow = queryCount.rows[0] || {};
   const displayThresholdRow = displayThreshold.rows[0] || {};
   const displayThresholdAnalysisBase = buildDisplayThresholdAnalysis(displayThresholdRow);
   const runtimeSettings = await getSettings(['recall.display.min_display_score']);
@@ -897,25 +810,41 @@ export async function getRecallStats({
     created_at: row.created_at ? new Date(row.created_at as string).toISOString() : null,
   }));
 
-  // Query detail: when filtering by queryId, fetch per-node and per-path breakdowns
+  let recentEventRows: Record<string, unknown>[] = [];
+
   if (filters.query_id) {
-    const qEventsForMerge = await sql(
-      `SELECT node_uri, retrieval_path, view_type, pre_rank_score, final_rank_score,
-         selected, used_in_answer, metadata
-       FROM recall_events WHERE ${filterWhere}`,
-      filterParams,
-    );
-    const mergedCandidates = mergeEventsByNode(qEventsForMerge.rows);
-    const debugShape = reshapeEventsForDebugView(qEventsForMerge.rows, mergedCandidates);
-    const [qNodes, qPaths] = await Promise.all([
+    const [qQuery, qCandidates, qEventsForMerge, qPaths] = await Promise.all([
       sql(
-        `SELECT node_uri, COUNT(*) AS total, COUNT(*) FILTER (WHERE selected) AS selected,
-          COUNT(*) FILTER (WHERE used_in_answer) AS used_in_answer,
-          AVG(pre_rank_score) AS avg_pre_rank_score, AVG(final_rank_score) AS avg_final_rank_score,
-          MAX(final_rank_score) AS max_final_rank_score
-        FROM recall_events WHERE ${filterWhere}
-        GROUP BY node_uri ORDER BY total DESC LIMIT $${filterParams.length + 1}`,
-        [...filterParams, safeLimit],
+        `
+          SELECT query_id, query_text, session_id, client_type, merged_count, shown_count, used_count, created_at
+          FROM recall_queries
+          WHERE ${filterWhere}
+          LIMIT 1
+        `,
+        filterParams,
+      ),
+      sql(
+        `
+          SELECT c.node_uri, c.final_rank_score, c.selected, c.used_in_answer,
+            c.ranked_position, c.displayed_position, c.client_type, c.created_at
+          FROM recall_query_candidates c
+          JOIN recall_queries q ON q.query_id = c.query_id
+          WHERE ${candidateWhere}
+          ORDER BY c.ranked_position NULLS LAST, c.final_rank_score DESC NULLS LAST, c.node_uri ASC
+        `,
+        candidateParams,
+      ),
+      sql(
+        `
+          SELECT id, query_text, node_uri, retrieval_path, view_type,
+            pre_rank_score, final_rank_score, selected, used_in_answer, metadata,
+            client_type, ranked_position, displayed_position, created_at
+          FROM recall_events
+          WHERE ${filterWhere}
+          ORDER BY created_at DESC, id DESC
+          LIMIT $${filterParams.length + 1}
+        `,
+        [...filterParams, safeLimit * 8],
       ),
       sql(
         `SELECT retrieval_path, view_type, COUNT(*) AS total, COUNT(*) FILTER (WHERE selected) AS selected,
@@ -925,38 +854,60 @@ export async function getRecallStats({
         filterParams,
       ),
     ]);
+    recentEventRows = qEventsForMerge.rows as Record<string, unknown>[];
+
+    const queryRow = qQuery.rows[0] || {};
+    const candidateByUri = new Map((qCandidates.rows as Record<string, unknown>[]).map((row) => [String(row.node_uri || ''), row]));
+    const mergedByUri = new Map(mergeEventsByNode(qEventsForMerge.rows).map((candidate) => [candidate.uri, candidate]));
+    const mergedCandidates = [...candidateByUri.entries()].map(([uri, row]) => {
+      const eventCandidate = mergedByUri.get(uri);
+      return {
+        uri,
+        score: asNumber(row.final_rank_score) ?? eventCandidate?.score ?? 0,
+        exact_score: eventCandidate?.exact_score ?? 0,
+        glossary_semantic_score: eventCandidate?.glossary_semantic_score ?? 0,
+        dense_score: eventCandidate?.dense_score ?? 0,
+        lexical_score: eventCandidate?.lexical_score ?? 0,
+        selected: row.selected === true,
+        used_in_answer: row.used_in_answer === true,
+        matched_on: eventCandidate?.matched_on ?? [],
+        cues: eventCandidate?.cues ?? [],
+        view_types: eventCandidate?.view_types ?? [],
+        client_type: typeof row.client_type === 'string' && row.client_type.trim() ? row.client_type.trim() : eventCandidate?.client_type ?? null,
+        score_breakdown: eventCandidate?.score_breakdown ?? null,
+        ranked_position: asNumber(row.ranked_position),
+        displayed_position: asNumber(row.displayed_position),
+        paths: eventCandidate?.paths ?? [],
+      };
+    }).sort((a, b) => {
+      const ar = a.ranked_position ?? 999999;
+      const br = b.ranked_position ?? 999999;
+      return ar - br || b.score - a.score || a.uri.localeCompare(b.uri);
+    });
+    const debugShape = reshapeEventsForDebugView(qEventsForMerge.rows, mergedCandidates);
+    const shownCount = qCandidates.rows.filter((row: Record<string, unknown>) => row.selected === true).length;
+    const usedCount = qCandidates.rows.filter((row: Record<string, unknown>) => row.used_in_answer === true).length;
+
     queryDetail = {
       query_id: filters.query_id,
-      query_text: recentEvents.rows[0]?.query_text || '',
-      query: recentEvents.rows[0]?.query_text || '',
-      client_type: typeof recentEvents.rows[0]?.client_type === 'string' && recentEvents.rows[0]?.client_type.trim() ? recentEvents.rows[0].client_type.trim() : null,
-      merged_count: Number(summaryRow.total_merged || 0),
-      shown_count: Number(summaryRow.total_shown || 0),
-      used_count: Number(summaryRow.total_used || 0),
+      query_text: queryRow.query_text || recentEventRows[0]?.query_text || '',
+      query: queryRow.query_text || recentEventRows[0]?.query_text || '',
+      client_type: typeof queryRow.client_type === 'string' && queryRow.client_type.trim() ? queryRow.client_type.trim() : null,
+      merged_count: Number(queryRow.merged_count ?? qCandidates.rows.length ?? 0),
+      shown_count: Number(queryRow.shown_count ?? shownCount),
+      used_count: Number(queryRow.used_count ?? usedCount),
       merged_candidates: mergedCandidates,
       ...debugShape,
-      nodes: qNodes.rows.map((r: Record<string, unknown>) => ({ node_uri: r.node_uri, total: Number(r.total), selected: Number(r.selected), used_in_answer: Number(r.used_in_answer), avg_pre_rank_score: asNumber(r.avg_pre_rank_score), avg_final_rank_score: asNumber(r.avg_final_rank_score), max_final_rank_score: asNumber(r.max_final_rank_score) })),
+      nodes: qCandidates.rows.map((r: Record<string, unknown>) => ({
+        node_uri: r.node_uri,
+        total: 1,
+        selected: r.selected === true ? 1 : 0,
+        used_in_answer: r.used_in_answer === true ? 1 : 0,
+        avg_pre_rank_score: null,
+        avg_final_rank_score: asNumber(r.final_rank_score),
+        max_final_rank_score: asNumber(r.final_rank_score),
+      })),
       paths: qPaths.rows.map((r: Record<string, unknown>) => ({ retrieval_path: r.retrieval_path, view_type: r.view_type, total: Number(r.total), selected: Number(r.selected), avg_pre_rank_score: asNumber(r.avg_pre_rank_score), avg_final_rank_score: asNumber(r.avg_final_rank_score) })),
-    };
-  }
-
-  // Node detail: when filtering by nodeUri, fetch per-query breakdowns
-  if (filters.node_uri) {
-    const nQueries = await sql(
-      `SELECT COALESCE(metadata->>'query_id', id::text) AS query_id, MIN(query_text) AS query_text,
-        COUNT(*) AS total, COUNT(*) FILTER (WHERE selected) AS selected,
-        COUNT(*) FILTER (WHERE used_in_answer) AS used_in_answer,
-        AVG(final_rank_score) AS avg_final_rank_score, MAX(final_rank_score) AS max_final_rank_score
-      FROM recall_events WHERE ${filterWhere}
-      GROUP BY COALESCE(metadata->>'query_id', id::text) ORDER BY MAX(created_at) DESC LIMIT $${filterParams.length + 1}`,
-      [...filterParams, safeLimit],
-    );
-    nodeDetail = {
-      node_uri: filters.node_uri,
-      merged_count: Number(summaryRow.total_merged || 0),
-      shown_count: Number(summaryRow.total_shown || 0),
-      avg_final_rank_score: asNumber(summaryRow.avg_final_rank_score),
-      queries: nQueries.rows.map((r: Record<string, unknown>) => ({ query_id: r.query_id, query_text: r.query_text, total: Number(r.total), selected: Number(r.selected), used_in_answer: Number(r.used_in_answer), avg_final_rank_score: asNumber(r.avg_final_rank_score), max_final_rank_score: asNumber(r.max_final_rank_score) })),
     };
   }
 
@@ -968,34 +919,14 @@ export async function getRecallStats({
       merged_count: Number(summaryRow.total_merged || 0),
       shown_count: Number(summaryRow.total_shown || 0),
       used_count: Number(summaryRow.total_used || 0),
-      query_count: Number(queryCountRow.query_count || 0),
-      last_event_at: queryCountRow.last_event_at ? new Date(queryCountRow.last_event_at).toISOString() : null,
+      query_count: Number(summaryRow.query_count || 0),
+      last_event_at: summaryRow.last_event_at ? new Date(summaryRow.last_event_at).toISOString() : null,
     },
     display_threshold_analysis: displayThresholdAnalysis,
     client_type_threshold_analysis: clientTypeRows,
-    by_path: byPath.rows.map((row: Record<string, unknown>) => ({
-      retrieval_path: row.retrieval_path,
-      total: Number(row.total || 0),
-      selected: Number(row.selected || 0),
-      used_in_answer: Number(row.used_in_answer || 0),
-      avg_pre_rank_score: asNumber(row.avg_pre_rank_score),
-      avg_final_rank_score: asNumber(row.avg_final_rank_score),
-    })),
-    by_view_type: byViewType.rows.map((row: Record<string, unknown>) => ({
-      view_type: row.view_type,
-      total: Number(row.total || 0),
-      selected: Number(row.selected || 0),
-      used_in_answer: Number(row.used_in_answer || 0),
-      avg_pre_rank_score: asNumber(row.avg_pre_rank_score),
-      avg_final_rank_score: asNumber(row.avg_final_rank_score),
-    })),
-    noisy_nodes: noisyNodes.rows.map((row: Record<string, unknown>) => ({
-      node_uri: row.node_uri,
-      total: Number(row.total || 0),
-      selected: Number(row.selected || 0),
-      avg_final_rank_score: asNumber(row.avg_final_rank_score),
-      last_event_at: row.last_event_at ? new Date(row.last_event_at as string).toISOString() : null,
-    })),
+    by_path: [],
+    by_view_type: [],
+    noisy_nodes: [],
     recent_queries: {
       items: recentQueryRows,
       total: recentQueriesTotal,
@@ -1003,7 +934,7 @@ export async function getRecallStats({
       offset: safeRecentQueriesOffset,
       has_more: safeRecentQueriesOffset + recentQueryRows.length < recentQueriesTotal,
     },
-    recent_events: recentEvents.rows.map((row: Record<string, unknown>) => ({
+    recent_events: recentEventRows.map((row: Record<string, unknown>) => ({
       id: Number(row.id),
       query_text: row.query_text,
       node_uri: row.node_uri,
@@ -1018,6 +949,5 @@ export async function getRecallStats({
       created_at: row.created_at ? new Date(row.created_at as string).toISOString() : null,
     })),
     ...(queryDetail ? { query_detail: queryDetail } : {}),
-    ...(nodeDetail ? { node_detail: nodeDetail } : {}),
   };
 }

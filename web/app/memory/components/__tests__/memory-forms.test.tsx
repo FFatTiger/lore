@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@lobehub/ui/es/Button/index', () => ({
-  default: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>,
+  default: ({ children, danger: _danger, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { danger?: boolean }) => <button {...props}>{children}</button>,
 }));
 
 vi.mock('@lobehub/ui/es/Alert/index', () => ({
@@ -23,7 +23,11 @@ vi.mock('@lobehub/ui/es/Input/Input', () => ({
 }));
 
 vi.mock('@lobehub/ui/es/Input/TextArea', () => ({
-  default: (props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea data-app-text-area="true" {...props} />,
+  default: ({ resize: _resize, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { resize?: boolean }) => <textarea data-app-text-area="true" {...props} />,
+}));
+
+vi.mock('@lobehub/ui/es/Input/InputNumber', () => ({
+  default: (props: Record<string, unknown>) => <input data-lobe-input-number="true" type="number" {...props} />,
 }));
 
 vi.mock('@lobehub/ui/es/Select/Select', () => ({
@@ -63,13 +67,14 @@ import CreateNodeForm from '../CreateNodeForm';
 import MoveDialog from '../MoveDialog';
 
 describe('memory form Lobe input wrappers', () => {
-  it('renders title, priority, and disclosure fields through AppInput', () => {
+  it('renders title and disclosure through AppInput and priority through AppInputNumber', () => {
     const html = renderToStaticMarkup(
       <CreateNodeForm domain="core" parentPath="agent" onCreated={() => undefined} onCancel={() => undefined} />,
     );
 
     expect(html).toContain('data-app-input="true"');
-    expect((html.match(/data-app-input="true"/g) || []).length).toBe(3);
+    expect((html.match(/data-app-input="true"/g) || []).length).toBe(2);
+    expect(html).toContain('data-lobe-input-number="true"');
     expect(html).toContain('type="number"');
     expect(html).toContain('snake_case_name');
     expect(html).toContain('When should this memory be recalled?');

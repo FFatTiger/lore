@@ -1,6 +1,6 @@
 {
   "name": "lore",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Long-term Lore memory for Codex via MCP tools and optional hook-based prompt context.",
   "author": {
     "name": "FFatTiger"

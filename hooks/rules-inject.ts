@@ -1,34 +1,49 @@
 /**
- * Claude Code SessionStart hook: injects Lore guidance + boot baseline +
- * startup recall context into the session on startup.
+ * Claude Code SessionStart hook: injects boot baseline + startup recall
+ * context into the session on startup.
  *
- * 1. Reads rules/lore-guidance.md (behavioral guidance)
- * 2. Calls Lore boot API for the fixed boot baseline inside Lore
- * 3. Appends startup boot content and environment recall as loaded context
+ * Static guidance (rules/lore-guidance.md) is now injected via
+ * CLAUDE.md @import at install time. This hook only outputs
+ * dynamic content: boot baseline and recall.
  *
- * Boot is best-effort: if the API call fails, guidance is still injected.
+ * Boot is best-effort: if the API call fails, the hook is silent.
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as os from "node:os";
 import { execSync } from "node:child_process";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:18901";
 const BOOT_TIMEOUT_MS = 8000;
 const CLIENT_BOOT_URI = "core://agent/claudecode";
 
-function resolveRulesPath(): string {
-  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
-  if (pluginRoot) {
-    return path.join(pluginRoot, "rules", "lore-guidance.md");
+function readConfigFile(): Record<string, string> {
+  const files = [
+    path.join(os.homedir(), ".config", "lore", "env"),
+  ];
+  for (const f of files) {
+    try {
+      const text = fs.readFileSync(f, "utf-8");
+      const result: Record<string, string> = {};
+      for (const line of text.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        const eqIdx = trimmed.indexOf("=");
+        if (eqIdx === -1) continue;
+        result[trimmed.slice(0, eqIdx).trim()] = trimmed.slice(eqIdx + 1).trim();
+      }
+      return result;
+    } catch {}
   }
-  return path.resolve(process.cwd(), "rules", "lore-guidance.md");
+  return {};
 }
 
 function loadConfig() {
+  const fileConfig = readConfigFile();
   return {
-    baseUrl: (process.env.LORE_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, ""),
-    apiToken: process.env.LORE_API_TOKEN || process.env.API_TOKEN || "",
+    baseUrl: (process.env.LORE_BASE_URL || fileConfig.LORE_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, ""),
+    apiToken: process.env.LORE_API_TOKEN || fileConfig.LORE_API_TOKEN || process.env.API_TOKEN || "",
   };
 }
 
@@ -208,24 +223,14 @@ async function fetchBoot(): Promise<string> {
 }
 
 async function main() {
-  // 1. Load static guidance (always)
-  const rulesPath = resolveRulesPath();
-  let rules = "";
-  try {
-    rules = fs.readFileSync(rulesPath, "utf-8").trim();
-  } catch {
-    // Silent: guidance file missing
-  }
-
-  // 2. Fetch boot content and initial recalls in parallel (best-effort)
+  // Fetch boot content and initial recalls in parallel (best-effort)
   const projectInfo = detectProjectInfo();
   const [boot, recall] = await Promise.all([
     fetchBoot().catch(() => ""),
     fetchInitialRecalls(projectInfo).catch(() => ""),
   ]);
 
-  // 4. Guidance first, boot content, then initial recall
-  const parts = [rules, boot, recall].filter(Boolean);
+  const parts = [boot, recall].filter(Boolean);
   if (parts.length === 0) process.exit(0);
 
   const output = {

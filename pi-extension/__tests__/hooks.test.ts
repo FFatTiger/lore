@@ -59,7 +59,7 @@ describe('Pi extension hooks', () => {
     registerHooks(pi as any, { injectPromptGuidance: false, recallEnabled: false, startupHealthcheck: false }, '');
     expect(pi.events.session_start).toBeTypeOf('function');
     expect(pi.events.before_agent_start).toBeTypeOf('function');
-    expect(pi.events.tool_call).toBeTypeOf('function');
+    expect(pi.events.tool_call).toBeUndefined();
     expect(pi.events.session_shutdown).toBeTypeOf('function');
   });
 

@@ -22,6 +22,10 @@ function makePluginCfg(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const RECALL_GET_NODE_DESCRIPTION = 'Open a memory node. REQUIRED when opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag.';
+const RECALL_SESSION_ID_DESCRIPTION = 'REQUIRED when the URI came from <recall>: copy the exact session_id from that <recall> tag.';
+const RECALL_QUERY_ID_DESCRIPTION = 'REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag.';
+
 describe('Pi extension tools', () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
@@ -45,6 +49,21 @@ describe('Pi extension tools', () => {
     ]);
     expect(pi.tools.lore_search.promptSnippet).toContain('Search Lore');
     expect(pi.tools.lore_get_node.promptGuidelines.join('\n')).toContain('lore_get_node');
+  });
+
+  it('lore_get_node exposes explicit recall identifiers without internal params', () => {
+    const pi = makeMockPi();
+    registerTools(pi as any, makePluginCfg());
+    const tool = pi.tools.lore_get_node;
+    const props = tool.parameters.properties;
+
+    expect(tool.description).toBe(RECALL_GET_NODE_DESCRIPTION);
+    expect(props.session_id.description).toBe(RECALL_SESSION_ID_DESCRIPTION);
+    expect(props.query_id.description).toBe(RECALL_QUERY_ID_DESCRIPTION);
+    expect(props.session_id).toBeDefined();
+    expect(props.query_id).toBeDefined();
+    expect(props.__session_id).toBeUndefined();
+    expect(props.__session_key).toBeUndefined();
   });
 
   it('status tool calls Lore with client_type=pi', async () => {

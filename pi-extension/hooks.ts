@@ -243,13 +243,6 @@ export function registerHooks(pi: any, pluginCfg: any, guidance: string) {
     }
   });
 
-  pi.on('tool_call', async (event: any, ctx: any) => {
-    if (event?.toolName !== 'lore_get_node') return;
-    const sessionId = getSessionId(ctx);
-    if (!sessionId) return;
-    event.input = { ...(event.input || {}), __session_id: sessionId };
-  });
-
   pi.on('session_shutdown', async (_event: any, ctx: any) => {
     const sessionId = getSessionId(ctx);
     pendingRecallUsage.delete(sessionId || '');

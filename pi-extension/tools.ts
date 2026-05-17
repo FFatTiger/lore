@@ -16,6 +16,10 @@ const Type = {
   }),
 };
 
+const RECALL_GET_NODE_DESCRIPTION = 'Open a memory node. REQUIRED when opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag.';
+const RECALL_SESSION_ID_DESCRIPTION = 'REQUIRED when the URI came from <recall>: copy the exact session_id from that <recall> tag.';
+const RECALL_QUERY_ID_DESCRIPTION = 'REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag.';
+
 export function registerTools(pi: any, pluginCfg: any) {
   pi.registerTool({
     name: 'lore_status',
@@ -51,22 +55,21 @@ export function registerTools(pi: any, pluginCfg: any) {
   pi.registerTool({
     name: 'lore_get_node',
     label: 'Lore get node',
-    description: 'Open a memory node to inspect its full content, metadata, and nearby structure. Pass session_id and query_id from the <recall> tag to enable read tracking and adoption.',
+    description: RECALL_GET_NODE_DESCRIPTION,
     parameters: Type.Object({
       uri: Type.String({ description: 'Full memory URI such as core://agent/pi. Use core:// or project:// to browse a domain root; bare words are paths in the default domain.' }),
       nav_only: Type.Optional(Type.Boolean({ description: 'If true, skip expensive glossary processing and only return structure/navigation info.' })),
-      session_id: Type.Optional(Type.String({ description: 'Session identifier from the <recall session_id="..."> tag. Enables per-session read tracking.' })),
-      query_id: Type.Optional(Type.String({ description: 'Query identifier from the <recall query_id="..."> tag. Marks this recall as adopted for usage tracking.' })),
-      __session_id: Type.Optional(Type.String({ description: 'Internal session tracking field (auto-injected by hooks).' })),
+      session_id: Type.Optional(Type.String({ description: RECALL_SESSION_ID_DESCRIPTION })),
+      query_id: Type.Optional(Type.String({ description: RECALL_QUERY_ID_DESCRIPTION })),
     }),
     promptSnippet: 'Open a Lore memory node by URI.',
     promptGuidelines: [
       'Use lore_get_node to open a recalled Lore URI before relying on it in an answer or code change.',
-      'Pass session_id and query_id from a <recall> block to lore_get_node when those fields are available.',
+      'When opening a URI from a <recall>, copy the exact session_id and query_id from that <recall> tag.',
     ],
     async execute(_toolCallId: string, params: any = {}, _signal?: AbortSignal, _onUpdate?: unknown, _ctx?: any) {
       const navOnly = params?.nav_only === true;
-      const sessionId = (typeof params?.session_id === 'string' && params.session_id.trim()) || (typeof params?.__session_id === 'string' && params.__session_id.trim()) || '';
+      const sessionId = typeof params?.session_id === 'string' && params.session_id.trim() ? params.session_id.trim() : '';
       const queryId = typeof params?.query_id === 'string' && params.query_id.trim() ? params.query_id.trim() : '';
       let domain = pluginCfg.defaultDomain;
       let path = '';

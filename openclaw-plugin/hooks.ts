@@ -264,24 +264,6 @@ export function registerHooks(api: any, pluginCfg: any, GUIDANCE: string) {
     { priority: 50 },
   );
 
-  // Inject session tracking into lore_get_node calls
-  api.on(
-    "before_tool_call",
-    async (event: any) => {
-      if (event?.toolName !== "lore_get_node") return;
-      const ctx = event?.context;
-      if (!ctx?.sessionId) return;
-      return {
-        params: {
-          ...(event?.params || {}),
-          __session_id: ctx.sessionId,
-          __session_key: ctx.sessionKey || undefined,
-        },
-      };
-    },
-    { priority: 50 },
-  );
-
   // Cleanup on session end
   api.on(
     "session_end",

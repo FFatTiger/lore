@@ -24,6 +24,9 @@ from . import formatters
 
 logger = logging.getLogger(__name__)
 CLIENT_BOOT_URI = "core://agent/hermes"
+RECALL_GET_NODE_DESCRIPTION = "Open a memory node. REQUIRED when opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag."
+RECALL_SESSION_ID_DESCRIPTION = "REQUIRED when the URI came from <recall>: copy the exact session_id from that <recall> tag."
+RECALL_QUERY_ID_DESCRIPTION = "REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag."
 
 # ---------------------------------------------------------------------------
 # Guidance text (static behavioral instructions)
@@ -378,15 +381,15 @@ class LoreMemoryProvider(MemoryProvider):
             },
             {
                 "name": "lore_get_node",
-                "description": "Open a memory node to inspect its full content, metadata, and nearby structure. Pass session_id and query_id from the <recall> tag to enable read tracking and recall adoption",
+                "description": RECALL_GET_NODE_DESCRIPTION,
                 "parameters": {
                     "type": "object",
                     "additionalProperties": False,
                     "properties": {
                         "uri": {"type": "string", "description": "Full memory URI (e.g. core://soul). Use core:// or project:// to browse a domain root; bare words are paths in the default domain."},
                         "nav_only": {"type": "boolean", "description": "If true, skip expensive glossary processing"},
-                        "session_id": {"type": "string", "description": "Session identifier from the <recall session_id=\"...\"> tag"},
-                        "query_id": {"type": "string", "description": "Query identifier from the <recall query_id=\"...\"> tag"},
+                        "session_id": {"type": "string", "description": RECALL_SESSION_ID_DESCRIPTION},
+                        "query_id": {"type": "string", "description": RECALL_QUERY_ID_DESCRIPTION},
                     },
                     "required": ["uri"],
                 },

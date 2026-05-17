@@ -24,6 +24,10 @@ function makePluginCfg(overrides: any = {}) {
   };
 }
 
+const RECALL_GET_NODE_DESCRIPTION = 'Open a memory node. REQUIRED when opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag.';
+const RECALL_SESSION_ID_DESCRIPTION = 'REQUIRED when the URI came from <recall>: copy the exact session_id from that <recall> tag.';
+const RECALL_QUERY_ID_DESCRIPTION = 'REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag.';
+
 describe('registerTools — tool registration', () => {
   it('registers all 11 tools', () => {
     const api = makeMockApi();
@@ -65,6 +69,19 @@ describe('tool parameter schemas', () => {
 
   it('lore_get_node requires uri', () => {
     expect(tools.lore_get_node.parameters.required).toContain('uri');
+  });
+
+  it('lore_get_node exposes explicit recall identifiers without internal params', () => {
+    const tool = tools.lore_get_node;
+    const props = tool.parameters.properties;
+
+    expect(tool.description).toBe(RECALL_GET_NODE_DESCRIPTION);
+    expect(props.session_id.description).toBe(RECALL_SESSION_ID_DESCRIPTION);
+    expect(props.query_id.description).toBe(RECALL_QUERY_ID_DESCRIPTION);
+    expect(props.session_id).toBeDefined();
+    expect(props.query_id).toBeDefined();
+    expect(props.__session_id).toBeUndefined();
+    expect(props.__session_key).toBeUndefined();
   });
 
   it('lore_search exposes content_limit', () => {

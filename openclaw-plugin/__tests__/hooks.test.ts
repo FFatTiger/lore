@@ -166,31 +166,9 @@ describe('registerHooks', () => {
     registerHooks(api as any, { startupHealthcheck: false, injectPromptGuidance: false, recallEnabled: false }, '');
     expect('lore.status' in api.gatewayMethods).toBe(true);
     expect('gateway_start' in api.events).toBe(true);
-    expect('before_tool_call' in api.events).toBe(true);
+    expect('before_tool_call' in api.events).toBe(false);
     expect('session_end' in api.events).toBe(true);
     expect('before_prompt_build' in api.events).toBe(true);
-  });
-
-  it('before_tool_call hook skips non-get_node tools', async () => {
-    const api = makeMockApi();
-    registerHooks(api as any, { startupHealthcheck: false, injectPromptGuidance: false, recallEnabled: false }, '');
-    const hook = api.events.before_tool_call;
-    const result = await hook.handler({ toolName: 'other_tool', context: { sessionId: 'abc' } });
-    expect(result).toBeUndefined();
-  });
-
-  it('before_tool_call hook injects session id for lore_get_node', async () => {
-    const api = makeMockApi();
-    registerHooks(api as any, { startupHealthcheck: false, injectPromptGuidance: false, recallEnabled: false }, '');
-    const hook = api.events.before_tool_call;
-    const result = await hook.handler({
-      toolName: 'lore_get_node',
-      params: { uri: 'core://test' },
-      context: { sessionId: 'sess-xyz', sessionKey: 'key-abc' },
-    });
-    expect(result?.params?.__session_id).toBe('sess-xyz');
-    expect(result?.params?.__session_key).toBe('key-abc');
-    expect(result?.params?.uri).toBe('core://test');
   });
 
   it('session_end hook clears pending recall for session', async () => {

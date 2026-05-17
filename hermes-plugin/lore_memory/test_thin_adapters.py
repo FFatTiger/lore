@@ -25,6 +25,11 @@ from lore_memory import LoreMemoryProvider
 from lore_memory.client import LoreClient
 
 
+RECALL_GET_NODE_DESCRIPTION = "Open a memory node. REQUIRED when opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag."
+RECALL_SESSION_ID_DESCRIPTION = "REQUIRED when the URI came from <recall>: copy the exact session_id from that <recall> tag."
+RECALL_QUERY_ID_DESCRIPTION = "REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag."
+
+
 class LoreClientThinAdapterTests(unittest.TestCase):
     def test_create_node_sends_glossary_in_node_request(self):
         client = LoreClient(base_url="http://example.com")
@@ -136,6 +141,15 @@ class LoreProviderThinAdapterTests(unittest.TestCase):
         self.assertIn("glossary_add", props)
         self.assertIn("glossary_remove", props)
         self.assertNotIn("glossary fields", schemas["lore_update_node"]["description"])
+
+    def test_get_node_tool_uses_unified_recall_identifier_descriptions(self):
+        schemas = {tool["name"]: tool for tool in self.provider.get_tool_schemas()}
+        tool = schemas["lore_get_node"]
+        props = tool["parameters"]["properties"]
+
+        self.assertEqual(tool["description"], RECALL_GET_NODE_DESCRIPTION)
+        self.assertEqual(props["session_id"]["description"], RECALL_SESSION_ID_DESCRIPTION)
+        self.assertEqual(props["query_id"]["description"], RECALL_QUERY_ID_DESCRIPTION)
 
     def test_update_tool_ignores_glossary_replacement_argument(self):
         result = self.provider._tool_lore_update_node({

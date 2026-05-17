@@ -11,20 +11,14 @@ const UriParam = Type.String({
   description: "Full memory URI, such as core://soul. Use core:// or project:// to browse a domain root; bare words are paths in the default domain.",
 });
 
+const GetNodeDescription = "Open a memory node. REQUIRED when opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag.";
+
 const SessionIdParam = Type.String({
-  description: "Session identifier from the <recall session_id=\"...\"> tag. Enables per-session read tracking and recall suppression.",
+  description: "REQUIRED when the URI came from <recall>: copy the exact session_id from that <recall> tag.",
 });
 
 const QueryIdParam = Type.String({
-  description: "Query identifier from the <recall query_id=\"...\"> tag. Enables recall usage tracking.",
-});
-
-const InternalSessionId = Type.String({
-  description: "Internal session tracking field.",
-});
-
-const InternalSessionKey = Type.String({
-  description: "Internal session tracking field.",
+  description: "REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag.",
 });
 
 export function registerTools(api: any, pluginCfg: any) {
@@ -63,19 +57,16 @@ export function registerTools(api: any, pluginCfg: any) {
   api.registerTool({
     name: "lore_get_node",
     label: "Lore get node",
-    description: "Open a memory node to inspect its full content, metadata, and nearby structure. Pass session_id and query_id from the <recall> tag to enable per-session read tracking and recall usage marking.",
+    description: GetNodeDescription,
     parameters: Type.Object({
       uri: UriParam,
       nav_only: Type.Optional(Type.Boolean({ description: "If true, skip expensive glossary processing." })),
       session_id: Type.Optional(SessionIdParam),
       query_id: Type.Optional(QueryIdParam),
-      __session_id: Type.Optional(InternalSessionId),
-      __session_key: Type.Optional(InternalSessionKey),
     }),
     async execute(_id: any, params: any) {
       const navOnly = params?.nav_only === true;
-      const sessionId = (typeof params?.session_id === "string" && params.session_id.trim()) || (typeof params?.__session_id === "string" && params.__session_id.trim()) || "";
-      const sessionKey = typeof params?.__session_key === "string" && params.__session_key.trim() ? params.__session_key.trim() : "";
+      const sessionId = typeof params?.session_id === "string" && params.session_id.trim() ? params.session_id.trim() : "";
       const queryId = typeof params?.query_id === "string" && params.query_id.trim() ? params.query_id.trim() : "";
       let domain = pluginCfg.defaultDomain;
       let path = "";
@@ -87,7 +78,6 @@ export function registerTools(api: any, pluginCfg: any) {
         if (sessionId && node?.uri) {
           await markSessionRead(pluginCfg, {
             sessionId,
-            sessionKey,
             uri: node.uri,
             nodeUuid: node.node_uuid,
             source: "tool:lore_get_node",

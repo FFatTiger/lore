@@ -217,6 +217,35 @@ class LoreClient:
         if session_id:
             data["session_id"] = session_id
         return self._request("POST", "/browse/recall", data=data) or {}
+
+    # ---- Bridge Lifecycle ----
+
+    def bridge_startup(
+        self,
+        session_id: str,
+        channel: str,
+        project: Dict,
+        include_guidance: bool = True,
+    ) -> Dict:
+        """Load unified startup context from the Lore bridge."""
+        data = {
+            "session_id": session_id,
+            "channel": channel,
+            "project": project,
+            "include_guidance": include_guidance,
+        }
+        return self._request("POST", "/bridge/startup", data=data) or {}
+
+    def bridge_recall(self, session_id: str, prompt: str) -> Dict:
+        """Load formatted prompt recall context from the Lore bridge."""
+        return self._request("POST", "/bridge/recall", data={
+            "session_id": session_id,
+            "prompt": prompt,
+        }) or {}
+
+    def bridge_session_end(self, session_id: str) -> Dict:
+        """Notify the Lore bridge that a session ended."""
+        return self._request("POST", "/bridge/session/end", data={"session_id": session_id}) or {}
     
     # ---- Domains ----
     

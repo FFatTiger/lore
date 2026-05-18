@@ -82,10 +82,33 @@ class LoreClientThinAdapterTests(unittest.TestCase):
         self.assertEqual(requests[0][1]["data"]["glossary_add"], ["memory"])
         self.assertEqual(requests[0][1]["data"]["glossary_remove"], ["archive"])
 
+    def test_bridge_methods_call_bridge_routes(self):
+        client = LoreClient(base_url="http://example.com")
+        requests = []
+        client._request = lambda *args, **kwargs: {"ok": True} if not requests.append((args, kwargs)) else {}
+
+        client.bridge_startup(
+            session_id="sess-1",
+            channel="hermes",
+            project={"dir_name": "lore", "repo_name": "lore"},
+            include_guidance=True,
+        )
+        client.bridge_recall(session_id="sess-1", prompt="hello")
+        client.bridge_session_end(session_id="sess-1")
+
+        self.assertEqual(requests[0][0], ("POST", "/bridge/startup"))
+        self.assertEqual(requests[0][1]["data"]["session_id"], "sess-1")
+        self.assertEqual(requests[0][1]["data"]["channel"], "hermes")
+        self.assertEqual(requests[1][0], ("POST", "/bridge/recall"))
+        self.assertEqual(requests[1][1]["data"], {"session_id": "sess-1", "prompt": "hello"})
+        self.assertEqual(requests[2][0], ("POST", "/bridge/session/end"))
+        self.assertEqual(requests[2][1]["data"], {"session_id": "sess-1"})
+
 
 class FakeClient:
     def __init__(self):
         self.last_update_kwargs = None
+        self.ended_session_id = None
 
     def parse_uri(self, uri):
         return uri.split("://", 1)[0], uri.split("://", 1)[1]
@@ -105,6 +128,16 @@ class FakeClient:
 
     def move_node(self, *args, **kwargs):
         return {"old_uri": "core://old/path", "new_uri": "core://new/path", "uri": "core://new/path"}
+
+    def bridge_startup(self, **kwargs):
+        return {"system_context": "BRIDGE SYSTEM"}
+
+    def bridge_recall(self, **kwargs):
+        return {"context": "<recall session_id=\"sess-1\" query_id=\"q1\">\n0.70 | core://project\n</recall>"}
+
+    def bridge_session_end(self, session_id):
+        self.ended_session_id = session_id
+        return {"ok": True, "session_id": session_id}
 
 
 class LoreProviderThinAdapterTests(unittest.TestCase):
@@ -141,6 +174,27 @@ class LoreProviderThinAdapterTests(unittest.TestCase):
         self.assertIn("glossary_add", props)
         self.assertIn("glossary_remove", props)
         self.assertNotIn("glossary fields", schemas["lore_update_node"]["description"])
+
+    def test_initialize_uses_bridge_startup_context(self):
+        import lore_memory as provider_module
+        original_client = provider_module.LoreClient
+        fake = FakeClient()
+        provider_module.LoreClient = lambda *args, **kwargs: fake
+        try:
+            provider = LoreMemoryProvider()
+            provider.initialize("sess-1")
+        finally:
+            provider_module.LoreClient = original_client
+
+        self.assertEqual(provider.system_prompt_block(), "BRIDGE SYSTEM")
+
+    def test_prefetch_uses_bridge_recall_context(self):
+        result = self.provider.prefetch("hello", session_id="sess-1")
+        self.assertIn("core://project", result)
+
+    def test_session_end_uses_bridge_session_end(self):
+        self.provider.on_session_end([])
+        self.assertEqual(self.provider._client.ended_session_id, "sess-1")
 
     def test_get_node_tool_uses_unified_recall_identifier_descriptions(self):
         schemas = {tool["name"]: tool for tool in self.provider.get_tool_schemas()}

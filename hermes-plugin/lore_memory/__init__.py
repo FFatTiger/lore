@@ -214,7 +214,22 @@ class LoreMemoryProvider(MemoryProvider):
         self._client = LoreClient(base_url=base_url, api_token=api_token)
         self._session_id = session_id
 
-        # Fetch boot content and initial environment recalls for system_prompt_block()
+        try:
+            bridge = self._client.bridge_startup(
+                session_id=session_id,
+                channel="hermes",
+                project=_detect_project_info(),
+                include_guidance=True,
+            )
+            system_context = str(bridge.get("system_context") or "").strip()
+            if system_context:
+                self._boot_block = system_context
+                logger.info("Lore memory provider initialized (server: %s, session: %s)", base_url, session_id)
+                return
+        except Exception as e:
+            logger.warning("Lore bridge startup failed: %s", e)
+
+        # Fallback for older Lore servers without bridge endpoints.
         try:
             boot_data = self._client.boot()
             boot_text = _format_boot_section(boot_data)
@@ -333,6 +348,16 @@ class LoreMemoryProvider(MemoryProvider):
         if not normalized_query:
             return ""
         try:
+            bridge = self._client.bridge_recall(session_id=session_id, prompt=normalized_query)
+            context = str(bridge.get("context") or "").strip()
+            with self._prefetch_lock:
+                self._last_recall_query = normalized_query
+            if context:
+                return context
+        except Exception as e:
+            logger.debug("Lore bridge recall failed: %s", e)
+
+        try:
             recall_data = self._client.recall(normalized_query, session_id=session_id)
             items = recall_data.get("items", [])
             with self._prefetch_lock:
@@ -355,9 +380,12 @@ class LoreMemoryProvider(MemoryProvider):
     def on_session_end(self, messages: List[Dict[str, Any]]) -> None:
         if self._client and self._session_id:
             try:
-                self._client.clear_session_reads(self._session_id)
+                self._client.bridge_session_end(self._session_id)
             except Exception:
-                pass
+                try:
+                    self._client.clear_session_reads(self._session_id)
+                except Exception:
+                    pass
 
     # -- Shutdown ----------------------------------------------------------
 

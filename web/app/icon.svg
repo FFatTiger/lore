@@ -1,0 +1,10 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" shape-rendering="geometricPrecision">
+  <title id="title">Lore logo</title>
+  <desc id="desc">A white Lore recall-ring mark on a dark background, with an amber memory dot.</desc>
+  <rect width="512" height="512" rx="128" fill="#080D14"/>
+  <g transform="translate(0 4)">
+    <path fill="#FFFFFF" d="M310.3 144.5A124 124 0 1 0 368.4 203.6L339.4 217.1A92 92 0 1 1 296.3 173.3Z"/>
+    <path fill="#FFFFFF" d="M224 160H270V276C270 286 276 292 286 292H356L337 321H250C234 321 224 311 224 294Z"/>
+    <circle cx="336" cy="172" r="18" fill="#D99A16"/>
+  </g>
+</svg>

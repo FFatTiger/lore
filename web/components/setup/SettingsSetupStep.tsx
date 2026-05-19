@@ -10,6 +10,7 @@ import {
   SettingsSectionEditor,
   type FieldSchema,
 } from '@/components/settings/SettingsSectionEditor';
+import { SettingsConnectionTestButton } from '@/components/settings/SettingsConnectionTestButton';
 import { useSettingsFlow } from '@/components/settings/useSettingsFlow';
 import { SetupBackButton, SetupFlowShell } from '@/components/setup/SetupFlowShell';
 import { getSetupAdvanceTarget, isLastSetupStep, setupAdvanceLabel } from '@/components/setup/setupFlowActions';
@@ -35,13 +36,13 @@ function getStepMeta(sectionId: SettingsSetupStepProps['sectionId']) {
     return {
       stepId: 'embedding' as const,
       title: 'Embedding setup',
-      description: 'Configure the vector endpoint Lore uses for embeddings before continuing.',
+      description: 'Configure the vector endpoint Lore uses for embeddings before continuing. Example: http://127.0.0.1:8090/v1',
     };
   }
   return {
     stepId: 'llm' as const,
     title: 'View LLM setup',
-    description: 'Configure the model Lore uses for view refinement and dream workflows.',
+    description: 'Configure the model Lore uses for view refinement and dream workflows. Example: http://127.0.0.1:8090/v1',
   };
 }
 
@@ -192,6 +193,15 @@ export default function SettingsSetupStep({ sectionId }: SettingsSetupStepProps)
 
       {!loading && section && data && (
         <div className={clsx('animate-in stagger-2 overflow-hidden', surfaceCardClassName)}>
+          <div className="flex justify-end border-b border-separator-thin px-4 md:px-6 py-3">
+            <SettingsConnectionTestButton
+              sectionId={sectionId}
+              data={data}
+              draft={draft}
+              disabled={saving || rebuilding}
+              notify={toast}
+            />
+          </div>
           <SettingsSectionEditor
             section={section}
             data={data}

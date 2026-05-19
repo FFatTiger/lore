@@ -83,6 +83,10 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
     'Step': '步骤',
     'Runtime not ready': '运行时未就绪',
     'Rebuild Index': '重建索引',
+    'Test connection': '测试联通',
+    'Testing…': '测试中…',
+    'Embedding connection OK': 'Embedding 联通正常',
+    'View LLM connection OK': 'View LLM 联通正常',
     'Changing the embedding model will invalidate all existing embeddings and trigger a full rebuild. Continue?':
       '修改 Embedding 模型会让现有向量全部失效，并触发一次完整重建。是否继续？',
 
@@ -124,8 +128,12 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
     'Fill every field on this page before continuing.': '请先填完当前页面的必填内容再继续。',
     'Embedding setup': 'Embedding 配置',
     'Configure the vector endpoint Lore uses for embeddings before continuing.': '先配置 Lore 用于向量化的 Embedding 服务，再继续后续步骤。',
+    'Configure the vector endpoint Lore uses for embeddings before continuing. Example: http://127.0.0.1:8090/v1':
+      '先配置 Lore 用于向量化的 Embedding 服务，再继续后续步骤。示例：http://127.0.0.1:8090/v1',
     'View LLM setup': 'View LLM 配置',
     'Configure the model Lore uses for view refinement and dream workflows.': '配置 Lore 用于视图精炼和 dream 流程的模型。',
+    'Configure the model Lore uses for view refinement and dream workflows. Example: http://127.0.0.1:8090/v1':
+      '配置 Lore 用于视图精炼和 dream 流程的模型。示例：http://127.0.0.1:8090/v1',
     'Agent boot memory': 'Agent 启动记忆',
     'Write the fixed workflow-constraints node that Lore always loads at startup.': '填写 Lore 每次启动都会固定加载的工作规则节点。',
     'Use this as the shared AGENTS.md / CLAUDE.md-style working rules: repository instructions, collaboration boundaries, safety checks, coding workflow, and verification expectations that every Lore agent loads at startup.':

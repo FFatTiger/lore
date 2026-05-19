@@ -218,7 +218,7 @@ export const SETTINGS_SCHEMA: SettingDef[] = [
     section: 'embedding',
     label: 'Embedding Base URL',
     type: 'string', default: '',
-    description: 'Embedding 服务基础 URL（当前使用 OpenAI-compatible /embeddings）',
+    description: 'Embedding 服务基础 URL（当前使用 OpenAI-compatible /embeddings；示例：http://127.0.0.1:8090/v1）',
   },
   {
     key: 'embedding.api_key',
@@ -254,7 +254,7 @@ export const SETTINGS_SCHEMA: SettingDef[] = [
     section: 'view_llm',
     label: 'View LLM Base URL',
     type: 'string', default: '',
-    description: '生成视图与 Dream 的 LLM 基础 URL；留空则禁用 LLM 精炼与 Dream 运行',
+    description: '生成视图与 Dream 的 LLM 基础 URL；示例：http://127.0.0.1:8090/v1；留空则禁用 LLM 精炼与 Dream 运行',
   },
   {
     key: 'view_llm.api_key',
@@ -421,8 +421,8 @@ export const SECTIONS: SettingSection[] = [
   { id: 'recall_display', label: '展示阈值', description: '决定哪些候选注入到 prompt' },
   { id: 'recall_safety', label: '召回保护', description: '限制超长查询和慢查询，避免 recall 阻塞主流程' },
   { id: 'views', label: '视图权重', description: 'gist/question 视图的权重与 prior' },
-  { id: 'embedding', label: 'Embedding 服务', description: '向量化模型端点' },
-  { id: 'view_llm', label: 'View LLM', description: '用于视图精炼的 LLM（可留空禁用）' },
+  { id: 'embedding', label: 'Embedding 服务', description: '向量化模型端点（示例：http://127.0.0.1:8090/v1）' },
+  { id: 'view_llm', label: 'View LLM', description: '用于视图精炼的 LLM（示例：http://127.0.0.1:8090/v1；可留空禁用）' },
   { id: 'policy', label: '写入策略', description: '控制 MCP 写入前的自动检查规则' },
   { id: 'dream', label: '做梦计划', description: '自动记忆整理的执行计划（需 View LLM 配置）' },
   { id: 'backup', label: '数据备份', description: '自动备份与恢复数据库' },

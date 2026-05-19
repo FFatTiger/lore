@@ -13,6 +13,7 @@ import {
   type SettingsData,
   type SectionGroup,
 } from '@/components/settings/SettingsSectionEditor';
+import { SettingsConnectionTestButton } from '@/components/settings/SettingsConnectionTestButton';
 import { useSettingsFlow } from '@/components/settings/useSettingsFlow';
 
 interface ToastState {
@@ -65,6 +66,9 @@ export default function SettingsPage(): React.JSX.Element {
   const [toast, setToast] = useState<ToastState | null>(null);
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
   const { confirm: confirmDialog } = useConfirm();
+  const notify = useCallback((text: string, type: 'success' | 'error') => {
+    setToast({ type, text });
+  }, []);
   const {
     data,
     draft,
@@ -81,9 +85,7 @@ export default function SettingsPage(): React.JSX.Element {
   } = useSettingsFlow({
     t,
     confirmDialog,
-    notify: useCallback((text: string, type: 'success' | 'error') => {
-      setToast({ type, text });
-    }, []),
+    notify,
   });
 
   useEffect(() => {
@@ -116,15 +118,35 @@ export default function SettingsPage(): React.JSX.Element {
         </Badge>
       );
     }
-    if (section.id === 'embedding') {
+    if (section.id === 'embedding' && data) {
       return (
-        <Button variant="secondary" onClick={() => void handleRebuild()} disabled={rebuilding || saving}>
-          {rebuilding ? t('Rebuilding…') : t('Rebuild Index')}
-        </Button>
+        <>
+          <SettingsConnectionTestButton
+            sectionId="embedding"
+            data={data}
+            draft={draft}
+            disabled={rebuilding || saving}
+            notify={notify}
+          />
+          <Button variant="secondary" onClick={() => void handleRebuild()} disabled={rebuilding || saving}>
+            {rebuilding ? t('Rebuilding…') : t('Rebuild Index')}
+          </Button>
+        </>
+      );
+    }
+    if (section.id === 'view_llm' && data) {
+      return (
+        <SettingsConnectionTestButton
+          sectionId="view_llm"
+          data={data}
+          draft={draft}
+          disabled={saving}
+          notify={notify}
+        />
       );
     }
     return null;
-  }, [handleRebuild, rebuilding, saving, t, weightSum]);
+  }, [data, draft, handleRebuild, notify, rebuilding, saving, t, weightSum]);
 
   useEffect(() => {
     if (tocItems.length === 0) return;

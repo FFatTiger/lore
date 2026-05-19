@@ -80,7 +80,8 @@ function createEmbeddingModel(config: ResolvedEmbeddingConfig): EmbeddingModel<s
   return buildOpenAiProvider(config).embedding(config.model);
 }
 
-export async function resolveViewLlmConfig(): Promise<ResolvedViewLlmConfig | null> {
+export async function resolveViewLlmConfig(viewLlm?: Partial<ResolvedViewLlmConfig> | null): Promise<ResolvedViewLlmConfig | null> {
+  const override = viewLlm && typeof viewLlm === 'object' ? viewLlm : null;
   const s = await getSettingsBatch([
     'view_llm.provider',
     'view_llm.base_url',
@@ -90,19 +91,19 @@ export async function resolveViewLlmConfig(): Promise<ResolvedViewLlmConfig | nu
     'view_llm.timeout_ms',
     'view_llm.api_version',
   ]);
-  const provider = normalizeLlmProvider(s['view_llm.provider'] ?? 'openai_compatible');
-  const base_url = normalizeBaseUrl(s['view_llm.base_url'] ?? '');
-  const api_key = String(s['view_llm.api_key'] ?? '').trim();
-  const model = String(s['view_llm.model'] ?? '').trim();
+  const provider = normalizeLlmProvider(getExplicitOverride(override, 'provider') ?? s['view_llm.provider'] ?? 'openai_compatible');
+  const base_url = normalizeBaseUrl(getExplicitOverride(override, 'base_url') ?? s['view_llm.base_url'] ?? '');
+  const api_key = String(getExplicitOverride(override, 'api_key') ?? s['view_llm.api_key'] ?? '').trim();
+  const model = String(getExplicitOverride(override, 'model') ?? s['view_llm.model'] ?? '').trim();
   if (!base_url || !api_key || !model) return null;
   return {
     provider,
     base_url,
     api_key,
     model,
-    timeout_ms: Number(s['view_llm.timeout_ms'] ?? 1800000) || 1800000,
-    temperature: Number(s['view_llm.temperature'] ?? 0.2),
-    api_version: String(s['view_llm.api_version'] ?? '').trim(),
+    timeout_ms: Number(getExplicitOverride(override, 'timeout_ms') ?? s['view_llm.timeout_ms'] ?? 1800000) || 1800000,
+    temperature: Number(getExplicitOverride(override, 'temperature') ?? s['view_llm.temperature'] ?? 0.2),
+    api_version: String(getExplicitOverride(override, 'api_version') ?? s['view_llm.api_version'] ?? '').trim(),
   };
 }
 

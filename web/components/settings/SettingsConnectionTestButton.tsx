@@ -43,7 +43,7 @@ export function SettingsConnectionTestButton({
   const { t } = useT();
   const [status, setStatus] = useState<TestStatus>('idle');
   const [errorText, setErrorText] = useState<string | null>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     return () => clearTimeout(timerRef.current);

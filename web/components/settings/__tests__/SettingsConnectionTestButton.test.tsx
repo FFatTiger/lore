@@ -50,7 +50,6 @@ describe('SettingsConnectionTestButton', () => {
         data={settingsData}
         draft={{}}
         disabled={false}
-        notify={() => undefined}
       />,
     );
 

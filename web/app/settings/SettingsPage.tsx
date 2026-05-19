@@ -87,7 +87,6 @@ export default function SettingsPage(): React.JSX.Element {
             data={data}
             draft={draft}
             disabled={rebuilding || saving}
-            notify={notify}
           />
           <Button variant="secondary" onClick={() => void handleRebuild()} disabled={rebuilding || saving}>
             {rebuilding ? t('Rebuilding…') : t('Rebuild Index')}
@@ -102,12 +101,11 @@ export default function SettingsPage(): React.JSX.Element {
           data={data}
           draft={draft}
           disabled={saving}
-          notify={notify}
         />
       );
     }
     return null;
-  }, [data, draft, handleRebuild, notify, rebuilding, saving, t, weightSum]);
+  }, [data, draft, handleRebuild, rebuilding, saving, t, weightSum]);
 
   return (
     <PageCanvas maxWidth="5xl">

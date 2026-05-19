@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { AxiosError } from 'axios';
+import clsx from 'clsx';
 import { Button } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useT } from '@/lib/i18n';
@@ -9,14 +10,11 @@ import type { SettingsData } from './SettingsSectionEditor';
 
 export type SettingsConnectionSectionId = 'embedding' | 'view_llm';
 
-type NotifyFn = (message: string, type: 'success' | 'error') => void;
-
 interface SettingsConnectionTestButtonProps {
   sectionId: SettingsConnectionSectionId;
   data: SettingsData;
   draft: Record<string, unknown>;
   disabled?: boolean;
-  notify: NotifyFn;
 }
 
 export function buildSettingsConnectionTestPatch(
@@ -34,40 +32,72 @@ export function buildSettingsConnectionTestPatch(
   return patch;
 }
 
-function successMessage(sectionId: SettingsConnectionSectionId, detail: unknown, t: (key: string) => string): string {
-  const prefix = sectionId === 'embedding' ? t('Embedding connection OK') : t('View LLM connection OK');
-  return detail ? `${prefix} · ${detail}` : prefix;
-}
+type TestStatus = 'idle' | 'testing' | 'ok' | 'fail';
 
 export function SettingsConnectionTestButton({
   sectionId,
   data,
   draft,
   disabled = false,
-  notify,
 }: SettingsConnectionTestButtonProps): React.JSX.Element {
   const { t } = useT();
-  const [testing, setTesting] = useState(false);
+  const [status, setStatus] = useState<TestStatus>('idle');
+  const [errorText, setErrorText] = useState<string | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    return () => clearTimeout(timerRef.current);
+  }, []);
 
   const handleTest = useCallback(async () => {
-    setTesting(true);
+    clearTimeout(timerRef.current);
+    setStatus('testing');
+    setErrorText(null);
     try {
       const response = await api.post('/settings/test', {
         section: sectionId,
         patch: buildSettingsConnectionTestPatch(sectionId, data, draft),
       });
-      notify(successMessage(sectionId, (response.data as { detail?: unknown })?.detail, t), 'success');
+      const detail = (response.data as { detail?: unknown })?.detail;
+      setErrorText(typeof detail === 'string' ? detail : null);
+      setStatus('ok');
+      timerRef.current = setTimeout(() => {
+        setStatus('idle');
+        setErrorText(null);
+      }, 3000);
     } catch (error) {
       const axiosError = error as AxiosError<{ detail?: string }>;
-      notify(axiosError.response?.data?.detail || axiosError.message, 'error');
-    } finally {
-      setTesting(false);
+      setErrorText(axiosError.response?.data?.detail || axiosError.message);
+      setStatus('fail');
+      timerRef.current = setTimeout(() => {
+        setStatus('idle');
+        setErrorText(null);
+      }, 6000);
     }
-  }, [data, draft, notify, sectionId, t]);
+  }, [data, draft, sectionId, t]);
+
+  const label = status === 'testing' ? t('Testing…')
+    : status === 'ok' ? (sectionId === 'embedding' ? t('Embedding OK') : t('View LLM OK'))
+    : status === 'fail' ? t('Connection failed')
+    : t('Test connection');
 
   return (
-    <Button variant="secondary" onClick={() => void handleTest()} disabled={disabled || testing}>
-      {testing ? t('Testing…') : t('Test connection')}
-    </Button>
+    <span className="inline-flex items-center gap-2">
+      <Button
+        variant="secondary"
+        onClick={() => void handleTest()}
+        disabled={disabled || status === 'testing'}
+        className={clsx(
+          status === 'ok' && '!border-green-500 !text-green-600',
+          status === 'fail' && '!border-red-500 !text-red-500',
+        )}
+      >
+        {status === 'ok' ? '✅ ' : status === 'fail' ? '❌ ' : ''}
+        {label}
+      </Button>
+      {status === 'fail' && errorText && (
+        <span className="text-xs text-red-500 max-w-[200px] truncate">{errorText}</span>
+      )}
+    </span>
   );
 }

@@ -199,7 +199,6 @@ export default function SettingsSetupStep({ sectionId }: SettingsSetupStepProps)
               data={data}
               draft={draft}
               disabled={saving || rebuilding}
-              notify={toast}
             />
           </div>
           <SettingsSectionEditor

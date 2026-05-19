@@ -38,18 +38,9 @@ describe('createLanguageModel', () => {
     capturedAnthropicOptions.current = undefined;
   });
 
-  it('keeps Anthropic-compatible JSON responses readable when no thinking signature patch is needed', async () => {
-    const body = JSON.stringify({ id: 'msg-1', content: [{ type: 'text', text: 'hello' }] });
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(body, {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    }));
-
+  it('does not wrap Anthropic fetch for DeepSeek-compatible models', () => {
     createLanguageModel(deepseekAnthropicConfig);
-    const patchedFetch = capturedAnthropicOptions.current?.fetch;
 
-    const response = await patchedFetch?.('http://example.test/v1/messages', {});
-
-    await expect(response?.text()).resolves.toBe(body);
+    expect(capturedAnthropicOptions.current?.fetch).toBe(globalThis.fetch);
   });
 });

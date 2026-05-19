@@ -54,67 +54,14 @@ function buildOpenAiProvider(config: { base_url: string; api_key: string }): Ret
   });
 }
 
-function needsUnsignedThinkingPatch(config: ResolvedViewLlmConfig): boolean {
-  const model = String(config.model || '').toLowerCase();
-  return model.includes('deepseek') || model.includes('zai') || model.includes('z.ai') || model.includes('glm-');
-}
-
 function buildAnthropicProvider(config: ResolvedViewLlmConfig): ReturnType<typeof createAnthropic> {
-  const fetch = config.provider === 'anthropic' && needsUnsignedThinkingPatch(config)
-    ? createAnthropicFetchPatch(config)
-    : globalThis.fetch;
-
   return createAnthropic({
     baseURL: config.base_url,
     apiKey: config.api_key,
     headers: config.api_version ? { 'anthropic-version': config.api_version } : undefined,
     name: 'lore-anthropic',
-    fetch,
+    fetch: globalThis.fetch,
   });
-}
-
-function createAnthropicFetchPatch(config: ResolvedViewLlmConfig): typeof globalThis.fetch {
-  const basePath = normalizeBaseUrl(config.base_url);
-  return async (input, init) => {
-    const response = await globalThis.fetch(input, init);
-    if (!response.ok || !isMessagesUrl(input, basePath)) return response;
-
-    const contentType = response.headers.get('content-type') || '';
-    if (!contentType.includes('application/json')) return response;
-
-    const text = await response.text();
-    const rebuildResponse = (body: string): Response => new Response(body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers,
-    });
-
-    let data: unknown;
-    try { data = JSON.parse(text); } catch { return rebuildResponse(text); }
-
-    if (data == null || typeof data !== 'object') return rebuildResponse(text);
-    const obj = data as Record<string, unknown>;
-    if (!Array.isArray(obj.content)) return rebuildResponse(text);
-
-    let modified = false;
-    for (const block of obj.content) {
-      if (block != null && typeof block === 'object' && (block as Record<string, unknown>).type === 'thinking' && (block as Record<string, unknown>).signature === undefined) {
-        (block as Record<string, unknown>).signature = '';
-        modified = true;
-      }
-    }
-    return rebuildResponse(modified ? JSON.stringify(obj) : text);
-  };
-}
-
-function isMessagesUrl(input: RequestInfo | URL, basePath: string): boolean {
-  if (typeof input === 'string') return input.includes('/messages');
-  if (input instanceof URL) return input.href.includes('/messages') || input.pathname.includes('/messages');
-  if (input instanceof Request) {
-    const url = input.url;
-    return url.includes('/messages') || url.includes(basePath + '/messages');
-  }
-  return false;
 }
 
 export function createLanguageModel(config: ResolvedViewLlmConfig): LanguageModel {

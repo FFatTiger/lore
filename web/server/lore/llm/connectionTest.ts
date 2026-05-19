@@ -20,6 +20,7 @@ type SettingsConnectionPatch = Record<string, unknown>;
 
 const CONNECTION_TEST_INPUT = 'Lore connection test';
 const CONNECTION_TEST_TIMEOUT_MS = 15_000;
+const VIEW_LLM_CONNECTION_TEST_MAX_OUTPUT_TOKENS = 256;
 
 function statusError(message: string, status: number): Error & { status: number } {
   return Object.assign(new Error(message), { status });
@@ -104,7 +105,7 @@ async function testViewLlmConnection(patch: SettingsConnectionPatch): Promise<Se
       model: createLanguageModel(config),
       prompt: 'Reply with OK only.',
       temperature: 0,
-      maxOutputTokens: 8,
+      maxOutputTokens: VIEW_LLM_CONNECTION_TEST_MAX_OUTPUT_TOKENS,
       maxRetries: 0,
       abortSignal: AbortSignal.timeout(Math.min(Math.max(1000, config.timeout_ms || CONNECTION_TEST_TIMEOUT_MS), 30_000)),
     });

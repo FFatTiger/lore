@@ -1,11 +1,19 @@
-Glossary terms are search hints. Add names, acronyms, product terms, and phrases the user will repeat.
+Glossary terms help recall find a memory when the prompt uses aliases or shorthand.
 
-Example:
+Good glossary terms include:
 
 ```text
-URI: project://my_app/auth
-Glossary: JWT, refresh token, session security, login
-Disclosure: When working on authentication or session behavior for MyApp.
+LoreHub, Cloudflare Pages, deploy hook, docs website, MDX docs
 ```
 
-Glossary terms help Lore catch exact product language and aliases that embeddings may miss.
+Use glossary for names people actually type:
+
+| Add | Avoid |
+| --- | --- |
+| project names | generic filler words |
+| feature names | every word from the content |
+| acronyms | obvious stop words |
+| user nicknames for tools | unrelated synonyms |
+| error names or symptoms | huge pasted logs |
+
+Glossary is especially useful for projects with multiple names, Chinese/English aliases, or tool-specific terms such as `CLAUDE.md`, `AGENTS.md`, `Codex`, and `OpenClaw`.

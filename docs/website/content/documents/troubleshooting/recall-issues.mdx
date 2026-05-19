@@ -1,8 +1,11 @@
-| Problem | What to check |
-|---|---|
-| A memory is missing | glossary terms, disclosure trigger, path name, recall threshold |
-| Too many memories appear | broad glossary terms, broad disclosure, high priority |
-| Recall is slow | model endpoint latency, timeout setting, query size |
-| Recall result is hard to understand | open Recall Drilldown and inspect the query detail |
+Recall problems can come from config, content, or expectations.
 
-Most recall problems improve by tightening memory shape: one topic, clear trigger, useful glossary terms.
+| Symptom | Likely cause | First action |
+| --- | --- | --- |
+| no candidates | embeddings or views not configured, memory lacks disclosure/glossary | verify setup, then improve the memory |
+| wrong candidates | broad memories or inflated priority | split broad notes and lower priority |
+| Chinese recall is poor | PostgreSQL fell back to `simple` tokenizer | install `pg_jieba` or `zhparser` |
+| recall is slow | too many broad generated views, slow model/db, low timeout | inspect recall analysis and tune limits |
+| agent ignores recall | hook not running or agent did not open nodes | verify runtime hooks and usage tracking |
+
+Use the Recall page to compare the prompt, candidate list, scores, and whether nodes were opened.

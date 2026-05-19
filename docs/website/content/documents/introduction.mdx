@@ -1,9 +1,21 @@
-Lore gives AI agents a shared long-term memory. It keeps stable facts, preferences, project decisions, and operating rules available across sessions and across tools.
+Lore gives AI agents one shared long-term memory system.
 
-Use Lore when you want an agent to remember context that should survive today’s chat.
+Use the concept pages after installation to understand what Lore stores, how agents receive memory, and how to decide whether a note belongs in durable memory.
 
-Open one topic at a time:
+## The short version
 
-- [What Lore is for](/documents/introduction/what-lore-is-for)
-- [How Lore works](/documents/introduction/how-lore-works)
-- [When to use it](/documents/introduction/when-to-use-it)
+- **Boot memory** provides stable startup context such as shared agent rules, user preferences, and runtime-specific constraints.
+- **Recall** provides task-specific candidate memories for the current prompt.
+- **Agents should open recalled nodes** before treating them as facts.
+- **Durable changes should be written back into Lore**, not copied into every local agent file.
+- **Dream** helps review and improve memory quality, but important changes still need human review.
+
+## What to read next
+
+Start with the three concept pages if you are new to Lore:
+
+1. [What Lore is for](/documents/introduction/what-lore-is-for)
+2. [How Lore works](/documents/introduction/how-lore-works)
+3. [When to use it](/documents/introduction/when-to-use-it)
+
+Then read the memory model pages when you are ready to write better memories: paths, disclosure triggers, priority, and glossary terms.

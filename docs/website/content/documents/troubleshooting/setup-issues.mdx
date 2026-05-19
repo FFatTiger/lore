@@ -1,8 +1,17 @@
-| Problem | What to check |
-|---|---|
-| Web console does not open | server address, container status, port, reverse proxy |
-| Setup stays incomplete | embedding endpoint, View LLM endpoint, boot memory save status |
-| Health check fails | database connection, server logs, environment values |
-| Login or API calls fail | API token, bearer header, browser cookie |
+Common setup issues usually fall into one boundary.
 
-After changing server settings, restart the server or runtime that consumes those settings.
+| Symptom | Check |
+| --- | --- |
+| server does not start | Docker logs, `DATABASE_URL`, PostgreSQL health, Redis URL |
+| migration fails | database user permissions, `vector` extension availability, `pg_jieba` preload if used |
+| `/api/health` fails | Web container logs and network port mapping |
+| browser/API auth fails | `API_TOKEN`, bearer header, browser session, reverse proxy headers |
+| setup cannot save model config | provider base URL, API key, model name, timeout |
+
+For Docker installs, inspect logs from the directory containing `docker-compose.yml`:
+
+```bash
+docker compose ps
+docker compose logs web
+docker compose logs postgres
+```

@@ -1,17 +1,17 @@
-In supported runtimes, Lore can add a compact recall block to the agent context.
-
-Example:
+A recall block is a list of memory leads.
 
 ```text
-<recall session_id="..." query_id="...">
-0.82 | project://my_app/auth | jwt · refresh token
+<recall session_id="sess-1" query_id="q1">
 0.74 | preferences://user | concise replies · timezone
+0.68 | project://my_app/deployment | cloudflare pages · build command
 </recall>
 ```
 
-Treat the block as pointers. The useful workflow is:
+The score is a relevance signal, not a command. Before you rely on a memory, open it with `lore_get_node` and pass the `session_id` and `query_id` from the recall block when the tool asks for them. That lets Lore record whether recalled memories were actually used.
 
-1. Read the recalled paths.
-2. Open the memories that look relevant.
-3. Use the full memory content in the answer.
-4. Write back durable decisions after the task changes something worth remembering.
+Good agent behavior:
+
+- open the most relevant memory before acting;
+- skip weak candidates instead of forcing them into the answer;
+- search manually if the recall block misses obvious context;
+- write or update memory after the task if a durable fact changed.

@@ -1,4 +1,4 @@
-One-command install:
+The fastest path is the installer script. It downloads the current release assets, starts Docker Compose unless you point it at an existing server, writes `~/.lore/config.json`, and configures selected agent channels.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash
@@ -10,11 +10,30 @@ Chinese installer output:
 curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.zh.sh | bash
 ```
 
-Common install choices:
+Common options are implemented by `scripts/install.sh`:
 
-| Choice | Use when |
-|---|---|
-| default install | you want Lore server and supported integrations configured together |
-| selected channels | you only use specific runtimes such as Codex or Claude Code |
-| existing server URL | you already run Lore and only need to connect clients |
-| API token | your server requires protected access |
+| Option | Use when |
+| --- | --- |
+| `--channels claudecode,codex` | install only selected integrations instead of all supported channels |
+| `--base-url http://host:18901` | connect clients to an existing Lore server; this skips Docker startup |
+| `--api-token TOKEN` | configure clients for a server protected by `API_TOKEN` |
+| `--skip-docker` | install client integrations without running Docker Compose |
+| `--pre` | use the `pre-latest` release channel |
+| `--dev` | use the `dev-latest` release channel |
+| `--force` | reinstall even if the installed version is already current |
+
+Examples:
+
+```bash
+# Install only Codex and Claude Code integrations
+curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --channels codex,claudecode
+
+# Connect this machine's agents to a Lore server already running elsewhere
+curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --base-url http://192.168.1.100:18901 --api-token YOUR_TOKEN
+```
+
+Default Docker install uses `docker-compose.yml` from the repository. It starts PostgreSQL, Redis, and the Lore Web server. The default Web port is `18901`; after install, open `http://127.0.0.1:18901/setup`.
+
+After installing integrations, restart the agent runtimes. Codex users should also open `/hooks` and trust Lore hooks if prompted. If `/plugins` still lists Lore as installable, install it manually there; the installer already configures MCP and hooks.
+
+If you do not use the script, follow [Manual configuration](/documents/installation/manual-configuration). That page lists the exact server `.env`, `~/.lore/config.json`, and per-agent config shapes.

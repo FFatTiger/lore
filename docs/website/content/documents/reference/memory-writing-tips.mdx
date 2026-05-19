@@ -1,16 +1,26 @@
-Good memory shape:
+Use this checklist when writing or reviewing memory.
+
+## Good memory shape
 
 ```text
-Title/path: project://my_app/auth
+URI: project://my_app/auth
 Disclosure: When working on authentication, login, refresh tokens, or session security for MyApp.
 Glossary: MyApp auth, JWT, refresh token, login
-Content: The project uses JWT access tokens with refresh-token rotation. Token refresh bugs should be evaluated against replay protection and server-side revocation state.
+Priority: 1
+Content: MyApp uses JWT access tokens with refresh-token rotation. Token refresh bugs should be evaluated against replay protection and server-side revocation state.
 ```
 
-Checklist:
+## Review checklist
 
 1. One memory, one topic.
 2. Path names the topic directly.
 3. Disclosure names the future situation.
-4. Glossary uses words the user will actually type.
+4. Glossary uses words the user or agent will actually type.
 5. Priority reflects real importance.
+6. Content is current and verified.
+7. The memory is not duplicated in local agent files.
+8. The memory can be opened and understood without reading unrelated nodes.
+
+## Split when needed
+
+Split a memory when it contains multiple independent triggers. For example, deployment commands, database migration rules, and design preferences should usually be separate nodes because they are recalled in different situations.

@@ -1,7 +1,25 @@
-Use troubleshooting by symptom. Check the simplest visible thing first: Web console, Settings, Recall, then the connected agent runtime.
+Troubleshooting starts by finding the failing boundary.
 
-Open one topic at a time:
+Do not tune recall thresholds first. Most problems are caused by setup, auth, stale hooks, incomplete model settings, or weak memory shape.
 
-- [Setup issues](/documents/troubleshooting/setup-issues)
-- [Recall issues](/documents/troubleshooting/recall-issues)
-- [Agent issues](/documents/troubleshooting/agent-issues)
+## Check in this order
+
+1. **Server health** — `/api/health` responds and the Web Console loads.
+2. **Database and migrations** — `DATABASE_URL` is correct; PostgreSQL has `vector`; Chinese recall has `pg_jieba` or `zhparser` when needed.
+3. **Setup** — `/setup` reports complete embedding, View LLM, and boot memory setup.
+4. **Auth** — protected servers receive `Authorization: Bearer <API_TOKEN>` from REST and MCP clients.
+5. **Agent connection** — MCP URL includes the right `client_type`; plugin files and hooks are installed.
+6. **Runtime reload** — the agent was restarted after config, hook, or plugin changes.
+7. **Memory quality** — path, disclosure, glossary, and priority describe the future prompt clearly.
+8. **Recall settings** — only tune thresholds after the above checks pass.
+
+## Use the focused pages
+
+| Symptom | Page |
+| --- | --- |
+| server or setup is broken | [Setup issues](/documents/troubleshooting/setup-issues) |
+| memory exists but does not appear | [Recall issues](/documents/troubleshooting/recall-issues) |
+| agent does not receive boot or recall | [Agent issues](/documents/troubleshooting/agent-issues) |
+| unsure how Lore should be used | [Common questions](/documents/reference/common-questions) |
+
+Keep troubleshooting evidence concrete: URL, `client_type`, token state, page name, query text, recalled URI, and whether the agent opened the memory node.

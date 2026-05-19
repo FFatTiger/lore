@@ -1,18 +1,25 @@
-Lore has a simple loop:
+Lore has a small operating loop.
 
-1. Start a session and load the fixed boot memories.
-2. Ask a question or assign a task.
-3. Lore recalls related memory candidates.
-4. The agent opens the useful memories and uses the full content.
-5. Durable new decisions get written back into Lore.
+1. At startup, the agent receives boot context from fixed memory paths.
+2. For each task, recall searches for relevant memory candidates.
+3. The agent opens the useful memory nodes before relying on them.
+4. After the task, durable changes are written back with path, priority, disclosure, and glossary terms.
+5. Dream and maintenance workflows later review stale, duplicate, or low-quality memory.
 
-The key idea is addressable memory. Every memory has a path such as:
+The boot baseline is deterministic. Integrations load global nodes such as:
 
 ```text
+core://agent
+core://soul
 preferences://user
-core://agent/codex
-project://lore_integration
-project://my_app/release_process
 ```
 
-Those paths make memory easy to browse, link, move, and reuse.
+They also load channel-specific nodes such as:
+
+```text
+core://agent/codex
+core://agent/claudecode
+core://agent/openclaw
+```
+
+Recall is not deterministic startup context. It is a search result for the current prompt. Treat a recall line as a lead, not as proof. Open the node and read the current content before acting on it.

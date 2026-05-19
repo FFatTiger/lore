@@ -1,11 +1,13 @@
-Recall settings affect what the agent sees.
+Recall settings change how many candidates agents see and how strict display should be.
 
-| Setting | Practical effect |
-|---|---|
-| display threshold | how strong a memory must be before it appears |
-| max display items | how many memories can be injected into context |
-| exact/glossary/dense weights | which match signals matter most |
-| query length limit | protects agent workflows from oversized prompts |
-| timeout | returns a notice when recall takes too long |
+Tune settings after memory content is reasonably clean.
 
-Keep display count small at first. Three focused memories usually beat a long noisy list.
+| Setting type | Effect |
+| --- | --- |
+| display threshold | hides candidates below the chosen score |
+| max display items | limits how many candidates appear in prompt context |
+| query timeout | protects the agent prompt flow from slow retrieval |
+| match weights | changes how much text, glossary, semantic, and priority signals matter |
+| exclude boot nodes | keeps fixed startup context from repeating in prompt recall |
+
+Start conservative: show a small number of candidates and improve memory shape when important context is missing. Raising item counts can make agents overfit weak memories.

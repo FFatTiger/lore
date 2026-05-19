@@ -1,11 +1,25 @@
-Recommended baseline:
+Dream and backup settings should be configured together.
 
-| Area | Recommendation |
-|---|---|
-| Dream auto approve | keep review required while tuning memories |
-| Dream schedule | use manual runs first, then enable schedule |
-| Backup | enable before using Dream heavily |
-| Retention | keep enough history for rollback and audits |
-| Policy warnings | keep disclosure and priority checks visible |
+Dream can improve memory quality, but backup is what makes maintenance reversible. Configure backup before scheduling broad maintenance.
 
-Backups matter because memory becomes operational infrastructure. Treat it like project state.
+## Recommended order
+
+1. Choose a backup location that survives container rebuilds.
+2. Run a manual backup.
+3. Verify restore in a test environment when changing backup settings.
+4. Keep Dream review conservative until recall quality is stable.
+5. Run Dream manually before enabling scheduled runs.
+6. Review Dream suggestions before approving memory changes.
+
+## Settings to review
+
+| Area | What to decide |
+| --- | --- |
+| `dream.enabled` | whether scheduled Dream is allowed |
+| `dream.cron` | when scheduled Dream runs |
+| `dream.auto_approve_changes` | keep false unless you trust the workflow and have verified backups |
+| `backup.enabled` | whether scheduled backup is allowed |
+| `backup.retention_count` | how many backups to keep |
+| `backup.webdav.*` | whether off-host backup is required |
+
+Do not schedule broad automated maintenance until you have a restore path you trust.

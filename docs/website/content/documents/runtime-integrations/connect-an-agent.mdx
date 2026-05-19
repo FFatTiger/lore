@@ -4,10 +4,23 @@ The installer can configure selected channels:
 curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --channels codex,claudecode
 ```
 
-For an existing Lore server, pass its URL and token:
+Use `--base-url` when the server is already running:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --base-url http://127.0.0.1:18901 --api-token YOUR_TOKEN
 ```
 
-After connecting, restart the runtime so hooks, plugins, or MCP config are reloaded.
+The important values are:
+
+| Value | Meaning |
+| --- | --- |
+| `base_url` / `baseUrl` / `LORE_BASE_URL` | Lore server origin, without a trailing slash |
+| `api_token` / `apiToken` / `LORE_API_TOKEN` | bearer token when the server uses `API_TOKEN` |
+| `client_type` | runtime identity sent to Lore: `codex`, `claudecode`, `pi`, `openclaw`, or `hermes` |
+| startup hook | loads boot memory for the current runtime |
+| prompt hook | fetches recall candidates for the current user prompt |
+| MCP tools | read, search, create, update, move, and delete Lore memory nodes |
+
+Restart the agent after changing plugin files, MCP config, hooks, or token values. Codex users should open `/hooks` and trust Lore hooks if prompted.
+
+After connection is verified, move duplicated durable instructions out of local agent docs and into Lore. Keep only bootstrap guidance locally.

@@ -1,7 +1,9 @@
 | Question | Answer |
-|---|---|
-| What should go into Lore? | Stable context that should help future sessions. |
-| How long should a memory be? | Long enough to be useful, short enough to stay focused on one topic. |
-| Should every chat result become memory? | Write the decisions, rules, and facts that will matter again. |
-| What makes recall good? | specific paths, concrete disclosure, useful glossary terms, focused content. |
-| When should I run Dream? | after active project changes, after noisy recall, or on a regular maintenance schedule. |
+| --- | --- |
+| Is Lore a vector database? | No. Lore uses PostgreSQL, pgvector, full-text search, generated views, and explicit memory metadata to manage agent memory. |
+| Do I need Docker? | No. Docker is the easiest path, but you can run the server against your own PostgreSQL and configure clients manually. |
+| Do I need `pg_jieba`? | It is recommended for Chinese recall. Lore can fall back to `zhparser` or `simple`, but quality may drop. |
+| Should every chat result become memory? | No. Store durable facts, preferences, rules, decisions, and workflows that should matter again. |
+| Should `CLAUDE.md` and `AGENTS.md` keep all rules? | No. Keep bootstrap guidance locally and move shared durable rules into Lore. |
+| Can several agents share memory? | Yes. That is the main point: one Lore server can serve Codex, Claude Code, Pi, OpenClaw, Hermes, and MCP clients. |
+| What if recall is noisy? | Improve memory shape first: split broad notes, clarify disclosure, tune glossary, and lower inflated priority. |

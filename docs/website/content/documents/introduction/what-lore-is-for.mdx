@@ -1,11 +1,22 @@
-Lore is useful for durable context:
+Lore is for information that should survive one chat, one terminal session, or one agent runtime.
 
-| You want to keep | Example |
-|---|---|
-| User preferences | preferred name, timezone, working style, language choice |
-| Project facts | repository paths, deployment URLs, architecture decisions |
-| Operating rules | how to run tests, how to release, what must be checked first |
-| Investigation results | root causes, decisions, follow-up constraints |
-| Product knowledge | feature behavior, known tradeoffs, glossary terms |
+Good candidates:
 
-A good memory answers a future question before the agent asks it again.
+| Keep in Lore | Reason |
+| --- | --- |
+| user preferences | they should shape future answers across tools |
+| project decisions | they affect future coding and review work |
+| commands and workflows | agents need the same operational facts repeatedly |
+| deployment constraints | mistakes are expensive and context is easy to lose |
+| agent operating rules | they should apply consistently at startup |
+
+Poor candidates:
+
+| Do not store | Why |
+| --- | --- |
+| temporary scratch notes | they create recall noise |
+| guesses not yet verified | they become false durable context |
+| huge pasted logs | summarize the conclusion instead |
+| duplicated local agent rules | store shared rules once in Lore |
+
+Lore is most valuable when several agents share the same memory graph. A rule learned in Claude Code can later help Codex, OpenClaw, Pi, or Hermes if it is stored in the right path.

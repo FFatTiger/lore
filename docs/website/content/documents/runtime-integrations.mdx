@@ -1,7 +1,10 @@
-Lore can connect multiple agent runtimes to the same memory graph.
+Connect agents after the server is healthy and `/setup` is complete.
 
-Open one topic at a time:
+Supported installer channels are `claudecode`, `codex`, `pi`, `openclaw`, and `hermes`. You can install all channels, select a subset, skip Docker, or point local agents at a Lore server running elsewhere.
 
-- [Choose runtimes](/documents/runtime-integrations/choose-runtimes)
-- [Connect an agent](/documents/runtime-integrations/connect-an-agent)
-- [What agents receive](/documents/runtime-integrations/what-agents-receive)
+Agent integration has two different jobs:
+
+1. **Connection** — MCP URL, `client_type`, bearer token, plugin files, and hooks.
+2. **Memory ownership** — shared durable rules live in Lore, while local `CLAUDE.md` and `AGENTS.md` files stay small.
+
+This section covers connection behavior. After the connection works, use [Move local agent docs into Lore](/documents/installation/move-agent-instructions-to-lore) to remove duplicated long-term instructions from local agent files.

@@ -1,7 +1,11 @@
-1. Create `project://project_name`.
-2. Add one overview memory.
-3. Add setup/run/test commands.
-4. Add deployment or release process.
-5. Add known constraints and user preferences for the project.
-6. Add glossary terms for project-specific names.
-7. Run a recall query using a realistic task prompt.
+Create project memory before the agent needs it.
+
+Recommended starting set:
+
+1. `project://project_name/overview` — what the project is and where it lives.
+2. `project://project_name/commands` — install, dev, test, build, and deploy commands.
+3. `project://project_name/constraints` — architecture rules, forbidden changes, product constraints.
+4. `project://project_name/deployment` — hosting, env vars, release process, rollback notes.
+5. `project://project_name/glossary` or glossary terms on each memory — product names, aliases, acronyms.
+
+After writing the first memories, run a realistic task prompt through recall. If the project overview does not appear, improve its disclosure and glossary.

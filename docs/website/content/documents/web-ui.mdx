@@ -1,7 +1,19 @@
-The Lore Web console is the control panel for memory, recall, Dream, setup, and settings.
+The Web Console is the human review surface for Lore.
 
-Open one topic at a time:
+Use it when you need to see or change memory deliberately instead of relying on an agent session. The console is where you inspect memory paths, test recall, configure model providers, review Dream suggestions, manage backups, and troubleshoot agent connections.
 
-- [Main pages](/documents/web-ui/main-pages)
-- [Recommended routine](/documents/web-ui/recommended-routine)
-- [What to check first](/documents/web-ui/what-to-check-first)
+## What belongs in the Web Console
+
+| Task | Use the console when |
+| --- | --- |
+| Memory review | you want to browse paths, check content, and edit a node intentionally |
+| Recall testing | a memory exists but did not appear in an agent prompt |
+| Setup and settings | embedding, View LLM, recall thresholds, cache, Dream, or backup need adjustment |
+| Dream review | automated maintenance suggested a memory change and needs human review |
+| Backup | you are about to run cleanup, migration, Dream, or broad edits |
+
+The console is not a replacement for agent recall. Agents still use boot memory and per-prompt recall during work. The console is the place to verify and correct the memory system when behavior is unclear.
+
+## Daily rule
+
+If an agent gives an answer that looks like it used stale context, do not immediately copy rules back into local `AGENTS.md` or `CLAUDE.md`. Check the memory, disclosure trigger, glossary terms, and recall evidence first.

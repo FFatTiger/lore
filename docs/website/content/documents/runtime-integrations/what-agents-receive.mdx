@@ -1,10 +1,17 @@
-Connected agents can receive:
+Connected agents receive three kinds of context.
 
-| Context | Purpose |
-|---|---|
-| Boot memory | stable rules, user preferences, and runtime guidance |
-| Recall candidates | task-relevant memory pointers |
-| MCP tools | browse, search, create, update, move, and delete memories |
-| Usage tracking | whether a recalled memory was opened and used |
+| Context | Source | Purpose |
+| --- | --- | --- |
+| Boot memory | `/api/bridge/startup` or `lore_boot` | stable baseline: shared agent rules, user preferences, and channel-specific rules |
+| Recall candidates | `/api/bridge/recall` | prompt-specific memory leads with session/query identifiers |
+| MCP tools | `/api/mcp?client_type=...` | browse, search, create, update, move, delete, and mark usage |
 
-A healthy agent workflow is: recall candidates, open relevant memories, do the task, then write durable changes back.
+Boot memory is not a replacement for recall. It is the deterministic startup baseline. Recall is task-specific and should be read as candidate leads.
+
+A healthy workflow is:
+
+1. Start the runtime and load boot context.
+2. Receive a `<recall>` block for the current prompt.
+3. Open the relevant memory node with `lore_get_node` before relying on it.
+4. Do the work.
+5. Write durable changes back to Lore when they should affect future sessions.

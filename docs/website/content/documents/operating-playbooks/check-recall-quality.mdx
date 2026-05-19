@@ -1,7 +1,18 @@
-1. Open Recall.
-2. Run a query similar to a real user prompt.
-3. Check which memories appear.
-4. Open Recall Drilldown for details.
-5. Add glossary terms for missed names.
-6. Narrow broad disclosures for noisy memories.
-7. Repeat with another realistic query.
+Check recall with real prompts, not keyword tests only.
+
+Use prompts like:
+
+```text
+Fix the Cloudflare Pages deploy hook for LoreHub docs.
+```
+
+Then inspect:
+
+| Question | Good sign |
+| --- | --- |
+| Did the right memory appear? | relevant project or preference node is listed |
+| Did the agent open it? | usage tracking shows the node was read |
+| Did the memory help the answer? | the response uses actual node content, not just the title |
+| Was there noise? | weak candidates are few and easy to ignore |
+
+If recall misses the memory, improve the memory before changing thresholds. Add glossary terms, rewrite disclosure, split broad notes, or move the memory to a clearer path.

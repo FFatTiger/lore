@@ -1,18 +1,31 @@
-1. Choose the right domain.
-2. Pick a short path.
-3. Write one clear concept.
-4. Add a disclosure trigger.
-5. Choose priority.
-6. Add glossary terms.
-7. Save the memory.
-8. Run a recall query to confirm it appears in the right situations.
+Write one durable memory for one future use case.
 
-Example:
+A useful memory is easy to find, easy to trust, and narrow enough that it does not pollute unrelated prompts.
+
+## Example
 
 ```text
-URI: project://my_app/release_process
+URI: project://my_app/auth
 Priority: 1
-Disclosure: When preparing a release or deployment for MyApp.
-Glossary: release, deploy, changelog, version
-Content: MyApp releases require typecheck, build, changelog update, Docker image push, and production health check.
+Disclosure: When working on authentication, login, refresh tokens, or session security for MyApp.
+Glossary: MyApp auth, JWT, refresh token, login
+Content: MyApp uses JWT access tokens with refresh-token rotation. Token refresh bugs must be checked against replay protection and server-side revocation state.
 ```
+
+## Checklist
+
+1. Choose the right domain: `core://`, `preferences://`, or `project://`.
+2. Keep the path short and specific.
+3. Write content as a fact, rule, decision, or workflow that should survive the session.
+4. Add a disclosure trigger that names the future task.
+5. Add glossary terms for aliases and likely prompt words.
+6. Set priority based on real importance.
+7. Run a recall query that should find the memory.
+
+## Avoid
+
+- saving secrets, tokens, credentials, or private keys;
+- combining unrelated project facts into one broad memory;
+- copying the same rule into local `AGENTS.md`, `CLAUDE.md`, and Lore;
+- using priority `0` or `1` for everything;
+- writing disclosure as a vague label instead of a future trigger.

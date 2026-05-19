@@ -1,7 +1,12 @@
-Install Lore first, then connect the agent runtimes you use.
+Start here when you are installing Lore for the first time.
 
-Open one topic at a time:
+Lore is an open-source memory server plus optional integrations for agent runtimes. The default installer starts the server with Docker Compose, creates a managed PostgreSQL database, and configures supported agent channels. If you already operate PostgreSQL or run Lore on another host, use the external server and manual configuration paths instead.
 
-- [Install Lore](/documents/installation/install-lore)
-- [First-run setup](/documents/installation/first-run-setup)
-- [Verify the install](/documents/installation/verify-the-install)
+Use this order:
+
+1. Run the quick installer, or prepare your own PostgreSQL instance and server `.env`.
+2. Open `/setup` and configure embedding, View LLM, and boot memory.
+3. Connect agent runtimes with the right `client_type` and token.
+4. Verify recall before moving durable instructions out of local agent files.
+
+The installer writes local state under `~/.lore` by default. Set `LORE_HOME` before running it if you want a different location.

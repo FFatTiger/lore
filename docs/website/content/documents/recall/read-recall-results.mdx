@@ -1,12 +1,14 @@
-The score tells you how strongly Lore thinks a memory matches the task. Higher scores usually mean stronger relevance.
+Recall results explain what Lore found and why it might matter.
 
-A recalled item can still be ignored when it clearly misses the task. A low-scoring item can still be useful when the path is exactly what you need.
+Look at these fields first:
 
-Use the Recall page when you want to inspect:
+| Field | Meaning |
+| --- | --- |
+| score | combined relevance score for display and ranking |
+| URI | stable memory address to open before use |
+| cue words | glossary, path, or content terms that matched the prompt |
+| query/session IDs | identifiers used to record recall adoption |
 
-| Question | Where to look |
-|---|---|
-| Why did this memory appear? | recall detail page |
-| Which query found it? | query list |
-| Which candidates were shown? | recall analysis |
-| Which candidates were opened? | usage/adoption state |
+In the Web Console recall analysis page, compare the prompt, candidates, scores, and opened/used state. A good result is not just a high score. It is a result the agent opened and used correctly.
+
+If a useful memory appears but ranks too low, improve its disclosure trigger and glossary terms. If noisy memories appear often, split broad memories and lower priority on background notes.

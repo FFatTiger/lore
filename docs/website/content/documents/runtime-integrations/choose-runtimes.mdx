@@ -1,12 +1,17 @@
-Supported runtimes include:
+Choose the runtime integrations that match your daily tools.
 
-| Runtime | Typical use |
-|---|---|
-| Codex | coding agent sessions |
-| Claude Code | terminal coding sessions |
-| Pi | assistant runtime with extension support |
-| OpenClaw | desktop agent workflow |
-| Hermes | Python-based agent workflow |
-| Generic MCP | any MCP client that can call Lore tools |
+| Runtime | Use when | Integration behavior |
+| --- | --- | --- |
+| Claude Code | you use Claude Code for coding sessions | MCP tools, `SessionStart` boot injection, per-prompt recall, and `CLAUDE.md` guidance import |
+| Codex | you use Codex CLI/Desktop | MCP tools, Lore skill, plugin registration, hooks feature, and compatibility user-level hooks |
+| Pi | you use Pi agent | extension hooks inject startup guidance and per-prompt recall |
+| OpenClaw | you use OpenClaw | plugin tools, startup health check, boot guidance, and recall injection |
+| Hermes | you use Hermes Agent | Python skill/provider with boot, recall, and memory tools |
 
-Use the runtimes you already work in. The value comes from sharing the same durable memory across them.
+Install only what you use:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --channels codex,claudecode
+```
+
+Every channel should use the same server URL and token. When a client connects through MCP, the endpoint includes a `client_type` query parameter so Lore can load client-specific boot rules and track recall usage by channel.

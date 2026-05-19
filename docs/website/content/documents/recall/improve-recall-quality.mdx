@@ -1,14 +1,21 @@
-If a memory should appear more often:
+Improve recall by improving memory shape before changing thresholds.
 
-1. Add clear glossary terms.
-2. Narrow the disclosure trigger.
-3. Split mixed-topic memories into smaller memories.
-4. Use a specific path name.
-5. Check recall analysis after a real query.
+Use this order:
 
-If a memory appears too often:
+1. Make the memory focused: one topic per node.
+2. Give it a specific path.
+3. Write a concrete disclosure trigger.
+4. Add glossary terms users and agents actually type.
+5. Set priority honestly.
+6. Check that embeddings and View LLM settings are configured.
+7. Tune recall settings only after the content is clean.
 
-1. Remove broad glossary terms.
-2. Make the disclosure trigger more specific.
-3. Lower the priority.
-4. Split broad notes into narrower memories.
+Common problems:
+
+| Symptom | First fix |
+| --- | --- |
+| useful memory never appears | add disclosure and glossary terms |
+| too many broad results | split large memories and lower priority |
+| Chinese queries are weak | verify `pg_jieba` or `zhparser`; otherwise Lore falls back to `simple` tokenizer |
+| semantic recall is missing | configure embedding provider and rebuild generated views |
+| results look stale | run Dream or refresh generated memory views after major edits |

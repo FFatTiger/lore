@@ -1,0 +1,101 @@
+Do this after Lore is installed, `/setup` is complete, and at least one agent runtime can receive boot context.
+
+Local files such as `CLAUDE.md`, `AGENTS.md`, plugin rules, and hook guidance are useful bootstrap files. They should not become the long-term source of truth for shared user preferences, project rules, coding standards, deployment commands, or operating habits. If the same instruction should affect more than one agent, move it into Lore.
+
+## What to keep local
+
+Keep only the small bootstrap text that helps the runtime load Lore:
+
+- connect to the Lore MCP server or plugin;
+- load boot memory at session start;
+- use recall before relying on memory;
+- open recalled nodes before treating them as facts;
+- write durable changes back to Lore.
+
+Do not keep repeated product rules, user preferences, project deploy commands, or long process documents in every local agent file. That creates drift: one agent receives a newer rule, another keeps the stale one.
+
+## Where to move each kind of instruction
+
+| Source material | Move to |
+| --- | --- |
+| Rules every agent should follow | `core://agent` |
+| Stable user preferences, writing style, collaboration style | `preferences://user` |
+| Project commands, constraints, architecture decisions, deploy notes | `project://<project_slug>/...` |
+| Claude Code-only behavior | `core://agent/claudecode` |
+| Codex-only behavior | `core://agent/codex` |
+| Pi-only behavior | `core://agent/pi` |
+| OpenClaw-only behavior | `core://agent/openclaw` |
+| Hermes-only behavior | `core://agent/hermes` |
+
+This matches the boot code in `web/server/lore/memory/boot.ts`: runtime boot loads the global boot nodes `core://agent`, `core://soul`, and `preferences://user`, plus the active client-specific node such as `core://agent/codex` or `core://agent/claudecode`.
+
+## Files to audit first
+
+Common local sources:
+
+| Runtime | Typical local file to inspect |
+| --- | --- |
+| Claude Code | `~/.claude/CLAUDE.md`, project `CLAUDE.md`, imported Claude guidance files |
+| Codex | `~/.codex/AGENTS.md`, project `AGENTS.md`, repository-level agent instructions |
+| OpenClaw | plugin guidance, `~/.openclaw/openclaw.json` plugin config, project notes |
+| Pi | extension guidance under `~/.pi/agent/extensions` or `PI_CODING_AGENT_DIR` |
+| Hermes | `hermes-plugin/lore_memory/AGENT_RULES.md` or local Hermes plugin guidance |
+
+Use actual runtime paths on the machine you are configuring. Do not assume that a random `AGENTS.md` in another project directory is the one Codex is currently using.
+
+## Migration workflow
+
+1. Open the local file and split it into sections: shared, user preference, project-specific, runtime-specific, and temporary.
+2. Move shared rules into `core://agent`.
+3. Move stable personal preferences into `preferences://user`.
+4. Move project material into `project://<project_slug>/...` nodes with clear titles such as `commands`, `deployment`, `architecture`, or `constraints`.
+5. Move runtime-only deltas into `core://agent/<client_type>`.
+6. Delete duplicated long-form content from the local file.
+7. Leave a short bootstrap note that tells the agent to use Lore and recall.
+8. Restart the runtime so startup hooks reload the boot baseline.
+
+## Example split
+
+Bad local file shape:
+
+```text
+CLAUDE.md and AGENTS.md both repeat:
+- user communication style
+- frontend standards
+- project install/build/deploy commands
+- Codex-only hook notes
+- Claude-only plugin notes
+```
+
+Better Lore shape:
+
+```text
+core://agent                         shared agent workflow and quality rules
+preferences://user                   stable user preferences and working style
+project://lorehub/commands           install, dev, typecheck, build commands
+project://lorehub/deployment         deploy notes and release process
+core://agent/codex                   Codex-specific hook or plugin behavior
+core://agent/claudecode              Claude Code-specific behavior
+```
+
+Local `AGENTS.md` or `CLAUDE.md` then becomes small:
+
+```text
+Use Lore as the durable memory source.
+Load boot memory at startup.
+Use recall for task-relevant context.
+Open recalled nodes before relying on them.
+Write durable new facts back to Lore.
+```
+
+## Verify the migration
+
+After removing duplicated local content:
+
+1. Restart the agent runtime.
+2. Ask a prompt that should need one migrated rule.
+3. Confirm startup context includes the shared and runtime-specific boot nodes.
+4. Confirm recall surfaces project-specific memories when the prompt mentions the project.
+5. If recall misses the memory, improve the memory's disclosure trigger and glossary terms instead of copying the rule back into local files.
+
+Do not store secrets, API keys, tokens, or one-off temporary instructions in Lore. Keep secrets in environment variables or deployment secret stores; keep temporary task notes in the current chat or issue tracker.

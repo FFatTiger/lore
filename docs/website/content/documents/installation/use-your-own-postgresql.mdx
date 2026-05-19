@@ -1,0 +1,104 @@
+Use your own PostgreSQL when you already operate a database service, need managed backups, or do not want the installer-managed PostgreSQL container.
+
+Lore only needs one server environment variable to point at it:
+
+```env
+DATABASE_URL=postgresql://lore:YOUR_PASSWORD@db.example.com:5432/lore
+```
+
+The server code accepts `postgresql://`, `postgres://`, and normalizes `postgresql+...://` URLs. Non-local hosts use SSL automatically unless the URL disables it with `sslmode=disable` or equivalent.
+
+## Required database capabilities
+
+| Capability | Required | Why |
+| --- | --- | --- |
+| PostgreSQL with pgvector support | yes | memory views store embedding vectors in `vector` columns |
+| `CREATE EXTENSION vector` | yes | initial migration creates pgvector |
+| `CREATE EXTENSION pg_jieba` | recommended | preferred tokenizer for Chinese full-text search |
+| `CREATE EXTENSION zhparser` | optional fallback | used if `pg_jieba` cannot be created |
+| ordinary schema DDL | yes | migrations create tables, indexes, and app settings |
+
+The initial migration runs this sequence:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Then try pg_jieba. If that fails, try zhparser. If both fail,
+-- Lore continues with PostgreSQL simple full-text search.
+CREATE EXTENSION IF NOT EXISTS pg_jieba;
+CREATE EXTENSION IF NOT EXISTS zhparser;
+```
+
+If neither `pg_jieba` nor `zhparser` is available, Lore still starts, but Chinese lexical recall is weaker. Semantic recall still depends on embedding configuration from `/setup`.
+
+## Create database and role
+
+Example owner-style setup:
+
+```sql
+CREATE USER lore WITH PASSWORD 'change-me';
+CREATE DATABASE lore OWNER lore;
+GRANT ALL PRIVILEGES ON DATABASE lore TO lore;
+```
+
+For a stricter production setup, run the first migration as an owner role that can create extensions, then run the Web server with a restricted role that can read/write the Lore schema. Do not point production at a role that lacks migration permission before the initial migration has completed.
+
+## Install extensions
+
+The easiest path is the Lore PostgreSQL image:
+
+```env
+LORE_POSTGRES_IMAGE=fffattiger/pgvector-zhparser:pg16
+```
+
+That image is built from `postgres/Dockerfile`: it starts from `pgvector/pgvector:pg16`, builds `zhparser`, builds `pg_jieba`, and appends:
+
+```conf
+shared_preload_libraries = 'pg_jieba'
+```
+
+If you operate PostgreSQL yourself, mirror that requirement:
+
+1. Install pgvector for your PostgreSQL major version.
+2. Install `pg_jieba` if you need high-quality Chinese recall.
+3. Add `pg_jieba` to `shared_preload_libraries`.
+4. Restart PostgreSQL.
+5. Create `vector` and `pg_jieba` in the Lore database, or let Lore's first migration create them.
+
+`pg_jieba` cannot be fully enabled by `CREATE EXTENSION` alone if the server library was not preloaded.
+
+## Compose Web container with external PostgreSQL
+
+If you still use the repository `docker-compose.yml` for the Web and Redis containers, set `.env` like this:
+
+```env
+DATABASE_URL=postgresql://lore:YOUR_PASSWORD@db.example.com:5432/lore
+API_TOKEN=YOUR_SERVER_TOKEN_IF_USED
+WEB_PORT=18901
+
+REDIS_URL=redis://redis:6379/0
+REDIS_DATA_DIR=./data/redis
+CACHE_KEY_PREFIX=lore
+CACHE_LOCAL_MAX_ITEMS=2000
+
+SNAPSHOT_DATA_DIR=./data/snapshots
+LORE_FRONTEND_IMAGE=fffattiger/lore:latest
+```
+
+Then either remove the bundled `postgres` service from your local Compose file or leave it unused. If you also operate Redis externally, replace `REDIS_URL`. If Redis is empty or unreachable during startup, Lore falls back to an in-process local cache; this is acceptable for one Web process but not ideal for multi-instance deployments.
+
+## Verify before connecting agents
+
+Run these checks from the Web server host:
+
+```bash
+curl -fsS http://127.0.0.1:18901/api/health
+```
+
+Then open `/setup` and complete embedding and View LLM configuration. Database connectivity alone is not enough for useful recall.
+
+When you want the installer to configure only local agents against this existing server, pass the server URL:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --base-url http://YOUR_SERVER:18901 --api-token YOUR_TOKEN
+```

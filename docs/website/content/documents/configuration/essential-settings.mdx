@@ -1,11 +1,19 @@
-Start with these settings:
+Essential settings are split between deployment environment variables and runtime settings stored in the Lore database.
 
-| Setting area | What to configure |
-|---|---|
-| Server URL | the address used by browser and agent runtimes |
-| API token | bearer token for protected access |
-| Embedding model | endpoint used for semantic recall |
-| View LLM | endpoint used for memory summaries, boot drafts, and Dream |
-| Backup | local or remote backup target |
+| Setting | Where it is configured | Why it matters |
+| --- | --- | --- |
+| `DATABASE_URL` | Web server environment | required by the server API, migrations, memory reads, and settings storage |
+| `API_TOKEN` | Web server environment | optional bearer token for REST and MCP access; the Web UI stores the same token in an `api_token` cookie |
+| `REDIS_URL` | Web server environment | optional shared cache backend; if empty or unreachable at startup, Lore uses process-local LRU cache |
+| `CACHE_KEY_PREFIX` | Web server environment | separates Lore cache keys from other Redis users |
+| `CACHE_LOCAL_MAX_ITEMS` | Web server environment | limits process-local cache size when Redis is not used |
+| `LORE_DB_POOL_SIZE` | Web server environment | controls the PostgreSQL pool size; default is `10` |
+| embedding provider/base URL/API key/model | `/setup`, `/settings`, or `/api/settings` | required for semantic recall and index rebuilds |
+| View LLM provider/base URL/API key/model | `/setup`, `/settings`, or `/api/settings` | required for generated views and Dream workflows |
+| recall, Dream, cache, backup policy | `/settings` | controls daily behavior after the server is running |
 
-Save settings from the Web console when possible. Environment variables are useful for deployment defaults and automation.
+The current server code does not read embedding or View LLM credentials from `.env`; those values live in the `app_settings` table. Use deployment secrets for server-level variables such as `API_TOKEN` and `DATABASE_URL`, and use the Web Console for runtime model settings.
+
+Docker Compose also uses host-side variables such as `POSTGRES_DATA_DIR`, `REDIS_DATA_DIR`, and `SNAPSHOT_DATA_DIR` to mount persistent storage. Inside the Web container, backups and review changesets are written under `/app/snapshots`.
+
+If an agent cannot connect but the Web Console works, check client config first: `base_url`, token, MCP URL, and `client_type`.

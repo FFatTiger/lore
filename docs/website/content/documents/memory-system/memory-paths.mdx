@@ -10,15 +10,19 @@ project://my_app/deployment
 Use domains by purpose:
 
 | Domain | Use for |
-|---|---|
-| `core://` | agent-wide operating rules and identity rules |
-| `preferences://` | user preferences and stable personal context |
-| `project://` | project-specific facts, decisions, and workflows |
+| --- | --- |
+| `core://` | agent-wide rules, runtime-specific rules, and shared operating context |
+| `preferences://` | stable user preferences and durable personal context |
+| `project://` | project-specific facts, decisions, commands, constraints, and workflows |
 
-Good paths are short, lowercase, and specific. Use one topic per memory:
+Good paths are short, lowercase, and specific:
 
 ```yaml
 project://my_app/auth
 project://my_app/release_process
 project://my_app/cloudflare_pages
+core://agent/codex
+core://agent/claudecode
 ```
+
+Avoid paths such as `project://notes`, `core://misc`, or `preferences://stuff`. They are easy to write and hard to recall correctly.

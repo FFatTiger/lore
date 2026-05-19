@@ -1,10 +1,18 @@
-Priority controls importance.
+Priority is an importance signal, not a guarantee that a memory always appears.
 
 | Priority | Use for |
-|---:|---|
-| `0` | core identity and rules that almost always matter |
-| `1` | important preferences and project rules |
+| --- | --- |
+| `0` | core identity, safety, or rules that almost always matter |
+| `1` | important preferences, project constraints, and high-value workflows |
 | `2` | normal project knowledge |
-| `3+` | lower-importance notes and background |
+| `3+` | background notes and lower-importance context |
 
-Use priority sparingly. Too many high-priority memories make recall noisy.
+Keep priority honest. If everything is priority `0`, recall becomes noisy and important rules stop standing out.
+
+A common shape:
+
+- global agent rules: `0` or `1`
+- user preferences: `1`
+- active project constraints: `1` or `2`
+- ordinary implementation notes: `2`
+- historical context: `3+`

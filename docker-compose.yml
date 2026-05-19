@@ -48,6 +48,7 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       CACHE_KEY_PREFIX: ${CACHE_KEY_PREFIX:-lore}
       CACHE_LOCAL_MAX_ITEMS: ${CACHE_LOCAL_MAX_ITEMS:-2000}
+      LORE_DB_POOL_SIZE: ${LORE_DB_POOL_SIZE:-10}
     ports:
       - "${WEB_PORT:-18901}:18901"
     volumes:

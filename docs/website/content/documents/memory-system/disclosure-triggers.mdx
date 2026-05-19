@@ -1,15 +1,33 @@
-Disclosure tells Lore when a memory should be recalled.
+Disclosure says when a memory should appear.
 
-Good disclosure is concrete:
-
-```text
-When working on authentication, refresh tokens, or session security for MyApp.
-```
-
-Weak disclosure is broad:
+A good disclosure is concrete:
 
 ```text
-When working on the project.
+When working on Cloudflare Pages deployment, custom domains, build commands, or Pages deploy hooks for LoreHub.
 ```
 
-A strong trigger improves recall quality because Lore knows when the memory matters.
+A weak disclosure is vague:
+
+```text
+Important project info.
+```
+
+## Write for future prompts
+
+Disclosure should describe the situation that should trigger the memory, not summarize the memory itself. Include likely tasks, symptoms, product names, and decision areas.
+
+Use this pattern:
+
+```text
+When [doing task], [touching area], [debugging symptom], or [making decision] for [project/product].
+```
+
+## Disclosure vs glossary
+
+| Field | Use for |
+| --- | --- |
+| Disclosure | when the memory should be shown |
+| Glossary | aliases, acronyms, product names, file names, and likely search words |
+| Content | the actual durable fact, rule, decision, or workflow |
+
+Do not stuff every keyword into disclosure. Put aliases and alternate names into glossary terms instead.

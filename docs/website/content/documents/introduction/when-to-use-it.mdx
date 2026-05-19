@@ -1,11 +1,16 @@
-Write a memory when the information has future value.
+Use Lore when the information will matter again.
 
-| Situation | Write a memory? |
-|---|---|
-| A project rule will apply again | Yes |
-| A user preference should shape future replies | Yes |
-| A bug root cause explains future behavior | Yes |
-| A one-off command output was only useful today | Usually skip |
-| A draft idea may change in ten minutes | Usually wait |
+| Situation | Store it? | Better shape |
+| --- | --- | --- |
+| A user preference should affect future replies | yes | `preferences://user/...` or a focused preference node |
+| A project has a repeatable command or deployment rule | yes | `project://project_name/workflow` |
+| An agent-specific hook or runtime behavior matters | yes | `core://agent/<channel>` |
+| A one-off error happened and is already fixed | maybe | store only the durable lesson, not the whole log |
+| You are brainstorming and may change direction | not yet | wait until a decision stabilizes |
 
-Start small. Add one clear memory for one clear topic. Lore works best when each memory has a practical future trigger.
+When in doubt, ask two questions:
+
+1. Would forgetting this cause repeated work or mistakes?
+2. Can I describe the future situation where this memory should appear?
+
+If the answer to both is yes, write a memory with a clear disclosure trigger.

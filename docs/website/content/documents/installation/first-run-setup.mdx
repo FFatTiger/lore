@@ -1,10 +1,13 @@
-After install, open the Web console and complete setup:
+After the server starts, open `/setup` on the Lore Web server.
 
-1. Configure the embedding model endpoint.
-2. Configure the View LLM endpoint.
-3. Save boot memories.
-4. Confirm runtime-specific memories.
-5. Open Settings and verify recall, Dream, backup, and auth settings.
-6. Restart connected agent runtimes.
+The setup flow writes runtime settings into the `app_settings` table. It is not the same thing as editing the server `.env` file.
 
-The embedding endpoint powers semantic recall. The View LLM improves generated memory summaries and Dream maintenance.
+1. Open `http://127.0.0.1:18901/setup` or your server URL.
+2. Configure the embedding provider. Lore uses embeddings for semantic retrieval and generated memory views.
+3. Configure the View LLM provider. Lore uses it to generate searchable views such as gists and questions from memory content, and Dream depends on it.
+4. Review boot memory defaults. The fixed startup baseline includes global agent rules, soul/style context, user preferences, and active client-specific agent rules.
+5. Save settings, then restart connected agent runtimes so hooks and MCP clients reload server config.
+
+If the server uses `API_TOKEN`, browser and API clients must authenticate. Agent clients need the same token in their MCP or plugin config.
+
+Do not skip setup just because the Web Console loads. A server can be online while embeddings, View LLM, cache, backup, or recall settings are still incomplete.

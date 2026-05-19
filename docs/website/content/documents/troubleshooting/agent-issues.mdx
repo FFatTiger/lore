@@ -1,8 +1,15 @@
-| Problem | What to check |
-|---|---|
-| Agent receives no boot context | plugin install, runtime restart, server URL |
-| Agent receives no recall block | prompt hook, API token, recall settings |
-| MCP tools fail | MCP URL, client config, auth token |
-| Agent opens stale memories | memory content, path moves, Dream changes, recent edits |
+Agent issues are usually local configuration issues, not server memory issues.
 
-When reconnecting an agent, verify the Web console first, then restart the agent runtime.
+Check:
+
+| Runtime | Important files/settings |
+| --- | --- |
+| Claude Code | `~/.claude/settings.json`, `~/.claude/CLAUDE.md`, `~/.claude/lore-guidance.md`, plugin hooks |
+| Codex | `~/.codex/config.toml`, `~/.codex/hooks.json`, MCP server, plugin enabled state |
+| OpenClaw | `~/.openclaw/openclaw.json` plugin entry and `baseUrl` / `apiToken` |
+| Pi | extension symlink under `${PI_CODING_AGENT_DIR:-~/.pi/agent}/extensions/lore` and plugin config/env |
+| Hermes | `LORE_BASE_URL`, `LORE_API_TOKEN`, and plugin symlink |
+
+After changing any of these, restart the runtime. Hooks and MCP config are usually loaded at process start.
+
+If MCP works but recall does not appear, check hook configuration. If recall appears but the agent does not use it, improve local guidance and verify the agent opens recalled nodes before relying on them.

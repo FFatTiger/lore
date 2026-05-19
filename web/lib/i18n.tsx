@@ -83,6 +83,8 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
     'Step': '步骤',
     'Runtime not ready': '运行时未就绪',
     'Rebuild Index': '重建索引',
+    '1 unsaved change': '1 项未保存变更',
+    'unsaved changes': '项未保存变更',
     'Test connection': '测试联通',
     'Testing…': '测试中…',
     'Embedding connection OK': 'Embedding 联通正常',

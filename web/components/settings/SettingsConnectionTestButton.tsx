@@ -80,8 +80,8 @@ export function SettingsConnectionTestButton({
     ? ''
     : t('Test connection');
 
-  const prefix = status === 'ok' ? '✅ '
-    : status === 'fail' ? '❌ '
+  const prefix = status === 'ok' ? t('OK')
+    : status === 'fail' ? t('Fail')
     : '';
 
   return (

@@ -88,6 +88,8 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
     'Test connection': '测试联通',
     'Testing…': '测试中…',
     'Embedding connection OK': 'Embedding 联通正常',
+    'OK': '成功',
+    'Fail': '失败',
     'View LLM connection OK': 'View LLM 联通正常',
     'Changing the embedding model will invalidate all existing embeddings and trigger a full rebuild. Continue?':
       '修改 Embedding 模型会让现有向量全部失效，并触发一次完整重建。是否继续？',

@@ -110,6 +110,7 @@ interface UseMemoryBrowserControllerResult {
   moving: boolean;
   creating: boolean;
   rebuildingViews: boolean;
+  treeVersion: number;
   setSidebarOpen: (value: boolean) => void;
   setEditContent: (value: string) => void;
   setEditDisclosure: (value: string) => void;
@@ -119,6 +120,7 @@ interface UseMemoryBrowserControllerResult {
   navigateTo: (newPath: string, newDomain?: string) => void;
   navigateToHistory: (targetPath?: string, targetDomain?: string) => void;
   refreshData: () => Promise<void>;
+  refreshNavigation: () => Promise<void>;
   startEditing: () => void;
   cancelEditing: () => void;
   handleSave: () => Promise<void>;
@@ -144,6 +146,7 @@ export function useMemoryBrowserController({ confirmDialog, t, toast }: UseMemor
   const [moving, setMoving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [rebuildingViews, setRebuildingViews] = useState(false);
+  const [treeVersion, setTreeVersion] = useState(0);
   const currentRouteRef = useRef({ domain, path });
 
   useEffect(() => {
@@ -154,11 +157,24 @@ export function useMemoryBrowserController({ confirmDialog, t, toast }: UseMemor
     if (typeof window !== 'undefined' && window.innerWidth >= 768) setSidebarOpen(true);
   }, []);
 
-  useEffect(() => {
-    void api.get('/browse/domains').then((response) => {
-      setDomains(response.data as DomainItem[]);
-    }).catch(() => {});
+  const loadDomains = useCallback(async () => {
+    const response = await api.get('/browse/domains');
+    setDomains(response.data as DomainItem[]);
   }, []);
+
+  const refreshNavigation = useCallback(async () => {
+    try {
+      await loadDomains();
+    } catch {
+      // The tree should still remount after write actions, even if domain counts fail to refresh.
+    } finally {
+      setTreeVersion((value) => value + 1);
+    }
+  }, [loadDomains]);
+
+  useEffect(() => {
+    void loadDomains().catch(() => {});
+  }, [loadDomains]);
 
   useEffect(() => {
     let cancelled = false;
@@ -261,6 +277,7 @@ export function useMemoryBrowserController({ confirmDialog, t, toast }: UseMemor
     if (!ok) return;
     try {
       await api.delete('/browse/node', { params: currentRouteRef.current });
+      await refreshNavigation();
       const parentPath = currentRouteRef.current.path.includes('/')
         ? currentRouteRef.current.path.split('/').slice(0, -1).join('/')
         : '';
@@ -269,20 +286,22 @@ export function useMemoryBrowserController({ confirmDialog, t, toast }: UseMemor
       const axiosErr = err as AxiosError<{ detail?: string }>;
       toast(axiosErr.response?.data?.detail || axiosErr.message || t('Delete failed'));
     }
-  }, [confirmDialog, navigateTo, t, toast]);
+  }, [confirmDialog, navigateTo, refreshNavigation, t, toast]);
 
   const handleRebuildViews = useCallback(async () => {
     setRebuildingViews(true);
     try {
-      await api.post('/browse/recall/rebuild');
+      const route = currentRouteRef.current;
+      await api.post('/browse/recall/rebuild', route.path ? route : {});
       await refreshData();
+      toast(t('Rebuild completed'), 'success');
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
       toast(axiosErr.response?.data?.detail || axiosErr.message || t('Rebuild failed'));
     } finally {
       setRebuildingViews(false);
     }
-  }, [refreshData, toast]);
+  }, [refreshData, t, toast]);
 
   return {
     domain,
@@ -302,6 +321,7 @@ export function useMemoryBrowserController({ confirmDialog, t, toast }: UseMemor
     moving,
     creating,
     rebuildingViews,
+    treeVersion,
     setSidebarOpen,
     setEditContent,
     setEditDisclosure,
@@ -311,6 +331,7 @@ export function useMemoryBrowserController({ confirmDialog, t, toast }: UseMemor
     navigateTo,
     navigateToHistory,
     refreshData,
+    refreshNavigation,
     startEditing,
     cancelEditing,
     handleSave,

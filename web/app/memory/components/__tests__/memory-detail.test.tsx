@@ -120,6 +120,7 @@ describe('memory detail Lobe wrappers', () => {
     expect((html.match(/data-app-input="true"/g) || []).length).toBe(1);
     expect(html).toContain('data-lobe-input-number="true"');
     expect(html).toContain('data-app-text-area="true"');
+    expect(html).toContain('!h-[480px]');
     expect(html).toContain('when useful');
   });
 

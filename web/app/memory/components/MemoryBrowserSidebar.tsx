@@ -12,6 +12,7 @@ interface MemoryBrowserSidebarProps {
   sidebarOpen: boolean;
   setSidebarOpen: (value: boolean) => void;
   navigateTo: (newPath: string, newDomain?: string) => void;
+  treeVersion: number;
   t: (key: string) => string;
 }
 
@@ -22,13 +23,14 @@ export default function MemoryBrowserSidebar({
   sidebarOpen,
   setSidebarOpen,
   navigateTo,
+  treeVersion,
   t,
 }: MemoryBrowserSidebarProps): React.JSX.Element {
   const sidebarBody = (
     <>
       {domains.map((item) => (
         <DomainNode
-          key={item.domain}
+          key={`${item.domain}:${treeVersion}`}
           domain={item.domain}
           rootCount={item.root_count}
           activeDomain={domain}
@@ -37,7 +39,7 @@ export default function MemoryBrowserSidebar({
         />
       ))}
       {domains.length === 0 && (
-        <DomainNode domain="core" activeDomain={domain} activePath={path} onNavigate={navigateTo} />
+        <DomainNode key={`core:${treeVersion}`} domain="core" activeDomain={domain} activePath={path} onNavigate={navigateTo} />
       )}
     </>
   );

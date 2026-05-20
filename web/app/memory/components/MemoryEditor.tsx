@@ -53,7 +53,7 @@ export default function MemoryEditor({
       <AppTextArea
         value={editContent}
         onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setEditContent(e.target.value)}
-        className="h-80 leading-relaxed"
+        className="!h-[480px] leading-relaxed"
         size="lg"
         spellCheck={false}
       />

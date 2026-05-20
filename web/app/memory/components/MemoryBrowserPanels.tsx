@@ -20,6 +20,7 @@ interface MemoryBrowserPanelsProps {
   path: string;
   navigateTo: (newPath: string, newDomain?: string) => void;
   refreshData: () => Promise<void>;
+  refreshNavigation: () => Promise<void>;
   setMoving: (value: boolean) => void;
   setCreating: (value: boolean) => void;
 }
@@ -41,6 +42,7 @@ export default function MemoryBrowserPanels({
   path,
   navigateTo,
   refreshData,
+  refreshNavigation,
   setMoving,
   setCreating,
 }: MemoryBrowserPanelsProps): React.JSX.Element | null {
@@ -67,6 +69,7 @@ export default function MemoryBrowserPanels({
           path={path}
           onMoved={(nextDomain, nextPath) => {
             setMoving(false);
+            void refreshNavigation();
             navigateTo(nextPath, nextDomain);
           }}
           onCancel={() => setMoving(false)}
@@ -78,7 +81,7 @@ export default function MemoryBrowserPanels({
           parentPath={path}
           onCreated={() => {
             setCreating(false);
-            void refreshData();
+            void Promise.all([refreshData(), refreshNavigation()]);
           }}
           onCancel={() => setCreating(false)}
         />

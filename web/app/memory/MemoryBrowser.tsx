@@ -43,6 +43,7 @@ export default function MemoryBrowser(): React.JSX.Element {
     moving,
     creating,
     rebuildingViews,
+    treeVersion,
     setSidebarOpen,
     setEditContent,
     setEditDisclosure,
@@ -51,6 +52,7 @@ export default function MemoryBrowser(): React.JSX.Element {
     setCreating,
     navigateTo,
     refreshData,
+    refreshNavigation,
     startEditing,
     cancelEditing,
     handleSave,
@@ -71,6 +73,7 @@ export default function MemoryBrowser(): React.JSX.Element {
             sidebarOpen={sidebarOpen}
             setSidebarOpen={setSidebarOpen}
             navigateTo={navigateTo}
+            treeVersion={treeVersion}
             t={t}
           />
 
@@ -145,13 +148,12 @@ export default function MemoryBrowser(): React.JSX.Element {
                   path={path}
                   navigateTo={navigateTo}
                   refreshData={refreshData}
+                  refreshNavigation={refreshNavigation}
                   setMoving={setMoving}
                   setCreating={setCreating}
                 />
 
-                {isRoot && (
-                  <MemoryChildrenList childItems={data.children as ChildItem[]} domain={domain} isRoot={isRoot} navigateTo={navigateTo} navigateToHistory={navigateToHistory} />
-                )}
+                <MemoryChildrenList childItems={data.children as ChildItem[]} domain={domain} isRoot={isRoot} navigateTo={navigateTo} navigateToHistory={navigateToHistory} />
 
                 {hasEmptyState && (
                   <div className="py-16 text-center">

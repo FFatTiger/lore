@@ -43,9 +43,17 @@ vi.mock('@lobehub/ui/es/Select/Select', () => ({
 }));
 
 vi.mock('@lobehub/ui/es/Segmented/index', () => ({
-  default: ({ options = [], value }: { options?: Array<{ label: React.ReactNode; value: string }>; value?: string }) => (
-    <div data-lobe-segmented="true" data-value={value}>
+  default: ({ options = [], value, className, shape }: { options?: Array<{ label: React.ReactNode; value: string }>; value?: string; className?: string; shape?: string }) => (
+    <div data-lobe-segmented="true" data-value={value} data-shape={shape} className={className}>
       {options.map((option) => <button key={option.value} type="button">{option.label}</button>)}
+    </div>
+  ),
+}));
+
+vi.mock('@lobehub/ui/es/Tabs/index', () => ({
+  default: ({ activeKey, items = [] }: { activeKey?: string; items?: Array<{ key: string; label: React.ReactNode }> }) => (
+    <div data-lobe-tabs="true" data-active-key={activeKey}>
+      {items.map((item) => <button key={item.key} type="button">{item.label}</button>)}
     </div>
   ),
 }));
@@ -64,7 +72,7 @@ vi.mock('@lobehub/ui/es/Checkbox/index', () => ({
 }));
 
 vi.mock('@lobehub/ui/es/Tag/Tag', () => ({
-  default: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+  default: ({ children, className }: { children: React.ReactNode; className?: string }) => <span className={className}>{children}</span>,
 }));
 
 vi.mock('@lobehub/ui/es/Empty/index', () => ({
@@ -84,8 +92,8 @@ vi.mock('@lobehub/ui/es/CopyButton/index', () => ({
 }));
 
 vi.mock('@lobehub/ui/es/ActionIcon/index', () => ({
-  default: ({ icon: Icon, title, size, variant, disabled, loading }: { icon: React.ElementType; title: string; size?: string; variant?: string; disabled?: boolean; loading?: boolean }) => (
-    <button data-lobe-action-icon="true" data-size={size} data-variant={variant} data-loading={loading} disabled={disabled} title={title}>
+  default: ({ icon: Icon, title, size, variant, disabled, loading, className }: { icon: React.ElementType; title: string; size?: string; variant?: string; disabled?: boolean; loading?: boolean; className?: string }) => (
+    <button className={className} data-lobe-action-icon="true" data-size={size} data-variant={variant} data-loading={loading} disabled={disabled} title={title}>
       <Icon data-lobe-action-icon-icon="true" />
     </button>
   ),
@@ -115,7 +123,7 @@ vi.mock('@lobehub/ui', () => ({
   ),
 }));
 
-import { ActionIcon, AppAvatar, AppCheckbox, AppInput, Badge, Button, CopyButton, DropdownMenu, Empty, FilterNumberField, FilterPill, MenuItem, Notice, SegmentedTabs, SelectionBox, Spinner, StatCard, TextButton, ToggleSwitch, Tooltip } from '../controls';
+import { ActionIcon, AppAvatar, AppCheckbox, AppInput, Badge, Button, CopyButton, DropdownMenu, Empty, FilterNumberField, FilterPill, MenuItem, Notice, SegmentedTabs, SelectionBox, Spinner, StatCard, Tabs, TextButton, ToggleSwitch, Tooltip } from '../controls';
 
 describe('ui controls Lobe wrappers', () => {
   it('maps primary buttons to Lobe type primary', () => {
@@ -165,6 +173,33 @@ describe('ui controls Lobe wrappers', () => {
 
     expect(html).toContain('data-lobe-button-size="middle"');
     expect(html).toContain('data-lobe-button-type="default"');
+  });
+
+  it('uses restrained rectangular geometry for shared controls', () => {
+    const button = renderToStaticMarkup(<Button>Edit</Button>);
+    const textButton = renderToStaticMarkup(<TextButton tone="default">More</TextButton>);
+    const badge = renderToStaticMarkup(<Badge>P0</Badge>);
+    const filter = renderToStaticMarkup(<FilterPill>Days</FilterPill>);
+    const segmented = renderToStaticMarkup(
+      <SegmentedTabs
+        value="zh"
+        onValueChange={() => undefined}
+        options={[
+          { value: 'zh', label: 'ZH' },
+          { value: 'en', label: 'EN' },
+        ]}
+      />,
+    );
+
+    expect(button).toContain('rounded-lg');
+    expect(button).not.toContain('rounded-full');
+    expect(textButton).toContain('rounded-md');
+    expect(textButton).not.toContain('rounded-full');
+    expect(badge).toContain('!rounded-md');
+    expect(filter).toContain('rounded-lg');
+    expect(filter).not.toContain('rounded-full');
+    expect(segmented).toContain('app-segmented-rect');
+    expect(segmented).toContain('data-shape="default"');
   });
 
   it('renders text content inside all button variants', () => {
@@ -244,6 +279,22 @@ describe('ui controls Lobe wrappers', () => {
     expect(html).toContain('data-lobe-segmented="true"');
     expect(html).toContain('data-value="view"');
     expect(html).toContain('By path');
+  });
+
+  it('renders Tabs through Lobe Tabs', () => {
+    const html = renderToStaticMarkup(
+      <Tabs
+        activeKey="memory"
+        items={[
+          { key: 'memory', label: 'Memory' },
+          { key: 'recall', label: 'Recall' },
+        ]}
+      />,
+    );
+
+    expect(html).toContain('data-lobe-tabs="true"');
+    expect(html).toContain('data-active-key="memory"');
+    expect(html).toContain('Recall');
   });
 
   it('renders compact StatCard larger for recall overview tabs', () => {

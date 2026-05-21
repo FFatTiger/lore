@@ -2,15 +2,14 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Sun, Moon, Waves } from 'lucide-react';
-import clsx from 'clsx';
+import { Moon, Sun } from 'lucide-react';
 import { getDomains, getSetupFlowStatus, AUTH_ERROR_EVENT } from '../lib/api';
 import { getSetupFlowDecision, SETUP_STATUS_CHANGED_EVENT, type SetupFlowStatus } from '@/lib/bootSetup';
 import { LanguageProvider, useT } from '../lib/i18n';
 import { ThemeProvider, useTheme } from '../lib/theme';
 import TokenAuth from './TokenAuth';
 import { ConfirmProvider, useConfirm } from './ConfirmDialog';
-import { AppUIProvider, AuroraBackdrop, Button } from './ui';
+import { ActionIcon, AppUIProvider, Button, SegmentedTabs, Tabs } from './ui';
 import { AxiosError } from 'axios';
 
 const BOOT_SETUP_ACK_KEY = 'lore-boot-setup-confirmed';
@@ -29,9 +28,7 @@ const tabs: Tab[] = [
   { href: '/settings', label: 'Settings' },
 ];
 
-export const navIndicatorClassName = 'bg-fill-primary shadow-none';
-
-const appContentClassName = 'relative z-10 h-full w-full max-w-full overflow-x-hidden md:pt-[80px]';
+const appContentClassName = 'relative z-10 min-h-0 w-full max-w-full flex-1 overflow-x-hidden';
 
 function LoreLogoMark({ className }: { className?: string }): React.JSX.Element {
   return (
@@ -57,21 +54,11 @@ function LoreLogoMark({ className }: { className?: string }): React.JSX.Element 
   );
 }
 
-interface IndicatorState {
-  x: number;
-  w: number;
-  ready: boolean;
-}
-
 export function NavDock(): React.JSX.Element {
   const pathname = usePathname() || '';
   const router = useRouter();
   const { t, lang, setLang } = useT();
-  const { auroraBackgroundEnabled, theme, toggleAuroraBackground, toggleTheme } = useTheme();
-  const navRef = useRef<HTMLElement>(null);
-  const tabRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
-  const [hoverHref, setHoverHref] = useState<string | null>(null);
-  const [indicator, setIndicator] = useState<IndicatorState>({ x: 0, w: 0, ready: false });
+  const { theme, toggleTheme } = useTheme();
   const [version, setVersion] = useState<string | null>(null);
 
   useEffect(() => {
@@ -91,127 +78,54 @@ export function NavDock(): React.JSX.Element {
     return null;
   }, [pathname]);
 
-  const targetHref = hoverHref || activeHref;
-
-  useEffect(() => {
-    if (!targetHref || !navRef.current) return;
-    const measure = () => {
-      const el = tabRefs.current.get(targetHref);
-      if (!el || !navRef.current) return;
-      const navRect = navRef.current.getBoundingClientRect();
-      const elRect = el.getBoundingClientRect();
-      const scrollLeft = navRef.current.scrollLeft || 0;
-      setIndicator({ x: elRect.left - navRect.left + scrollLeft, w: elRect.width, ready: true });
-    };
-    requestAnimationFrame(measure);
-    const nav = navRef.current;
-    const ro = new ResizeObserver(measure);
-    ro.observe(nav);
-    nav.addEventListener('scroll', measure, { passive: true });
-    return () => { ro.disconnect(); nav.removeEventListener('scroll', measure); };
-  }, [targetHref, pathname]);
+  const navItems = useMemo(() => (
+    tabs.map((tab) => ({
+      key: tab.href,
+      label: t(tab.label),
+    }))
+  ), [t]);
 
   return (
-    <header className="fixed bottom-3 md:bottom-auto md:top-4 left-1/2 z-50 w-[min(calc(100vw-8px),24rem)] md:w-auto md:max-w-[calc(100vw-16px)] -translate-x-1/2">
-      <div className="animate-in relative flex w-full items-center gap-1 md:gap-1.5 rounded-full border border-separator-thin bg-[var(--dock-bg-mobile)] md:bg-[var(--dock-bg)] backdrop-blur-2xl backdrop-saturate-150 pl-1.5 md:pl-2.5 pr-1.5 md:pr-2 py-2.5 md:py-2 shadow-none md:shadow-dock">
+    <header className="relative z-50 flex h-16 items-center justify-between gap-4 border-b border-separator-thin bg-bg-system px-6">
+      <div className="flex min-w-0 items-center gap-8" data-shell-nav-left="true">
         <button
+          className="press flex min-w-0 items-center gap-3 text-txt-primary"
+          type="button"
           onClick={() => router.push('/memory')}
-          className="press hidden md:flex items-center gap-2 rounded-full pl-1 pr-2.5 py-1 hover:bg-fill-quaternary transition-colors"
         >
-          <div className="flex h-7 w-8 shrink-0 items-center justify-center overflow-visible text-txt-primary">
-            <LoreLogoMark className="h-7 w-7" />
-          </div>
-          <span className="hidden md:inline text-[14px] font-semibold tracking-tight text-txt-primary">Lore</span>
-          {version && (
-            <span className="hidden md:inline text-[10px] text-txt-tertiary/60 font-normal select-none -ml-0.5">{version}</span>
-          )}
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center text-txt-primary">
+            <LoreLogoMark className="h-8 w-8" />
+          </span>
+          <span className="text-[15px] font-semibold">Lore</span>
+          {version ? <span className="text-[12px] text-txt-tertiary">{version}</span> : null}
         </button>
 
-        <div className="hidden md:block h-5 w-px bg-separator-thin mx-0.5" />
-
-        <div className="relative min-w-0 flex-1 overflow-hidden md:flex-none">
-          <nav
-            ref={navRef}
-            className="relative grid w-full grid-cols-5 items-center gap-0 overflow-hidden md:flex md:w-auto md:gap-0.5 md:overflow-x-auto no-scrollbar"
-            onMouseLeave={() => setHoverHref(null)}
-          >
-            <div
-              aria-hidden
-              className={clsx(
-                'pointer-events-none absolute inset-y-0 rounded-full transition-all duration-300 ease-spring',
-                indicator.ready ? 'opacity-100' : 'opacity-0',
-                navIndicatorClassName,
-              )}
-              style={{ transform: `translateX(${indicator.x}px)`, width: `${indicator.w}px` }}
-            />
-            {tabs.map((tab) => {
-              const isActive = activeHref === tab.href;
-              const isHover = hoverHref === tab.href;
-              const showAsActive = isActive && !hoverHref;
-              return (
-                <button
-                  key={tab.href}
-                  ref={(el) => { if (el) tabRefs.current.set(tab.href, el); }}
-                  onMouseEnter={() => setHoverHref(tab.href)}
-                  onClick={() => router.push(tab.href)}
-                  className={clsx(
-                    'press relative z-10 min-w-0 truncate rounded-full px-1 py-2.5 text-center text-[12.5px] transition-colors duration-200 ease-spring md:shrink-0 md:px-3.5 md:py-2 md:text-[13.5px]',
-                    showAsActive
-                      ? 'font-semibold text-sys-blue'
-                      : isHover
-                        ? 'font-medium text-txt-primary'
-                        : 'font-medium text-txt-secondary/90',
-                  )}
-                >
-                  {t(tab.label)}
-                </button>
-              );
-            })}
-          </nav>
+        <div className="min-w-0" data-shell-nav-tabs="true">
+          <Tabs
+            activeKey={activeHref ?? undefined}
+            items={navItems}
+            onChange={(key) => router.push(key)}
+          />
         </div>
+      </div>
 
-        <div className="hidden md:block h-5 w-px bg-separator-thin mx-0.5" />
-
-        <div className="flex items-center gap-1">
-          <button
-            onClick={toggleTheme}
-            aria-label={theme === 'dark' ? t('Switch to light') : t('Switch to dark')}
-            title={theme === 'dark' ? t('Switch to light') : t('Switch to dark')}
-            className="press flex h-9 w-9 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-full text-txt-secondary hover:bg-fill-quaternary hover:text-txt-primary transition-colors"
-          >
-            {theme === 'dark'
-              ? <Moon size={14} strokeWidth={2} />
-              : <Sun size={14} strokeWidth={2} />}
-          </button>
-          <button
-            onClick={toggleAuroraBackground}
-            aria-pressed={auroraBackgroundEnabled}
-            aria-label={auroraBackgroundEnabled ? t('Disable Aurora Background') : t('Enable Aurora Background')}
-            title={auroraBackgroundEnabled ? t('Disable Aurora Background') : t('Enable Aurora Background')}
-            className={clsx(
-              'press flex h-9 w-9 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-full transition-colors',
-              auroraBackgroundEnabled
-                ? 'bg-sys-blue/15 text-sys-blue shadow-sm'
-                : 'text-txt-secondary hover:bg-fill-quaternary hover:text-txt-primary',
-            )}
-          >
-            <Waves size={14} strokeWidth={2.2} />
-          </button>
-        </div>
-
-        <div className="hidden sm:flex items-center rounded-full bg-fill-quaternary p-[3px]">
-          {(['zh', 'en'] as const).map((code) => (
-            <button
-              key={code}
-              onClick={() => setLang(code)}
-              className={clsx(
-                'press rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-wide transition-colors',
-                lang === code ? 'bg-bg-raised text-txt-primary shadow-sm' : 'text-txt-tertiary hover:text-txt-secondary',
-              )}
-            >
-              {code.toUpperCase()}
-            </button>
-          ))}
+      <div className="flex shrink-0 items-center gap-2">
+        <ActionIcon
+          icon={theme === 'dark' ? Moon : Sun}
+          title={theme === 'dark' ? t('Switch to light') : t('Switch to dark')}
+          onClick={toggleTheme}
+        />
+        <div className="ml-2 border-l border-separator-thin pl-3">
+          <SegmentedTabs
+            value={lang}
+            options={[
+              { value: 'zh', label: 'ZH' },
+              { value: 'en', label: 'EN' },
+            ]}
+            onValueChange={(value) => {
+              if (value === 'zh' || value === 'en') setLang(value);
+            }}
+          />
         </div>
       </div>
     </header>
@@ -223,14 +137,12 @@ interface AppShellInnerProps {
 }
 
 interface AppShellFrameProps {
-  auroraBackgroundEnabled: boolean;
   children: ReactNode;
 }
 
-export function AppShellFrame({ auroraBackgroundEnabled, children }: AppShellFrameProps): React.JSX.Element {
+export function AppShellFrame({ children }: AppShellFrameProps): React.JSX.Element {
   return (
-    <div className="relative h-screen w-full max-w-full overflow-hidden bg-bg-system text-txt-primary">
-      {auroraBackgroundEnabled ? <AuroraBackdrop /> : null}
+    <div className="relative flex h-screen w-full max-w-full flex-col overflow-hidden bg-bg-system text-txt-primary">
       <NavDock />
       <div className={appContentClassName}>{children}</div>
     </div>
@@ -242,7 +154,6 @@ function AppShellInner({ children }: AppShellInnerProps): React.JSX.Element {
   const pathname = usePathname() || '';
   const { confirm } = useConfirm();
   const { t } = useT();
-  const { auroraBackgroundEnabled } = useTheme();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [backendError, setBackendError] = useState(false);
@@ -454,7 +365,7 @@ function AppShellInner({ children }: AppShellInnerProps): React.JSX.Element {
   }
 
   return (
-    <AppShellFrame auroraBackgroundEnabled={auroraBackgroundEnabled}>
+    <AppShellFrame>
       {children}
     </AppShellFrame>
   );

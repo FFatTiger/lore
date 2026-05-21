@@ -20,14 +20,14 @@ export function OutlineNavShell({
 }: OutlineNavShellProps): React.JSX.Element {
   return (
     <nav className={className} aria-label={ariaLabel}>
-      <div className="border-l border-separator-thin pl-4">
+      <div>
         {(title || right) && (
-          <div className="mb-3 flex items-center justify-between gap-2">
-            {title && <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-txt-tertiary">{title}</div>}
+          <div className="mb-6 flex items-center justify-between gap-2">
+            {title && <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-txt-tertiary">{title}</div>}
             {right ? <div className="shrink-0">{right}</div> : null}
           </div>
         )}
-        <div className="space-y-4">{children}</div>
+        <div className="space-y-5">{children}</div>
       </div>
     </nav>
   );
@@ -114,16 +114,16 @@ export function OutlineNavGroup({
         type={onClick ? 'button' : undefined}
         onClick={onClick}
         className={clsx(
-          'mb-1.5 flex w-full items-center gap-1.5 rounded-md py-1 text-left text-[11px] font-medium uppercase tracking-[0.08em] transition-colors',
-          onClick && 'cursor-pointer px-1 hover:bg-fill-quaternary',
-          active ? 'bg-sys-blue/[0.05] text-sys-blue' : 'text-txt-tertiary',
+          'mb-2 flex min-h-7 w-full items-center gap-2 rounded-lg py-1.5 text-left text-[13px] leading-snug transition-colors',
+          onClick && 'cursor-pointer px-2 hover:bg-fill-quaternary',
+          active ? 'bg-[color-mix(in_srgb,var(--sys-blue)_12%,transparent)] font-medium text-sys-blue' : 'text-txt-secondary',
         )}
       >
-        {left ? <span className="flex h-3 w-3 shrink-0 items-center justify-center">{left}</span> : null}
+        {left ? <span className="flex h-4 w-4 shrink-0 items-center justify-center">{left}</span> : null}
         <span className="min-w-0 flex-1 truncate">{label}</span>
-        {right ? <span className="shrink-0 text-[10px] font-normal normal-case tracking-normal text-txt-quaternary">{right}</span> : null}
+        {right ? <span className="shrink-0 text-[10px] text-txt-quaternary">{right}</span> : null}
       </HeaderTag>
-      {children ? <div className="space-y-0.5 border-l border-separator-hairline pl-3">{children}</div> : null}
+      {children ? <div className="space-y-1 border-l border-separator-hairline pl-3">{children}</div> : null}
     </div>
   );
 }
@@ -157,9 +157,8 @@ export function OutlineNavItem({
       title={title}
       style={style}
       className={clsx(
-        'relative flex min-h-7 w-full items-center gap-1.5 rounded-md py-1.5 pl-3 pr-2 text-left text-[12.5px] leading-snug transition-colors',
-        'before:absolute before:left-0 before:top-1/2 before:h-px before:w-2 before:-translate-x-3 before:bg-separator-thin',
-        active ? 'bg-sys-blue/[0.05] font-medium text-sys-blue before:bg-sys-blue' : 'text-txt-primary hover:bg-fill-quaternary hover:text-txt-primary',
+        'relative flex min-h-7 w-full items-center gap-2 rounded-lg py-1.5 pl-3 pr-2 text-left text-[13px] leading-snug transition-colors',
+        active ? 'bg-[color-mix(in_srgb,var(--sys-blue)_12%,transparent)] font-medium text-sys-blue' : 'text-txt-secondary hover:bg-fill-quaternary hover:text-txt-primary',
         className,
       )}
     >

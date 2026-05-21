@@ -5,20 +5,13 @@ import React, { createContext, useCallback, useContext, useEffect, useState, Rea
 type Theme = 'dark' | 'light';
 
 interface ThemeContextValue {
-  auroraBackgroundEnabled: boolean;
-  setAuroraBackgroundEnabled: (enabled: boolean) => void;
   theme: Theme;
-  toggleAuroraBackground: () => void;
   toggleTheme: () => void;
 }
 
 const STORAGE_KEY = 'lore-theme';
-const AURORA_BACKGROUND_STORAGE_KEY = 'lore-aurora-background';
 const ThemeContext = createContext<ThemeContextValue>({
-  auroraBackgroundEnabled: false,
-  setAuroraBackgroundEnabled: () => {},
   theme: 'dark',
-  toggleAuroraBackground: () => {},
   toggleTheme: () => {},
 });
 
@@ -32,10 +25,6 @@ export function ThemeProvider({ children }: ThemeProviderProps): React.JSX.Eleme
     if (typeof document === 'undefined') return 'dark';
     return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
   });
-  const [auroraBackgroundEnabled, setAuroraBackgroundEnabledState] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    try { return window.localStorage.getItem(AURORA_BACKGROUND_STORAGE_KEY) === '1'; } catch { return false; }
-  });
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -46,21 +35,8 @@ export function ThemeProvider({ children }: ThemeProviderProps): React.JSX.Eleme
     setThemeState((prev) => (prev === 'dark' ? 'light' : 'dark'));
   }, []);
 
-  const setAuroraBackgroundEnabled = useCallback((enabled: boolean) => {
-    setAuroraBackgroundEnabledState(enabled);
-    try { window.localStorage.setItem(AURORA_BACKGROUND_STORAGE_KEY, enabled ? '1' : '0'); } catch { /* ignore */ }
-  }, []);
-
-  const toggleAuroraBackground = useCallback(() => {
-    setAuroraBackgroundEnabledState((prev) => {
-      const next = !prev;
-      try { window.localStorage.setItem(AURORA_BACKGROUND_STORAGE_KEY, next ? '1' : '0'); } catch { /* ignore */ }
-      return next;
-    });
-  }, []);
-
   return (
-    <ThemeContext.Provider value={{ auroraBackgroundEnabled, setAuroraBackgroundEnabled, theme, toggleAuroraBackground, toggleTheme }}>
+    <ThemeContext.Provider value={{ theme, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   );

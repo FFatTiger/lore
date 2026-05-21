@@ -7,9 +7,8 @@ import { ThemeProvider, useTheme } from '../theme';
 const originalWindow = globalThis.window;
 const originalDocument = globalThis.document;
 
-function installBrowserState({ auroraStorageValue, themeAttribute = 'dark' }: { auroraStorageValue?: string; themeAttribute?: string } = {}): void {
+function installBrowserState({ themeAttribute = 'dark' }: { themeAttribute?: string } = {}): void {
   const store = new Map<string, string>();
-  if (auroraStorageValue !== undefined) store.set('lore-aurora-background', auroraStorageValue);
 
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
@@ -38,36 +37,35 @@ function restoreBrowserState(): void {
 }
 
 function ThemeProbe(): React.JSX.Element {
-  const { auroraBackgroundEnabled, theme, toggleAuroraBackground } = useTheme();
+  const { theme, toggleTheme } = useTheme();
 
   return (
     <span
-      data-aurora-background-enabled={String(auroraBackgroundEnabled)}
       data-theme={theme}
-      data-toggle-aurora-type={typeof toggleAuroraBackground}
+      data-toggle-theme-type={typeof toggleTheme}
     />
   );
 }
 
-describe('ThemeProvider aurora background preference', () => {
+describe('ThemeProvider app theme preference', () => {
   afterEach(() => {
     restoreBrowserState();
   });
 
-  it('defaults the aurora background preference to disabled', () => {
+  it('reads the initial app theme from the document attribute', () => {
     installBrowserState();
 
     const html = renderToStaticMarkup(<ThemeProvider><ThemeProbe /></ThemeProvider>);
 
-    expect(html).toContain('data-aurora-background-enabled="false"');
-    expect(html).toContain('data-toggle-aurora-type="function"');
+    expect(html).toContain('data-theme="dark"');
+    expect(html).toContain('data-toggle-theme-type="function"');
   });
 
-  it('restores the aurora background preference from localStorage', () => {
-    installBrowserState({ auroraStorageValue: '1' });
+  it('restores the light theme from the document attribute', () => {
+    installBrowserState({ themeAttribute: 'light' });
 
     const html = renderToStaticMarkup(<ThemeProvider><ThemeProbe /></ThemeProvider>);
 
-    expect(html).toContain('data-aurora-background-enabled="true"');
+    expect(html).toContain('data-theme="light"');
   });
 });

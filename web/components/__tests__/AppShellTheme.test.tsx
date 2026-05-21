@@ -3,8 +3,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const themeMock = vi.hoisted(() => ({
-  auroraBackgroundEnabled: false,
-  toggleAuroraBackground: vi.fn(),
   toggleTheme: vi.fn(),
 }));
 
@@ -15,10 +13,6 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@lobehub/ui', () => ({
   ConfigProvider: ({ children }: { children: React.ReactNode }) => <div data-lobe-config-provider="true">{children}</div>,
-}));
-
-vi.mock('@lobehub/ui/awesome', () => ({
-  AuroraBackground: ({ children }: { children?: React.ReactNode }) => <div data-aurora-background="true">{children}</div>,
 }));
 
 vi.mock('@lobehub/ui/es/ThemeProvider/index', () => ({
@@ -54,26 +48,41 @@ vi.mock('../../lib/i18n', () => ({
 
 vi.mock('../../lib/theme', () => ({
   useTheme: () => ({
-    auroraBackgroundEnabled: themeMock.auroraBackgroundEnabled,
     theme: 'light',
-    toggleAuroraBackground: themeMock.toggleAuroraBackground,
     toggleTheme: themeMock.toggleTheme,
   }),
 }));
 
 vi.mock('../ui', () => ({
-  AuroraBackdrop: () => <div data-aurora-background="true" />,
+  ActionIcon: ({ icon: Icon, title }: { icon: React.ElementType; title: string }) => (
+    <button data-action-icon="true" title={title}>
+      <Icon />
+    </button>
+  ),
   AppUIProvider: ({ children }: { children: React.ReactNode }) => <div data-app-ui-provider="true">{children}</div>,
   Button: ({ children }: { children: React.ReactNode }) => <button>{children}</button>,
+  SegmentedTabs: ({ options = [], value }: { options?: Array<{ value: string; label: React.ReactNode }>; value?: string }) => (
+    <div data-segmented-tabs="true" data-value={value}>
+      {options.map((option) => <button key={option.value}>{option.label}</button>)}
+    </div>
+  ),
+  Tabs: ({ activeKey, items = [] }: {
+    activeKey?: string;
+    items?: Array<{ key: string; label: React.ReactNode }>;
+  }) => {
+    return (
+      <div data-lobe-tabs="true" data-active-key={activeKey}>
+        {items.map((item) => <button key={item.key} data-tab-key={item.key}>{item.label}</button>)}
+      </div>
+    );
+  },
 }));
 
-import { AppShellFrame, NavDock, navIndicatorClassName } from '../AppShell';
+import { AppShellFrame, NavDock } from '../AppShell';
 import { AppUIProvider } from '../ui';
 
 describe('AppShell theme contrast', () => {
   beforeEach(() => {
-    themeMock.auroraBackgroundEnabled = false;
-    themeMock.toggleAuroraBackground.mockClear();
     themeMock.toggleTheme.mockClear();
   });
 
@@ -83,66 +92,36 @@ describe('AppShell theme contrast', () => {
     expect(html).toContain('data-app-ui-provider="true"');
   });
 
-  it('uses a subtle fill background for active nav indicator', () => {
-    expect(navIndicatorClassName).toContain('bg-fill-primary');
-    expect(navIndicatorClassName).toContain('shadow-none');
-  });
-
-  it('renders the responsive nav dock with the final mobile behavior', () => {
+  it('renders the workspace header around one default Lobe Tabs surface', () => {
     const html = renderToStaticMarkup(<NavDock />);
 
-    expect(html).toContain('bottom-3');
-    expect(html).toContain('md:bottom-auto');
-    expect(html).toContain('md:top-4');
-    expect(html).toContain('Enable Aurora Background');
-    expect(html).not.toContain('Disable Aurora Background');
-    expect(html).toContain('aria-pressed="false"');
-    expect(html).toContain('bg-[var(--dock-bg-mobile)]');
-    expect(html).toContain('md:bg-[var(--dock-bg)]');
-    expect(html).not.toContain('bg-bg-elevated/80');
-    expect(html).toContain('w-[min(calc(100vw-8px),24rem)] md:w-auto md:max-w-[calc(100vw-16px)]');
-    expect(html).toContain('relative flex w-full items-center');
-    expect(html).not.toContain('justify-between');
-    expect(html).toContain('relative min-w-0 flex-1 overflow-hidden md:flex-none');
-    expect(html).toContain('grid w-full grid-cols-5 items-center gap-0 overflow-hidden md:flex md:w-auto md:gap-0.5 md:overflow-x-auto');
-    expect(html).toContain('min-w-0 truncate rounded-full px-1 py-2.5 text-center text-[12.5px]');
-    expect(html).not.toContain('bg-[linear-gradient(to_left,var(--dock-bg-mobile),transparent)]');
-    expect(html).toContain('pl-1.5 md:pl-2.5 pr-1.5 md:pr-2 py-2.5 md:py-2');
-    expect(html).toContain('md:shrink-0 md:px-3.5 md:py-2 md:text-[13.5px]');
-    expect(html).toContain('h-9 w-9 md:h-8 md:w-8');
-    expect(html).toContain('hidden md:flex items-center gap-2');
-  });
-
-  it('renders the aurora nav toggle as active when enabled', () => {
-    themeMock.auroraBackgroundEnabled = true;
-
-    const html = renderToStaticMarkup(<NavDock />);
-
-    expect(html).toContain('Disable Aurora Background');
+    expect((html.match(/data-lobe-tabs="true"/g) || []).length).toBe(1);
+    expect(html).toContain('data-active-key="/memory"');
+    expect(html).toContain('data-tab-key="/memory"');
+    expect(html).toContain('data-tab-key="/recall"');
+    expect(html).toContain('data-tab-key="/recall/drilldown"');
+    expect(html).toContain('Lore');
+    expect(html).toContain('data-shell-nav-left="true"');
+    expect(html).toContain('data-shell-nav-tabs="true"');
+    expect((html.match(/data-action-icon="true"/g) || []).length).toBe(1);
     expect(html).not.toContain('Enable Aurora Background');
-    expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain('bg-sys-blue/15');
+    expect(html).not.toContain('Disable Aurora Background');
+    expect(html).toContain('data-segmented-tabs="true"');
+    expect(html).toContain('ZH');
+    expect(html).not.toContain('bottom-3');
+    expect(html).not.toContain('fixed');
+    expect(html).not.toContain('grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]');
+    expect(html).not.toContain('bg-[var(--dock-bg-mobile)]');
   });
 
-  it('keeps the workspace aurora backdrop disabled by default', () => {
+  it('renders the workspace frame without an aurora backdrop layer', () => {
     const html = renderToStaticMarkup(
-      <AppShellFrame auroraBackgroundEnabled={false}>
+      <AppShellFrame>
         <main>Workspace</main>
       </AppShellFrame>,
     );
 
     expect(html).toContain('Workspace');
     expect(html).not.toContain('data-aurora-background="true"');
-  });
-
-  it('renders the workspace aurora backdrop when enabled', () => {
-    const html = renderToStaticMarkup(
-      <AppShellFrame auroraBackgroundEnabled>
-        <main>Workspace</main>
-      </AppShellFrame>,
-    );
-
-    expect(html).toContain('Workspace');
-    expect(html).toContain('data-aurora-background="true"');
   });
 });

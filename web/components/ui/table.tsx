@@ -50,7 +50,7 @@ export function Table<T extends RowData = RowData>({ columns, rows, empty = '暂
   return (
     <div className="w-full overflow-x-auto">
       <table className="min-w-full border-collapse text-left">
-        <thead>
+        <thead className="bg-bg-inset">
           {table.getHeaderGroups().map((headerGroup) => (
             <tr key={headerGroup.id} className="border-b border-separator-thin">
               {headerGroup.headers.map((header) => (

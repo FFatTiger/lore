@@ -1,66 +1,9 @@
 import React from 'react';
 import clsx from 'clsx';
-import UpdaterDisplay, { type UpdaterSummary } from '../../../components/UpdaterDisplay';
 import type { MemoryNode } from '../useMemoryBrowserController';
-import KeywordManager from './KeywordManager';
 import GlossaryHighlighter from './GlossaryHighlighter';
 import { surfaceCardClassName } from '../../../components/ui';
 import MemoryViewsSection from './MemoryViewsSection';
-
-function MemoryNodeProperties({
-  node,
-  domain,
-  path,
-  refreshData,
-  navigateToHistory,
-  t,
-}: {
-  node: MemoryNode;
-  domain: string;
-  path: string;
-  refreshData: () => Promise<void>;
-  navigateToHistory: () => void;
-  t: (key: string) => string;
-}): React.JSX.Element {
-  const formatTime = (value?: string | null) => value ? new Date(value).toLocaleString() : '';
-
-  return (
-    <div className="space-y-3">
-      {node.disclosure && (
-        <blockquote className="max-w-3xl border-l-2 border-separator pl-3 text-[13px] leading-relaxed text-txt-tertiary italic">
-          {node.disclosure}
-        </blockquote>
-      )}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] text-txt-quaternary">
-        {node.last_updated_at ? (
-          <span title={formatTime(node.last_updated_at)}>
-            {t('Updated')}: {new Date(node.last_updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </span>
-        ) : node.created_at ? (
-          <span title={formatTime(node.created_at)}>
-            {t('Created')}: {new Date(node.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </span>
-        ) : null}
-        {node.last_updated_at && (
-          <span className="flex flex-wrap items-center gap-1.5">
-            <span>{t('Source')}:</span>
-            <UpdaterDisplay
-              updaters={node.updaters as UpdaterSummary[] | undefined}
-              fallbackClientType={node.last_updated_client_type}
-              fallbackSource={node.last_updated_source}
-              fallbackUpdatedAt={node.last_updated_at}
-              size="sm"
-              onOpenHistory={navigateToHistory}
-            />
-          </span>
-        )}
-        {!node.is_virtual && (
-          <KeywordManager keywords={node.glossary_keywords || []} domain={domain} path={path} onUpdate={() => void refreshData()} />
-        )}
-      </div>
-    </div>
-  );
-}
 
 interface MemoryNodeMetaProps {
   node: MemoryNode;
@@ -85,34 +28,49 @@ export default function MemoryNodeMeta({
 }: MemoryNodeMetaProps): React.JSX.Element | null {
   if (editing) return null;
 
-  const hasProperties = Boolean(
-    node.disclosure
-    || node.last_updated_at
-    || node.created_at
-    || (!node.is_virtual && (node.glossary_keywords?.length ?? 0) > 0)
-  );
+  const hasCoreContent = Boolean(node.disclosure || node.content);
+  const hasViews = Array.isArray(node.memory_views) && node.memory_views.length > 0;
+  if (!hasCoreContent && !hasViews) return null;
 
   return (
-    <div className="mb-6 space-y-4">
-      {hasProperties && (
-        <div className={clsx(surfaceCardClassName, 'px-4 py-4 md:px-6 md:py-5')}>
-          <MemoryNodeProperties node={node} domain={domain} path={path} refreshData={refreshData} navigateToHistory={navigateToHistory} t={t} />
-        </div>
+    <div className="mb-7 space-y-10">
+      {hasCoreContent && (
+        <article className={clsx(surfaceCardClassName, 'overflow-hidden px-5 py-5 md:px-7 md:py-7')} data-memory-core-card="true">
+          {node.disclosure && (
+            <section
+              className={clsx(node.content && 'border-b border-separator-hairline pb-5')}
+              data-memory-disclosure-section="true"
+            >
+              <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-txt-tertiary">
+                {t('Trigger / summary')}
+              </div>
+              <p className="text-[15px] leading-relaxed text-txt-primary">{node.disclosure}</p>
+            </section>
+          )}
+          {node.content && (
+            <section
+              className={clsx(node.disclosure && 'pt-5')}
+              data-memory-payload-section="true"
+            >
+              <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-txt-tertiary">
+                {t('Memory content')}
+              </div>
+              <div className="prose max-w-none">
+                <GlossaryHighlighter
+                  key={node.node_uuid}
+                  content={node.content}
+                  glossary={node.glossary_matches || []}
+                  currentNodeUuid={node.node_uuid || ''}
+                  onNavigate={navigateTo}
+                />
+              </div>
+            </section>
+          )}
+        </article>
       )}
-      {Array.isArray(node.memory_views) && node.memory_views.length > 0 && (
-        <MemoryViewsSection memoryViews={node.memory_views} t={t} />
-      )}
-      {node.content && (
-        <div className={clsx(surfaceCardClassName, 'px-4 py-4 md:px-6 md:py-5')}>
-          <div className="prose max-w-none">
-            <GlossaryHighlighter
-              key={node.node_uuid}
-              content={node.content}
-              glossary={node.glossary_matches || []}
-              currentNodeUuid={node.node_uuid || ''}
-              onNavigate={navigateTo}
-            />
-          </div>
+      {hasViews && (
+        <div className="pt-2" data-memory-advanced-section="true">
+          <MemoryViewsSection memoryViews={node.memory_views || []} t={t} />
         </div>
       )}
     </div>

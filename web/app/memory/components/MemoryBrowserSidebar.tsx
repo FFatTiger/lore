@@ -2,7 +2,7 @@
 
 import React from 'react';
 import clsx from 'clsx';
-import { OutlineNavFloatingPanel, OutlineNavShell } from '../../../components/ui';
+import { OutlineNavShell } from '../../../components/ui';
 import type { DomainItem } from '../useMemoryBrowserController';
 import DomainNode from './MemorySidebar';
 interface MemoryBrowserSidebarProps {
@@ -74,23 +74,21 @@ export default function MemoryBrowserSidebar({
         </div>
       </div>
 
-      {sidebarOpen && (
-        <OutlineNavFloatingPanel
-          ariaLabel={t('Domains')}
-          breakpoint="md"
-          left="max(1.5rem, calc((100vw - 1400px) / 2 + 1.5rem))"
-          panelClassName="w-52 lg:w-56"
-          placeholderClassName="w-52 lg:w-56"
-          title={t('Domains')}
-          footer={(
-            <code className="block break-all font-mono text-[10px] leading-snug text-txt-quaternary">
-              {domain}://{path || 'root'}
-            </code>
-          )}
-        >
-          {sidebarBody}
-        </OutlineNavFloatingPanel>
-      )}
+      <aside className="hidden h-full w-[280px] shrink-0 flex-col border-r border-separator-hairline bg-bg-system/95 md:flex lg:w-[300px]">
+        <div className="hover-scrollbar min-h-0 flex-1 overflow-y-auto px-9 py-8">
+          <OutlineNavShell
+            ariaLabel={t('Domains')}
+            title={`${t('Domains')} (DOMAIN)`}
+          >
+            {sidebarBody}
+          </OutlineNavShell>
+        </div>
+        <div className="flex-shrink-0 border-t border-separator-hairline px-9 py-4">
+          <code className="block break-all font-mono text-[10px] leading-snug text-txt-quaternary">
+            {domain}://{path || 'root'}
+          </code>
+        </div>
+      </aside>
     </>
   );
 }

@@ -22,48 +22,42 @@
   :root {
     color-scheme: dark;
 
-    /* ── Apple dark system palette (default) ─────────────── */
-    /* bumped off pure black to avoid halos on OLED-ish displays */
-    --bg-system: #101012;
-    --bg-elevated: #1C1C1F;
-    --bg-raised: #2A2A2E;
-    --bg-surface: #3A3A3D;
-    --bg-inset: #0C0C0E;
-    --dock-bg: rgba(28, 28, 31, 0.68);
-    --dock-bg-mobile: rgba(28, 28, 31, 0.36);
+    /* ── graphite dark system palette (default) ──────────── */
+    --bg-system: #050505;
+    --bg-elevated: #111111;
+    --bg-raised: #151515;
+    --bg-surface: #1B1B1B;
+    --bg-inset: #080808;
 
-    --fill-primary: rgba(120, 120, 128, 0.36);
-    --fill-secondary: rgba(120, 120, 128, 0.24);
-    --fill-tertiary: rgba(118, 118, 128, 0.16);
-    --fill-quaternary: rgba(116, 116, 128, 0.10);
+    --fill-primary: rgba(255, 255, 255, 0.12);
+    --fill-secondary: rgba(255, 255, 255, 0.09);
+    --fill-tertiary: rgba(255, 255, 255, 0.06);
+    --fill-quaternary: rgba(255, 255, 255, 0.04);
 
-    --separator: rgba(84, 84, 88, 0.65);
-    --separator-thin: rgba(255, 255, 255, 0.08);
-    --separator-hairline: rgba(255, 255, 255, 0.05);
+    --separator: rgba(255, 255, 255, 0.18);
+    --separator-thin: rgba(255, 255, 255, 0.11);
+    --separator-hairline: rgba(255, 255, 255, 0.07);
 
-    --text-primary: #FFFFFF;
-    --text-secondary: rgba(235, 235, 245, 0.62);
-    --text-tertiary: rgba(235, 235, 245, 0.38);
-    --text-quaternary: rgba(235, 235, 245, 0.22);
+    --text-primary: #F4F4F5;
+    --text-secondary: rgba(244, 244, 245, 0.72);
+    --text-tertiary: rgba(244, 244, 245, 0.46);
+    --text-quaternary: rgba(244, 244, 245, 0.28);
 
-    /* slightly desaturated colors for dark mode comfort */
-    --sys-blue: #409CFF;
-    --sys-purple: #C47BF0;
-    --sys-green: #4CD471;
-    --sys-red: #FF6961;
-    --sys-orange: #FFB443;
-    --sys-yellow: #FFE066;
-    --sys-teal: #7AD6F5;
-    --sys-indigo: #7A78E8;
-    --sys-pink: #FF6B8F;
+    /* crisp accent colors against near-black surfaces */
+    --sys-blue: #2F80FF;
+    --sys-purple: #A855F7;
+    --sys-green: #10D39A;
+    --sys-red: #FF3B4F;
+    --sys-orange: #FF6B00;
+    --sys-yellow: #FBBF24;
+    --sys-teal: #14B8A6;
+    --sys-indigo: #6366F1;
+    --sys-pink: #EC4899;
 
-    /* soft card shadow — barely visible in dark, gives subtle depth */
-    --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-    --dock-shadow: 0 16px 56px -10px rgba(0, 0, 0, 0.55), 0 2px 10px rgba(0, 0, 0, 0.35);
-
+    --card-shadow: 0 0 0 1px rgba(255, 255, 255, 0.02);
     /* scrollbar (theme-aware) */
-    --scrollbar-thumb: rgba(255, 255, 255, 0.10);
-    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.18);
+    --scrollbar-thumb: rgba(255, 255, 255, 0.16);
+    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.28);
 
     /* typography */
     --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
@@ -79,45 +73,39 @@
   :root[data-theme="light"] {
     color-scheme: light;
 
-    /* ── Apple light system palette ──────────────────────── */
-    /* inverted hierarchy: body is light gray, cards pop as white */
-    --bg-system: #F2F2F5;
-    --bg-elevated: #FFFFFF;
-    --bg-raised: #F5F5F7;
-    --bg-surface: #E9E9EC;
-    --bg-inset: #FAFAFC;
-    --dock-bg: rgba(255, 255, 255, 0.68);
-    --dock-bg-mobile: rgba(255, 255, 255, 0.48);
+    /* ── soft light system palette ───────────────────────── */
+    --bg-system: #F9FAFB;
+    --bg-elevated: #FCFCFD;
+    --bg-raised: #F3F4F6;
+    --bg-surface: #EEF2F7;
+    --bg-inset: #F8FAFC;
 
-    --fill-primary: rgba(120, 120, 128, 0.18);
-    --fill-secondary: rgba(120, 120, 128, 0.14);
-    --fill-tertiary: rgba(118, 118, 128, 0.10);
-    --fill-quaternary: rgba(116, 116, 128, 0.06);
+    --fill-primary: rgba(17, 24, 39, 0.08);
+    --fill-secondary: rgba(17, 24, 39, 0.06);
+    --fill-tertiary: rgba(17, 24, 39, 0.045);
+    --fill-quaternary: rgba(17, 24, 39, 0.028);
 
-    --separator: rgba(60, 60, 67, 0.36);
-    --separator-thin: rgba(60, 60, 67, 0.12);
-    --separator-hairline: rgba(60, 60, 67, 0.06);
+    --separator: rgba(17, 24, 39, 0.16);
+    --separator-thin: rgba(17, 24, 39, 0.09);
+    --separator-hairline: rgba(17, 24, 39, 0.055);
 
-    --text-primary: #1C1C1E;
-    --text-secondary: rgba(60, 60, 67, 0.78);
-    --text-tertiary: rgba(60, 60, 67, 0.54);
-    --text-quaternary: rgba(60, 60, 67, 0.36);
+    --text-primary: #111827;
+    --text-secondary: rgba(17, 24, 39, 0.72);
+    --text-tertiary: rgba(17, 24, 39, 0.50);
+    --text-quaternary: rgba(17, 24, 39, 0.34);
 
     /* Apple system colors (light) */
     --sys-blue: #007AFF;
     --sys-purple: #AF52DE;
     --sys-green: #34C759;
     --sys-red: #FF3B30;
-    --sys-orange: #FF9500;
+    --sys-orange: #B7791F;
     --sys-yellow: #B8860B;
     --sys-teal: #30B0C7;
     --sys-indigo: #5856D6;
     --sys-pink: #FF2D55;
 
-    /* light-mode cards need a visible shadow for depth */
-    --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.03);
-    --dock-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06);
-
+    --card-shadow: 0 4px 20px rgba(15, 23, 42, 0.03), 0 1px 2px rgba(15, 23, 42, 0.025);
     --scrollbar-thumb: rgba(0, 0, 0, 0.14);
     --scrollbar-thumb-hover: rgba(0, 0, 0, 0.28);
   }
@@ -313,6 +301,15 @@
   flex-shrink: 0;
   margin-top: 0.18rem;
   color: var(--sys-orange);
+}
+
+.app-segmented-rect.ant-segmented {
+  border-radius: 8px;
+}
+.app-segmented-rect .ant-segmented-thumb,
+.app-segmented-rect .ant-segmented-item,
+.app-segmented-rect .ant-segmented-item-label {
+  border-radius: 6px;
 }
 
 .sidebar-panel {

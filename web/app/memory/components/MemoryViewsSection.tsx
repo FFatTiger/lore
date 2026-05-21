@@ -44,15 +44,15 @@ export default function MemoryViewsSection({ memoryViews, t, defaultOpen = false
             return (
               <div
                 key={String(view.id || `${view.view_type}-${view.updated_at}`)}
-                className={index > 0 ? 'border-t border-separator-hairline px-4 py-3 md:px-6' : 'px-4 py-3 md:px-6'}
+                className={index > 0 ? 'border-t border-separator-hairline px-5 py-5 md:px-6' : 'px-5 py-5 md:px-6'}
               >
-                <div className="mb-1.5 flex flex-wrap items-center gap-2">
-                  <span className="text-[12px] font-medium text-txt-primary">{view.view_type}</span>
-                  <span className="font-mono text-[11px] text-txt-tertiary">{t('Relevance')} {Number(view.weight || 0).toFixed(2)}</span>
+                <div className="mb-4 flex flex-wrap items-center gap-2">
+                  <span className="text-[15px] font-semibold text-txt-primary">{view.view_type}</span>
+                  <span className="font-mono text-[12px] text-txt-tertiary">{t('Relevance')} {Number(view.weight || 0).toFixed(2)}</span>
                   {view.status && <Badge tone={view.status === 'active' ? 'green' : 'soft'}>{view.status}</Badge>}
                 </div>
-                <pre className="mb-2 max-h-24 overflow-hidden whitespace-pre-wrap text-[12.5px] leading-relaxed text-txt-secondary">{view.text_content}</pre>
-                <details className="text-[10.5px] text-txt-quaternary">
+                <pre className="mb-4 max-h-56 overflow-hidden rounded-lg bg-bg-inset px-4 py-4 whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-txt-secondary">{view.text_content}</pre>
+                <details className="text-[12px] text-txt-quaternary">
                   <summary className="w-fit cursor-pointer select-none hover:text-txt-secondary">{t('Details')}</summary>
                   <div className="mt-1 font-mono">
                     {view.embedding_model || t('Pending')}

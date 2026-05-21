@@ -97,8 +97,13 @@ vi.mock('../../../../../lib/i18n', () => ({
   useT: () => ({ t: (key: string) => key }),
 }));
 
+vi.mock('../../../../components/ConfirmDialog', () => ({
+  useConfirm: () => ({ toast: vi.fn() }),
+}));
+
 import MemoryEditor from '../MemoryEditor';
 import MemoryNodeHeader from '../MemoryNodeHeader';
+import MemoryNodeMeta from '../MemoryNodeMeta';
 import MemoryViewsSection from '../MemoryViewsSection';
 
 describe('memory detail Lobe wrappers', () => {
@@ -144,12 +149,87 @@ describe('memory detail Lobe wrappers', () => {
         rebuildingViews={false}
         handleDelete={async () => undefined}
         navigateTo={() => undefined}
+        refreshData={async () => undefined}
+        navigateToHistory={() => undefined}
         t={(key) => key}
       />,
     );
 
     expect(html).toContain('data-lobe-dropdown="true"');
     expect(html).toContain('More');
+    expect(html).toContain('data-memory-node-header="true"');
+  });
+
+  it('keeps title actions aligned and renders node metadata as a subtitle', () => {
+    const html = renderToStaticMarkup(
+      <MemoryNodeHeader
+        node={{
+          content: 'body',
+          priority: 0,
+          disclosure: 'when useful',
+          last_updated_at: '2026-05-20T10:12:00.000Z',
+          last_updated_client_type: 'codex',
+          last_updated_source: 'api:test',
+          glossary_keywords: ['term', 'timezone'],
+        }}
+        data={{ node: null, children: [], breadcrumbs: [{ label: 'Memory', path: '' }, { label: 'user', path: 'user' }] }}
+        domain="preferences"
+        path="user"
+        isRoot={false}
+        editing={false}
+        moving={false}
+        creating={false}
+        sidebarOpen
+        setSidebarOpen={() => undefined}
+        startEditing={() => undefined}
+        setCreating={() => undefined}
+        setMoving={() => undefined}
+        handleRebuildViews={async () => undefined}
+        rebuildingViews={false}
+        handleDelete={async () => undefined}
+        navigateTo={() => undefined}
+        refreshData={async () => undefined}
+        navigateToHistory={() => undefined}
+        t={(key) => key}
+      />,
+    );
+
+    expect(html).toContain('data-memory-title-row="true"');
+    expect(html).toContain('items-center justify-between');
+    expect(html).toContain('data-memory-node-subtitle="true"');
+    expect(html).toContain('Updated');
+    expect(html).toContain('Source');
+    expect(html).toContain('#term');
+  });
+
+  it('uses the active domain as the title on domain root pages', () => {
+    const html = renderToStaticMarkup(
+      <MemoryNodeHeader
+        node={{ content: '', priority: 0, is_virtual: true }}
+        data={{ node: null, children: [], breadcrumbs: [{ label: 'Memory', path: '' }] }}
+        domain="preferences"
+        path=""
+        isRoot
+        editing={false}
+        moving={false}
+        creating={false}
+        sidebarOpen
+        setSidebarOpen={() => undefined}
+        startEditing={() => undefined}
+        setCreating={() => undefined}
+        setMoving={() => undefined}
+        handleRebuildViews={async () => undefined}
+        rebuildingViews={false}
+        handleDelete={async () => undefined}
+        navigateTo={() => undefined}
+        refreshData={async () => undefined}
+        navigateToHistory={() => undefined}
+        t={(key) => key}
+      />,
+    );
+
+    expect(html).toContain('>preferences<');
+    expect(html).not.toContain('>root<');
   });
 
   it('does not render history action in the node header', () => {
@@ -172,6 +252,8 @@ describe('memory detail Lobe wrappers', () => {
         rebuildingViews={false}
         handleDelete={async () => undefined}
         navigateTo={() => undefined}
+        refreshData={async () => undefined}
+        navigateToHistory={() => undefined}
         t={(key) => key}
       />,
     );
@@ -199,5 +281,70 @@ describe('memory detail Lobe wrappers', () => {
 
     expect(html).toContain('data-badge="true"');
     expect(html).toContain('claude-opus-4-7');
+  });
+
+  it('keeps retrieval views collapsed by default in memory details', () => {
+    const html = renderToStaticMarkup(
+      <MemoryNodeMeta
+        node={{
+          memory_views: [
+            {
+              id: 1,
+              view_type: 'gist',
+              weight: 1,
+              status: 'active',
+              text_content: 'collapsed view text',
+            },
+          ],
+        }}
+        domain="project"
+        path="node"
+        editing={false}
+        refreshData={async () => undefined}
+        navigateTo={() => undefined}
+        navigateToHistory={() => undefined}
+        t={(key) => key}
+      />,
+    );
+
+    expect(html).toContain('Retrieval views');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain('collapsed view text');
+  });
+
+  it('merges disclosure and payload into one core card before advanced retrieval views', () => {
+    const html = renderToStaticMarkup(
+      <MemoryNodeMeta
+        node={{
+          node_uuid: 'node-1',
+          disclosure: 'when user profile is needed',
+          content: 'user is da ge',
+          memory_views: [
+            {
+              id: 1,
+              view_type: 'gist',
+              weight: 1,
+              status: 'active',
+              text_content: 'collapsed view text',
+            },
+          ],
+        }}
+        domain="preferences"
+        path="user"
+        editing={false}
+        refreshData={async () => undefined}
+        navigateTo={() => undefined}
+        navigateToHistory={() => undefined}
+        t={(key) => key}
+      />,
+    );
+
+    expect(html).toContain('data-memory-core-card="true"');
+    expect(html).toContain('data-memory-disclosure-section="true"');
+    expect(html).toContain('data-memory-payload-section="true"');
+    expect(html).toContain('Trigger / summary');
+    expect(html).toContain('Memory content');
+    expect(html.indexOf('when user profile is needed')).toBeLessThan(html.indexOf('user is da ge'));
+    expect(html.indexOf('user is da ge')).toBeLessThan(html.indexOf('Retrieval views'));
   });
 });

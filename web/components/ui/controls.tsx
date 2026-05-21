@@ -20,6 +20,8 @@ import type { InputNumberProps as LobeInputNumberProps, InputPasswordProps as Lo
 import LobeSelect from '@lobehub/ui/es/Select/Select';
 import type { SelectProps as LobeSelectProps } from '@lobehub/ui/es/Select/type';
 import LobeSegmented from '@lobehub/ui/es/Segmented/index';
+import LobeTabs from '@lobehub/ui/es/Tabs/index';
+import type { TabsProps as LobeTabsProps } from '@lobehub/ui/es/Tabs/type';
 import LobeTag from '@lobehub/ui/es/Tag/Tag';
 import LobeEmpty from '@lobehub/ui/es/Empty/index';
 import LobeCopyButton from '@lobehub/ui/es/CopyButton/index';
@@ -59,7 +61,7 @@ export function Button({ variant = 'secondary', size = 'md', block = false, chil
 
   return (
     <LobeButton
-      className={clsx('press inline-flex items-center justify-center gap-1.5 font-medium rounded-full whitespace-nowrap', block && 'w-full', className)}
+      className={clsx('press inline-flex items-center justify-center gap-1.5 font-medium !rounded-lg whitespace-nowrap', block && 'w-full', className)}
       danger={danger}
       size={BUTTON_SIZE_MAP[size]}
       type={type}
@@ -96,7 +98,7 @@ export function TextButton({ tone = 'blue', size = 'md', active = false, type = 
     <button
       type={type}
       className={clsx(
-        'press inline-flex items-center gap-1 rounded-full font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+        'press inline-flex items-center gap-1 rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40',
         TEXT_BUTTON_SIZES[size],
         TEXT_BUTTON_TONES[tone],
         active && 'bg-sys-blue/15 font-semibold hover:opacity-100',
@@ -169,6 +171,7 @@ export function Badge({ children, tone = 'default', size = 'md', dot = false, mo
     <LobeTag
       className={clsx(
         'inline-flex items-center gap-1 font-medium',
+        '!rounded-md',
         BADGE_SIZE_CLASSES[size],
         mono && 'font-mono tabular-nums',
         className,
@@ -313,7 +316,7 @@ export function FilterNumberField({ className, value, onChange, variant = 'borde
       variant={variant}
       onChange={(next: number | null | undefined) => onChange(next == null ? null : Number(next))}
       {...rest}
-      className={clsx(className)}
+      className={clsx('!rounded-md', className)}
     />
   );
 }
@@ -384,7 +387,7 @@ interface FilterPillProps {
 
 function filterPillClassName(active: boolean, className?: string): string {
   return clsx(
-    'inline-flex min-h-8 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors',
+    'inline-flex min-h-8 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium transition-colors',
     active ? 'border-sys-blue/40 bg-sys-blue/[0.04] text-txt-primary' : 'border-separator-thin bg-bg-elevated text-txt-secondary',
     className,
   );
@@ -573,14 +576,20 @@ interface SegmentedTabsProps {
 export function SegmentedTabs({ value, onValueChange, options, className }: SegmentedTabsProps): React.JSX.Element {
   return (
     <LobeSegmented
-      className={className}
+      className={clsx('app-segmented-rect', className)}
       options={options.map((option) => ({ label: option.label, value: option.value }))}
-      shape="round"
+      shape="default"
       value={value}
       variant="filled"
       onChange={(next) => onValueChange(String(next))}
     />
   );
+}
+
+export type AppTabsProps = LobeTabsProps;
+
+export function Tabs(props: AppTabsProps): React.JSX.Element {
+  return <LobeTabs {...props} />;
 }
 
 interface CopyButtonProps {

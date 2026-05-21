@@ -91,6 +91,8 @@ describe('MemoryBrowser actions surface', () => {
   it('renders children on non-root memory nodes and wires navigation refresh to action panels', () => {
     const html = renderToStaticMarkup(<MemoryBrowser />);
 
+    expect(html).toContain('data-memory-browser-shell="true"');
+    expect(html).toContain('data-memory-content="true"');
     expect(html).toContain('children-list:false:1');
     expect(html).toContain('sidebar-tree-version:0');
     expect(html).toContain('panels-refresh-navigation:function');

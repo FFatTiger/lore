@@ -19,8 +19,11 @@ describe('OutlineNav', () => {
     expect(html).toContain('Recall');
     expect(html).toContain('Weights');
     expect(html).toContain('Display');
-    expect(html).toContain('border-l border-separator-thin');
-    expect(html).toContain('before:bg-sys-blue');
+    expect(html).toContain('border-l border-separator-hairline');
+    expect(html).toContain('min-h-7');
+    expect(html).not.toContain('tracking-[0.04em]');
+    expect(html).not.toContain('before:bg-sys-blue');
+    expect(html).not.toContain('before:-translate-x-3');
   });
 
   it('renders the shared floating panel shell with a placeholder and footer', () => {

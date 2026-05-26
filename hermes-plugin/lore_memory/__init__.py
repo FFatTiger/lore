@@ -198,9 +198,8 @@ class LoreMemoryProvider(MemoryProvider):
     # -- Availability -------------------------------------------------------
 
     def is_available(self) -> bool:
-        base_url = os.environ.get("LORE_BASE_URL", "http://127.0.0.1:18901")
         try:
-            client = LoreClient(base_url=base_url)
+            client = LoreClient()
             client.health()
             return True
         except Exception:
@@ -209,10 +208,9 @@ class LoreMemoryProvider(MemoryProvider):
     # -- Lifecycle ----------------------------------------------------------
 
     def initialize(self, session_id: str, **kwargs) -> None:
-        base_url = os.environ.get("LORE_BASE_URL", "http://127.0.0.1:18901")
-        api_token = os.environ.get("LORE_API_TOKEN", "")
-        self._client = LoreClient(base_url=base_url, api_token=api_token)
+        self._client = LoreClient()
         self._session_id = session_id
+        resolved_base_url = getattr(self._client, "base_url", "http://127.0.0.1:18901")
 
         try:
             bridge = self._client.bridge_startup(
@@ -224,7 +222,7 @@ class LoreMemoryProvider(MemoryProvider):
             system_context = str(bridge.get("system_context") or "").strip()
             if system_context:
                 self._boot_block = system_context
-                logger.info("Lore memory provider initialized (server: %s, session: %s)", base_url, session_id)
+                logger.info("Lore memory provider initialized (server: %s, session: %s)", resolved_base_url, session_id)
                 return
         except Exception as e:
             logger.warning("Lore bridge startup failed: %s", e)
@@ -247,7 +245,7 @@ class LoreMemoryProvider(MemoryProvider):
         self._boot_block = "\n\n".join(part for part in parts if part)
 
         logger.info("Lore memory provider initialized (server: %s, session: %s)",
-                     base_url, session_id)
+                     resolved_base_url, session_id)
 
     # -- System prompt (static content) ------------------------------------
 

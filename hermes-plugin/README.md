@@ -43,7 +43,16 @@ client.create_node(
 
 ## Configuration
 
-Environment variables:
+Connection settings are read from `~/.lore/config.json`:
+
+```json
+{
+  "base_url": "http://127.0.0.1:18901",
+  "api_token": "YOUR_TOKEN_IF_USED"
+}
+```
+
+Environment variables remain as fallback compatibility:
 
 | Variable | Default | Description |
 |----------|---------|-------------|

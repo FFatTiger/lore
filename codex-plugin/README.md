@@ -5,7 +5,13 @@ Lore gives Codex MCP tools for fixed boot memory, recall search, durable memory 
 ## One-Command Install
 
 ```bash
-export LORE_BASE_URL=http://127.0.0.1:18901
+mkdir -p ~/.lore
+cat > ~/.lore/config.json <<'JSON'
+{
+  "base_url": "http://127.0.0.1:18901",
+  "api_token": "YOUR_TOKEN_IF_USED"
+}
+JSON
 ./scripts/install.sh
 ```
 
@@ -19,7 +25,6 @@ Start Lore before using the plugin:
 
 ```bash
 docker compose up -d
-export LORE_BASE_URL=http://127.0.0.1:18901
 ```
 
 The plugin MCP config points Codex to:
@@ -28,14 +33,16 @@ The plugin MCP config points Codex to:
 ${LORE_BASE_URL:-http://127.0.0.1:18901}/api/mcp?client_type=codex
 ```
 
-If Lore is protected by `API_TOKEN`, configure Codex MCP with the official Streamable HTTP bearer-token flag:
+Shared connection settings come from `~/.lore/config.json`:
 
-```bash
-export LORE_API_TOKEN="$API_TOKEN"
-./scripts/install.sh
+```json
+{
+  "base_url": "http://127.0.0.1:18901",
+  "api_token": "YOUR_TOKEN_IF_USED"
+}
 ```
 
-The installer uses `LORE_API_TOKEN` when present, then `API_TOKEN`, and writes the matching bearer-token env var into Codex MCP config.
+The installer reads that file, configures Codex MCP with a standard `Authorization: Bearer ...` HTTP header, and leaves the MCP URL as a plain base URL plus `client_type`.
 
 ## Prompt Injection Hooks
 

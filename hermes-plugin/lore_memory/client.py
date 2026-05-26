@@ -7,6 +7,7 @@ import json
 import urllib.request
 import urllib.error
 import ssl
+from pathlib import Path
 from typing import Any, Optional, Dict, List
 from urllib.parse import urlencode, urlparse, parse_qsl, urlunparse
 
@@ -26,6 +27,20 @@ class LoreClient:
     DEFAULT_TIMEOUT = 30
     DEFAULT_DOMAIN = "core"
     CLIENT_TYPE = "hermes"
+
+    @staticmethod
+    def _shared_config() -> Dict[str, Any]:
+        try:
+            path = Path.home() / ".lore" / "config.json"
+            with path.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _clean(value: Optional[str]) -> str:
+        return value.strip() if isinstance(value, str) and value.strip() else ""
     
     def __init__(
         self,
@@ -34,8 +49,11 @@ class LoreClient:
         timeout: Optional[int] = None,
         default_domain: Optional[str] = None
     ):
-        self.base_url = (base_url or os.getenv("LORE_BASE_URL") or self.DEFAULT_BASE_URL).rstrip("/")
-        self.api_token = api_token or os.getenv("LORE_API_TOKEN") or os.getenv("API_TOKEN") or ""
+        shared = self._shared_config()
+        shared_base_url = self._clean(shared.get("base_url"))
+        shared_api_token = self._clean(shared.get("api_token"))
+        self.base_url = (self._clean(base_url) or shared_base_url or self._clean(os.getenv("LORE_BASE_URL")) or self.DEFAULT_BASE_URL).rstrip("/")
+        self.api_token = self._clean(api_token) or shared_api_token or self._clean(os.getenv("LORE_API_TOKEN")) or self._clean(os.getenv("API_TOKEN"))
         self.timeout = timeout or int(os.getenv("LORE_TIMEOUT", self.DEFAULT_TIMEOUT))
         self.default_domain = default_domain or os.getenv("LORE_DEFAULT_DOMAIN") or self.DEFAULT_DOMAIN
     

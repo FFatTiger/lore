@@ -41,7 +41,7 @@ DOCKER_MANAGED=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --base-url)   BASE_URL="$2"; _EXPLICIT_BASE_URL=1; shift 2;;
-    --api-token)  API_TOKEN="$2"; shift 2;;
+    --api-token)  API_TOKEN="$2"; _EXPLICIT_API_TOKEN=1; shift 2;;
     --channels)   CHANNELS_RAW="$2"; shift 2;;
     --skip-docker) SKIP_DOCKER=1; shift;;
     --force)       FORCE=1; shift;;
@@ -154,35 +154,56 @@ have_command() { command -v "$1" >/dev/null 2>&1; }
 
 # ---- Config file ----
 
-read_config() {
+read_config_value() {
+  local key="$1"
   if [[ -f "$LORE_CONFIG_FILE" ]]; then
-    python3 -c "
-import sys, json
+    python3 - "$LORE_CONFIG_FILE" "$key" <<'PY' 2>/dev/null
+import json
+import sys
+
+path, key = sys.argv[1], sys.argv[2]
 try:
-  with open('$LORE_CONFIG_FILE') as f: d = json.load(f)
-  print(d.get('base_url',''))
-except: pass
-" 2>/dev/null
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+    value = data.get(key, "") if isinstance(data, dict) else ""
+    print(value if isinstance(value, str) else "")
+except Exception:
+    pass
+PY
   fi
+}
+
+read_config() {
+  read_config_value "base_url"
+}
+
+read_config_token() {
+  read_config_value "api_token"
 }
 
 read_config_docker_managed() {
   if [[ -f "$LORE_CONFIG_FILE" ]]; then
-    python3 -c "
-import sys, json
+    python3 - "$LORE_CONFIG_FILE" <<'PY' 2>/dev/null
+import json
+import sys
+
+path = sys.argv[1]
 try:
-  with open('$LORE_CONFIG_FILE') as f: d = json.load(f)
-  print(d.get('docker_managed', False))
-except: pass
-" 2>/dev/null
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+    print(data.get("docker_managed", False) if isinstance(data, dict) else False)
+except Exception:
+    pass
+PY
   fi
 }
 
 write_config() {
+  local write_version="${1:-1}"
   mkdir -p "$LORE_HOME"
   local new_ver=""
   # Only bump installed_version if we actually installed
-  if [[ $NEED_INSTALL -ne 2 ]]; then
+  if [[ "$write_version" == "1" && $NEED_INSTALL -ne 2 ]]; then
     new_ver="${RELEASE_VERSION:-}"
   fi
 
@@ -201,8 +222,8 @@ if os.path.exists(path):
     except: data = {}
 
 data['base_url'] = base_url
-if api_token: data['api_token'] = api_token
-elif 'api_token' in data: del data['api_token']
+if api_token:
+    data['api_token'] = api_token
 if version: data['installed_version'] = version
 if docker_managed == "1":
     data['docker_managed'] = True
@@ -214,7 +235,11 @@ elif 'docker_managed' not in data:
 with open(path, 'w') as f:
     json.dump(data, f, indent=2, ensure_ascii=False)
 PY
-  ok "Config saved"
+  if [[ "$write_version" == "1" ]]; then
+    ok "Config saved"
+  else
+    ok "Client config saved"
+  fi
 }
 
 # ---- Resolve channels ----
@@ -292,6 +317,12 @@ PY
 
 start_docker() {
   if [[ "$SKIP_DOCKER" == "1" ]]; then
+    if [[ -z "${_EXPLICIT_BASE_URL:-}" ]]; then
+      local saved; saved=$(read_config)
+      if [[ -n "$saved" ]]; then
+        BASE_URL="$saved"
+      fi
+    fi
     info "Skipping Docker"
     return
   fi
@@ -446,13 +477,19 @@ print(json.loads(sys.stdin.read()).get('tag_name',''))
   fi
 
   local installed
-  installed=$(python3 -c "
-import sys, json
+  installed=$(python3 - "$LORE_CONFIG_FILE" <<'PY' 2>/dev/null
+import json
+import sys
+
+path = sys.argv[1]
 try:
-  with open('$LORE_CONFIG_FILE') as f: d = json.load(f)
-  print(d.get('installed_version',''))
-except: pass
-" 2>/dev/null) || installed=""
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+    print(data.get("installed_version", "") if isinstance(data, dict) else "")
+except Exception:
+    pass
+PY
+) || installed=""
 
   # Semver compare: don't downgrade
   if [[ -n "$installed" && "$FORCE" != "1" ]]; then
@@ -600,6 +637,26 @@ PY
     ok "Claude settings updated"
   fi
 
+  local claude_mcp_url="${BASE_URL}/api/mcp?client_type=claudecode"
+  run_quiet claude mcp remove lore || true
+  local claude_mcp_configured=0
+  if [[ -n "$API_TOKEN" ]]; then
+    if run_quiet claude mcp add --transport http --scope user lore "$claude_mcp_url" --header "Authorization: Bearer ${API_TOKEN}"; then
+      claude_mcp_configured=1
+    else
+      warn "Claude: configure Lore MCP manually"
+    fi
+  else
+    if run_quiet claude mcp add --transport http --scope user lore "$claude_mcp_url"; then
+      claude_mcp_configured=1
+    else
+      warn "Claude: configure Lore MCP manually"
+    fi
+  fi
+  if [[ "$claude_mcp_configured" == "1" ]]; then
+    ok "Claude MCP configured"
+  fi
+
   # lore-guidance.md + CLAUDE.md @import
   local gsrc="$plugin_dir/rules/lore-guidance.md"
   local gdst="$HOME/.claude/lore-guidance.md"
@@ -686,10 +743,59 @@ PY
   # MCP
   local mcp_url="${BASE_URL}/api/mcp?client_type=codex"
   run_quiet codex mcp remove lore || true
-  if [[ -n "$API_TOKEN" ]]; then
-    run_quiet codex mcp add lore --url "$mcp_url" --bearer-token-env-var LORE_API_TOKEN || true
-  else
-    run_quiet codex mcp add lore --url "$mcp_url" || true
+  run_quiet codex mcp add lore --url "$mcp_url" || true
+  if have_command python3; then
+    python3 - "$cfg" "$mcp_url" "$API_TOKEN" <<'PY'
+import json
+import sys
+
+path, mcp_url, api_token = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    with open(path, encoding='utf-8') as handle:
+        lines = handle.read().splitlines()
+except FileNotFoundError:
+    lines = []
+
+section = '[mcp_servers.lore]'
+out = []
+idx = 0
+found = False
+while idx < len(lines):
+    line = lines[idx]
+    if line.strip() == section:
+        found = True
+        out.append(line)
+        idx += 1
+        url_written = False
+        while idx < len(lines) and not lines[idx].lstrip().startswith('['):
+            stripped = lines[idx].strip()
+            if stripped.startswith('url'):
+                out.append(f'url = {json.dumps(mcp_url)}')
+                url_written = True
+            elif stripped.startswith('bearer_token_env_var') or stripped.startswith('http_headers') or stripped.startswith('env_http_headers'):
+                pass
+            else:
+                out.append(lines[idx])
+            idx += 1
+        if not url_written:
+            out.append(f'url = {json.dumps(mcp_url)}')
+        if api_token:
+            out.append(f'http_headers = {{ Authorization = {json.dumps("Bearer " + api_token)} }}')
+        continue
+    out.append(line)
+    idx += 1
+
+if not found:
+    if out and out[-1] != '':
+        out.append('')
+    out.append(section)
+    out.append(f'url = {json.dumps(mcp_url)}')
+    if api_token:
+        out.append(f'http_headers = {{ Authorization = {json.dumps("Bearer " + api_token)} }}')
+
+with open(path, 'w', encoding='utf-8') as handle:
+    handle.write('\n'.join(out).rstrip() + '\n')
+PY
   fi
   ok "MCP configured"
 
@@ -733,6 +839,7 @@ PY
   if [[ -x "$installed_plugin_root/scripts/install-hooks.sh" ]]; then
     LORE_CODEX_PLUGIN_ROOT="$installed_plugin_root" \
       LORE_BASE_URL="${BASE_URL}" \
+      LORE_API_TOKEN="${API_TOKEN:-}" \
       bash "$installed_plugin_root/scripts/install-hooks.sh" 2>/dev/null || true
     ok "Codex hooks installed"
   fi
@@ -823,6 +930,9 @@ main() {
   # Ensure BASE_URL is set
   BASE_URL="${BASE_URL:-$DEFAULT_BASE_URL}"
   BASE_URL="${BASE_URL%/}"
+  if [[ -z "${_EXPLICIT_API_TOKEN:-}" && -z "$API_TOKEN" ]]; then
+    API_TOKEN="$(read_config_token)"
+  fi
 
   local channel_label="stable"
   [[ "$CHECK_DEV" == "1" ]] && channel_label="dev"
@@ -831,6 +941,7 @@ main() {
   info "Channels: $(IFS=,; echo "${CHANNELS[*]}") (${channel_label})"
 
   check_release || true
+  write_config 0
 
   for ch in "${CHANNELS[@]}"; do
     case "$ch" in
@@ -843,7 +954,7 @@ main() {
     esac
   done
 
-  write_config
+  write_config 1
 
   echo ""
   ok "Install complete (${RELEASE_VERSION:-unknown})"

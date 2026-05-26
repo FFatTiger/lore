@@ -12,7 +12,31 @@ CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 CODEX_CONFIG="${CODEX_CONFIG:-$CODEX_HOME/config.toml}"
 TARGET_ROOT="${LORE_CODEX_MARKETPLACE_ROOT:-$CODEX_HOME/plugins/lore-local-marketplace}"
 INSTALLED_PLUGIN_ROOT="$CODEX_HOME/plugins/cache/$MARKETPLACE_NAME/$PLUGIN_NAME/local"
+LORE_CONFIG_FILE="${LORE_CONFIG_FILE:-$HOME/.lore/config.json}"
+
+read_lore_config_value() {
+  local key="$1"
+  python3 - "$LORE_CONFIG_FILE" "$key" <<'PY' 2>/dev/null || true
+import json
+import sys
+
+path, key = sys.argv[1], sys.argv[2]
+try:
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+    value = data.get(key, "")
+    print(value if isinstance(value, str) else "")
+except Exception:
+    pass
+PY
+}
+
+SHARED_LORE_BASE_URL="$(read_lore_config_value base_url)"
+SHARED_LORE_API_TOKEN="$(read_lore_config_value api_token)"
+
+LORE_BASE_URL="${SHARED_LORE_BASE_URL:-${LORE_BASE_URL:-}}"
 LORE_BASE_URL="${LORE_BASE_URL:-$DEFAULT_BASE_URL}"
+LORE_API_TOKEN="${SHARED_LORE_API_TOKEN:-${LORE_API_TOKEN:-${API_TOKEN:-}}}"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -147,21 +171,62 @@ PY
 
 configure_mcp() {
   local url="${LORE_BASE_URL%/}/api/mcp?client_type=codex"
-  local token_env="${LORE_BEARER_TOKEN_ENV_VAR:-}"
-  if [ -z "$token_env" ]; then
-    if [ -n "${LORE_API_TOKEN:-}" ]; then
-      token_env="LORE_API_TOKEN"
-    elif [ -n "${API_TOKEN:-}" ]; then
-      token_env="API_TOKEN"
-    fi
-  fi
+  local token="${LORE_API_TOKEN:-${API_TOKEN:-}}"
 
   codex mcp remove lore >/dev/null 2>&1 || true
-  if [ -n "$token_env" ]; then
-    codex mcp add lore --url "$url" --bearer-token-env-var "$token_env"
-  else
-    codex mcp add lore --url "$url"
-  fi
+  codex mcp add lore --url "$url"
+
+  python3 - "$CODEX_CONFIG" "$url" "$token" <<'PY'
+import json
+import sys
+
+path, url, token = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    with open(path, encoding="utf-8") as handle:
+        lines = handle.read().splitlines()
+except FileNotFoundError:
+    lines = []
+
+section = "[mcp_servers.lore]"
+out = []
+idx = 0
+found = False
+while idx < len(lines):
+    line = lines[idx]
+    if line.strip() == section:
+        found = True
+        out.append(line)
+        idx += 1
+        url_written = False
+        while idx < len(lines) and not lines[idx].lstrip().startswith("["):
+            stripped = lines[idx].strip()
+            if stripped.startswith("url"):
+                out.append(f"url = {json.dumps(url)}")
+                url_written = True
+            elif stripped.startswith("bearer_token_env_var") or stripped.startswith("http_headers") or stripped.startswith("env_http_headers"):
+                pass
+            else:
+                out.append(lines[idx])
+            idx += 1
+        if not url_written:
+            out.append(f"url = {json.dumps(url)}")
+        if token:
+            out.append(f"http_headers = {{ Authorization = {json.dumps('Bearer ' + token)} }}")
+        continue
+    out.append(line)
+    idx += 1
+
+if not found:
+    if out and out[-1] != "":
+        out.append("")
+    out.append(section)
+    out.append(f"url = {json.dumps(url)}")
+    if token:
+        out.append(f"http_headers = {{ Authorization = {json.dumps('Bearer ' + token)} }}")
+
+with open(path, "w", encoding="utf-8") as handle:
+    handle.write("\n".join(out).rstrip() + "\n")
+PY
 }
 
 install_user_hooks() {

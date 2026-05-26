@@ -1,7 +1,37 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { pickPluginConfig, fetchJson, hasRecallConfig, textResult, buildApiUrl, authHeaders } from '../api';
 
 describe('pickPluginConfig', () => {
+  let originalHome: string | undefined;
+  let tempHome: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'lore-openclaw-home-'));
+    process.env.HOME = tempHome;
+    delete process.env.LORE_BASE_URL;
+    delete process.env.LORE_API_TOKEN;
+    delete process.env.API_TOKEN;
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    fs.rmSync(tempHome, { recursive: true, force: true });
+    delete process.env.LORE_BASE_URL;
+    delete process.env.LORE_API_TOKEN;
+    delete process.env.API_TOKEN;
+  });
+
+  function writeSharedConfig(config: Record<string, unknown>) {
+    const loreDir = path.join(tempHome, '.lore');
+    fs.mkdirSync(loreDir, { recursive: true });
+    fs.writeFileSync(path.join(loreDir, 'config.json'), JSON.stringify(config), 'utf-8');
+  }
+
   it('uses defaults when pluginConfig is empty', () => {
     const cfg = pickPluginConfig({});
     expect(cfg.baseUrl).toBe('http://127.0.0.1:18901');
@@ -29,6 +59,49 @@ describe('pickPluginConfig', () => {
     expect(cfg.recallEnabled).toBe(false);
     expect(cfg.injectPromptGuidance).toBe(false);
     expect(cfg.startupHealthcheck).toBe(false);
+  });
+
+  it('loads base URL and API token from shared Lore config', () => {
+    writeSharedConfig({
+      base_url: 'http://shared-lore:18901/',
+      api_token: 'shared-token',
+    });
+
+    const cfg = pickPluginConfig({});
+
+    expect(cfg.baseUrl).toBe('http://shared-lore:18901');
+    expect(cfg.apiToken).toBe('shared-token');
+  });
+
+  it('prefers plugin config over shared Lore config', () => {
+    writeSharedConfig({
+      base_url: 'http://shared-lore:18901',
+      api_token: 'shared-token',
+    });
+
+    const cfg = pickPluginConfig({
+      pluginConfig: {
+        baseUrl: 'http://plugin-lore:18901',
+        apiToken: 'plugin-token',
+      },
+    });
+
+    expect(cfg.baseUrl).toBe('http://plugin-lore:18901');
+    expect(cfg.apiToken).toBe('plugin-token');
+  });
+
+  it('prefers shared Lore config over legacy environment variables', () => {
+    process.env.LORE_BASE_URL = 'http://env-lore:18901';
+    process.env.LORE_API_TOKEN = 'env-token';
+    writeSharedConfig({
+      base_url: 'http://shared-lore:18901',
+      api_token: 'shared-token',
+    });
+
+    const cfg = pickPluginConfig({});
+
+    expect(cfg.baseUrl).toBe('http://shared-lore:18901');
+    expect(cfg.apiToken).toBe('shared-token');
   });
 
   it('strips trailing slash from baseUrl', () => {

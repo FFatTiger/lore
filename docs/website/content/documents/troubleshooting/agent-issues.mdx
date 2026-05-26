@@ -6,11 +6,11 @@ Check:
 
 | Runtime | Important files/settings |
 | --- | --- |
-| Claude Code | `~/.claude/settings.json`, `~/.claude/CLAUDE.md`, `~/.claude/lore-guidance.md`, plugin hooks |
-| Codex | `~/.codex/config.toml`, `~/.codex/hooks.json`, MCP server, plugin enabled state |
-| OpenClaw | `~/.openclaw/openclaw.json` plugin entry and `baseUrl` / `apiToken` |
-| Pi | extension symlink under `${PI_CODING_AGENT_DIR:-~/.pi/agent}/extensions/lore` and plugin config/env |
-| Hermes | `LORE_BASE_URL`, `LORE_API_TOKEN`, and plugin symlink |
+| Claude Code | `~/.lore/config.json`, `~/.claude/CLAUDE.md`, `~/.claude/lore-guidance.md`, MCP server, plugin hooks |
+| Codex | `~/.lore/config.json`, `~/.codex/config.toml`, `~/.codex/hooks.json`, MCP server, plugin enabled state |
+| OpenClaw | `~/.lore/config.json`, `~/.openclaw/openclaw.json` plugin entry and optional `baseUrl` / `apiToken` overrides |
+| Pi | `~/.lore/config.json`, extension symlink under `${PI_CODING_AGENT_DIR:-~/.pi/agent}/extensions/lore`, and optional plugin config overrides |
+| Hermes | `~/.lore/config.json`, plugin symlink, and optional environment fallback |
 
 After changing any of these, restart the runtime. Hooks and MCP config are usually loaded at process start.
 

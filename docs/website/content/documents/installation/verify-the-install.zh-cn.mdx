@@ -25,6 +25,6 @@ Agent 检查：
 4. 发一个真实项目 prompt，检查是否出现 `<recall>` 块。
 5. 如果召回行出现，在依赖它之前先打开记忆节点。
 
-Codex 用户打开 `/hooks`，如果提示确认，信任 Lore hooks。Claude Code 用户确认 `~/.claude/CLAUDE.md` 导入了 `@~/.claude/lore-guidance.md`，且 `~/.claude/settings.json` 暴露了 `LORE_BASE_URL`。
+Codex 用户打开 `/hooks`，如果提示确认，信任 Lore hooks。Claude Code 用户确认 `~/.claude/CLAUDE.md` 导入了 `@~/.claude/lore-guidance.md`。两个运行时都应共用 `~/.lore/config.json` 中的 Lore server URL 和 token。
 
 如果其中某项失败，不要先调召回阈值。先修复对应边界：服务器、数据库、设置、认证、Agent 配置或 hooks。

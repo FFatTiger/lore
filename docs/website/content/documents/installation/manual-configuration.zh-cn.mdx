@@ -147,22 +147,16 @@ Claude Code 和 Codex hooks 可以读取同一个本机配置。在运行 Agent 
 
 ## 连接 Claude Code
 
-在 `~/.claude/settings.json` 中设置服务器 URL 和 token：
+Claude Code hooks 会读取共享的 `~/.lore/config.json`。如果手动配置 Claude MCP，服务器启用 `API_TOKEN` 时用标准 bearer header 注册 HTTP endpoint：
 
-```json
-{
-  "env": {
-    "LORE_BASE_URL": "http://127.0.0.1:18901",
-    "LORE_API_TOKEN": "YOUR_TOKEN_IF_USED"
-  }
-}
+```bash
+claude mcp remove lore || true
+claude mcp add --transport http --scope user \
+  --header "Authorization: Bearer YOUR_TOKEN_IF_USED" \
+  lore "http://127.0.0.1:18901/api/mcp?client_type=claudecode"
 ```
 
-在 Claude 运行时或插件配置中注册 Lore MCP endpoint：
-
-```text
-${LORE_BASE_URL:-http://127.0.0.1:18901}/api/mcp?client_type=claudecode
-```
+如果本地服务器未启用认证，省略 `--header`。
 
 如果手动安装 Claude Code 插件，克隆 Lore 仓库并复制 guidance 文件，然后从 `~/.claude/CLAUDE.md` 导入：
 
@@ -196,19 +190,17 @@ codex mcp remove lore || true
 codex mcp add lore --url "http://127.0.0.1:18901/api/mcp?client_type=codex"
 ```
 
-有服务器认证时注册 MCP：
+有服务器认证时注册 MCP，URL 保持纯净，把 bearer header 写进 `~/.codex/config.toml`：
 
-```bash
-export LORE_API_TOKEN="YOUR_TOKEN"
-codex mcp remove lore || true
-codex mcp add lore --url "http://127.0.0.1:18901/api/mcp?client_type=codex" --bearer-token-env-var LORE_API_TOKEN
+```toml
+[mcp_servers.lore]
+url = "http://127.0.0.1:18901/api/mcp?client_type=codex"
+http_headers = { Authorization = "Bearer YOUR_TOKEN_IF_USED" }
 ```
 
-如果需要启动记忆和每次 prompt 召回，从插件包安装 Codex hooks。从克隆的 Lore 仓库执行：
+如果需要启动记忆和每次 prompt 召回，从插件包安装 Codex hooks。Hooks 会读取 `~/.lore/config.json`，不再需要额外 token 环境变量：
 
 ```bash
-export LORE_BASE_URL="http://127.0.0.1:18901"
-export LORE_API_TOKEN="YOUR_TOKEN_IF_USED"
 bash /tmp/lore-plugin/packages/codex-plugin/scripts/install-hooks.sh
 ```
 
@@ -253,7 +245,7 @@ OpenClaw 使用 `~/.openclaw/openclaw.json` 里的插件 entry：
 PI_CODING_AGENT_DIR="$HOME/.pi/agent" bash /tmp/lore-plugin/packages/pi-extension/scripts/install-local.sh
 ```
 
-如果 Pi 运行时支持扩展配置，使用：
+Pi 默认读取 `~/.lore/config.json`。如果 Pi 运行时支持扩展配置，只在需要单独覆盖该运行时时使用：
 
 ```json
 {
@@ -271,12 +263,16 @@ PI_CODING_AGENT_DIR="$HOME/.pi/agent" bash /tmp/lore-plugin/packages/pi-extensio
 
 ## 连接 Hermes
 
-Hermes 从环境变量读取 Lore 服务器：
+Hermes 从 `~/.lore/config.json` 读取 Lore 服务器和 token：
 
-```bash
-export LORE_BASE_URL="http://127.0.0.1:18901"
-export LORE_API_TOKEN="YOUR_TOKEN_IF_USED"
+```json
+{
+  "base_url": "http://127.0.0.1:18901",
+  "api_token": "YOUR_TOKEN_IF_USED"
+}
 ```
+
+`LORE_BASE_URL` 和 `LORE_API_TOKEN` 保留为旧配置的兜底环境变量。
 
 然后把插件包链接到 Hermes 插件目录。从克隆的 Lore 仓库执行：
 

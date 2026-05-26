@@ -12,12 +12,12 @@ Use `--base-url` when the server is already running:
 curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --base-url http://127.0.0.1:18901 --api-token YOUR_TOKEN
 ```
 
-The important values are:
+Shared connection settings live in `~/.lore/config.json`; plugin-specific config can override them, while legacy environment variables are only fallbacks:
 
 | Value | Meaning |
 | --- | --- |
-| `base_url` / `baseUrl` / `LORE_BASE_URL` | Lore server origin, without a trailing slash |
-| `api_token` / `apiToken` / `LORE_API_TOKEN` | bearer token when the server uses `API_TOKEN` |
+| `base_url` / `baseUrl` | Lore server origin, without a trailing slash |
+| `api_token` / `apiToken` | bearer token when the server uses `API_TOKEN` |
 | `client_type` | runtime identity sent to Lore: `codex`, `claudecode`, `pi`, `openclaw`, or `hermes` |
 | startup hook | loads boot memory for the current runtime |
 | prompt hook | fetches recall candidates for the current user prompt |

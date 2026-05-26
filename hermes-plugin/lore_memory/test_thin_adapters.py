@@ -1,6 +1,9 @@
 import sys
 import types
 import unittest
+import json
+import os
+import tempfile
 from pathlib import Path
 
 
@@ -31,6 +34,99 @@ RECALL_QUERY_ID_DESCRIPTION = "REQUIRED when the URI came from <recall>: copy th
 
 
 class LoreClientThinAdapterTests(unittest.TestCase):
+    def test_reads_shared_lore_config_when_constructor_and_env_omit_values(self):
+        old_home = os.environ.get("HOME")
+        old_base_url = os.environ.get("LORE_BASE_URL")
+        old_lore_token = os.environ.get("LORE_API_TOKEN")
+        old_api_token = os.environ.get("API_TOKEN")
+        with tempfile.TemporaryDirectory() as home:
+            os.environ["HOME"] = home
+            os.environ.pop("LORE_BASE_URL", None)
+            os.environ.pop("LORE_API_TOKEN", None)
+            os.environ.pop("API_TOKEN", None)
+            config_dir = Path(home) / ".lore"
+            config_dir.mkdir()
+            (config_dir / "config.json").write_text(json.dumps({
+                "base_url": "http://shared-lore:18901/",
+                "api_token": "shared-token",
+            }), encoding="utf-8")
+
+            client = LoreClient()
+
+            self.assertEqual(client.base_url, "http://shared-lore:18901")
+            self.assertEqual(client.api_token, "shared-token")
+
+        if old_home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = old_home
+        if old_base_url is None:
+            os.environ.pop("LORE_BASE_URL", None)
+        else:
+            os.environ["LORE_BASE_URL"] = old_base_url
+        if old_lore_token is None:
+            os.environ.pop("LORE_API_TOKEN", None)
+        else:
+            os.environ["LORE_API_TOKEN"] = old_lore_token
+        if old_api_token is None:
+            os.environ.pop("API_TOKEN", None)
+        else:
+            os.environ["API_TOKEN"] = old_api_token
+
+    def test_constructor_values_override_shared_lore_config(self):
+        old_home = os.environ.get("HOME")
+        with tempfile.TemporaryDirectory() as home:
+            os.environ["HOME"] = home
+            config_dir = Path(home) / ".lore"
+            config_dir.mkdir()
+            (config_dir / "config.json").write_text(json.dumps({
+                "base_url": "http://shared-lore:18901",
+                "api_token": "shared-token",
+            }), encoding="utf-8")
+
+            client = LoreClient(base_url="http://constructor-lore:18901", api_token="constructor-token")
+
+            self.assertEqual(client.base_url, "http://constructor-lore:18901")
+            self.assertEqual(client.api_token, "constructor-token")
+
+        if old_home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = old_home
+
+    def test_shared_lore_config_overrides_legacy_environment(self):
+        old_home = os.environ.get("HOME")
+        old_base_url = os.environ.get("LORE_BASE_URL")
+        old_lore_token = os.environ.get("LORE_API_TOKEN")
+        with tempfile.TemporaryDirectory() as home:
+            os.environ["HOME"] = home
+            os.environ["LORE_BASE_URL"] = "http://env-lore:18901"
+            os.environ["LORE_API_TOKEN"] = "env-token"
+            config_dir = Path(home) / ".lore"
+            config_dir.mkdir()
+            (config_dir / "config.json").write_text(json.dumps({
+                "base_url": "http://shared-lore:18901",
+                "api_token": "shared-token",
+            }), encoding="utf-8")
+
+            client = LoreClient()
+
+            self.assertEqual(client.base_url, "http://shared-lore:18901")
+            self.assertEqual(client.api_token, "shared-token")
+
+        if old_home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = old_home
+        if old_base_url is None:
+            os.environ.pop("LORE_BASE_URL", None)
+        else:
+            os.environ["LORE_BASE_URL"] = old_base_url
+        if old_lore_token is None:
+            os.environ.pop("LORE_API_TOKEN", None)
+        else:
+            os.environ["LORE_API_TOKEN"] = old_lore_token
+
     def test_create_node_sends_glossary_in_node_request(self):
         client = LoreClient(base_url="http://example.com")
         requests = []

@@ -25,11 +25,20 @@ function readLoreConfig(): LoreConfig {
   }
 }
 
+function pickString(value: unknown): string {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
 function loadConfig() {
   const config = readLoreConfig();
+  const baseUrl = pickString(config.base_url)
+    || pickString(process.env.LORE_BASE_URL)
+    || DEFAULT_BASE_URL;
   return {
-    baseUrl: (config.base_url || DEFAULT_BASE_URL).replace(/\/$/, ""),
-    apiToken: config.api_token || "",
+    baseUrl: baseUrl.replace(/\/+$/, ""),
+    apiToken: pickString(config.api_token)
+      || pickString(process.env.LORE_API_TOKEN)
+      || pickString(process.env.API_TOKEN),
   };
 }
 

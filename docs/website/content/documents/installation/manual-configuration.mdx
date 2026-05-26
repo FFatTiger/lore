@@ -147,22 +147,16 @@ Rules:
 
 ## Connect Claude Code
 
-Set the server URL and token in `~/.claude/settings.json`:
+Claude Code hooks read the shared `~/.lore/config.json`. If you configure Claude MCP manually, register the HTTP endpoint with a bearer header when the server uses `API_TOKEN`:
 
-```json
-{
-  "env": {
-    "LORE_BASE_URL": "http://127.0.0.1:18901",
-    "LORE_API_TOKEN": "YOUR_TOKEN_IF_USED"
-  }
-}
+```bash
+claude mcp remove lore || true
+claude mcp add --transport http --scope user \
+  --header "Authorization: Bearer YOUR_TOKEN_IF_USED" \
+  lore "http://127.0.0.1:18901/api/mcp?client_type=claudecode"
 ```
 
-Register the Lore MCP endpoint in the Claude runtime or plugin configuration:
-
-```text
-${LORE_BASE_URL:-http://127.0.0.1:18901}/api/mcp?client_type=claudecode
-```
+For an unprotected local server, omit the `--header` option.
 
 If you install the Claude Code plugin by hand, clone the Lore repository and copy its guidance file, then import it from `~/.claude/CLAUDE.md`:
 
@@ -196,19 +190,17 @@ codex mcp remove lore || true
 codex mcp add lore --url "http://127.0.0.1:18901/api/mcp?client_type=codex"
 ```
 
-Register MCP with server auth:
+Register MCP with server auth by keeping the URL plain and storing the bearer header in `~/.codex/config.toml`:
 
-```bash
-export LORE_API_TOKEN="YOUR_TOKEN"
-codex mcp remove lore || true
-codex mcp add lore --url "http://127.0.0.1:18901/api/mcp?client_type=codex" --bearer-token-env-var LORE_API_TOKEN
+```toml
+[mcp_servers.lore]
+url = "http://127.0.0.1:18901/api/mcp?client_type=codex"
+http_headers = { Authorization = "Bearer YOUR_TOKEN_IF_USED" }
 ```
 
-Install Codex hooks from the plugin package when you need startup boot memory and per-prompt recall. From the cloned Lore repository:
+Install Codex hooks from the plugin package when you need startup boot memory and per-prompt recall. Hooks read `~/.lore/config.json`, so no extra token environment variable is required:
 
 ```bash
-export LORE_BASE_URL="http://127.0.0.1:18901"
-export LORE_API_TOKEN="YOUR_TOKEN_IF_USED"
 bash /tmp/lore-plugin/packages/codex-plugin/scripts/install-hooks.sh
 ```
 
@@ -253,7 +245,7 @@ Install or symlink the Lore extension into the Pi extension directory. From the 
 PI_CODING_AGENT_DIR="$HOME/.pi/agent" bash /tmp/lore-plugin/packages/pi-extension/scripts/install-local.sh
 ```
 
-If your Pi runtime supports extension config, use:
+Pi reads `~/.lore/config.json` by default. If your Pi runtime supports extension config, use it only when you need a per-runtime override:
 
 ```json
 {
@@ -271,12 +263,16 @@ Run `/reload` inside Pi or restart the runtime.
 
 ## Connect Hermes
 
-Hermes reads the Lore server from environment variables:
+Hermes reads the Lore server and token from `~/.lore/config.json`:
 
-```bash
-export LORE_BASE_URL="http://127.0.0.1:18901"
-export LORE_API_TOKEN="YOUR_TOKEN_IF_USED"
+```json
+{
+  "base_url": "http://127.0.0.1:18901",
+  "api_token": "YOUR_TOKEN_IF_USED"
+}
 ```
+
+`LORE_BASE_URL` and `LORE_API_TOKEN` remain fallback environment variables for older setups.
 
 Then link the plugin package into the Hermes plugin directory. From the cloned Lore repository:
 

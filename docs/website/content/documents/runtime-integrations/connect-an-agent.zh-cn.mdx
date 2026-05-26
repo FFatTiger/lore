@@ -12,12 +12,12 @@ curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install
 curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --base-url http://127.0.0.1:18901 --api-token YOUR_TOKEN
 ```
 
-重要值：
+共享连接配置位于 `~/.lore/config.json`；插件专属配置可覆盖它，旧环境变量只作为兜底：
 
 | 值 | 含义 |
 | --- | --- |
-| `base_url` / `baseUrl` / `LORE_BASE_URL` | Lore 服务器 origin，不带尾部斜杠 |
-| `api_token` / `apiToken` / `LORE_API_TOKEN` | 服务器使用 `API_TOKEN` 时的 bearer token |
+| `base_url` / `baseUrl` | Lore 服务器 origin，不带尾部斜杠 |
+| `api_token` / `apiToken` | 服务器使用 `API_TOKEN` 时的 bearer token |
 | `client_type` | 发送给 Lore 的运行时身份：`codex`、`claudecode`、`pi`、`openclaw` 或 `hermes` |
 | startup hook | 为当前运行时加载启动记忆 |
 | prompt hook | 为当前用户 prompt 获取召回候选 |

@@ -19,6 +19,72 @@ import * as path from 'node:path';
 import { getPool } from '../../db';
 
 const MIGRATIONS_DIR = path.resolve(process.cwd(), 'migrations');
+const DEFAULT_DB_STARTUP_WAIT_MS = 120_000;
+const DEFAULT_DB_STARTUP_RETRY_MS = 2_000;
+const TRANSIENT_CONNECTION_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  '57P01',
+  '08000',
+  '08001',
+  '08003',
+  '08006',
+]);
+
+function getPositiveIntegerEnv(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function getDatabaseErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' ? code : undefined;
+}
+
+function isTransientDatabaseStartupError(error: unknown): boolean {
+  const code = getDatabaseErrorCode(error);
+  if (code && TRANSIENT_CONNECTION_CODES.has(code)) return true;
+
+  const message = error instanceof Error ? error.message : String(error || '');
+  return /terminating connection|connection terminated|database system is starting up|the database system is in recovery mode/i.test(message);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForDatabaseReady(): Promise<void> {
+  const waitMs = getPositiveIntegerEnv('LORE_DB_STARTUP_WAIT_MS', DEFAULT_DB_STARTUP_WAIT_MS);
+  const retryMs = getPositiveIntegerEnv('LORE_DB_STARTUP_RETRY_MS', DEFAULT_DB_STARTUP_RETRY_MS);
+  const startedAt = Date.now();
+  let attempt = 0;
+
+  while (true) {
+    attempt += 1;
+    try {
+      await getPool().query('SELECT 1');
+      if (attempt > 1) console.log('[migrations] database is ready');
+      return;
+    } catch (error) {
+      const elapsedMs = Date.now() - startedAt;
+      const remainingMs = waitMs - elapsedMs;
+      if (!isTransientDatabaseStartupError(error) || remainingMs <= 0) {
+        throw error;
+      }
+
+      const code = getDatabaseErrorCode(error);
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[migrations] waiting for database (${code || 'unknown'}): ${message}; retrying in ${Math.min(retryMs, remainingMs)}ms`,
+      );
+      await sleep(Math.min(retryMs, remainingMs));
+    }
+  }
+}
 
 async function ensureTrackingTable(): Promise<void> {
   await getPool().query(`
@@ -45,6 +111,7 @@ function loadMigrationFiles(): { version: number; name: string; sql: string }[] 
 }
 
 export async function runMigrations(): Promise<void> {
+  await waitForDatabaseReady();
   await ensureTrackingTable();
 
   const applied = await getPool().query('SELECT version FROM schema_migrations');

@@ -87,6 +87,9 @@ export const DEFAULT_GUIDANCE = [
   "If the recall block looks weak, noisy, or only loosely related, do not force it; search further or continue with normal reasoning as appropriate.",
   "When you need to create, revise, remove, or reorganize long-term memory, choose the Lore tool that matches that memory operation.",
   "Read a memory node before updating or deleting it.",
+  "Memory URI/path is a stable semantic identity, not a timestamp, log number, or one-off task title.",
+  "Do not append dates, timestamps, or epoch values to ordinary memory paths; put dates in the content instead. Date paths are only for explicit diary/log/release/archive nodes.",
+  "Before creating memory, search or open the likely owner node; prefer updating or merging into an existing stable node. Use create only for a new long-term semantic object.",
 ].join("\n");
 
 export function loadPromptGuidance() {

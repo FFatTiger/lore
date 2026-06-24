@@ -26,6 +26,7 @@ if str(ROOT) not in sys.path:
 
 from lore_memory import LoreMemoryProvider
 from lore_memory.client import LoreClient
+from lore_memory.formatters import format_boot_view
 
 
 RECALL_GET_NODE_DESCRIPTION = "Open a memory node. REQUIRED when opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag."
@@ -236,6 +237,10 @@ class LoreProviderThinAdapterTests(unittest.TestCase):
         self.provider._client = FakeClient()
         self.provider._session_id = "sess-1"
 
+    def test_format_boot_view_warns_recent_memories_not_uri_examples(self):
+        text = format_boot_view({"recent_memories": [{"uri": "core://foo_2026_06_24", "priority": 2}]})
+        self.assertIn("not URI naming examples", text)
+
     def test_create_tool_formats_top_level_uri(self):
         result = self.provider._tool_lore_create_node({
             "domain": "core",
@@ -255,6 +260,13 @@ class LoreProviderThinAdapterTests(unittest.TestCase):
         })
 
         self.assertEqual(result, "Updated: core://agent/profile-renamed")
+
+    def test_create_schema_warns_against_date_suffixes(self):
+        schemas = {tool["name"]: tool for tool in self.provider.get_tool_schemas()}
+        create = schemas["lore_create_node"]
+        self.assertIn("stable semantic", create["description"])
+        self.assertIn("Do not append dates", create["description"])
+        self.assertIn("Do not append dates", create["parameters"]["properties"]["uri"]["description"])
 
     def test_update_tool_does_not_expose_glossary_replacement(self):
         schemas = {tool["name"]: tool for tool in self.provider.get_tool_schemas()}

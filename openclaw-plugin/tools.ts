@@ -177,15 +177,15 @@ export function registerTools(api: any, pluginCfg: any) {
   api.registerTool({
     name: "lore_create_node",
     label: "Lore create node",
-    description: "Create a new long-term memory node for durable facts, rules, project knowledge, or conclusions worth keeping.",
+    description: "Create a new long-term memory node only when no existing stable node should own the fact. Use stable semantic snake_case URI/title segments. Do not append dates, timestamps, or epoch values to ordinary memory paths; put dates in content instead. Date suffixes are only for explicit diary/log/release/archive nodes. Prefer lore_update_node after search/get_node.",
     parameters: Type.Object({
       content: Type.String({ description: "Memory text body." }),
       priority: Type.Integer({ minimum: 0, description: "Importance tier: 0=core identity (max 5), 1=key facts (max 15), 2+=general." }),
       glossary: Type.Array(Type.String({ description: "Search keyword." }), { description: "Initial glossary keywords written with this node create event for later retrieval." }),
-      uri: Type.Optional(Type.String({ description: "Optional final memory URI. Use this when you already know where the new memory should live. Intermediate paths must already exist." })),
+      uri: Type.Optional(Type.String({ description: "Optional final stable semantic memory URI. Do not append dates, timestamps, or epoch values for ordinary memories. Intermediate paths must already exist." })),
       domain: Type.Optional(Type.String({ description: "Target memory domain when you are not using `uri`." })),
       parent_path: Type.Optional(Type.String({ description: "Parent location inside the chosen domain." })),
-      title: Type.Optional(Type.String({ description: "Final path segment for the new memory." })),
+      title: Type.Optional(Type.String({ description: "Final stable semantic path segment for the new memory; ordinary memories must not end with dates or timestamps." })),
       disclosure: Type.Optional(Type.String({ description: "When this memory should be recalled." })),
     }),
     async execute(_id: any, params: any) {

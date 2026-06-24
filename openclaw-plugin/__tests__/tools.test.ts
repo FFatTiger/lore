@@ -95,6 +95,12 @@ describe('tool parameter schemas', () => {
     expect(req).toContain('glossary');
   });
 
+  it('lore_create_node warns against date suffixes', () => {
+    expect(tools.lore_create_node.description).toContain('stable semantic');
+    expect(tools.lore_create_node.description).toContain('Do not append dates');
+    expect(tools.lore_create_node.parameters.properties.uri.description).toContain('Do not append dates');
+  });
+
   it('lore_update_node requires uri', () => {
     expect(tools.lore_update_node.parameters.required).toContain('uri');
   });

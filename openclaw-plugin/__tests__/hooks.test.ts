@@ -70,8 +70,10 @@ describe('DEFAULT_GUIDANCE', () => {
     expect(DEFAULT_GUIDANCE.length).toBeGreaterThan(0);
   });
 
-  it('mentions Lore', () => {
+  it('mentions Lore stable path guidance', () => {
     expect(DEFAULT_GUIDANCE).toContain('Lore');
+    expect(DEFAULT_GUIDANCE).toContain('ordinary memory paths');
+    expect(DEFAULT_GUIDANCE).toContain('stable semantic identity');
   });
 });
 

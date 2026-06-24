@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerTools } from '../tools';
+import { formatBootView } from '../formatters';
 
 function makeMockPi() {
   const tools: Record<string, any> = {};
@@ -47,6 +48,19 @@ describe('Pi extension tools', () => {
     ]);
     expect(pi.tools.lore_search.promptSnippet).toContain('Search Lore');
     expect(pi.tools.lore_get_node.promptGuidelines.join('\n')).toContain('lore_get_node');
+  });
+
+  it('create description warns against date suffixes', () => {
+    const pi = makeMockPi();
+    registerTools(pi as any, makePluginCfg());
+    expect(pi.tools.lore_create_node.description).toContain('stable semantic');
+    expect(pi.tools.lore_create_node.description).toContain('Do not append dates');
+    expect(pi.tools.lore_create_node.parameters.properties.uri.description).toContain('Do not append dates');
+  });
+
+  it('boot formatter warns recent memories are not URI examples', () => {
+    const text = formatBootView({ recent_memories: [{ uri: 'core://foo_2026_06_24', priority: 2 }] });
+    expect(text).toContain('not URI naming examples');
   });
 
   it('lore_get_node exposes explicit recall identifiers without internal params', () => {

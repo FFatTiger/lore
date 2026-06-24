@@ -83,6 +83,7 @@ export function formatBootView(data: any) {
     lines.push('---');
     lines.push('');
     lines.push('# Recent Memories');
+    lines.push('These are context hints, not URI naming examples. Some legacy URIs may contain date suffixes; do not imitate that path style for ordinary memories.');
     for (const memory of recentMemories) {
       const meta: string[] = [];
       if (Number.isFinite(memory?.priority)) meta.push(`priority: ${memory.priority}`);

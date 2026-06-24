@@ -101,6 +101,7 @@ def format_boot_view(data: Dict) -> str:
         lines.append("---")
         lines.append("")
         lines.append("# Recent Memories")
+        lines.append("These are context hints, not URI naming examples. Some legacy URIs may contain date suffixes; do not imitate that path style for ordinary memories.")
         for memory in recent_memories:
             meta = []
             if memory.get("priority") is not None:

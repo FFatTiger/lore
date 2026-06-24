@@ -41,7 +41,7 @@ export function createMcpServer(context: McpServerContext = {}): InstanceType<ty
   const server = new McpServer(
     {
       name: 'lore',
-      version: '1.3.8',
+      version: '1.3.9',
     },
     guidance ? { instructions: guidance } : undefined,
   );
@@ -193,15 +193,15 @@ export function createMcpServer(context: McpServerContext = {}): InstanceType<ty
   // ── lore_create_node ─────────────────────────────────────────
   server.tool(
     'lore_create_node',
-    'Create a new long-term memory node for durable facts, rules, project knowledge, or conclusions worth keeping.',
+    'Create a new long-term memory node only when no existing stable node should own the fact. Use stable semantic snake_case URI/title segments. A multi-segment path is a semantic memory tree; every intermediate segment must be a real abstraction parent node with memory content, disclosure, and glossary, so create parents first. Do not append dates, timestamps, or epoch values to ordinary memory paths; put dates in content instead.',
     {
       content: z.string().describe('Memory text body.'),
       priority: z.number().int().min(0).describe('Importance tier (0=core identity, 1=key facts, 2+=general).'),
       glossary: z.array(z.string()).describe('Initial glossary keywords written with this node create event.'),
-      uri: z.string().optional().describe('Optional final memory URI. Use when you know exactly where to place it. Intermediate paths in the URI must already exist.'),
+      uri: z.string().optional().describe('Optional final stable semantic memory URI. Do not append dates, timestamps, or epoch values for ordinary memories. Intermediate paths must already exist as real abstraction parent nodes with content.'),
       domain: z.string().optional().describe('Target memory domain when not using uri.'),
-      parent_path: z.string().optional().describe('Parent location inside the chosen domain.'),
-      title: z.string().optional().describe('Final path segment for the new memory.'),
+      parent_path: z.string().optional().describe('Parent location inside the chosen domain; for multi-segment paths this must be a real abstraction node with content, disclosure, and glossary.'),
+      title: z.string().optional().describe('Final stable semantic path segment for the new memory; ordinary memories must not end with dates or timestamps.'),
       disclosure: z.string().optional().describe('When this memory should be recalled.'),
     },
     async (args) => {
@@ -332,10 +332,10 @@ export function createMcpServer(context: McpServerContext = {}): InstanceType<ty
   // ── lore_move_node ───────────────────────────────────────────
   server.tool(
     'lore_move_node',
-    'Move or rename a memory node to a new URI path. Updates all child paths automatically.',
+    'Move or rename a memory node to a new URI path. A multi-segment path is a semantic memory tree; the target parent must already be a real abstraction parent node with memory content. The operation reparents the moved node to that parent and updates all child paths automatically.',
     {
       old_uri: z.string().describe('Current memory URI to move from.'),
-      new_uri: z.string().describe('New memory URI to move to.'),
+      new_uri: z.string().describe('New memory URI to move to. For multi-segment paths, the target parent must already be a real abstraction node with content.'),
     },
     async (args) => {
       try {

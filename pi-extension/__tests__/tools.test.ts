@@ -55,7 +55,13 @@ describe('Pi extension tools', () => {
     registerTools(pi as any, makePluginCfg());
     expect(pi.tools.lore_create_node.description).toContain('stable semantic');
     expect(pi.tools.lore_create_node.description).toContain('Do not append dates');
+    expect(pi.tools.lore_create_node.description).toContain('real abstraction parent node');
     expect(pi.tools.lore_create_node.parameters.properties.uri.description).toContain('Do not append dates');
+    expect(pi.tools.lore_create_node.parameters.properties.uri.description).toContain('real abstraction parent nodes');
+    expect(pi.tools.lore_move_node.description).toContain('semantic memory tree');
+    expect(pi.tools.lore_move_node.description).toContain('real abstraction parent node');
+    expect(pi.tools.lore_move_node.description).toContain('reparents');
+    expect(pi.tools.lore_move_node.parameters.properties.new_uri.description).toContain('real abstraction node');
   });
 
   it('boot formatter warns recent memories are not URI examples', () => {

@@ -98,7 +98,9 @@ describe('tool parameter schemas', () => {
   it('lore_create_node warns against date suffixes', () => {
     expect(tools.lore_create_node.description).toContain('stable semantic');
     expect(tools.lore_create_node.description).toContain('Do not append dates');
+    expect(tools.lore_create_node.description).toContain('real abstraction parent node');
     expect(tools.lore_create_node.parameters.properties.uri.description).toContain('Do not append dates');
+    expect(tools.lore_create_node.parameters.properties.uri.description).toContain('real abstraction parent nodes');
   });
 
   it('lore_update_node requires uri', () => {
@@ -121,6 +123,10 @@ describe('tool parameter schemas', () => {
     const req = tools.lore_move_node.parameters.required;
     expect(req).toContain('old_uri');
     expect(req).toContain('new_uri');
+    expect(tools.lore_move_node.description).toContain('semantic memory tree');
+    expect(tools.lore_move_node.description).toContain('real abstraction parent node');
+    expect(tools.lore_move_node.description).toContain('reparents');
+    expect(tools.lore_move_node.parameters.properties.new_uri.description).toContain('real abstraction node');
   });
 
 

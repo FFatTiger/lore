@@ -26,6 +26,8 @@ Create or update Lore memory when the information should survive this session. P
 
 Do not append dates, timestamps, or epoch values to ordinary memory paths. Put dates in the content instead. Date suffixes are only valid for explicitly date-archived objects such as `dream_diary_2026_06_24`, `daily_log_2026_06_24`, or `release_2026_06_24`.
 
+A multi-segment path is a semantic memory tree. Every intermediate segment must be a real abstraction parent node with content, disclosure, and glossary. Before moving nodes into a hierarchy, create or update those parent nodes; a string-only path move is incomplete.
+
 Before creating, search or open the likely existing owner node. Prefer updating or merging into an existing stable node. Use `lore_create_node` only for a new long-term semantic object.
 
 ## Maintenance

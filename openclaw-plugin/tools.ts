@@ -177,12 +177,12 @@ export function registerTools(api: any, pluginCfg: any) {
   api.registerTool({
     name: "lore_create_node",
     label: "Lore create node",
-    description: "Create a new long-term memory node only when no existing stable node should own the fact. Use stable semantic snake_case URI/title segments. Do not append dates, timestamps, or epoch values to ordinary memory paths; put dates in content instead. Date suffixes are only for explicit diary/log/release/archive nodes. Prefer lore_update_node after search/get_node.",
+    description: "Create a new long-term memory node only when no existing stable node should own the fact. Use stable semantic snake_case URI/title segments. A multi-segment path is a semantic memory tree; every intermediate segment must be a real abstraction parent node with memory content, disclosure, and glossary, so create parents first. Do not append dates, timestamps, or epoch values to ordinary memory paths; put dates in content instead. Date suffixes are only for explicit diary/log/release/archive nodes. Prefer lore_update_node after search/get_node.",
     parameters: Type.Object({
       content: Type.String({ description: "Memory text body." }),
       priority: Type.Integer({ minimum: 0, description: "Importance tier: 0=core identity (max 5), 1=key facts (max 15), 2+=general." }),
       glossary: Type.Array(Type.String({ description: "Search keyword." }), { description: "Initial glossary keywords written with this node create event for later retrieval." }),
-      uri: Type.Optional(Type.String({ description: "Optional final stable semantic memory URI. Do not append dates, timestamps, or epoch values for ordinary memories. Intermediate paths must already exist." })),
+      uri: Type.Optional(Type.String({ description: "Optional final stable semantic memory URI. Do not append dates, timestamps, or epoch values for ordinary memories. Intermediate paths must already exist as real abstraction parent nodes with content." })),
       domain: Type.Optional(Type.String({ description: "Target memory domain when you are not using `uri`." })),
       parent_path: Type.Optional(Type.String({ description: "Parent location inside the chosen domain." })),
       title: Type.Optional(Type.String({ description: "Final stable semantic path segment for the new memory; ordinary memories must not end with dates or timestamps." })),
@@ -296,10 +296,10 @@ export function registerTools(api: any, pluginCfg: any) {
   api.registerTool({
     name: "lore_move_node",
     label: "Lore move node",
-    description: "Move or rename a memory node to a new URI path. Updates all child paths automatically.",
+    description: "Move or rename a memory node to a new URI path. A multi-segment path is a semantic memory tree; the target parent must already be a real abstraction parent node with memory content. The operation reparents the moved node to that parent and updates all child paths automatically.",
     parameters: Type.Object({
       old_uri: Type.String({ description: "Current memory URI to move from." }),
-      new_uri: Type.String({ description: "New memory URI to move to." }),
+      new_uri: Type.String({ description: "New memory URI to move to. For multi-segment paths, the target parent must already be a real abstraction node with content." }),
     }),
     async execute(_id: any, params: any) {
       const body = {

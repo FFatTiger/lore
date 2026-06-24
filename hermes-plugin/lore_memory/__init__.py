@@ -47,7 +47,7 @@ def _load_guidance() -> str:
         "lore_boot is a fixed startup baseline inside Lore, not a separate config layer. "
         f"At startup, lore_boot deterministically loads the three global boot nodes core://agent (workflow constraints), core://soul (style / persona / self-definition), and preferences://user (stable user definition / durable user context), plus {CLIENT_BOOT_URI} for Hermes-specific agent rules. "
         "Treat boot as the session's startup baseline. core://agent holds shared agent rules; core://agent/hermes holds Hermes-specific rules. Use recall and search to add prompt-specific memory leads, not to replace the role of those fixed paths. "
-        "Use lore_get_node to read and lore_search to find. Before creating, search or open the likely owner node; prefer updating or merging. Use stable semantic URI/path segments and do not append dates, timestamps, or epoch values to ordinary memory paths."
+        "Use lore_get_node to read and lore_search to find. Before creating, search or open the likely owner node; prefer updating or merging. Use stable semantic URI/path segments and do not append dates, timestamps, or epoch values to ordinary memory paths. A multi-segment path is a semantic memory tree; every intermediate segment must be a real abstraction parent node with content, disclosure, and glossary. Before moving nodes into a hierarchy, create or update those parent nodes; a string-only path move is incomplete."
     )
 
 
@@ -416,7 +416,7 @@ class LoreMemoryProvider(MemoryProvider):
             },
             {
                 "name": "lore_create_node",
-                "description": "Create a new long-term memory node only when no existing stable node should own the fact. Use stable semantic snake_case URI/title segments. Do not append dates, timestamps, or epoch values to ordinary memory paths; put dates in content instead. Date suffixes are only for explicit diary/log/release/archive nodes. Prefer lore_update_node after search/get_node.",
+                "description": "Create a new long-term memory node only when no existing stable node should own the fact. Use stable semantic snake_case URI/title segments. A multi-segment path is a semantic memory tree; every intermediate segment must be a real abstraction parent node with memory content, disclosure, and glossary, so create parents first. Do not append dates, timestamps, or epoch values to ordinary memory paths; put dates in content instead. Date suffixes are only for explicit diary/log/release/archive nodes. Prefer lore_update_node after search/get_node.",
                 "parameters": {
                     "type": "object",
                     "additionalProperties": False,
@@ -424,9 +424,9 @@ class LoreMemoryProvider(MemoryProvider):
                         "content": {"type": "string", "description": "Memory text body"},
                         "priority": {"type": "integer", "minimum": 0, "description": "Importance tier (0=core identity, 1=key facts, 2+=general)"},
                         "glossary": {"type": "array", "items": {"type": "string"}, "description": "Initial glossary keywords written with this node create event"},
-                        "uri": {"type": "string", "description": "Optional final stable semantic memory URI. Do not append dates, timestamps, or epoch values for ordinary memories. Intermediate paths must already exist."},
+                        "uri": {"type": "string", "description": "Optional final stable semantic memory URI. Do not append dates, timestamps, or epoch values for ordinary memories. Intermediate paths must already exist as real abstraction parent nodes with content."},
                         "domain": {"type": "string", "description": "Target memory domain when not using uri"},
-                        "parent_path": {"type": "string", "description": "Parent location inside the chosen domain"},
+                        "parent_path": {"type": "string", "description": "Parent location inside the chosen domain; for multi-segment paths this must be a real abstraction node with content, disclosure, and glossary."},
                         "title": {"type": "string", "description": "Final stable semantic path segment for the new memory; ordinary memories must not end with dates or timestamps."},
                         "disclosure": {"type": "string", "description": "When this memory should be recalled"},
                     },
@@ -464,13 +464,13 @@ class LoreMemoryProvider(MemoryProvider):
             },
             {
                 "name": "lore_move_node",
-                "description": "Move or rename a memory node to a new URI path. Updates all child paths automatically",
+                "description": "Move or rename a memory node to a new URI path. A multi-segment path is a semantic memory tree; the target parent must already be a real abstraction parent node with memory content. The operation reparents the moved node to that parent and updates all child paths automatically.",
                 "parameters": {
                     "type": "object",
                     "additionalProperties": False,
                     "properties": {
                         "old_uri": {"type": "string", "description": "Current memory URI to move from"},
-                        "new_uri": {"type": "string", "description": "New memory URI to move to"},
+                        "new_uri": {"type": "string", "description": "New memory URI to move to. For multi-segment paths, the target parent must already be a real abstraction node with content."},
                     },
                     "required": ["old_uri", "new_uri"],
                 },

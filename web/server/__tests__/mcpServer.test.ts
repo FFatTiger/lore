@@ -88,6 +88,20 @@ describe('embedded MCP contract projections', () => {
     expect(tools.lore_clear_session_reads).toBeUndefined();
   });
 
+  it('describes semantic parent requirements for create and move tools', () => {
+    const server = createMcpServer();
+    const tools = (server as any)._registeredTools;
+    const createShape = tools.lore_create_node.inputSchema._def.shape();
+    const moveShape = tools.lore_move_node.inputSchema._def.shape();
+
+    expect(tools.lore_create_node.description).toContain('real abstraction parent node');
+    expect(createShape.uri.description).toContain('real abstraction parent nodes');
+    expect(createShape.parent_path.description).toContain('real abstraction node');
+    expect(tools.lore_move_node.description).toContain('semantic memory tree');
+    expect(tools.lore_move_node.description).toContain('reparents');
+    expect(moveShape.new_uri.description).toContain('real abstraction node');
+  });
+
   it('records recall usage without session read tracking when opening a recalled node', async () => {
     mockGetNodePayload.mockResolvedValueOnce({
       node: { uri: 'core://agent', node_uuid: 'node-1', content: 'Agent' },

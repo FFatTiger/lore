@@ -266,7 +266,17 @@ class LoreProviderThinAdapterTests(unittest.TestCase):
         create = schemas["lore_create_node"]
         self.assertIn("stable semantic", create["description"])
         self.assertIn("Do not append dates", create["description"])
+        self.assertIn("real abstraction parent node", create["description"])
         self.assertIn("Do not append dates", create["parameters"]["properties"]["uri"]["description"])
+        self.assertIn("real abstraction parent nodes", create["parameters"]["properties"]["uri"]["description"])
+
+    def test_move_schema_requires_real_parent_nodes(self):
+        schemas = {tool["name"]: tool for tool in self.provider.get_tool_schemas()}
+        move = schemas["lore_move_node"]
+        self.assertIn("semantic memory tree", move["description"])
+        self.assertIn("real abstraction parent node", move["description"])
+        self.assertIn("reparents", move["description"])
+        self.assertIn("real abstraction node", move["parameters"]["properties"]["new_uri"]["description"])
 
     def test_update_tool_does_not_expose_glossary_replacement(self):
         schemas = {tool["name"]: tool for tool in self.provider.get_tool_schemas()}

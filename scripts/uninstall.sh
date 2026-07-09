@@ -129,10 +129,10 @@ PY
 
   # Remove @import line from CLAUDE.md
   local claude_md="$HOME/.claude/CLAUDE.md"
-  if [[ -f "$claude_md" ]] && grep -qF "@import ~/.claude/lore-guidance.md" "$claude_md" 2>/dev/null; then
+  if [[ -f "$claude_md" ]] && grep -Eq '^(@~/.claude/lore-guidance\.md|@import ~/.claude/lore-guidance\.md)$' "$claude_md" 2>/dev/null; then
     info "Removing lore-guidance import from CLAUDE.md..."
     local tmp="${claude_md}.tmp.$$"
-    grep -vF "@import ~/.claude/lore-guidance.md" "$claude_md" > "$tmp"
+    grep -Ev '^(@~/.claude/lore-guidance\.md|@import ~/.claude/lore-guidance\.md)$' "$claude_md" > "$tmp"
     if [[ "$OSTYPE" == "darwin"* ]]; then
       sed -i '' '/./,$!d' "$tmp"
     else

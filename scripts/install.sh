@@ -661,10 +661,9 @@ PY
   local gdst="$HOME/.claude/lore-guidance.md"
   [[ -f "$gdst" ]] && rm -f "$gdst"
   local cmd="$HOME/.claude/CLAUDE.md"
-  local iline="@~/.claude/lore-guidance.md"
-  if [[ -f "$cmd" ]] && grep -qF "$iline" "$cmd" 2>/dev/null; then
+  if [[ -f "$cmd" ]] && grep -Eq '^(@~/.claude/lore-guidance\.md|@import ~/.claude/lore-guidance\.md)$' "$cmd" 2>/dev/null; then
     local tmp="${cmd}.tmp.$$"
-    grep -vF "$iline" "$cmd" > "$tmp"
+    grep -Ev '^(@~/.claude/lore-guidance\.md|@import ~/.claude/lore-guidance\.md)$' "$cmd" > "$tmp"
     if [[ "$OSTYPE" == "darwin"* ]]; then
       sed -i '' '/./,$!d' "$tmp"
     else

@@ -35,6 +35,7 @@ fi
 
 # web/package.json
 "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" web/package.json
+"${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" web/package-lock.json
 
 # MCP server
 "${SED_INPLACE[@]}" "s/version: '[^']*'/version: '${VERSION}'/" web/server/mcpServer.ts
@@ -49,15 +50,20 @@ fi
 # OpenClaw plugin
 "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" openclaw-plugin/openclaw.plugin.json
 "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" openclaw-plugin/package.json
+"${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" openclaw-plugin/package-lock.json
 
 # Pi extension
 "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" pi-extension/package.json
 
+# Hermes plugin
+"${SED_INPLACE[@]}" "s/^version: .*/version: ${VERSION}/" hermes-plugin/lore_memory/plugin.yaml
+
 # Verify
 echo ""
 echo "Updated files:"
-grep -n "\"version\"" web/package.json claudecode-plugin/.claude-plugin/plugin.json claudecode-plugin/.claude-plugin/marketplace.json codex-plugin/.codex-plugin/plugin.json openclaw-plugin/openclaw.plugin.json openclaw-plugin/package.json pi-extension/package.json
+grep -n "\"version\"" web/package.json web/package-lock.json claudecode-plugin/.claude-plugin/plugin.json claudecode-plugin/.claude-plugin/marketplace.json codex-plugin/.codex-plugin/plugin.json openclaw-plugin/openclaw.plugin.json openclaw-plugin/package.json openclaw-plugin/package-lock.json pi-extension/package.json
 grep -n "version:" web/server/mcpServer.ts | head -1
+grep -n "version:" hermes-plugin/lore_memory/plugin.yaml | head -1
 echo ""
 
 # Commit, tag, push

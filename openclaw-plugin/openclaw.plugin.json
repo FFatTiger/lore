@@ -2,7 +2,7 @@
   "id": "lore",
   "name": "Lore",
   "description": "Primary Lore memory system for fixed boot baseline, recall, and cross-session project knowledge.",
-  "version": "1.3.12",
+  "version": "1.3.13",
   "activation": {
     "onStartup": true
   },

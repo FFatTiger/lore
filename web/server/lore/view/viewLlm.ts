@@ -3,6 +3,8 @@ import { normalizeList } from './viewBuilders';
 import type { EmbeddingConfig } from '../core/types';
 import { resolveViewLlmConfig, type ResolvedViewLlmConfig } from '../llm/config';
 import { generateText, type ProviderMessage } from '../llm/provider';
+import { DEFAULT_VIEW_GENERATION_SYSTEM_PROMPT } from '../config/settingsSchema';
+import { loadServerPromptConfig } from '../prompts/config';
 
 // ---------------------------------------------------------------------------
 // LLM config resolution
@@ -50,7 +52,10 @@ export async function chatCompletion(
 // View generation prompt builder
 // ---------------------------------------------------------------------------
 
-export function buildViewGenerationMessages(doc: Record<string, unknown>): Array<{ role: string; content: string }> {
+export function buildViewGenerationMessages(
+  doc: Record<string, unknown>,
+  systemPrompt = DEFAULT_VIEW_GENERATION_SYSTEM_PROMPT,
+): Array<{ role: string; content: string }> {
   const payload = {
     uri: doc.uri,
     path: doc.path,
@@ -63,24 +68,18 @@ export function buildViewGenerationMessages(doc: Record<string, unknown>): Array
   return [
     {
       role: 'system',
-      content: [
-        'You generate retrieval views for a memory system.',
-        'Return strict JSON only.',
-        'Keys: gist(string), question(string[]).',
-        'gist: 1-2 dense sentences that summarize what this memory is about and when it should be recalled.',
-        'question: exactly 3 specific, diverse natural-language questions that someone may ask later and this memory should help answer.',
-        'Each question must be concrete and distinct — avoid vague patterns like "关于X，我应该想起什么？" or "What should I remember about X?".',
-        'Good questions target specific facts, decisions, or context within the memory (e.g. "部署Lore时用的哪个Portainer stack ID？" instead of "关于Lore部署，我应该想起什么？").',
-        'Use the same dominant language as the source material.',
-        'Do not output tags, keywords, cue lists, path fragments, or generic labels.',
-        'Do not include markdown fences.',
-      ].join(' '),
+      content: systemPrompt,
     },
     {
       role: 'user',
       content: JSON.stringify(payload, null, 2),
     },
   ];
+}
+
+export async function buildConfiguredViewGenerationMessages(doc: Record<string, unknown>): Promise<Array<{ role: string; content: string }>> {
+  const prompts = await loadServerPromptConfig();
+  return buildViewGenerationMessages(doc, prompts.viewGenerationSystem);
 }
 
 // ---------------------------------------------------------------------------
@@ -92,7 +91,7 @@ export async function refineDocumentWithLlm(
   config: ViewLlmConfig,
 ): Promise<{ gist: string; question: string[]; model: string } | null> {
   try {
-    const raw = await chatCompletion(config, buildViewGenerationMessages(doc));
+    const raw = await chatCompletion(config, await buildConfiguredViewGenerationMessages(doc));
     const parsed = extractJsonObject(raw);
     if (!parsed || typeof parsed !== 'object') return null;
 

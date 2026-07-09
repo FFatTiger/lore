@@ -6,10 +6,6 @@
  * McpServer / importing heavy dependencies.
  */
 
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import type { ClientType } from './auth';
 
 // ── types ─────────────────────────────────────────────────────────
@@ -211,16 +207,4 @@ export function formatBootView(data: BootViewData | undefined): string {
   }
 
   return lines.join('\n').trim();
-}
-
-// ── guidance loader ───────────────────────────────────────────────
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-export function loadGuidance(): string {
-  try {
-    return fs.readFileSync(path.join(__dirname, 'lore', 'mcp-guidance.md'), 'utf-8');
-  } catch {
-    return '';
-  }
 }

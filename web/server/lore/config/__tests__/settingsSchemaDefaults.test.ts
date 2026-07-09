@@ -23,4 +23,16 @@ describe('settings schema defaults', () => {
     expect(String(SCHEMA_BY_KEY.get('lifecycle.startup_recall.preamble')?.default)).toContain('相关');
     expect(SCHEMA_BY_KEY.get('lifecycle.prompt_recall.preamble')?.default).toBe('');
   });
+
+  it('ships server-side prompt templates for runtime-editable agent jobs', async () => {
+    const { SCHEMA_BY_KEY } = await import('../settingsSchema');
+
+    expect(String(SCHEMA_BY_KEY.get('prompts.view_generation.system')?.default)).toContain('retrieval views');
+    expect(String(SCHEMA_BY_KEY.get('prompts.boot_draft.system')?.default)).toContain('{{instructions}}');
+    expect(String(SCHEMA_BY_KEY.get('prompts.boot_draft.instructions.role_agent')?.default)).toContain('working protocol');
+    expect(String(SCHEMA_BY_KEY.get('prompts.boot_draft.instructions.client_extra')?.default)).toContain('{{client_type}}');
+    expect(String(SCHEMA_BY_KEY.get('prompts.dream.system')?.default)).toContain('{{boot_baseline_json}}');
+    expect(String(SCHEMA_BY_KEY.get('prompts.dream.poetic_diary')?.default)).toContain('dream diary');
+    expect(String(SCHEMA_BY_KEY.get('prompts.dream.phase.audit')?.default)).toContain('{{apply}}');
+  });
 });

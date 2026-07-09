@@ -62,6 +62,12 @@ describe('settingsSchema', () => {
       type: 'text',
     });
     expect(SECTIONS.some((section) => section.id === 'lifecycle')).toBe(true);
+    expect(SCHEMA_BY_KEY.get('prompts.view_generation.system')).toMatchObject({
+      section: 'prompts',
+      type: 'text',
+    });
+    expect(SCHEMA_BY_KEY.get('prompts.dream.system')?.default).toContain('{{guidance}}');
+    expect(SECTIONS.some((section) => section.id === 'prompts')).toBe(true);
     expect(SCHEMA_BY_KEY.get('recall.safety.max_query_chars')).toMatchObject({
       section: 'recall_safety',
       type: 'integer',

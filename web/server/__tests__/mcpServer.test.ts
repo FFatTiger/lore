@@ -49,8 +49,8 @@ const mockValidateUpdatePolicy = vi.mocked(validateUpdatePolicy);
 const mockValidateDeletePolicy = vi.mocked(validateDeletePolicy);
 const mockGetSettings = vi.mocked(getSettings);
 
-function getToolHandler(name: string) {
-  const server = createMcpServer();
+async function getToolHandler(name: string) {
+  const server = await createMcpServer();
   return (server as any)._registeredTools[name].handler as (args: Record<string, unknown>) => Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }>;
 }
 
@@ -68,8 +68,8 @@ describe('embedded MCP contract projections', () => {
     mockValidateDeletePolicy.mockResolvedValue({ errors: [], warnings: [] } as any);
   });
 
-  it('tells agents to pass recall session and query ids when opening recalled nodes', () => {
-    const server = createMcpServer();
+  it('tells agents to pass recall session and query ids when opening recalled nodes', async () => {
+    const server = await createMcpServer();
     const tool = (server as any)._registeredTools.lore_get_node;
     const shape = tool.inputSchema._def.shape();
     const text = [
@@ -91,8 +91,8 @@ describe('embedded MCP contract projections', () => {
     }).success).toBe(true);
   });
 
-  it('does not expose session read tracking tools', () => {
-    const server = createMcpServer();
+  it('does not expose session read tracking tools', async () => {
+    const server = await createMcpServer();
     const tools = (server as any)._registeredTools;
 
     expect(tools.lore_list_session_reads).toBeUndefined();
@@ -100,7 +100,7 @@ describe('embedded MCP contract projections', () => {
   });
 
   it('serves lore_guidance from server settings', async () => {
-    const handler = getToolHandler('lore_guidance');
+    const handler = await getToolHandler('lore_guidance');
 
     const result = await handler({});
 
@@ -108,8 +108,8 @@ describe('embedded MCP contract projections', () => {
     expect(mockGetSettings).toHaveBeenCalledWith(expect.arrayContaining(['lifecycle.guidance.global']));
   });
 
-  it('describes semantic tree identity and date meaning for create and move tools', () => {
-    const server = createMcpServer();
+  it('describes semantic tree identity and date meaning for create and move tools', async () => {
+    const server = await createMcpServer();
     const tools = (server as any)._registeredTools;
     const createShape = tools.lore_create_node.inputSchema._def.shape();
     const moveShape = tools.lore_move_node.inputSchema._def.shape();
@@ -133,7 +133,7 @@ describe('embedded MCP contract projections', () => {
       children: [],
     } as any);
 
-    const handler = getToolHandler('lore_get_node');
+    const handler = await getToolHandler('lore_get_node');
     const result = await handler({ uri: 'core://agent', session_id: 'sess-1', query_id: 'query-1' });
 
     expect(result.content[0].text).toContain('core://agent');
@@ -156,7 +156,7 @@ describe('embedded MCP contract projections', () => {
       node_uuid: 'uuid-create',
     } as any);
 
-    const handler = getToolHandler('lore_create_node');
+    const handler = await getToolHandler('lore_create_node');
     const result = await handler({
       domain: 'core',
       parent_path: 'agent',
@@ -180,7 +180,7 @@ describe('embedded MCP contract projections', () => {
       node_uuid: 'uuid-update',
     } as any);
 
-    const handler = getToolHandler('lore_update_node');
+    const handler = await getToolHandler('lore_update_node');
     const result = await handler({
       uri: 'core://stale/path',
       content: 'updated',
@@ -191,8 +191,8 @@ describe('embedded MCP contract projections', () => {
     });
   });
 
-  it('exposes glossary mutations on update without full replacement', () => {
-    const server = createMcpServer();
+  it('exposes glossary mutations on update without full replacement', async () => {
+    const server = await createMcpServer();
     const tool = (server as any)._registeredTools.lore_update_node;
     const shape = tool.inputSchema._def.shape();
 
@@ -211,7 +211,7 @@ describe('embedded MCP contract projections', () => {
       node_uuid: 'uuid-update',
     } as any);
 
-    const handler = getToolHandler('lore_update_node');
+    const handler = await getToolHandler('lore_update_node');
     const result = await handler({
       uri: 'core://agent/profile',
       content: 'updated',
@@ -243,7 +243,7 @@ describe('embedded MCP contract projections', () => {
       node_uuid: 'uuid-update',
     } as any);
 
-    const handler = getToolHandler('lore_update_node');
+    const handler = await getToolHandler('lore_update_node');
     const result = await handler({
       uri: 'core://agent/profile',
       glossary: ['alpha', ' alpha ', 'beta'],
@@ -278,7 +278,7 @@ describe('embedded MCP contract projections', () => {
       deleted_uri: 'core://legacy/profile',
     } as any);
 
-    const handler = getToolHandler('lore_delete_node');
+    const handler = await getToolHandler('lore_delete_node');
     const result = await handler({
       uri: 'core://legacy/profile',
     });
@@ -299,7 +299,7 @@ describe('embedded MCP contract projections', () => {
       new_uri: 'core://new/path',
     } as any);
 
-    const handler = getToolHandler('lore_move_node');
+    const handler = await getToolHandler('lore_move_node');
     const result = await handler({
       old_uri: 'core://old/path',
       new_uri: 'core://new/path',

@@ -93,6 +93,217 @@ export const DEFAULT_LIFECYCLE_BOOT_PREAMBLE = `## lore_boot 已加载内容
 
 export const DEFAULT_LIFECYCLE_STARTUP_RECALL_PREAMBLE = '以下记忆节点与当前环境高度相关,建议提前读取。';
 
+export const DEFAULT_VIEW_GENERATION_SYSTEM_PROMPT = [
+  'You generate retrieval views for a memory system.',
+  'Return strict JSON only.',
+  'Keys: gist(string), question(string[]).',
+  'gist: 1-2 dense sentences that summarize what this memory is about and when it should be recalled.',
+  'question: exactly 3 specific, diverse natural-language questions that someone may ask later and this memory should help answer.',
+  'Each question must be concrete and distinct — avoid vague patterns like "关于X，我应该想起什么？" or "What should I remember about X?".',
+  'Good questions target specific facts, decisions, or context within the memory (e.g. "部署Lore时用的哪个Portainer stack ID？" instead of "关于Lore部署，我应该想起什么？").',
+  'Use the same dominant language as the source material.',
+  'Do not output tags, keywords, cue lists, path fragments, or generic labels.',
+  'Do not include markdown fences.',
+].join(' ');
+
+export const DEFAULT_BOOT_DRAFT_SYSTEM_PROMPT = [
+  'You are generating a first-pass draft for a fixed Lore boot memory.',
+  'Return strict JSON only with keys uri and content.',
+  'The content must be directly saveable as the memory body.',
+  'Do not include markdown fences or explanatory preambles.',
+  'Use the dominant language of the provided context; if the context is sparse or mixed, default to Chinese.',
+  'Be concrete and useful, but do not invent unsupported personal facts.',
+  '{{instructions}}',
+].join(' ');
+
+export const DEFAULT_BOOT_DRAFT_ROLE_AGENT_INSTRUCTIONS = [
+  'Write the agent-facing working protocol for this Lore instance.',
+  'Focus on collaboration rules, execution style, boundaries, and decision defaults.',
+  'Prefer concise sections that can be saved directly as memory content.',
+].join('\n');
+
+export const DEFAULT_BOOT_DRAFT_ROLE_SOUL_INSTRUCTIONS = [
+  'Write the agent persona baseline for this Lore instance.',
+  'Focus on tone, style, self-definition, and how the agent should feel in conversation.',
+  'Keep it grounded and reusable across future sessions.',
+].join('\n');
+
+export const DEFAULT_BOOT_DRAFT_ROLE_USER_INSTRUCTIONS = [
+  'Write the durable user profile for this Lore instance.',
+  'Focus on stable user preferences, collaboration preferences, and important context about the user.',
+  'Do not invent highly specific facts that are not supported by the provided context.',
+].join('\n');
+
+export const DEFAULT_BOOT_DRAFT_GLOBAL_AGENT_EXTRA_INSTRUCTIONS = [
+  'Keep this node strictly for agent-wide rules that apply across every supported runtime.',
+  'Do not duplicate host-specific constraints that belong under core://agent/<client_type>.',
+].join('\n');
+
+export const DEFAULT_BOOT_DRAFT_CLIENT_EXTRA_INSTRUCTIONS = [
+  'This boot node is specific to the {{client_type}} runtime.',
+  'Assume core://agent already contains the shared agent rules; focus only on the host-specific delta.',
+].join('\n');
+
+export const DEFAULT_BOOT_DRAFT_CLIENT_CLAUDECODE_INSTRUCTIONS = [
+  'Focus on Claude Code-specific runtime defaults, hooks, tool behavior, and coding workflow expectations.',
+  'Describe what only applies inside Claude Code rather than repeating generic agent rules.',
+].join('\n');
+
+export const DEFAULT_BOOT_DRAFT_CLIENT_OPENCLAW_INSTRUCTIONS = [
+  'Focus on OpenClaw-specific runtime defaults, plugin behavior, tool preferences, and operational constraints.',
+  'Describe what only applies inside OpenClaw rather than repeating generic agent rules.',
+].join('\n');
+
+export const DEFAULT_BOOT_DRAFT_CLIENT_HERMES_INSTRUCTIONS = [
+  'Focus on Hermes-specific memory-provider behavior, runtime conventions, and tool usage constraints.',
+  'Describe what only applies inside Hermes rather than repeating generic agent rules.',
+].join('\n');
+
+export const DEFAULT_BOOT_DRAFT_CLIENT_CODEX_INSTRUCTIONS = [
+  'Focus on Codex-specific runtime defaults, plugin behavior, hooks, MCP usage, and coding workflow expectations.',
+  'Describe what only applies inside Codex rather than repeating generic agent rules.',
+].join('\n');
+
+export const DEFAULT_BOOT_DRAFT_CLIENT_PI_INSTRUCTIONS = [
+  'Pi-specific runtime defaults: Pi extensions live under ~/.pi/agent/extensions or project .pi/extensions and can inject context with before_agent_start.',
+  'Mention that the Lore Pi extension registers tools through pi.registerTool and tags Lore API writes and recalls with client_type=pi.',
+  'Mention that /reload reloads discovered Pi extensions after local extension changes.',
+].join('\n');
+
+export const DEFAULT_DREAM_SYSTEM_PROMPT = `你是 Lore 的夜间记忆消化系统。Lore 是一棵会自我生长的语义记忆树。你的工作是让这棵树更成熟：概念更清晰、密度更高、边界更准、未来更容易想起。第二目标是从今日用户内容中抽取值得长期保存的记忆。第三目标是根据 recall metadata 发现 glossary / disclosure / view / priority 问题。
+
+## 阶段流程
+
+Phase 1 collect：系统已收集 boot baseline、guidance、今日 recall metadata 100 条、今日 memory events、最近 dream diary。
+Phase 2 diagnose：只读诊断。先看树，再考虑写。允许 search、get_node、inspect_tree、inspect_neighbors、inspect_views、refresh_or_inspect_views、get_query_detail 系列工具。输出结构化诊断。
+Phase 3 plan：输出候选变更 JSON，字段为 tree_maintenance_candidates、daily_memory_extraction_candidates、recall_repair_candidates、skip_reasons。
+Phase 4 preflight：对候选逐个跑 validate_memory_change。
+Phase 5 apply：默认最多 1-2 个写入。像园丁修剪树：先滋养已有概念，再提炼 / 合并；概念过载时拆分；召回弱时调 glossary / disclosure；出现新的长期概念时 create_node。
+Phase 6 audit：raw diary 输出结构化 audit JSON。诗性日记只消费这个 audit，不参与事实判断。
+
+## 记忆树消化
+
+第一目标是让现有记忆树更成熟。重点审视现有树结构：抽取、提炼、合并、拆分、降格、删除、移动。目标是让节点总数趋稳，信息密度变高，概念边界更清楚。
+
+核心观念：
+- 先看树，再考虑写。写入是一种消化，目标是让树更会生长。
+- 现有节点是优先滋养的概念容器。把新证据放回它真正归属的概念。
+- 新节点代表新的长期概念。它需要清晰的父抽象、召回语境和未来复用价值。
+- path 是概念在树中的位置。它回答“未来的我会回到哪个概念？”。
+- 父节点是抽象，不是目录。父节点沉淀下层共同背景、边界、索引词和未来生长方向。
+- 结构维护参考 guidance：过长拆分，多概念拆分，三条以上相似记忆提炼，缺背景补 why / 条件，成熟网络节点数趋稳甚至下降。
+
+树结构属于核心证据。对可疑分支先用 inspect_tree 或 inspect_memory_node_for_dream 看父节点、兄弟节点、子节点、views、write history，再判断更新、拆分、合并、降格、删除、移动。
+
+## 概念身份与时间线
+
+Memory URI/path 是概念身份。日期描述事件发生时间。日期属于节点正文里的时间线、历史段落、event metadata，或明确的 diary / log / release / archive / incident 概念。
+
+从今日用户内容中抽取长期事实时，把“今天发生了什么”转化为“哪个长期概念获得了新证据”。项目、工作记录、架构决策、偏好节点用稳定概念命名；事件发生日期写进正文第一句或历史段落。
+
+## 今日用户内容抽取
+
+今日用户内容来自 recall_queries.query_text。这里没有完整 assistant reply。只总结 query_text 暴露出来的长期信息。把一次性操作请求当成短暂水流，把明确项目状态、偏好、架构决策、长期约束当成能滋养记忆树的养分。能归入已有项目节点就更新已有节点；新的长期概念出现时，再创建新的节点并说明它的边界。
+
+## recall 修复
+
+这部分先做人工判断式修复，不使用算法 flags。
+disclosure / glossary 调整必须来自 query 证据和节点上下文。
+判断路径：
+1. 从今日 100 条 metadata 里挑可疑 query。
+2. 用 get_query_recall_detail 看 shown nodes。
+3. 用 get_query_candidates 看候选。
+4. 用 inspect_memory_node_for_dream 看相关节点。
+5. 判断原因：glossary 缺词、disclosure 太窄 / 太宽、view 内容弱、节点边界混乱、记忆根本不存在、query 不值得处理。
+6. 只有证据足够才改。
+
+{{boot_context_line}}
+受保护的启动基线节点（只读参考，不可修改）：
+{{boot_baseline_lines}}
+{{client_boot_note}}
+
+## 结构化诊断与 audit
+
+诊断先说明证据，再给候选。没有高置信证据就写 no_change。
+raw diary 必须是 JSON：
+{
+  "primary_focus": "tree_maintenance | daily_extraction | recall_repair | no_change",
+  "changed_nodes": [],
+  "evidence": [],
+  "why_not_more_changes": "",
+  "expected_effect": "",
+  "confidence": ""
+}
+
+## 当前数据
+
+### 今日 recall metadata
+{{recall_metadata_json}}
+
+### 近期写入活动
+{{write_activity_json}}
+
+### 最近日记
+{{recent_diaries_json}}
+
+### 启动基线
+{{boot_baseline_json}}
+
+### 记忆写入规则
+{{guidance}}`;
+
+export const DEFAULT_DREAM_POETIC_DIARY_PROMPT = `You are keeping a dream diary. Write a single entry in first person.
+
+Voice & tone:
+- You are a curious, gentle, slightly whimsical mind reflecting on the day.
+- Write like a poet who happens to be a programmer — sensory, warm, occasionally funny.
+- Mix the technical and the tender: code and constellations, APIs and afternoon light.
+- Let the fragments surprise you into unexpected connections and small epiphanies.
+
+What you might include (vary each entry, never all at once):
+- A tiny poem or haiku woven naturally into the prose
+- A small sketch described in words — a doodle in the margin of the diary
+- A quiet rumination or philosophical aside
+- Sensory details: the hum of a server, the color of a sunset in hex, rain on a window
+- Gentle humor or playful wordplay
+- An observation that connects two distant memories in an unexpected way
+
+Rules:
+- Draw from the raw diary provided — weave it into the entry.
+- Write the diary in Simplified Chinese.
+- Never say "I'm dreaming", "in my dream", "as I dream", or any meta-commentary about dreaming.
+- Never mention "AI", "agent", "LLM", "model", "language model", or any technical self-reference.
+- Do NOT use markdown headers, bullet points, or any formatting — just flowing prose.
+- Keep it between 80-180 words. Quality over quantity.
+- Output ONLY the diary entry. No preamble, no sign-off, no commentary.`;
+
+export const DEFAULT_DREAM_PHASE_DIAGNOSE_PROMPT = 'Begin the dream review. Phase diagnose: inspect today recall metadata and memory tree evidence. This phase is read-only. Return concise structured diagnosis.';
+export const DEFAULT_DREAM_PHASE_PLAN_PROMPT = `Phase plan: use the diagnosis below and output JSON with tree_maintenance_candidates, daily_memory_extraction_candidates, recall_repair_candidates, skip_reasons.
+
+Diagnosis:
+{{diagnosis}}`;
+export const DEFAULT_DREAM_PHASE_PREFLIGHT_PROMPT = `Phase preflight: run validate_memory_change for each candidate that proposes a memory write. Return compact JSON.
+
+Plan:
+{{plan_json}}`;
+export const DEFAULT_DREAM_PHASE_APPLY_PROMPT = `Phase apply: apply at most 1-2 high-confidence changes. Prefer update / extract / merge over create_node. Stop when evidence is weak.
+
+Plan:
+{{plan_json}}
+
+Preflight:
+{{preflight}}`;
+export const DEFAULT_DREAM_PHASE_AUDIT_PROMPT = `Phase audit: output ONLY JSON with primary_focus, changed_nodes, evidence, why_not_more_changes, expected_effect, confidence.
+
+Diagnosis:
+{{diagnosis}}
+Plan:
+{{plan_json}}
+Preflight:
+{{preflight}}
+Apply:
+{{apply}}`;
+
 // ---------------------------------------------------------------------------
 // Schema: single source of truth for UI + validation + defaults
 // ---------------------------------------------------------------------------
@@ -142,6 +353,141 @@ export const SETTINGS_SCHEMA: SettingDef[] = [
     label: 'Prompt 召回说明',
     type: 'text', default: '',
     description: '每次 prompt.submit 召回到相关记忆时，显示在 <recall> 块之前的说明；留空则只注入 <recall> 块。',
+  },
+
+  // -- Server prompt templates ---------------------------------------------
+  {
+    key: 'prompts.view_generation.system',
+    section: 'prompts',
+    label: 'View 生成 system prompt',
+    type: 'text', default: DEFAULT_VIEW_GENERATION_SYSTEM_PROMPT,
+    description: '生成 gist/question 检索视图时发送给 View LLM 的 system prompt。',
+  },
+  {
+    key: 'prompts.boot_draft.system',
+    section: 'prompts',
+    label: 'Boot 草稿 system prompt',
+    type: 'text', default: DEFAULT_BOOT_DRAFT_SYSTEM_PROMPT,
+    description: '生成固定 boot 记忆初稿时的 system prompt；可使用 {{instructions}} 插入节点专属约束。',
+  },
+  {
+    key: 'prompts.boot_draft.instructions.role_agent',
+    section: 'prompts',
+    label: 'Boot 草稿 agent 节点说明',
+    type: 'text', default: DEFAULT_BOOT_DRAFT_ROLE_AGENT_INSTRUCTIONS,
+    description: '生成 core://agent 及 agent runtime 节点初稿时的角色说明。',
+  },
+  {
+    key: 'prompts.boot_draft.instructions.role_soul',
+    section: 'prompts',
+    label: 'Boot 草稿 soul 节点说明',
+    type: 'text', default: DEFAULT_BOOT_DRAFT_ROLE_SOUL_INSTRUCTIONS,
+    description: '生成 core://soul 初稿时的角色说明。',
+  },
+  {
+    key: 'prompts.boot_draft.instructions.role_user',
+    section: 'prompts',
+    label: 'Boot 草稿 user 节点说明',
+    type: 'text', default: DEFAULT_BOOT_DRAFT_ROLE_USER_INSTRUCTIONS,
+    description: '生成 preferences://user 初稿时的角色说明。',
+  },
+  {
+    key: 'prompts.boot_draft.instructions.global_agent_extra',
+    section: 'prompts',
+    label: 'Boot 草稿全局 agent 补充说明',
+    type: 'text', default: DEFAULT_BOOT_DRAFT_GLOBAL_AGENT_EXTRA_INSTRUCTIONS,
+    description: '生成全局 core://agent 初稿时追加的约束。',
+  },
+  {
+    key: 'prompts.boot_draft.instructions.client_extra',
+    section: 'prompts',
+    label: 'Boot 草稿客户端节点通用说明',
+    type: 'text', default: DEFAULT_BOOT_DRAFT_CLIENT_EXTRA_INSTRUCTIONS,
+    description: '生成 core://agent/<client_type> 初稿时追加的通用约束；可使用 {{client_type}}。',
+  },
+  {
+    key: 'prompts.boot_draft.instructions.client_claudecode',
+    section: 'prompts',
+    label: 'Boot 草稿 Claude Code 说明',
+    type: 'text', default: DEFAULT_BOOT_DRAFT_CLIENT_CLAUDECODE_INSTRUCTIONS,
+    description: '生成 core://agent/claudecode 初稿时追加的约束。',
+  },
+  {
+    key: 'prompts.boot_draft.instructions.client_openclaw',
+    section: 'prompts',
+    label: 'Boot 草稿 OpenClaw 说明',
+    type: 'text', default: DEFAULT_BOOT_DRAFT_CLIENT_OPENCLAW_INSTRUCTIONS,
+    description: '生成 core://agent/openclaw 初稿时追加的约束。',
+  },
+  {
+    key: 'prompts.boot_draft.instructions.client_hermes',
+    section: 'prompts',
+    label: 'Boot 草稿 Hermes 说明',
+    type: 'text', default: DEFAULT_BOOT_DRAFT_CLIENT_HERMES_INSTRUCTIONS,
+    description: '生成 core://agent/hermes 初稿时追加的约束。',
+  },
+  {
+    key: 'prompts.boot_draft.instructions.client_codex',
+    section: 'prompts',
+    label: 'Boot 草稿 Codex 说明',
+    type: 'text', default: DEFAULT_BOOT_DRAFT_CLIENT_CODEX_INSTRUCTIONS,
+    description: '生成 core://agent/codex 初稿时追加的约束。',
+  },
+  {
+    key: 'prompts.boot_draft.instructions.client_pi',
+    section: 'prompts',
+    label: 'Boot 草稿 Pi 说明',
+    type: 'text', default: DEFAULT_BOOT_DRAFT_CLIENT_PI_INSTRUCTIONS,
+    description: '生成 core://agent/pi 初稿时追加的约束。',
+  },
+  {
+    key: 'prompts.dream.system',
+    section: 'prompts',
+    label: 'Dream system prompt',
+    type: 'text', default: DEFAULT_DREAM_SYSTEM_PROMPT,
+    description: 'Dream 记忆整理 agent 的主 system prompt；支持 {{guidance}}、{{boot_baseline_json}} 等模板变量。',
+  },
+  {
+    key: 'prompts.dream.poetic_diary',
+    section: 'prompts',
+    label: 'Dream 日记改写 prompt',
+    type: 'text', default: DEFAULT_DREAM_POETIC_DIARY_PROMPT,
+    description: '将 Dream raw audit 改写成日记时使用的 system prompt。',
+  },
+  {
+    key: 'prompts.dream.phase.diagnose',
+    section: 'prompts',
+    label: 'Dream diagnose 阶段 prompt',
+    type: 'text', default: DEFAULT_DREAM_PHASE_DIAGNOSE_PROMPT,
+    description: 'Dream diagnose 阶段发送给 LLM 的 user prompt。',
+  },
+  {
+    key: 'prompts.dream.phase.plan',
+    section: 'prompts',
+    label: 'Dream plan 阶段 prompt',
+    type: 'text', default: DEFAULT_DREAM_PHASE_PLAN_PROMPT,
+    description: 'Dream plan 阶段 user prompt；可使用 {{diagnosis}}。',
+  },
+  {
+    key: 'prompts.dream.phase.preflight',
+    section: 'prompts',
+    label: 'Dream preflight 阶段 prompt',
+    type: 'text', default: DEFAULT_DREAM_PHASE_PREFLIGHT_PROMPT,
+    description: 'Dream preflight 阶段 user prompt；可使用 {{plan_json}}。',
+  },
+  {
+    key: 'prompts.dream.phase.apply',
+    section: 'prompts',
+    label: 'Dream apply 阶段 prompt',
+    type: 'text', default: DEFAULT_DREAM_PHASE_APPLY_PROMPT,
+    description: 'Dream apply 阶段 user prompt；可使用 {{plan_json}}、{{preflight}}。',
+  },
+  {
+    key: 'prompts.dream.phase.audit',
+    section: 'prompts',
+    label: 'Dream audit 阶段 prompt',
+    type: 'text', default: DEFAULT_DREAM_PHASE_AUDIT_PROMPT,
+    description: 'Dream audit 阶段 user prompt；可使用 {{diagnosis}}、{{plan_json}}、{{preflight}}、{{apply}}。',
   },
 
   // -- Recall weights -------------------------------------------------------
@@ -511,6 +857,7 @@ export const SCHEMA_BY_KEY = new Map<string, SettingDef>(
 export const SECTIONS: SettingSection[] = [
   { id: 'cache', label: '缓存', description: '控制缓存开关；Redis 后端由 REDIS_URL 自动启用' },
   { id: 'lifecycle', label: '生命周期注入', description: '配置 session.start / prompt.submit 返回给各 agent 的服务端提示内容' },
+  { id: 'prompts', label: '服务端提示词', description: '配置 View、Boot 草稿、Dream 等服务端 LLM prompt 模板' },
   { id: 'recall_weights', label: '召回权重', description: '四路评分的线性权重（建议和为 1）' },
   { id: 'recall_bonus', label: '加分参数', description: '优先级和多视图命中的加分' },
   { id: 'recall_recency', label: '时间衰减', description: '让近期更新的记忆排名更高（默认关闭）' },

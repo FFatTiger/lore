@@ -203,7 +203,7 @@ export async function runDream(): Promise<DreamResult> {
         state: node.state,
         content: node.content || '',
       })),
-      guidance: loadGuidanceFile(),
+      guidance: await loadGuidanceFile(),
       recallReview: recallReview as unknown as Record<string, unknown>,
       recallStats: recallStats as unknown as Record<string, unknown>,
       writeActivity: writeStats as unknown as Record<string, unknown>,

@@ -27,7 +27,6 @@ import {
   resolveUri,
   formatNode,
   formatBootView,
-  loadGuidance,
 } from './mcpFormatters';
 
 // ── server factory ────────────────────────────────────────────────
@@ -36,8 +35,8 @@ interface McpServerContext {
   clientType?: ClientType | null;
 }
 
-export function createMcpServer(context: McpServerContext = {}): InstanceType<typeof McpServer> {
-  const guidance = loadGuidance();
+export async function createMcpServer(context: McpServerContext = {}): Promise<InstanceType<typeof McpServer>> {
+  const guidance = await loadLifecycleTextConfig().then((config) => config.guidance).catch(() => '');
   const server = new McpServer(
     {
       name: 'lore',
@@ -55,7 +54,7 @@ export function createMcpServer(context: McpServerContext = {}): InstanceType<ty
     {},
     async () => {
       const text = (await loadLifecycleTextConfig()).guidance;
-      return text ? ok(text) : fail('Guidance', new Error('file not found'));
+      return text ? ok(text) : fail('Guidance', new Error('not configured'));
     },
   );
 

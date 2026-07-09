@@ -54,10 +54,6 @@ vi.mock('../../ops/policy', () => ({
   validateUpdatePolicy: vi.fn(),
   validateDeletePolicy: vi.fn(),
 }));
-vi.mock('node:fs', () => ({
-  readFileSync: vi.fn(() => '# MCP Guidance\nlore_boot\nlore_guidance\nlore_get_node is useful'),
-}));
-
 vi.mock('../../llm/provider', () => ({
   generateText: vi.fn(),
   generateTextWithTools: vi.fn(),
@@ -1095,8 +1091,15 @@ describe('processDreamToolCalls', () => {
 });
 
 describe('loadGuidanceFile', () => {
-  it('loads guidance from the real lore guidance path and remaps tool names to English placeholders', () => {
-    const prompt = loadGuidanceFile();
+  it('loads guidance from server settings and remaps tool names to English placeholders', async () => {
+    mockGetSettings.mockResolvedValueOnce({
+      'lifecycle.guidance.enabled': true,
+      'lifecycle.guidance.global': '# MCP Guidance\nlore_boot\nlore_guidance\nlore_get_node is useful',
+      'lifecycle.boot.preamble': '',
+      'lifecycle.startup_recall.preamble': '',
+      'lifecycle.prompt_recall.preamble': '',
+    });
+    const prompt = await loadGuidanceFile();
     expect(prompt).toContain('preloaded boot baseline');
     expect(prompt).toContain('preloaded guidance');
     expect(prompt).toContain('get_node');

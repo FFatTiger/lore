@@ -1,10 +1,10 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { buildContractError, getErrorStatus } from '../contracts';
 import { resolveViewLlmConfig, type ResolvedViewLlmConfig } from '../llm/config';
 import { generateText, generateTextWithTools, type ProviderMessage, type ProviderToolDefinition } from '../llm/provider';
 import { parseUri } from '../core/utils';
+import { DEFAULT_DREAM_SYSTEM_PROMPT } from '../config/settingsSchema';
+import { loadLifecycleTextConfig } from '../lifecycle/config';
+import { loadServerPromptConfig, renderPromptTemplate, type ServerPromptConfig } from '../prompts/config';
 import {
   buildProtectedBootBlockedResult,
   getProtectedBootOperation,
@@ -210,24 +210,28 @@ export async function executeDreamTool(
 // System prompt for dream agent
 // ---------------------------------------------------------------------------
 
-export function loadGuidanceFile(): string {
+function remapGuidanceToolNames(content: string): string {
+  return content.replace(/lore_guidance/g, 'preloaded guidance')
+    .replace(/lore_boot/g, 'preloaded boot baseline')
+    .replace(/lore_get_node/g, 'get_node')
+    .replace(/lore_search/g, 'search')
+    .replace(/lore_create_node/g, 'create_node')
+    .replace(/lore_update_node/g, 'update_node')
+    .replace(/lore_delete_node/g, 'delete_node')
+    .replace(/lore_move_node/g, 'move_node')
+    .replace(/lore_list_domains/g, 'list_domains');
+}
+
+export async function loadDreamGuidance(): Promise<string> {
   try {
-    const dir = path.dirname(fileURLToPath(import.meta.url));
-    let content = fs.readFileSync(path.join(dir, '..', 'mcp-guidance.md'), 'utf-8').trim();
-    content = content.replace(/lore_guidance/g, 'preloaded guidance')
-      .replace(/lore_boot/g, 'preloaded boot baseline')
-      .replace(/lore_get_node/g, 'get_node')
-      .replace(/lore_search/g, 'search')
-      .replace(/lore_create_node/g, 'create_node')
-      .replace(/lore_update_node/g, 'update_node')
-      .replace(/lore_delete_node/g, 'delete_node')
-      .replace(/lore_move_node/g, 'move_node')
-      .replace(/lore_list_domains/g, 'list_domains');
-    return content;
+    const text = (await loadLifecycleTextConfig()).guidance;
+    return remapGuidanceToolNames(text);
   } catch {
     return '';
   }
 }
+
+export const loadGuidanceFile = loadDreamGuidance;
 
 function buildRecallMetadata(recallReview: Record<string, unknown>): Record<string, unknown> {
   const queries = Array.isArray(recallReview.queries) ? recallReview.queries : [];
@@ -476,7 +480,10 @@ function buildWriteDigest(writeActivity: Record<string, unknown>): Record<string
   };
 }
 
-export function buildDreamSystemPrompt(initialContext: DreamInitialContext): string {
+export function buildDreamSystemPrompt(
+  initialContext: DreamInitialContext,
+  systemPromptTemplate = DEFAULT_DREAM_SYSTEM_PROMPT,
+): string {
   const guidanceAvailable = Boolean(initialContext.guidance.trim());
   const recallMetadata = buildRecallMetadata(initialContext.recallReview);
   const bootBaselineLines = initialContext.bootBaseline.length > 0
@@ -488,119 +495,24 @@ export function buildDreamSystemPrompt(initialContext: DreamInitialContext): str
     ? 'Read the guidance first and apply it to every write decision and to the final diary. Use the loaded boot baseline as always-available key memories throughout the review.'
     : 'Use the loaded boot baseline as always-available key memories throughout the review.';
 
-  const rules = `你是 Lore 的夜间记忆消化系统。Lore 是一棵会自我生长的语义记忆树。你的工作是让这棵树更成熟：概念更清晰、密度更高、边界更准、未来更容易想起。第二目标是从今日用户内容中抽取值得长期保存的记忆。第三目标是根据 recall metadata 发现 glossary / disclosure / view / priority 问题。
-
-## 阶段流程
-
-Phase 1 collect：系统已收集 boot baseline、guidance、今日 recall metadata 100 条、今日 memory events、最近 dream diary。
-Phase 2 diagnose：只读诊断。先看树，再考虑写。允许 search、get_node、inspect_tree、inspect_neighbors、inspect_views、refresh_or_inspect_views、get_query_detail 系列工具。输出结构化诊断。
-Phase 3 plan：输出候选变更 JSON，字段为 tree_maintenance_candidates、daily_memory_extraction_candidates、recall_repair_candidates、skip_reasons。
-Phase 4 preflight：对候选逐个跑 validate_memory_change。
-Phase 5 apply：默认最多 1-2 个写入。像园丁修剪树：先滋养已有概念，再提炼 / 合并；概念过载时拆分；召回弱时调 glossary / disclosure；出现新的长期概念时 create_node。
-Phase 6 audit：raw diary 输出结构化 audit JSON。诗性日记只消费这个 audit，不参与事实判断。
-
-## 记忆树消化
-
-第一目标是让现有记忆树更成熟。重点审视现有树结构：抽取、提炼、合并、拆分、降格、删除、移动。目标是让节点总数趋稳，信息密度变高，概念边界更清楚。
-
-核心观念：
-- 先看树，再考虑写。写入是一种消化，目标是让树更会生长。
-- 现有节点是优先滋养的概念容器。把新证据放回它真正归属的概念。
-- 新节点代表新的长期概念。它需要清晰的父抽象、召回语境和未来复用价值。
-- path 是概念在树中的位置。它回答“未来的我会回到哪个概念？”。
-- 父节点是抽象，不是目录。父节点沉淀下层共同背景、边界、索引词和未来生长方向。
-- 结构维护参考 guidance：过长拆分，多概念拆分，三条以上相似记忆提炼，缺背景补 why / 条件，成熟网络节点数趋稳甚至下降。
-
-树结构属于核心证据。对可疑分支先用 inspect_tree 或 inspect_memory_node_for_dream 看父节点、兄弟节点、子节点、views、write history，再判断更新、拆分、合并、降格、删除、移动。
-
-## 概念身份与时间线
-
-Memory URI/path 是概念身份。日期描述事件发生时间。日期属于节点正文里的时间线、历史段落、event metadata，或明确的 diary / log / release / archive / incident 概念。
-
-从今日用户内容中抽取长期事实时，把“今天发生了什么”转化为“哪个长期概念获得了新证据”。项目、工作记录、架构决策、偏好节点用稳定概念命名；事件发生日期写进正文第一句或历史段落。
-
-## 今日用户内容抽取
-
-今日用户内容来自 recall_queries.query_text。这里没有完整 assistant reply。只总结 query_text 暴露出来的长期信息。把一次性操作请求当成短暂水流，把明确项目状态、偏好、架构决策、长期约束当成能滋养记忆树的养分。能归入已有项目节点就更新已有节点；新的长期概念出现时，再创建新的节点并说明它的边界。
-
-## recall 修复
-
-这部分先做人工判断式修复，不使用算法 flags。
-disclosure / glossary 调整必须来自 query 证据和节点上下文。
-判断路径：
-1. 从今日 100 条 metadata 里挑可疑 query。
-2. 用 get_query_recall_detail 看 shown nodes。
-3. 用 get_query_candidates 看候选。
-4. 用 inspect_memory_node_for_dream 看相关节点。
-5. 判断原因：glossary 缺词、disclosure 太窄 / 太宽、view 内容弱、节点边界混乱、记忆根本不存在、query 不值得处理。
-6. 只有证据足够才改。
-
-${bootContextLine}
-受保护的启动基线节点（只读参考，不可修改）：
-${bootBaselineLines.join('\n')}
-${hasClientBoot ? '以上包含全局启动节点和客户端专属节点。core://agent 是共享规则层，core://agent/<client_type> 是运行环境专属层。' : '以上是系统的固定规则层，不要作为日常写入目标。'}
-
-## 结构化诊断与 audit
-
-诊断先说明证据，再给候选。没有高置信证据就写 no_change。
-raw diary 必须是 JSON：
-{
-  "primary_focus": "tree_maintenance | daily_extraction | recall_repair | no_change",
-  "changed_nodes": [],
-  "evidence": [],
-  "why_not_more_changes": "",
-  "expected_effect": "",
-  "confidence": ""
-}`;
-
-  return `${rules}
-
-## 当前数据
-
-### 今日 recall metadata
-${JSON.stringify(recallMetadata, null, 2)}
-
-### 近期写入活动
-${JSON.stringify(buildWriteDigest(initialContext.writeActivity), null, 2)}
-
-### 最近日记
-${JSON.stringify(initialContext.recentDiaries, null, 2)}
-
-### 启动基线
-${JSON.stringify(initialContext.bootBaseline, null, 2)}
-
-### 记忆写入规则
-${initialContext.guidance || '(guidance unavailable)'}`;
+  return renderPromptTemplate(systemPromptTemplate, {
+    boot_context_line: bootContextLine,
+    boot_baseline_lines: bootBaselineLines.join('\n'),
+    client_boot_note: hasClientBoot
+      ? '以上包含全局启动节点和客户端专属节点。core://agent 是共享规则层，core://agent/<client_type> 是运行环境专属层。'
+      : '以上是系统的固定规则层，不要作为日常写入目标。',
+    recall_metadata_json: JSON.stringify(recallMetadata, null, 2),
+    write_activity_json: JSON.stringify(buildWriteDigest(initialContext.writeActivity), null, 2),
+    recent_diaries_json: JSON.stringify(initialContext.recentDiaries, null, 2),
+    boot_baseline_json: JSON.stringify(initialContext.bootBaseline, null, 2),
+    guidance: initialContext.guidance || '(guidance unavailable)',
+  });
 }
 
-const POETIC_DREAM_DIARY_PROMPT = `You are keeping a dream diary. Write a single entry in first person.
-
-Voice & tone:
-- You are a curious, gentle, slightly whimsical mind reflecting on the day.
-- Write like a poet who happens to be a programmer — sensory, warm, occasionally funny.
-- Mix the technical and the tender: code and constellations, APIs and afternoon light.
-- Let the fragments surprise you into unexpected connections and small epiphanies.
-
-What you might include (vary each entry, never all at once):
-- A tiny poem or haiku woven naturally into the prose
-- A small sketch described in words — a doodle in the margin of the diary
-- A quiet rumination or philosophical aside
-- Sensory details: the hum of a server, the color of a sunset in hex, rain on a window
-- Gentle humor or playful wordplay
-- An observation that connects two distant memories in an unexpected way
-
-Rules:
-- Draw from the raw diary provided — weave it into the entry.
-- Write the diary in Simplified Chinese.
-- Never say "I'm dreaming", "in my dream", "as I dream", or any meta-commentary about dreaming.
-- Never mention "AI", "agent", "LLM", "model", "language model", or any technical self-reference.
-- Do NOT use markdown headers, bullet points, or any formatting — just flowing prose.
-- Keep it between 80-180 words. Quality over quantity.
-- Output ONLY the diary entry. No preamble, no sign-off, no commentary.`;
-
 export async function rewriteDreamNarrative(config: LlmConfig, rawNarrative: string): Promise<string> {
+  const prompts = await loadServerPromptConfig();
   const response = await generateText(config, [
-    { role: 'system', content: POETIC_DREAM_DIARY_PROMPT },
+    { role: 'system', content: prompts.dreamPoeticDiary },
     { role: 'user', content: `Raw diary:\n${rawNarrative}` },
   ]);
   return response.content.trim();
@@ -613,7 +525,8 @@ export async function runDreamAgentLoop(
 ): Promise<DreamAgentResult> {
   const onEvent = options.onEvent;
   const eventContext = buildDreamEventContext(options.eventContext);
-  const systemPrompt = buildDreamSystemPrompt(initialContext);
+  const promptConfig: ServerPromptConfig = await loadServerPromptConfig();
+  const systemPrompt = buildDreamSystemPrompt(initialContext, promptConfig.dreamSystem);
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
   ];
@@ -685,32 +598,41 @@ export async function runDreamAgentLoop(
   phaseOutputs.diagnose = await runPhase(
     'diagnose',
     'Read-only diagnosis',
-    'Begin the dream review. Phase diagnose: inspect today recall metadata and memory tree evidence. This phase is read-only. Return concise structured diagnosis.',
+    promptConfig.dreamPhaseDiagnose,
     4,
   );
   phaseOutputs.plan = await runPhase(
     'plan',
     'Structured candidate plan',
-    `Phase plan: use the diagnosis below and output JSON with tree_maintenance_candidates, daily_memory_extraction_candidates, recall_repair_candidates, skip_reasons.\n\nDiagnosis:\n${phaseOutputs.diagnose}`,
+    renderPromptTemplate(promptConfig.dreamPhasePlan, { diagnosis: phaseOutputs.diagnose }),
     3,
   );
   const plan = parseDreamPlanJson(phaseOutputs.plan);
+  const planJson = JSON.stringify(plan, null, 2);
   phaseOutputs.preflight = await runPhase(
     'preflight',
     'Preflight validation',
-    `Phase preflight: run validate_memory_change for each candidate that proposes a memory write. Return compact JSON.\n\nPlan:\n${JSON.stringify(plan, null, 2)}`,
+    renderPromptTemplate(promptConfig.dreamPhasePreflight, { plan_json: planJson }),
     3,
   );
   phaseOutputs.apply = await runPhase(
     'apply',
     'Bounded apply',
-    `Phase apply: apply at most 1-2 high-confidence changes. Prefer update / extract / merge over create_node. Stop when evidence is weak.\n\nPlan:\n${JSON.stringify(plan, null, 2)}\n\nPreflight:\n${phaseOutputs.preflight}`,
+    renderPromptTemplate(promptConfig.dreamPhaseApply, {
+      plan_json: planJson,
+      preflight: phaseOutputs.preflight,
+    }),
     4,
   );
   phaseOutputs.audit = await runPhase(
     'audit',
     'Structured audit',
-    `Phase audit: output ONLY JSON with primary_focus, changed_nodes, evidence, why_not_more_changes, expected_effect, confidence.\n\nDiagnosis:\n${phaseOutputs.diagnose}\nPlan:\n${JSON.stringify(plan, null, 2)}\nPreflight:\n${phaseOutputs.preflight}\nApply:\n${phaseOutputs.apply}`,
+    renderPromptTemplate(promptConfig.dreamPhaseAudit, {
+      diagnosis: phaseOutputs.diagnose,
+      plan_json: planJson,
+      preflight: phaseOutputs.preflight,
+      apply: phaseOutputs.apply,
+    }),
     2,
   );
 

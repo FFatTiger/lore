@@ -82,7 +82,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
     });
-    const server = createMcpServer({ clientType: requestClientType });
+    const server = await createMcpServer({ clientType: requestClientType });
     await server.connect(transport);
     await transport.handleRequest(req, res, body);
   } catch (error) {

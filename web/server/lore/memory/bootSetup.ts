@@ -12,6 +12,8 @@ import { createNode, updateNodeByPath } from './write';
 import { resolveViewLlmConfig } from '../llm/config';
 import { generateText, type ProviderMessage } from '../llm/provider';
 import { extractJsonObject } from '../view/viewLlm';
+import { DEFAULT_BOOT_DRAFT_SYSTEM_PROMPT } from '../config/settingsSchema';
+import { loadServerPromptConfig, renderPromptTemplate, type ServerPromptConfig } from '../prompts/config';
 
 interface EventContext {
   source?: string;
@@ -71,48 +73,6 @@ export interface GenerateBootDraftsResult {
   results: BootDraftResult[];
 }
 
-const ROLE_DRAFT_INSTRUCTIONS: Record<BootNodeRole, string[]> = {
-  agent: [
-    'Write the agent-facing working protocol for this Lore instance.',
-    'Focus on collaboration rules, execution style, boundaries, and decision defaults.',
-    'Prefer concise sections that can be saved directly as memory content.',
-  ],
-  soul: [
-    'Write the agent persona baseline for this Lore instance.',
-    'Focus on tone, style, self-definition, and how the agent should feel in conversation.',
-    'Keep it grounded and reusable across future sessions.',
-  ],
-  user: [
-    'Write the durable user profile for this Lore instance.',
-    'Focus on stable user preferences, collaboration preferences, and important context about the user.',
-    'Do not invent highly specific facts that are not supported by the provided context.',
-  ],
-};
-
-const CLIENT_DRAFT_INSTRUCTIONS: Record<BootClientType, string[]> = {
-  claudecode: [
-    'Focus on Claude Code-specific runtime defaults, hooks, tool behavior, and coding workflow expectations.',
-    'Describe what only applies inside Claude Code rather than repeating generic agent rules.',
-  ],
-  openclaw: [
-    'Focus on OpenClaw-specific runtime defaults, plugin behavior, tool preferences, and operational constraints.',
-    'Describe what only applies inside OpenClaw rather than repeating generic agent rules.',
-  ],
-  hermes: [
-    'Focus on Hermes-specific memory-provider behavior, runtime conventions, and tool usage constraints.',
-    'Describe what only applies inside Hermes rather than repeating generic agent rules.',
-  ],
-  codex: [
-    'Focus on Codex-specific runtime defaults, plugin behavior, hooks, MCP usage, and coding workflow expectations.',
-    'Describe what only applies inside Codex rather than repeating generic agent rules.',
-  ],
-  pi: [
-    'Pi-specific runtime defaults: Pi extensions live under ~/.pi/agent/extensions or project .pi/extensions and can inject context with before_agent_start.',
-    'Mention that the Lore Pi extension registers tools through pi.registerTool and tags Lore API writes and recalls with client_type=pi.',
-    'Mention that /reload reloads discovered Pi extensions after local extension changes.',
-  ],
-};
-
 function asStatusError(message: string, status: number): Error & { status: number } {
   return Object.assign(new Error(message), { status });
 }
@@ -125,18 +85,37 @@ function requireBootSpec(uri: unknown) {
   return spec;
 }
 
-function buildDraftInstructionList(spec: BootNodeSpec): string[] {
-  const instructions = [...ROLE_DRAFT_INSTRUCTIONS[spec.role]];
+function splitInstructionText(text: string): string[] {
+  return String(text || '').split(/\r?\n+/).map((line) => line.trim()).filter(Boolean);
+}
+
+function roleInstructions(config: ServerPromptConfig, role: BootNodeRole): string {
+  if (role === 'agent') return config.bootDraftRoleAgentInstructions;
+  if (role === 'soul') return config.bootDraftRoleSoulInstructions;
+  return config.bootDraftRoleUserInstructions;
+}
+
+function clientInstructions(config: ServerPromptConfig, clientType: BootClientType): string {
+  if (clientType === 'claudecode') return config.bootDraftClientClaudecodeInstructions;
+  if (clientType === 'openclaw') return config.bootDraftClientOpenclawInstructions;
+  if (clientType === 'hermes') return config.bootDraftClientHermesInstructions;
+  if (clientType === 'codex') return config.bootDraftClientCodexInstructions;
+  return config.bootDraftClientPiInstructions;
+}
+
+function buildDraftInstructionList(spec: BootNodeSpec, config: ServerPromptConfig): string[] {
+  const instructions = splitInstructionText(roleInstructions(config, spec.role));
 
   if (spec.scope === 'global' && spec.role === 'agent') {
-    instructions.push('Keep this node strictly for agent-wide rules that apply across every supported runtime.');
-    instructions.push('Do not duplicate host-specific constraints that belong under core://agent/<client_type>.');
+    instructions.push(...splitInstructionText(config.bootDraftGlobalAgentExtraInstructions));
   }
 
   if (spec.scope === 'client' && spec.client_type) {
-    instructions.push(`This boot node is specific to the ${spec.client_type} runtime.`);
-    instructions.push('Assume core://agent already contains the shared agent rules; focus only on the host-specific delta.');
-    instructions.push(...CLIENT_DRAFT_INSTRUCTIONS[spec.client_type]);
+    instructions.push(...splitInstructionText(renderPromptTemplate(
+      config.bootDraftClientExtraInstructions,
+      { client_type: spec.client_type },
+    )));
+    instructions.push(...splitInstructionText(clientInstructions(config, spec.client_type)));
   }
 
   return instructions;
@@ -237,8 +216,14 @@ async function getExistingBootNodeState(uri: string): Promise<ExistingBootNodeSt
   };
 }
 
-function buildDraftMessages(spec: BootNodeSpec, sharedContext: string, nodeContext: string): ProviderMessage[] {
-  const instructions = buildDraftInstructionList(spec).join(' ');
+function buildDraftMessages(
+  spec: BootNodeSpec,
+  sharedContext: string,
+  nodeContext: string,
+  promptConfig: ServerPromptConfig,
+  systemPromptTemplate = DEFAULT_BOOT_DRAFT_SYSTEM_PROMPT,
+): ProviderMessage[] {
+  const instructions = buildDraftInstructionList(spec, promptConfig).join(' ');
   const payload = {
     id: spec.id,
     uri: spec.uri,
@@ -256,15 +241,7 @@ function buildDraftMessages(spec: BootNodeSpec, sharedContext: string, nodeConte
   return [
     {
       role: 'system',
-      content: [
-        'You are generating a first-pass draft for a fixed Lore boot memory.',
-        'Return strict JSON only with keys uri and content.',
-        'The content must be directly saveable as the memory body.',
-        'Do not include markdown fences or explanatory preambles.',
-        'Use the dominant language of the provided context; if the context is sparse or mixed, default to Chinese.',
-        'Be concrete and useful, but do not invent unsupported personal facts.',
-        instructions,
-      ].join(' '),
+      content: renderPromptTemplate(systemPromptTemplate, { instructions }),
     },
     {
       role: 'user',
@@ -353,7 +330,10 @@ export async function generateBootDrafts({
   const requestedUris = normalizeBootUriList(uris);
   const normalizedNodeContext = normalizeNodeContext(node_context);
   const sharedContext = String(shared_context ?? '').trim();
-  const config = await resolveViewLlmConfig();
+  const [config, promptConfig] = await Promise.all([
+    resolveViewLlmConfig(),
+    loadServerPromptConfig(),
+  ]);
 
   if (!config) {
     throw asStatusError('View LLM draft generation is unavailable. Configure View LLM in /settings first.', 409);
@@ -365,7 +345,7 @@ export async function generateBootDrafts({
     try {
       const response = await generateText(
         config,
-        buildDraftMessages(spec, sharedContext, normalizedNodeContext[spec.uri] || ''),
+        buildDraftMessages(spec, sharedContext, normalizedNodeContext[spec.uri] || '', promptConfig, promptConfig.bootDraftSystem),
       );
       const parsed = extractJsonObject(response.content);
       const content = typeof parsed?.content === 'string' ? parsed.content.trim() : '';

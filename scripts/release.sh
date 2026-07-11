@@ -35,7 +35,6 @@ fi
 
 # web/package.json
 "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" web/package.json
-"${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" web/package-lock.json
 
 # MCP server
 "${SED_INPLACE[@]}" "s/version: '[^']*'/version: '${VERSION}'/" web/server/mcpServer.ts
@@ -50,7 +49,23 @@ fi
 # OpenClaw plugin
 "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" openclaw-plugin/openclaw.plugin.json
 "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" openclaw-plugin/package.json
-"${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" openclaw-plugin/package-lock.json
+
+# package-lock roots only; never rewrite dependency versions.
+python3 - "${VERSION}" web/package-lock.json openclaw-plugin/package-lock.json <<'PYLOCK'
+import json
+import sys
+from pathlib import Path
+
+version = sys.argv[1]
+for filename in sys.argv[2:]:
+    path = Path(filename)
+    data = json.loads(path.read_text())
+    data["version"] = version
+    root = data.get("packages", {}).get("")
+    if isinstance(root, dict):
+        root["version"] = version
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+PYLOCK
 
 # Pi extension
 "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" pi-extension/package.json

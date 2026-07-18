@@ -20,9 +20,28 @@ Then open the Web Console and check:
 Agent checks:
 
 1. Restart the runtime after installing or changing config.
-2. Confirm the Lore MCP server appears in that runtime.
+2. Confirm Lore appears in that runtime: as an MCP server where applicable, or as the native OpenCode plugin at `~/.config/opencode/plugins/lore-memory.js`.
 3. Ask the agent to load boot memory or call `lore_status`.
 4. Send a realistic project prompt and check whether a `<recall>` block appears.
 5. If a recall line appears, open the memory node before relying on it.
 
 For Codex, open `/hooks` and trust Lore hooks if prompted. For Claude Code, confirm the Lore hooks and MCP server are installed. Both runtimes should share `~/.lore/config.json` for the Lore server URL and token.
+
+For the OpenCode prerelease `v1.3.15-pre.1` (minimum tested OpenCode 1.18.3), run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --pre --channels opencode
+```
+
+Then restart OpenCode and verify:
+
+1. `~/.config/opencode/plugins/lore-memory.js` contains `@lore-managed-opencode-plugin`.
+2. `lore_status` and `lore_guidance` run, and the full exact native tool set ends with `lore_move_node`.
+3. `lore_boot` includes the OpenCode Boot node.
+4. A normal user prompt triggers Recall through `chat.message`.
+5. Boot system context uses `experimental.chat.system.transform`; if that experimental hook is unavailable, OpenCode continues normally and prompt Recall still works.
+6. Standard installation has not added an OpenCode MCP entry. `/api/mcp` is a manual fallback only.
+
+For manual installation, download `lore-opencode.zip` from the prerelease and copy its `lore-memory.js` to the plugin path. It uses the shared `~/.lore/config.json`.
+
+If any check fails, do not tune recall thresholds first. Fix the relevant boundary: server, database, settings, authentication, agent configuration, native plugin, or hooks.

@@ -3,7 +3,7 @@ Use the installer when you want the shortest path to a working Lore server and l
 ## Prerequisites
 
 - **Docker** with the Compose plugin (`docker compose`). On macOS, Docker Desktop includes both. On Linux, install Docker Engine and the `docker compose` plugin.
-- At least one supported agent runtime (Claude Code, Codex, Pi, OpenClaw, or Hermes) that you want to connect.
+- At least one supported agent runtime (Claude Code, Codex, Pi, OpenClaw, Hermes, or OpenCode) that you want to connect. The OpenCode prerelease is tested with OpenCode 1.18.3.
 - An **OpenAI-compatible API key** for embeddings (e.g. OpenAI, DeepSeek, or a local service). You will configure this in `/setup` after the installer finishes. Without it, semantic recall and Dream will not work.
 
 ## Run the installer
@@ -26,8 +26,11 @@ curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install
 - Starts the Lore server, PostgreSQL, and Redis containers.
 - Waits for the server to become healthy.
 - Creates `~/.lore/config.json` with server URL and token.
-- Installs MCP configuration and hooks for the selected agent channels.
+- Installs MCP configuration and hooks where the selected runtime uses them.
+- For OpenCode, downloads `lore-opencode.zip` and atomically installs the managed native plugin at `~/.config/opencode/plugins/lore-memory.js`.
 - Installs thin lifecycle forwarders; boot guidance and recall formatting are returned by the Lore server.
+
+The standard OpenCode installation does not configure MCP. OpenCode receives the exact native `lore_*` tools, so generic `/api/mcp` is only a manual fallback.
 
 You can inspect `~/.lore/` after the installer finishes to see what was written.
 
@@ -35,7 +38,7 @@ You can inspect `~/.lore/` after the installer finishes to see what was written.
 
 | Option | Use it when |
 | --- | --- |
-| `--channels claudecode,codex` | You only want selected integrations. |
+| `--channels claudecode,codex` | You only want selected integrations. Use `opencode` for OpenCode. |
 | `--base-url http://host:18901` | Lore is already running somewhere else. This skips server startup. |
 | `--api-token TOKEN` | The server is protected by `API_TOKEN`. |
 | `--skip-docker` | You only want local client integrations. |
@@ -44,6 +47,14 @@ You can inspect `~/.lore/` after the installer finishes to see what was written.
 | `--force` | You want to reinstall even if the version looks current. |
 
 ## Examples
+
+Install only the OpenCode prerelease `v1.3.15-pre.1`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --pre --channels opencode
+```
+
+This installs `lore-opencode.zip` for OpenCode 1.18.3 or newer. If the `opencode` CLI is not installed, the channel reports a successful skip instead of failing the whole installer.
 
 Install only Codex and Claude Code integrations:
 
@@ -63,6 +74,7 @@ curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install
 2. Complete embedding, View LLM, and boot memory setup.
 3. Restart the agent runtimes you installed.
 4. For Codex, run `codex mcp list` to confirm Lore is registered. Then open a Codex session and type `/hooks` — trust the Lore hooks if prompted.
-5. Send a realistic prompt and confirm a recall block appears.
+5. For OpenCode, confirm `~/.config/opencode/plugins/lore-memory.js` exists, restart OpenCode, and ask it to call `lore_status`. Boot uses `experimental.chat.system.transform`; prompt Recall uses `chat.message` and remains available when system injection is unavailable.
+6. Send a realistic prompt and confirm a recall block appears.
 
 If you do not want the installer to manage the server or clients, use [Manual configuration](/documents/installation/manual-configuration).

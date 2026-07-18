@@ -7,7 +7,7 @@ You will configure four things:
 | Server | Database URL, optional auth token, cache, and file storage | Lore Web starts and exposes `/setup` and `/api/mcp` |
 | Runtime settings | Embedding, View LLM, boot memory, recall, Dream, and backup settings | Lore can search, view, and maintain memory |
 | Shared client config | Server URL and token for local hooks | Local integrations know where Lore is |
-| Agent runtime | MCP endpoint, environment variables, and runtime-specific hooks | Agents can load boot memory and use recall |
+| Agent runtime | Native plugin or MCP endpoint, environment variables, and runtime-specific hooks | Agents can load boot memory and use recall |
 
 Keep server secrets on the server, and keep agent-specific configuration in the agent runtime. A client config should not contain `DATABASE_URL`; a server `.env` should not contain Claude, Codex, or OpenClaw hook settings.
 
@@ -129,7 +129,7 @@ Skip the `authorization` header only when your server has no `API_TOKEN`.
 
 ## Create shared client config
 
-Claude Code and Codex hooks can read the same local Lore config. Create `~/.lore/config.json` on the machine where the agents run:
+Local Lore integrations, including Claude Code, Codex, and OpenCode, can read the same client config. Create `~/.lore/config.json` on the machine where the agents run:
 
 ```json
 {
@@ -204,6 +204,60 @@ bash /tmp/lore-plugin/packages/codex-plugin/scripts/install-hooks.sh
 ```
 
 Restart Codex, open `/hooks`, and trust the Lore hooks if Codex asks for approval.
+
+## Connect OpenCode
+
+The native OpenCode integration is a prerelease in `v1.3.15-pre.1`, tested with OpenCode 1.18.3. It reads the same `~/.lore/config.json` shown above and installs one managed file:
+
+```text
+~/.config/opencode/plugins/lore-memory.js
+```
+
+The preferred path is the prerelease installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --pre --channels opencode
+```
+
+To install `lore-opencode.zip` manually, preserve any unmarked file already at the target path:
+
+```bash
+tmp_dir="$(mktemp -d)"
+target="$HOME/.config/opencode/plugins/lore-memory.js"
+curl -fL https://github.com/FFatTiger/lore/releases/download/v1.3.15-pre.1/lore-opencode.zip \
+  -o "$tmp_dir/lore-opencode.zip"
+unzip -q "$tmp_dir/lore-opencode.zip" -d "$tmp_dir/lore-opencode"
+mkdir -p "$(dirname "$target")"
+if [ -f "$target" ] && ! grep -q '@lore-managed-opencode-plugin' "$target"; then
+  echo "Refusing to overwrite unmarked OpenCode plugin: $target" >&2
+  exit 1
+fi
+install -m 0644 "$tmp_dir/lore-opencode/lore-memory.js" "$target"
+rm -rf "$tmp_dir"
+```
+
+Restart OpenCode after installation. The plugin registers exactly these native tools:
+
+- `lore_guidance`
+- `lore_status`
+- `lore_boot`
+- `lore_get_node`
+- `lore_search`
+- `lore_list_domains`
+- `lore_create_node`
+- `lore_update_node`
+- `lore_delete_node`
+- `lore_move_node`
+
+Boot is injected into system context with `experimental.chat.system.transform`; it is never inserted into the user message. Prompt Recall runs through `chat.message` and appends a separate current-turn text part. If Lore or the experimental system hook is unavailable, the plugin warns and fails open. Native tools remain available, and prompt Recall continues when only system injection is unavailable.
+
+Standard OpenCode installation does not configure `/api/mcp`. If native plugin loading is impossible, generic MCP at `/api/mcp?client_type=opencode` is a manual fallback only and does not reproduce the native lifecycle behavior.
+
+To uninstall only the OpenCode integration, use the ownership-aware uninstaller. It removes `lore-memory.js` only when the file contains the Lore management marker and preserves unmarked plugins:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/uninstall.sh | bash -s -- --channels opencode -y
+```
 
 ## Connect OpenClaw
 
@@ -288,8 +342,8 @@ Before moving real instructions into Lore, check these items:
 
 1. `curl -fsS http://127.0.0.1:18901/api/health` returns success.
 2. `/setup` shows embedding, View LLM, and boot memory complete.
-3. Each agent MCP URL includes the right `client_type`.
-4. Protected servers receive the same bearer token from Web UI, MCP, and hooks.
-5. A new agent session includes boot context.
-6. A realistic project prompt produces a recall block.
+3. Every MCP-based agent URL includes the right `client_type`; OpenCode uses its native plugin instead.
+4. Protected servers receive the same bearer token from Web UI, MCP, hooks, and the OpenCode plugin.
+5. A new agent session includes boot context. For OpenCode, confirm `core://agent/opencode` through `lore_boot`.
+6. A realistic project prompt produces a recall block. In OpenCode this must still work when experimental system injection is unavailable.
 7. Opening a recalled node works in the Web Console.

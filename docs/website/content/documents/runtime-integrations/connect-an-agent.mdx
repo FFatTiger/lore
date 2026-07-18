@@ -18,10 +18,19 @@ Shared connection settings live in `~/.lore/config.json`; plugin-specific config
 | --- | --- |
 | `base_url` / `baseUrl` | Lore server origin, without a trailing slash |
 | `api_token` / `apiToken` | bearer token when the server uses `API_TOKEN` |
-| `client_type` | runtime identity sent to Lore: `codex`, `claudecode`, `pi`, `openclaw`, or `hermes` |
+| `client_type` | runtime identity sent to Lore: `codex`, `claudecode`, `pi`, `openclaw`, `hermes`, or `opencode` |
+| native OpenCode tools | exact names from `lore_guidance` through `lore_move_node` |
 | startup hook | loads boot memory for the current runtime |
 | prompt hook | fetches recall candidates for the current user prompt |
 | MCP tools | read, search, create, update, move, and delete Lore memory nodes |
+
+For the OpenCode prerelease `v1.3.15-pre.1`, tested with OpenCode 1.18.3, use:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --pre --channels opencode
+```
+
+The installer places `lore-memory.js` from `lore-opencode.zip` at `~/.config/opencode/plugins/lore-memory.js`. Manual ZIP installation uses the same path and shared `~/.lore/config.json`. Boot enters system context through `experimental.chat.system.transform`; prompt Recall uses `chat.message`. If system injection is unavailable, the plugin warns and fails open while prompt Recall continues. Standard OpenCode installation does not configure MCP; `/api/mcp` is a manual fallback only.
 
 Restart the agent after changing plugin files, MCP config, hooks, or token values. Codex users should open `/hooks` and trust Lore hooks if prompted.
 

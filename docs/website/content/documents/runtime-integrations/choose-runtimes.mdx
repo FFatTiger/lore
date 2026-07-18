@@ -9,6 +9,7 @@ Choose the runtime integrations that match your daily tools.
 | Pi | you use Pi agent | extension hooks inject startup guidance and per-prompt recall |
 | OpenClaw | you use OpenClaw | plugin tools, startup health check, boot guidance, and recall injection |
 | Hermes | you use Hermes Agent | Python skill/provider with boot, recall, and memory tools |
+| OpenCode *(prerelease `v1.3.15-pre.1`)* | you use OpenCode 1.18.3 or newer | native exact `lore_*` tools, Boot through `experimental.chat.system.transform`, and prompt Recall through `chat.message` |
 
 Install only what you use:
 
@@ -16,4 +17,12 @@ Install only what you use:
 curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --channels codex,claudecode
 ```
 
-Every channel should use the same server URL and token. When a client connects through MCP, the endpoint includes a `client_type` query parameter so Lore can load client-specific boot rules and track recall usage by channel.
+Install only the OpenCode prerelease:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --pre --channels opencode
+```
+
+It installs `lore-opencode.zip` to `~/.config/opencode/plugins/lore-memory.js` and shares `~/.lore/config.json` with the other clients. The native tool list runs from `lore_guidance` through `lore_move_node`. System injection is fail-open, and prompt Recall continues when only the experimental system hook is unavailable. Standard OpenCode installation does not configure MCP; `/api/mcp` is a manual fallback only.
+
+Every channel should use the same server URL and token. MCP-based clients include a `client_type` query parameter. Native OpenCode REST calls identify themselves as `opencode` without adding an MCP configuration.

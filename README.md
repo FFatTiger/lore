@@ -31,6 +31,7 @@ Supported runtimes:
 | **Codex** | `codex-plugin/` | Local marketplace plugin, MCP config, and optional hooks for boot / recall injection. |
 | **OpenClaw** | `openclaw-plugin/` | Runtime plugin with boot, recall, and Lore tools. |
 | **Hermes** | `hermes-plugin/` | MemoryProvider plugin with Lore tools and recall support. |
+| **OpenCode** *(prerelease `v1.3.15-pre.1`)* | `opencode-plugin/` | Native plugin tested with OpenCode 1.18.3. Boot uses `experimental.chat.system.transform`; prompt Recall uses `chat.message`; exact `lore_*` tools are registered without MCP prefixes. |
 | **Generic MCP clients** | `/api/mcp` | Streamable HTTP MCP endpoint for clients that can connect to remote tools. |
 
 Most agent memory systems stop at retrieval. Lore focuses on the full memory lifecycle:
@@ -61,15 +62,15 @@ Chinese installer output:
 curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.zh.sh | bash
 ```
 
-This single command starts the Lore server (Docker Compose), connects all 5 agent runtimes,
+This single command starts the Lore server (Docker Compose), connects all 6 agent runtimes,
 and creates `~/.lore/config.json`. Re-run anytime to update.
-Docker Compose pull/start output is shown; other installer subcommands stay quiet.
+Docker Compose pull/start output is shown; other installer subcommands stay quiet. OpenCode is included in the default channel set and is skipped successfully when the `opencode` CLI is absent.
 
 | Flag | Description |
 |---|---|
 | `--pre` | Pre-release channel (`pre-latest` Docker tag) |
 | `--dev` | Dev channel (`dev-latest` Docker tag) |
-| `--channels CH,...` | Specific runtimes: `claudecode`, `codex`, `pi`, `openclaw`, `hermes` |
+| `--channels CH,...` | Specific runtimes: `claudecode`, `codex`, `pi`, `openclaw`, `hermes`, `opencode` |
 | `--base-url URL` | External server URL (skips local Docker) |
 | `--skip-docker` | Don't start or manage Docker |
 | `--force` | Force reinstall even if version unchanged |
@@ -102,6 +103,7 @@ Complete the setup flow:
    - `core://agent/openclaw`
    - `core://agent/hermes`
    - `core://agent/pi`
+   - `core://agent/opencode`
 
 The `Skip` button saves the default value for an empty boot node and moves forward.
 
@@ -200,6 +202,9 @@ curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install
 # External server (skip local Docker)
 curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --base-url http://192.168.1.100:18901 --api-token my-token
 
+# OpenCode prerelease only (v1.3.15-pre.1)
+curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --pre --channels opencode
+
 # Specific channels only
 curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --channels claudecode,codex
 ```
@@ -210,7 +215,7 @@ Full options:
 |---|---|
 | `--base-url URL` | Lore server base URL (auto-starts Docker if omitted) |
 | `--api-token TOKEN` | Lore API token |
-| `--channels CH,...` | Comma-separated: `claudecode`, `codex`, `pi`, `openclaw`, `hermes`. Default: all 5 |
+| `--channels CH,...` | Comma-separated: `claudecode`, `codex`, `pi`, `openclaw`, `hermes`, `opencode`. Default: all 6 |
 | `--dev` | Use dev channel (`dev-latest` Docker tag) |
 | `--pre` | Use pre-release channel (`pre-latest` Docker tag) |
 | `--skip-docker` | Don't start or update Docker containers |
@@ -227,7 +232,10 @@ Re-run the install script anytime to update. If Docker was auto-started on first
 | **Pi** | Extension tools, startup boot + recall context |
 | **OpenClaw** | Runtime plugin with boot, recall, and Lore tools |
 | **Hermes** | MemoryProvider plugin, tools, recall support |
+| **OpenCode** *(prerelease)* | Native local plugin at `~/.config/opencode/plugins/lore-memory.js`; exact tools from `lore_guidance` through `lore_move_node`; system-hook Boot and message-hook Recall |
 | **Generic MCP** | `http://your-host:18901/api/mcp?client_type=mcp` |
+
+> **OpenCode prerelease note:** `v1.3.15-pre.1` is tested with OpenCode 1.18.3. The installer downloads `lore-opencode.zip`, installs `lore-memory.js` at `~/.config/opencode/plugins/lore-memory.js`, and reads server URL/token from `~/.lore/config.json`. Boot is injected only through `experimental.chat.system.transform`; prompt Recall is injected as a separate current-turn part through `chat.message`. If the experimental system hook or Lore is unavailable, the adapter fails open instead of blocking the conversation. The standard install does not configure MCP. Generic `/api/mcp` remains a manual fallback only.
 
 > **Claude Code note:** Claude Code has a built-in auto-memory feature. The
 > install script does not disable it — if you want Lore as your only memory

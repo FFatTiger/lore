@@ -11,7 +11,23 @@ Agent 问题通常是本地配置问题，而不是服务器记忆问题。
 | OpenClaw | `~/.lore/config.json`、`~/.openclaw/openclaw.json` 插件 entry，以及可选 `baseUrl` / `apiToken` 覆盖 |
 | Pi | `~/.lore/config.json`、`${PI_CODING_AGENT_DIR:-~/.pi/agent}/extensions/lore` 下的扩展 symlink，以及可选插件配置覆盖 |
 | Hermes | `~/.lore/config.json`、插件 symlink，以及可选环境变量兜底 |
+| OpenCode | OpenCode 1.18.3 或更新版本、共享 `~/.lore/config.json`，以及来自预发布 `v1.3.15-pre.1` / `lore-opencode.zip` 的 `~/.config/opencode/plugins/lore-memory.js` |
 
 修改这些内容后，重启运行时。Hooks 和 MCP 配置通常在进程启动时加载。
 
-如果 MCP 可用但没有出现 recall，检查 hook 配置。如果 recall 出现但 Agent 不使用它，改善本地 guidance，并验证 Agent 会先打开召回节点再依赖内容。
+## OpenCode 检查
+
+- 如果没有原生 Lore 工具，确认插件文件包含 `@lore-managed-opencode-plugin`，并确认 CLI 达到已验证的 OpenCode 1.18.3 基线。
+- 如果工具已出现，确认精确名称包含 `lore_guidance`、`lore_status` 和 `lore_move_node`。`lore_lore_search` 这类名称说明配置的是 MCP，而不是标准原生插件。
+- 如果 Boot 缺失，但工具和 prompt Recall 正常，可能是 `experimental.chat.system.transform` 不可用。这是预期的 fail-open 模式：插件只警告一次，不修改用户消息，`chat.message` Recall 仍会继续。
+- 如果所有 Lore 调用失败，检查 `~/.lore/config.json`、服务器健康、token 和网络。除了健康检查，插件 REST 请求都会标记 `client_type=opencode`。
+- 如果 `~/.config/opencode/plugins/lore-memory.js` 已有未标记文件，安装器会有意保留它。若要让 Lore 管理该路径，请自行移走旧文件后重试。
+- OpenCode 标准安装不得创建 MCP entry。只有原生插件无法加载时，才使用 `/api/mcp?client_type=opencode` 作为手动兜底。
+
+重新安装预发布版：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.zh.sh | bash -s -- --pre --channels opencode --force
+```
+
+其他运行时如果 MCP 可用但没有 recall，检查 hook 配置。OpenCode 则检查原生插件加载和 `chat.message`。如果 recall 出现但 Agent 不使用它，改善本地 guidance，并验证 Agent 会先打开召回节点再依赖内容。

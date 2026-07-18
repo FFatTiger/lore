@@ -3,7 +3,7 @@
 ## 前置条件
 
 - **Docker** 并带 Compose 插件（`docker compose`）。macOS 上 Docker Desktop 已包含两者。Linux 上需安装 Docker Engine 和 `docker compose` 插件。
-- 至少一个要连接的 Agent 运行时（Claude Code、Codex、Pi、OpenClaw 或 Hermes）。
+- 至少一个要连接的 Agent 运行时（Claude Code、Codex、Pi、OpenClaw、Hermes 或 OpenCode）。OpenCode 预发布集成已用 OpenCode 1.18.3 验证。
 - 一个 **OpenAI 兼容的 API key** 用于 embedding（例如 OpenAI、DeepSeek 或本地服务）。安装完成后在 `/setup` 中配置。没有它，语义召回和 Dream 无法工作。
 
 ## 运行安装器
@@ -26,8 +26,11 @@ curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install
 - 启动 Lore 服务器、PostgreSQL 和 Redis 容器。
 - 等待服务器健康检查通过。
 - 创建 `~/.lore/config.json`，写入服务器 URL 和 token。
-- 为选中的 Agent 渠道安装 MCP 配置和 hooks。
+- 为使用 MCP/hooks 的选中 Agent 渠道安装对应配置。
+- 对 OpenCode，下载 `lore-opencode.zip`，并原子安装受管理的原生插件到 `~/.config/opencode/plugins/lore-memory.js`。
 - 安装轻量生命周期转发器；boot guidance 和 recall 格式由 Lore server 返回。
+
+OpenCode 标准安装不会配置 MCP。OpenCode 使用精确命名的原生 `lore_*` 工具；通用 `/api/mcp` 仅作为手动兜底。
 
 安装完成后可以查看 `~/.lore/` 目录确认写入了哪些文件。
 
@@ -35,7 +38,7 @@ curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install
 
 | 选项 | 什么时候用 |
 | --- | --- |
-| `--channels claudecode,codex` | 只安装选中的集成。 |
+| `--channels claudecode,codex` | 只安装选中的集成。OpenCode 使用 `opencode`。 |
 | `--base-url http://host:18901` | Lore 已经在别处运行。这个选项会跳过服务器启动。 |
 | `--api-token TOKEN` | 服务器启用了 `API_TOKEN`。 |
 | `--skip-docker` | 只安装本机客户端集成。 |
@@ -44,6 +47,14 @@ curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install
 | `--force` | 即使版本看起来已是最新，也重新安装。 |
 
 ## 示例
+
+只安装 OpenCode 预发布版 `v1.3.15-pre.1`：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.zh.sh | bash -s -- --pre --channels opencode
+```
+
+该命令为 OpenCode 1.18.3 或更新版本安装 `lore-opencode.zip`。如果系统未安装 `opencode` CLI，该 channel 会成功跳过，而不会导致整个安装器失败。
 
 只安装 Codex 和 Claude Code 集成：
 
@@ -63,6 +74,7 @@ curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install
 2. 完成 embedding、View LLM 和 boot memory 设置。
 3. 重启刚安装集成的 Agent 运行时。
 4. Codex 用户运行 `codex mcp list` 确认 Lore 已注册，然后打开 Codex 会话输入 `/hooks`，如果提示确认，信任 Lore hooks。
-5. 发一个真实任务 prompt，确认能看到召回块。
+5. OpenCode 用户确认 `~/.config/opencode/plugins/lore-memory.js` 存在，重启 OpenCode，并要求它调用 `lore_status`。Boot 使用 `experimental.chat.system.transform`；prompt Recall 使用 `chat.message`，即使 system 注入不可用也会继续工作。
+6. 发一个真实任务 prompt，确认能看到召回块。
 
 如果你不想让安装器管理服务器或客户端，使用 [手动配置](/zh-cn/documents/installation/manual-configuration)。

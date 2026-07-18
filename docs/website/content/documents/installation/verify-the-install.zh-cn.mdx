@@ -20,11 +20,28 @@ curl -fsS http://127.0.0.1:18901/api/health
 Agent 检查：
 
 1. 安装或修改配置后，重启运行时。
-2. 确认 Lore MCP 服务器出现在该运行时中。
+2. 确认 Lore 已出现在运行时中：适用时是 MCP server；OpenCode 则是 `~/.config/opencode/plugins/lore-memory.js` 原生插件。
 3. 让 Agent 加载启动记忆，或调用 `lore_status`。
 4. 发一个真实项目 prompt，检查是否出现 `<recall>` 块。
 5. 如果召回行出现，在依赖它之前先打开记忆节点。
 
 Codex 用户打开 `/hooks`，如果提示确认，信任 Lore hooks。Claude Code 用户确认 Lore hooks 和 MCP server 已安装。两个运行时都应共用 `~/.lore/config.json` 中的 Lore server URL 和 token。
 
-如果其中某项失败，不要先调召回阈值。先修复对应边界：服务器、数据库、设置、认证、Agent 配置或 hooks。
+OpenCode 预发布版 `v1.3.15-pre.1` 最低已验证 OpenCode 1.18.3。运行：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.zh.sh | bash -s -- --pre --channels opencode
+```
+
+重启 OpenCode 后验证：
+
+1. `~/.config/opencode/plugins/lore-memory.js` 包含 `@lore-managed-opencode-plugin`。
+2. `lore_status` 和 `lore_guidance` 可调用，完整精确原生工具列表以 `lore_move_node` 结束。
+3. `lore_boot` 包含 OpenCode Boot 节点。
+4. 普通用户 prompt 通过 `chat.message` 触发 Recall。
+5. Boot system context 使用 `experimental.chat.system.transform`；实验性 hook 不可用时 OpenCode 仍正常运行，prompt Recall 仍然工作。
+6. 标准安装没有添加 OpenCode MCP entry；`/api/mcp` 仅是手动兜底。
+
+手动安装时，从预发布下载 `lore-opencode.zip`，把其中的 `lore-memory.js` 复制到插件路径。它共用 `~/.lore/config.json`。
+
+如果其中某项失败，不要先调召回阈值。先修复对应边界：服务器、数据库、设置、认证、Agent 配置、原生插件或 hooks。

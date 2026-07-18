@@ -11,7 +11,23 @@ Check:
 | OpenClaw | `~/.lore/config.json`, `~/.openclaw/openclaw.json` plugin entry and optional `baseUrl` / `apiToken` overrides |
 | Pi | `~/.lore/config.json`, extension symlink under `${PI_CODING_AGENT_DIR:-~/.pi/agent}/extensions/lore`, and optional plugin config overrides |
 | Hermes | `~/.lore/config.json`, plugin symlink, and optional environment fallback |
+| OpenCode | OpenCode 1.18.3 or newer, shared `~/.lore/config.json`, and `~/.config/opencode/plugins/lore-memory.js` from prerelease `v1.3.15-pre.1` / `lore-opencode.zip` |
 
 After changing any of these, restart the runtime. Hooks and MCP config are usually loaded at process start.
 
-If MCP works but recall does not appear, check hook configuration. If recall appears but the agent does not use it, improve local guidance and verify the agent opens recalled nodes before relying on them.
+## OpenCode checks
+
+- If no native Lore tools appear, confirm the plugin file contains `@lore-managed-opencode-plugin` and that the CLI meets the tested OpenCode 1.18.3 baseline.
+- If tools appear, verify the exact names include `lore_guidance`, `lore_status`, and `lore_move_node`. Names such as `lore_lore_search` indicate an MCP setup, not the standard native plugin.
+- If Boot is missing but tools and prompt Recall work, `experimental.chat.system.transform` may be unavailable. This is an expected fail-open mode: the plugin warns once, does not alter the user message, and `chat.message` Recall continues.
+- If all Lore calls fail, validate `~/.lore/config.json`, server health, token, and network access. Every plugin REST call except health identifies `client_type=opencode`.
+- If an unmarked file already exists at `~/.config/opencode/plugins/lore-memory.js`, the installer intentionally preserves it. Move it yourself before retrying if you want Lore to own that path.
+- The standard OpenCode installer must not create an MCP entry. Use `/api/mcp?client_type=opencode` only as a manual fallback when native plugin loading is impossible.
+
+To reinstall the prerelease:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --pre --channels opencode --force
+```
+
+If MCP works but recall does not appear in other runtimes, check hook configuration. In OpenCode, check native plugin loading and `chat.message` instead. If recall appears but the agent does not use it, improve local guidance and verify the agent opens recalled nodes before relying on them.

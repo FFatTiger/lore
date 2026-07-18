@@ -18,10 +18,19 @@ curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install
 | --- | --- |
 | `base_url` / `baseUrl` | Lore 服务器 origin，不带尾部斜杠 |
 | `api_token` / `apiToken` | 服务器使用 `API_TOKEN` 时的 bearer token |
-| `client_type` | 发送给 Lore 的运行时身份：`codex`、`claudecode`、`pi`、`openclaw` 或 `hermes` |
+| `client_type` | 发送给 Lore 的运行时身份：`codex`、`claudecode`、`pi`、`openclaw`、`hermes` 或 `opencode` |
+| OpenCode 原生工具 | 精确名称从 `lore_guidance` 到 `lore_move_node` |
 | startup hook | 为当前运行时加载启动记忆 |
 | prompt hook | 为当前用户 prompt 获取召回候选 |
 | MCP tools | 读取、搜索、创建、更新、移动和删除 Lore 记忆节点 |
+
+OpenCode 预发布版 `v1.3.15-pre.1` 已用 OpenCode 1.18.3 验证，安装命令：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.zh.sh | bash -s -- --pre --channels opencode
+```
+
+安装器把 `lore-opencode.zip` 中的 `lore-memory.js` 放到 `~/.config/opencode/plugins/lore-memory.js`。手动 ZIP 安装也使用相同路径和共享 `~/.lore/config.json`。Boot 通过 `experimental.chat.system.transform` 进入 system context；prompt Recall 使用 `chat.message`。System 注入不可用时插件会警告并 fail open，prompt Recall 仍会继续。OpenCode 标准安装不会配置 MCP；`/api/mcp` 只作为手动兜底。
 
 修改插件文件、MCP 配置、hooks 或 token 后，重启 Agent。Codex 用户应该打开 `/hooks`，并在提示时信任 Lore hooks。
 

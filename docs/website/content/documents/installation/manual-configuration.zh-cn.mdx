@@ -7,7 +7,7 @@
 | 服务器 | 数据库 URL、可选认证 token、缓存和文件存储 | Lore Web 启动，并提供 `/setup` 和 `/api/mcp` |
 | 运行时设置 | Embedding、View LLM、启动记忆、召回、Dream 和备份 | Lore 可以搜索、查看和维护记忆 |
 | 共享客户端配置 | 本机 hooks 使用的服务器 URL 和 token | 本机集成知道要连接哪个 Lore 服务器 |
-| Agent 运行时 | MCP endpoint、环境变量和运行时专属 hooks | Agent 可以加载启动记忆并使用召回 |
+| Agent 运行时 | 原生插件或 MCP endpoint、环境变量和运行时专属 hooks | Agent 可以加载启动记忆并使用召回 |
 
 原则很简单：服务器密钥放在服务器侧，Agent 专属配置放在 Agent 运行时。本地客户端配置不应该包含 `DATABASE_URL`；服务器 `.env` 也不应该塞进 Claude、Codex 或 OpenClaw 的 hook 设置。
 
@@ -129,7 +129,7 @@ curl -fsS -X PUT http://127.0.0.1:18901/api/settings \
 
 ## 创建共享客户端配置
 
-Claude Code 和 Codex hooks 可以读取同一个本机配置。在运行 Agent 的机器上创建 `~/.lore/config.json`：
+Claude Code、Codex、OpenCode 等本机 Lore 集成都可以读取同一个客户端配置。在运行 Agent 的机器上创建 `~/.lore/config.json`：
 
 ```json
 {
@@ -204,6 +204,60 @@ bash /tmp/lore-plugin/packages/codex-plugin/scripts/install-hooks.sh
 ```
 
 重启 Codex，打开 `/hooks`，如果 Codex 要求确认，信任 Lore hooks。
+
+## 连接 OpenCode
+
+OpenCode 原生集成随 `v1.3.15-pre.1` 预发布，已用 OpenCode 1.18.3 验证。它读取上面的同一个 `~/.lore/config.json`，并安装一个受管理文件：
+
+```text
+~/.config/opencode/plugins/lore-memory.js
+```
+
+推荐使用预发布安装器：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.zh.sh | bash -s -- --pre --channels opencode
+```
+
+如需手动安装 `lore-opencode.zip`，如果目标路径已有未带管理标记的文件，必须保留它：
+
+```bash
+tmp_dir="$(mktemp -d)"
+target="$HOME/.config/opencode/plugins/lore-memory.js"
+curl -fL https://github.com/FFatTiger/lore/releases/download/v1.3.15-pre.1/lore-opencode.zip \
+  -o "$tmp_dir/lore-opencode.zip"
+unzip -q "$tmp_dir/lore-opencode.zip" -d "$tmp_dir/lore-opencode"
+mkdir -p "$(dirname "$target")"
+if [ -f "$target" ] && ! grep -q '@lore-managed-opencode-plugin' "$target"; then
+  echo "拒绝覆盖未标记的 OpenCode 插件：$target" >&2
+  exit 1
+fi
+install -m 0644 "$tmp_dir/lore-opencode/lore-memory.js" "$target"
+rm -rf "$tmp_dir"
+```
+
+安装后重启 OpenCode。插件精确注册以下原生工具：
+
+- `lore_guidance`
+- `lore_status`
+- `lore_boot`
+- `lore_get_node`
+- `lore_search`
+- `lore_list_domains`
+- `lore_create_node`
+- `lore_update_node`
+- `lore_delete_node`
+- `lore_move_node`
+
+Boot 通过 `experimental.chat.system.transform` 注入 system context，绝不会塞进用户消息。Prompt Recall 通过 `chat.message` 追加当前轮独立 text part。Lore 或实验性 system hook 不可用时，插件会警告并 fail open；原生工具仍可用，仅 system 注入不可用时 prompt Recall 仍会继续。
+
+OpenCode 标准安装不会配置 `/api/mcp`。只有原生插件无法加载时，才把 `/api/mcp?client_type=opencode` 当作手动兜底；它不能复现原生生命周期行为。
+
+只卸载 OpenCode 集成时，使用 ownership-aware 卸载器。只有 `lore-memory.js` 带 Lore 管理标记时才会删除，未标记插件会被保留：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/uninstall.sh | bash -s -- --channels opencode -y
+```
 
 ## 连接 OpenClaw
 
@@ -288,8 +342,8 @@ ln -s /tmp/lore-plugin/packages/hermes-plugin/lore_memory ~/.hermes/skills/lore_
 
 1. `curl -fsS http://127.0.0.1:18901/api/health` 返回成功。
 2. `/setup` 显示 embedding、View LLM 和 boot memory 已完成。
-3. 每个 Agent 的 MCP URL 都包含正确的 `client_type`。
-4. 受保护服务器能从 Web UI、MCP 和 hooks 收到同一个 bearer token。
-5. 新 Agent 会话能看到启动上下文。
-6. 真实项目 prompt 会产生召回块。
+3. 基于 MCP 的 Agent URL 包含正确的 `client_type`；OpenCode 使用原生插件。
+4. 受保护服务器能从 Web UI、MCP、hooks 和 OpenCode 插件收到同一个 bearer token。
+5. 新 Agent 会话能看到启动上下文。OpenCode 通过 `lore_boot` 确认 `core://agent/opencode`。
+6. 真实项目 prompt 会产生召回块；OpenCode 的实验性 system 注入不可用时，这项仍应工作。
 7. 能在 Web Console 打开召回到的记忆节点。

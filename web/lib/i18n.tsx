@@ -155,6 +155,9 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
     'Write the Codex-specific agent rules that load together with core://agent.': '填写会与 core://agent 一起加载的 Codex 专属 agent 规则。',
     'Pi boot memory': 'Pi 启动记忆',
     'Write the Pi-specific agent rules that load together with core://agent.': '填写会与 core://agent 一起加载的 Pi 专属 agent 规则。',
+    'OpenCode boot memory': 'OpenCode 启动记忆',
+    'Write the OpenCode-specific native tool, context injection, attribution, and fail-open rules that load together with core://agent.':
+      '填写会与 core://agent 一起加载的 OpenCode 原生工具、上下文注入、归因与 fail-open 专属规则。',
     'Channel agent setup': 'Channel agent 配置',
     'Review every supported channel in one page. Each channel keeps only its runtime-specific delta; shared rules stay in core://agent.':
       '在同一个页面检查所有支持的 channel。每个 channel 只保留运行时专属差异；通用规则放在 core://agent。',
@@ -201,6 +204,7 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
     'hermes runtime constraints': 'Hermes 运行时约束',
     'codex runtime constraints': 'Codex 运行时约束',
     'pi runtime constraints': 'Pi 运行时约束',
+    'opencode runtime constraints': 'OpenCode 运行时约束',
     'style / persona / self-definition': '风格 / 人格 / 自我定义',
     'stable user definition': '稳定用户定义',
     'Working rules, collaboration constraints, and execution protocol.':
@@ -215,6 +219,8 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
       'Codex 专属插件、hook、MCP 行为与运行时工作流约束。',
     'Pi-specific extensions, tools, prompt injection, and runtime workflow constraints.':
       'Pi 专属扩展、工具、prompt 注入与运行时工作流约束。',
+    'OpenCode-specific native tools, system and message hooks, lifecycle attribution, and fail-open runtime behavior.':
+      'OpenCode 专属原生工具、system/message hook、生命周期归因与 fail-open 运行时行为。',
     'Agent style, persona, and self-cognition baseline.':
       '代理的风格、人格与自我认知基线。',
     'Stable user information, user preferences, and durable collaboration context.':
@@ -582,6 +588,11 @@ interface LanguageContextValue {
   t: (key: TranslationKey) => string;
 }
 
+export function translate(key: TranslationKey, lang: Lang): string {
+  if (lang === 'en') return key;
+  return DICT.zh[key] ?? key;
+}
+
 const LanguageContext = createContext<LanguageContextValue>({
   lang: 'zh',
   setLang: () => {},
@@ -612,10 +623,7 @@ export function LanguageProvider({ children }: LanguageProviderProps): React.JSX
     try { window.localStorage.setItem('lore-lang', next); } catch { /* ignore */ }
   }, []);
 
-  const t = useCallback((key: TranslationKey): string => {
-    if (lang === 'en') return key;
-    return DICT.zh[key] ?? key;
-  }, [lang]);
+  const t = useCallback((key: TranslationKey): string => translate(key, lang), [lang]);
 
   return (
     <LanguageContext.Provider value={{ lang, setLang, t }}>

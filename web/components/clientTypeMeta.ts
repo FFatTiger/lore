@@ -38,6 +38,12 @@ const CLIENT_TYPE_META: Record<string, ClientTypeMeta> = {
     assetPath: '/channel-icons/pi.svg',
     initials: 'π',
   },
+  opencode: {
+    label: 'OpenCode',
+    tone: 'soft',
+    assetPath: '/channel-icons/opencode.svg',
+    initials: 'OC',
+  },
   mcp: {
     label: 'MCP',
     tone: 'orange',

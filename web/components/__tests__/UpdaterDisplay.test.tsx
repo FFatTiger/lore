@@ -45,6 +45,18 @@ describe('UpdaterDisplay', () => {
     expect(html).toContain('data-alt="Pi"');
   });
 
+  it('renders OpenCode avatar alt text and official asset path', () => {
+    const html = renderToStaticMarkup(
+      <UpdaterDisplay
+        updaters={[{ client_type: 'opencode', source: 'api:test', updated_at: '2026-07-18T10:00:00.000Z', event_count: 1 }]}
+        compact
+      />,
+    );
+
+    expect(html).toContain('data-alt="OpenCode"');
+    expect(html).toContain('/channel-icons/opencode.svg');
+  });
+
   it('renders history entry as a native button when history handler is provided', () => {
     const html = renderToStaticMarkup(
       <UpdaterDisplay

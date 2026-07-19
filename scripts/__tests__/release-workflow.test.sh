@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 WORKFLOW="$ROOT/.github/workflows/release.yml"
+PLUGIN_PACKAGE="$ROOT/opencode-plugin/package.json"
+PLUGIN_LOCK="$ROOT/opencode-plugin/package-lock.json"
 
 fail() {
   echo "FAIL: $*" >&2
@@ -20,5 +22,22 @@ grep -Fq 'for f in dist/lore-*.zip' "$WORKFLOW" || fail 'release upload loop mis
 BUILD_LINE=$(grep -n 'name: Build OpenCode artifact' "$WORKFLOW" | cut -d: -f1)
 UPLOAD_LINE=$(grep -n 'name: Upload artifacts to release' "$WORKFLOW" | cut -d: -f1)
 [[ "$BUILD_LINE" -lt "$UPLOAD_LINE" ]] || fail 'OpenCode artifact must build before upload'
+
+python3 - "$PLUGIN_PACKAGE" "$PLUGIN_LOCK" <<'PY'
+import json, sys
+package_path, lock_path = sys.argv[1:]
+with open(package_path, encoding='utf-8') as handle:
+    package = json.load(handle)
+with open(lock_path, encoding='utf-8') as handle:
+    lock = json.load(handle)
+
+assert package['devDependencies']['esbuild'] == '0.28.1', package['devDependencies']['esbuild']
+assert lock['packages']['node_modules/esbuild']['version'] == '0.28.1'
+assert 'node_modules/vitest/node_modules/esbuild' not in lock['packages']
+assert not any(path.startswith('node_modules/vitest/node_modules/@esbuild/') for path in lock['packages'])
+for path, metadata in lock['packages'].items():
+    if path.startswith('node_modules/@esbuild/'):
+        assert metadata.get('optional') is True, (path, metadata)
+PY
 
 echo "release workflow tests passed"

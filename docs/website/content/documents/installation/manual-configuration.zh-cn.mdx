@@ -207,7 +207,7 @@ bash /tmp/lore-plugin/packages/codex-plugin/scripts/install-hooks.sh
 
 ## 连接 OpenCode
 
-OpenCode 原生集成随 `v1.3.15-pre.2` 预发布，已用 OpenCode 1.18.3 验证。它读取上面的同一个 `~/.lore/config.json`，并安装一个受管理文件：
+OpenCode 原生集成随 `v1.3.15-pre.3` 预发布，已用 OpenCode 1.18.3 验证。它读取上面的同一个 `~/.lore/config.json`，并安装一个受管理文件：
 
 ```text
 ~/.config/opencode/plugins/lore-memory.js
@@ -224,7 +224,7 @@ curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install
 ```bash
 tmp_dir="$(mktemp -d)"
 target="$HOME/.config/opencode/plugins/lore-memory.js"
-curl -fL https://github.com/FFatTiger/lore/releases/download/v1.3.15-pre.2/lore-opencode.zip \
+curl -fL https://github.com/FFatTiger/lore/releases/download/v1.3.15-pre.3/lore-opencode.zip \
   -o "$tmp_dir/lore-opencode.zip"
 unzip -q "$tmp_dir/lore-opencode.zip" -d "$tmp_dir/lore-opencode"
 mkdir -p "$(dirname "$target")"

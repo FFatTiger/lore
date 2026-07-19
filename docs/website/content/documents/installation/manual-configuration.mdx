@@ -207,7 +207,7 @@ Restart Codex, open `/hooks`, and trust the Lore hooks if Codex asks for approva
 
 ## Connect OpenCode
 
-The native OpenCode integration is a prerelease in `v1.3.15-pre.2`, tested with OpenCode 1.18.3. It reads the same `~/.lore/config.json` shown above and installs one managed file:
+The native OpenCode integration is a prerelease in `v1.3.15-pre.3`, tested with OpenCode 1.18.3. It reads the same `~/.lore/config.json` shown above and installs one managed file:
 
 ```text
 ~/.config/opencode/plugins/lore-memory.js
@@ -224,7 +224,7 @@ To install `lore-opencode.zip` manually, preserve any unmarked file already at t
 ```bash
 tmp_dir="$(mktemp -d)"
 target="$HOME/.config/opencode/plugins/lore-memory.js"
-curl -fL https://github.com/FFatTiger/lore/releases/download/v1.3.15-pre.2/lore-opencode.zip \
+curl -fL https://github.com/FFatTiger/lore/releases/download/v1.3.15-pre.3/lore-opencode.zip \
   -o "$tmp_dir/lore-opencode.zip"
 unzip -q "$tmp_dir/lore-opencode.zip" -d "$tmp_dir/lore-opencode"
 mkdir -p "$(dirname "$target")"

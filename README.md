@@ -31,7 +31,7 @@ Supported runtimes:
 | **Codex** | `codex-plugin/` | Local marketplace plugin, MCP config, and optional hooks for boot / recall injection. |
 | **OpenClaw** | `openclaw-plugin/` | Runtime plugin with boot, recall, and Lore tools. |
 | **Hermes** | `hermes-plugin/` | MemoryProvider plugin with Lore tools and recall support. |
-| **OpenCode** *(prerelease `v1.3.15-pre.2`)* | `opencode-plugin/` | Native plugin tested with OpenCode 1.18.3. Boot uses `experimental.chat.system.transform`; prompt Recall uses `chat.message`; exact `lore_*` tools are registered without MCP prefixes. |
+| **OpenCode** *(prerelease `v1.3.15-pre.3`)* | `opencode-plugin/` | Native plugin tested with OpenCode 1.18.3. Boot uses `experimental.chat.system.transform`; prompt Recall uses `chat.message`; exact `lore_*` tools are registered without MCP prefixes. |
 | **Generic MCP clients** | `/api/mcp` | Streamable HTTP MCP endpoint for clients that can connect to remote tools. |
 
 Most agent memory systems stop at retrieval. Lore focuses on the full memory lifecycle:
@@ -202,7 +202,7 @@ curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install
 # External server (skip local Docker)
 curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --base-url http://192.168.1.100:18901 --api-token my-token
 
-# OpenCode prerelease only (v1.3.15-pre.2)
+# OpenCode prerelease only (v1.3.15-pre.3)
 curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --pre --channels opencode
 
 # Specific channels only
@@ -235,7 +235,7 @@ Re-run the install script anytime to update. If Docker was auto-started on first
 | **OpenCode** *(prerelease)* | Native local plugin at `~/.config/opencode/plugins/lore-memory.js`; exact tools from `lore_guidance` through `lore_move_node`; system-hook Boot and message-hook Recall |
 | **Generic MCP** | `http://your-host:18901/api/mcp?client_type=mcp` |
 
-> **OpenCode prerelease note:** `v1.3.15-pre.2` is tested with OpenCode 1.18.3. The installer downloads `lore-opencode.zip`, installs `lore-memory.js` at `~/.config/opencode/plugins/lore-memory.js`, and reads server URL/token from `~/.lore/config.json`. Boot is injected only through `experimental.chat.system.transform`; prompt Recall is injected as a separate current-turn part through `chat.message`. If the experimental system hook or Lore is unavailable, the adapter fails open instead of blocking the conversation. The standard install does not configure MCP. Generic `/api/mcp` remains a manual fallback only.
+> **OpenCode prerelease note:** `v1.3.15-pre.3` is tested with OpenCode 1.18.3. The installer downloads `lore-opencode.zip`, installs `lore-memory.js` at `~/.config/opencode/plugins/lore-memory.js`, and reads server URL/token from `~/.lore/config.json`. Boot is injected only through `experimental.chat.system.transform`; prompt Recall is injected as a separate current-turn part through `chat.message`. If the experimental system hook or Lore is unavailable, the adapter fails open instead of blocking the conversation. The standard install does not configure MCP. Generic `/api/mcp` remains a manual fallback only.
 
 > **Claude Code note:** Claude Code has a built-in auto-memory feature. The
 > install script does not disable it — if you want Lore as your only memory

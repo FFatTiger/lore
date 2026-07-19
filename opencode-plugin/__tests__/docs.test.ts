@@ -42,7 +42,7 @@ describe('OpenCode prerelease documentation', () => {
   it('covers the complete English prerelease contract', () => {
     const content = corpus(englishFiles);
     for (const required of [
-      'v1.3.15-pre.2',
+      'v1.3.15-pre.3',
       'OpenCode 1.18.3',
       '--channels opencode',
       '~/.config/opencode/plugins/lore-memory.js',
@@ -62,7 +62,7 @@ describe('OpenCode prerelease documentation', () => {
   it('covers the complete Chinese prerelease contract', () => {
     const content = corpus(chineseFiles);
     for (const required of [
-      'v1.3.15-pre.2',
+      'v1.3.15-pre.3',
       'OpenCode 1.18.3',
       '--channels opencode',
       '~/.config/opencode/plugins/lore-memory.js',

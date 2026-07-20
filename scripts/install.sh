@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Legacy frozen installer. Prefer: npx @loremem/cli
+# This script is kept for compatibility and is no longer updated with new features.
+
 # =============================================================================
 # Lore install script — one command to connect any agent runtime
 # =============================================================================

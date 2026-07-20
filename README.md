@@ -53,13 +53,13 @@ Lore is built for agents that need continuity across sessions, tools, and runtim
 ### 1. Run the install script
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash
+npx @loremem/cli
 ```
 
 Chinese installer output:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.zh.sh | bash
+npx @loremem/cli --lang zh
 ```
 
 This single command starts the Lore server (Docker Compose), connects all 6 agent runtimes,
@@ -188,25 +188,25 @@ agents to an external server, use `--base-url`. After installing, restart each a
 
 ```bash
 # Stable (default)
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash
+npx @loremem/cli
 
 # Chinese output
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.zh.sh | bash
+npx @loremem/cli --lang zh
 
 # Pre-release channel
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --pre
+npx @loremem/cli install --pre
 
 # Dev channel
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --dev
+npx @loremem/cli install --dev
 
 # External server (skip local Docker)
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --base-url http://192.168.1.100:18901 --api-token my-token
+npx @loremem/cli install --base-url http://192.168.1.100:18901 --api-token my-token
 
 # OpenCode prerelease only (v1.3.15-pre.4)
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --pre --channels opencode
+npx @loremem/cli install --pre --channels opencode
 
 # Specific channels only
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --channels claudecode,codex
+npx @loremem/cli install --channels claudecode,codex
 ```
 
 Full options:
@@ -222,6 +222,17 @@ Full options:
 | `--force` | Force reinstall even if version unchanged |
 
 Re-run the install script anytime to update. If Docker was auto-started on first install, it will be updated automatically.
+
+
+
+### Legacy (frozen)
+
+The old `curl | bash` installers under `scripts/install.sh` remain available for compatibility but are **frozen** and no longer receive new features. Prefer `npx @loremem/cli`.
+
+```bash
+# legacy only
+curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash
+```
 
 ### What each runtime gets
 

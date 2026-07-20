@@ -104,5 +104,5 @@ curl -fsS http://127.0.0.1:18901/api/health
 如果想让安装器只把本地 Agent 配到这台已有服务器，传入服务器 URL：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --base-url http://YOUR_SERVER:18901 --api-token YOUR_TOKEN
+npx @loremem/cli install --base-url http://YOUR_SERVER:18901 --api-token YOUR_TOKEN
 ```

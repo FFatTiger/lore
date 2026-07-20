@@ -216,7 +216,7 @@ The native OpenCode integration is a prerelease in `v1.3.15-pre.4`, tested with 
 The preferred path is the prerelease installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --pre --channels opencode
+npx @loremem/cli install --pre --channels opencode
 ```
 
 To install `lore-opencode.zip` manually, preserve any unmarked file already at the target path:
@@ -258,7 +258,7 @@ Manual ZIP installation does not apply this compatibility edit: if `oh-my-openag
 To uninstall only the OpenCode integration, use the ownership-aware uninstaller. It removes `lore-memory.js` only when the file contains the Lore management marker and preserves unmarked plugins:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/uninstall.sh | bash -s -- --channels opencode -y
+npx @loremem/cli uninstall --channels opencode -y
 ```
 
 ## Connect OpenClaw

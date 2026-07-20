@@ -14,13 +14,13 @@ Choose the runtime integrations that match your daily tools.
 Install only what you use:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --channels codex,claudecode
+npx @loremem/cli install --channels codex,claudecode
 ```
 
 Install only the OpenCode prerelease:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --pre --channels opencode
+npx @loremem/cli install --pre --channels opencode
 ```
 
 It installs `lore-opencode.zip` to `~/.config/opencode/plugins/lore-memory.js` and shares `~/.lore/config.json` with the other clients. The native tool list runs from `lore_guidance` through `lore_move_node`. System injection is fail-open, and prompt Recall continues when only the experimental system hook is unavailable. Standard OpenCode installation does not configure MCP; `/api/mcp` is a manual fallback only.

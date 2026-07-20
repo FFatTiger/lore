@@ -14,13 +14,13 @@
 只安装你使用的集成：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --channels codex,claudecode
+npx @loremem/cli install --channels codex,claudecode
 ```
 
 只安装 OpenCode 预发布版：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.zh.sh | bash -s -- --pre --channels opencode
+npx @loremem/cli install --lang zh --pre --channels opencode
 ```
 
 它把 `lore-opencode.zip` 安装为 `~/.config/opencode/plugins/lore-memory.js`，并与其他客户端共用 `~/.lore/config.json`。原生工具列表从 `lore_guidance` 到 `lore_move_node`。System 注入 fail open；仅实验性 system hook 不可用时，prompt Recall 仍会继续。OpenCode 标准安装不配置 MCP；`/api/mcp` 仅作为手动兜底。

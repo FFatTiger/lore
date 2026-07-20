@@ -29,7 +29,7 @@ After changing any of these, restart the runtime. Hooks and MCP config are usual
 To reinstall the prerelease:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --pre --channels opencode --force
+npx @loremem/cli install --pre --channels opencode --force
 ```
 
 If MCP works but recall does not appear in other runtimes, check hook configuration. In OpenCode, check native plugin loading and `chat.message` instead. If recall appears but the agent does not use it, improve local guidance and verify the agent opens recalled nodes before relying on them.

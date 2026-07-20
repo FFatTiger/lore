@@ -11,13 +11,13 @@ Use the installer when you want the shortest path to a working Lore server and l
 The default install starts Lore with Docker Compose, writes local client config, and sets up supported agent channels on this machine.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash
+npx @loremem/cli
 ```
 
 Chinese-language installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.zh.sh | bash
+npx @loremem/cli --lang zh
 ```
 
 ## What the installer does
@@ -55,7 +55,7 @@ You can inspect `~/.lore/` after the installer finishes to see what was written.
 Install only the OpenCode prerelease `v1.3.15-pre.4`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --pre --channels opencode
+npx @loremem/cli install --pre --channels opencode
 ```
 
 This installs `lore-opencode.zip` for OpenCode 1.18.3 or newer. If the `opencode` CLI is not installed, the channel reports a successful skip instead of failing the whole installer.
@@ -63,13 +63,13 @@ This installs `lore-opencode.zip` for OpenCode 1.18.3 or newer. If the `opencode
 Install only Codex and Claude Code integrations:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --channels codex,claudecode
+npx @loremem/cli install --channels codex,claudecode
 ```
 
 Point this machine's agents at an existing Lore server:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --base-url http://192.168.1.100:18901 --api-token YOUR_TOKEN
+npx @loremem/cli install --base-url http://192.168.1.100:18901 --api-token YOUR_TOKEN
 ```
 
 ## After the installer finishes

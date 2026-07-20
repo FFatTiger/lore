@@ -50,10 +50,10 @@ Lore 面向需要跨会话、跨工具、跨运行时连续性的 agent。
 
 ## 3. Quick Start
 
-### 1. 运行安装脚本
+### 1. 运行安装命令
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.zh.sh | bash
+npx @loremem/cli --lang zh
 ```
 
 一条命令完成：启动 Lore 服务器（Docker Compose）、接入全部 6 个 agent 运行时、
@@ -182,22 +182,22 @@ docker compose up -d --build
 
 ```bash
 # 稳定版（默认）
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.zh.sh | bash
+npx @loremem/cli --lang zh
 
 # 尝鲜版
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.zh.sh | bash -s -- --pre
+npx @loremem/cli install --lang zh --pre
 
 # 开发版
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.zh.sh | bash -s -- --dev
+npx @loremem/cli install --lang zh --dev
 
 # 外部服务器（跳过本地 Docker）
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.zh.sh | bash -s -- --base-url http://192.168.1.100:18901 --api-token my-token
+npx @loremem/cli install --lang zh --base-url http://192.168.1.100:18901 --api-token my-token
 
 # 只安装 OpenCode 预发布版（v1.3.15-pre.4）
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.zh.sh | bash -s -- --pre --channels opencode
+npx @loremem/cli install --lang zh --pre --channels opencode
 
 # 只安装指定 channel
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.zh.sh | bash -s -- --channels claudecode,codex
+npx @loremem/cli install --lang zh --channels claudecode,codex
 ```
 
 完整选项：
@@ -212,7 +212,7 @@ curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install
 | `--skip-docker` | 不启动或更新 Docker 容器 |
 | `--force` | 强制重装（即使版本已是最新） |
 
-随时重新运行安装脚本即可更新。首次安装时由脚本自动启动的 Docker 会在更新时自动拉取最新镜像。
+随时重新运行安装命令即可更新。首次安装时由脚本自动启动的 Docker 会在更新时自动拉取最新镜像。
 
 ### 各运行时接入内容
 

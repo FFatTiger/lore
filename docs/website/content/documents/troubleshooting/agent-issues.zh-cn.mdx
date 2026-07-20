@@ -29,7 +29,7 @@ Agent 问题通常是本地配置问题，而不是服务器记忆问题。
 重新安装预发布版：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.zh.sh | bash -s -- --pre --channels opencode --force
+npx @loremem/cli install --lang zh --pre --channels opencode --force
 ```
 
 其他运行时如果 MCP 可用但没有 recall，检查 hook 配置。OpenCode 则检查原生插件加载和 `chat.message`。如果 recall 出现但 Agent 不使用它，改善本地 guidance，并验证 Agent 会先打开召回节点再依赖内容。

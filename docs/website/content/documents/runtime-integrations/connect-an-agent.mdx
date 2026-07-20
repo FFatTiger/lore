@@ -3,13 +3,13 @@ The installer can configure selected channels:
 ## Installer path
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --channels codex,claudecode
+npx @loremem/cli install --channels codex,claudecode
 ```
 
 Use `--base-url` when the server is already running:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --base-url http://127.0.0.1:18901 --api-token YOUR_TOKEN
+npx @loremem/cli install --base-url http://127.0.0.1:18901 --api-token YOUR_TOKEN
 ```
 
 Shared connection settings live in `~/.lore/config.json`; plugin-specific config can override them, while legacy environment variables are only fallbacks:
@@ -27,7 +27,7 @@ Shared connection settings live in `~/.lore/config.json`; plugin-specific config
 For the OpenCode prerelease `v1.3.15-pre.4`, tested with OpenCode 1.18.3, use:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --pre --channels opencode
+npx @loremem/cli install --pre --channels opencode
 ```
 
 The installer places `lore-memory.js` from `lore-opencode.zip` at `~/.config/opencode/plugins/lore-memory.js`. Manual ZIP installation uses the same path and shared `~/.lore/config.json`. Boot enters system context through `experimental.chat.system.transform`; prompt Recall uses `chat.message`. If system injection is unavailable, the plugin warns and fails open while prompt Recall continues. Standard OpenCode installation does not configure MCP; `/api/mcp` is a manual fallback only.

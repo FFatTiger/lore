@@ -3,13 +3,13 @@
 ## 安装器路径
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --channels codex,claudecode
+npx @loremem/cli install --channels codex,claudecode
 ```
 
 服务器已经运行时，使用 `--base-url`：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.sh | bash -s -- --base-url http://127.0.0.1:18901 --api-token YOUR_TOKEN
+npx @loremem/cli install --base-url http://127.0.0.1:18901 --api-token YOUR_TOKEN
 ```
 
 共享连接配置位于 `~/.lore/config.json`；插件专属配置可覆盖它，旧环境变量只作为兜底：
@@ -27,7 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install
 OpenCode 预发布版 `v1.3.15-pre.4` 已用 OpenCode 1.18.3 验证，安装命令：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/scripts/install.zh.sh | bash -s -- --pre --channels opencode
+npx @loremem/cli install --lang zh --pre --channels opencode
 ```
 
 安装器把 `lore-opencode.zip` 中的 `lore-memory.js` 放到 `~/.config/opencode/plugins/lore-memory.js`。手动 ZIP 安装也使用相同路径和共享 `~/.lore/config.json`。Boot 通过 `experimental.chat.system.transform` 进入 system context；prompt Recall 使用 `chat.message`。System 注入不可用时插件会警告并 fail open，prompt Recall 仍会继续。OpenCode 标准安装不会配置 MCP；`/api/mcp` 只作为手动兜底。

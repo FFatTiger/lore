@@ -53,6 +53,33 @@ function q(lang: Lang, en: string, zh: string): string {
   return lang === 'zh' ? zh : en;
 }
 
+/** Keybinding hints shown on every interactive step. */
+function keysSelect(lang: Lang): string {
+  return q(lang, '↑/↓ move · enter confirm', '↑/↓ 选择 · enter 确认');
+}
+
+function keysMulti(lang: Lang): string {
+  return q(
+    lang,
+    '↑/↓ move · space toggle · a all · n none · enter confirm',
+    '↑/↓ 移动 · space 勾选 · a 全选 · n 清空 · enter 确认',
+  );
+}
+
+function keysConfirm(lang: Lang): string {
+  return q(lang, '←/→ or ↑/↓ toggle · enter confirm', '←/→ 或 ↑/↓ 切换 · enter 确认');
+}
+
+function keysText(lang: Lang): string {
+  return q(lang, 'type value · enter confirm',
+    '输入内容 · enter 确认');
+}
+
+function withKeys(message: string, keys: string): string {
+  return `${message}
+${keys}`;
+}
+
 function isCancel(value: unknown): boolean {
   return p.isCancel(value);
 }
@@ -104,10 +131,13 @@ export function createTTYPrompt(opts: CreateTTYPromptOptions = {}): PromptServic
     message: string;
     options: Array<{ value: T; label: string; hint?: string }>;
     initialValue?: T;
+    /** Override keybinding hint; default is ↑/↓ · enter */
+    keys?: string;
   }): Promise<T> {
-    if (opts.selectOne) return opts.selectOne(args);
+    const message = withKeys(args.message, args.keys ?? keysSelect(lang));
+    if (opts.selectOne) return opts.selectOne({ ...args, message });
     const value = await p.select({
-      message: args.message,
+      message,
       // clack Option typing is invariant over value; cast for generic helper
       options: args.options as never,
       initialValue: args.initialValue,
@@ -120,10 +150,12 @@ export function createTTYPrompt(opts: CreateTTYPromptOptions = {}): PromptServic
     message: string;
     options: Array<{ value: T; label: string; hint?: string }>;
     initialValues?: T[];
+    keys?: string;
   }): Promise<T[]> {
-    if (opts.multiSelect) return opts.multiSelect(args);
+    const message = withKeys(args.message, args.keys ?? keysMulti(lang));
+    if (opts.multiSelect) return opts.multiSelect({ ...args, message });
     const value = await p.multiselect({
-      message: args.message,
+      message,
       options: args.options as never,
       initialValues: args.initialValues,
       required: false,
@@ -137,10 +169,12 @@ export function createTTYPrompt(opts: CreateTTYPromptOptions = {}): PromptServic
     placeholder?: string;
     defaultValue?: string;
     validate?: (value: string) => string | undefined;
+    keys?: string;
   }): Promise<string> {
-    if (opts.text) return opts.text(args);
+    const message = withKeys(args.message, args.keys ?? keysText(lang));
+    if (opts.text) return opts.text({ ...args, message });
     const value = await p.text({
-      message: args.message,
+      message,
       placeholder: args.placeholder,
       defaultValue: args.defaultValue,
       validate: args.validate,
@@ -149,10 +183,15 @@ export function createTTYPrompt(opts: CreateTTYPromptOptions = {}): PromptServic
     return String(value ?? '');
   }
 
-  async function confirmImpl(args: { message: string; initialValue?: boolean }): Promise<boolean> {
-    if (opts.confirmFn) return opts.confirmFn(args);
+  async function confirmImpl(args: {
+    message: string;
+    initialValue?: boolean;
+    keys?: string;
+  }): Promise<boolean> {
+    const message = withKeys(args.message, args.keys ?? keysConfirm(lang));
+    if (opts.confirmFn) return opts.confirmFn({ ...args, message });
     const value = await p.confirm({
-      message: args.message,
+      message,
       initialValue: args.initialValue ?? true,
     });
     abortOnCancel(value, lang);
@@ -163,6 +202,7 @@ export function createTTYPrompt(opts: CreateTTYPromptOptions = {}): PromptServic
     async pickLanguage(defaultLang) {
       const value = await selectOneImpl({
         message: 'Language / 语言',
+        keys: '↑/↓ move · enter confirm  |  ↑/↓ 选择 · enter 确认',
         initialValue: defaultLang,
         options: [
           { value: 'en' as Lang, label: 'English' },

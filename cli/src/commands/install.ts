@@ -7,6 +7,7 @@ import { fetchReleaseTag, resolveNeedInstall } from '../core/release.js';
 import { createExec, type ExecFn } from '../core/exec.js';
 import { getInstaller } from '../channels/registry.js';
 import { collectInstallSnapshot } from '../core/snapshot.js';
+import { summarizeChannelResults } from '../core/result.js';
 import { createLogger } from '../ui/log.js';
 import { banner } from '../ui/banner.js';
 import { t } from '../ui/i18n.js';
@@ -114,6 +115,7 @@ async function executeInstallPlan(
     needInstall = 1;
   }
 
+  // Always persist connection config even if plugin install fails later.
   await writeConfig(
     configPath,
     { base_url: resolvedBase, api_token: apiToken },
@@ -127,6 +129,20 @@ async function executeInstallPlan(
   log.info(
     `Channels: ${plan.channels.join(',')} (${plan.dev ? 'dev' : plan.pre ? 'pre-release' : 'stable'})`,
   );
+
+  if (!releaseVersion) {
+    log.err(t(plan.lang, 'install.release_unknown'));
+    if (releaseInfo.error) {
+      log.err(t(plan.lang, 'install.release_unknown_detail', { detail: releaseInfo.error }));
+    }
+  } else {
+    log.info(`Release: ${releaseVersion}`);
+  }
+
+  if (!plan.channels.length) {
+    log.err(t(plan.lang, 'install.no_channels'));
+    return 1;
+  }
 
   const results: ChannelResult[] = [];
   for (const id of plan.channels) {
@@ -155,25 +171,53 @@ async function executeInstallPlan(
     }
   }
 
+  const outcome = summarizeChannelResults(results);
+  const versionLabel = releaseVersion ?? 'unknown';
+
+  // Only bump installed_version when we actually applied a known release and had some success.
+  const shouldBumpVersion =
+    Boolean(releaseVersion) && needInstall !== 2 && outcome.ok > 0;
+
   await writeConfig(
     configPath,
     { base_url: resolvedBase, api_token: apiToken },
     {
-      writeVersion: needInstall !== 2,
+      writeVersion: shouldBumpVersion,
       releaseVersion,
       dockerManaged: docker.dockerManaged === null ? undefined : docker.dockerManaged,
     },
   );
 
-  const failed = results.filter((r) => r.status === 'failed');
-  const okCount = results.filter((r) => r.status === 'ok').length;
-  log.ok(t(plan.lang, 'install.complete', { version: releaseVersion ?? 'unknown' }));
-  log.info(t(plan.lang, 'config.path', { path: configPath }));
-  log.info(t(plan.lang, 'setup.url', { baseUrl: resolvedBase }));
-  log.info(t(plan.lang, 'restart.next', { baseUrl: resolvedBase }));
+  if (outcome.kind === 'success') {
+    log.ok(t(plan.lang, 'install.complete', { version: versionLabel }));
+    log.info(t(plan.lang, 'config.path', { path: configPath }));
+    log.info(t(plan.lang, 'setup.url', { baseUrl: resolvedBase }));
+    log.info(t(plan.lang, 'restart.next', { baseUrl: resolvedBase }));
+    return 0;
+  }
 
-  if (failed.length && okCount === 0) return 1;
-  return 0;
+  if (outcome.kind === 'partial') {
+    log.err(
+      t(plan.lang, 'install.partial', {
+        version: versionLabel,
+        ok: String(outcome.ok),
+        failed: String(outcome.failed),
+        skipped: String(outcome.skipped),
+      }),
+    );
+  } else {
+    log.err(
+      t(plan.lang, 'install.failed', {
+        version: versionLabel,
+        ok: String(outcome.ok),
+        failed: String(outcome.failed),
+        skipped: String(outcome.skipped),
+      }),
+    );
+  }
+  log.info(t(plan.lang, 'config.path', { path: configPath }));
+  // Do not print restart/success next-steps on failure.
+  return outcome.exitCode;
 }
 
 export async function runInstall(args: GlobalArgs, deps: InstallDeps = {}): Promise<number> {

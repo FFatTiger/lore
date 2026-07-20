@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { downloadOrSkip } from '../core/artifact.js';
+import { downloadOrSkipDetailed } from '../core/artifact.js';
 import { channelDir } from '../core/paths.js';
 import type { ChannelInstaller, ChannelContext, UninstallContext } from './types.js';
 import type { ChannelResult, ChannelStatus } from '../core/types.js';
@@ -16,15 +16,15 @@ export const hermesInstaller: ChannelInstaller = {
 
   async install(ctx: ChannelContext): Promise<ChannelResult> {
     const dest = channelDir(ctx.loreHome, 'hermes');
-    const ok = await downloadOrSkip({
+    const download = await downloadOrSkipDetailed({
       channel: 'hermes',
       dest,
       releaseVersion: ctx.releaseVersion,
       needInstall: ctx.needInstall,
       run: ctx.run,
     });
-    if (!ok) {
-      return { id: 'hermes', status: 'failed', message: 'Hermes artifact download failed' };
+    if (!download.ok) {
+      return { id: 'hermes', status: 'failed', message: download.reason ?? 'hermes artifact download failed' };
     }
     const memoryPath = path.join(dest, 'lore_memory');
     return {

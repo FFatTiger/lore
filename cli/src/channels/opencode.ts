@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { downloadOrSkip } from '../core/artifact.js';
+import { downloadOrSkipDetailed } from '../core/artifact.js';
 import { haveCommand } from '../core/detect.js';
 import { createExec, type ExecFn } from '../core/exec.js';
 import { channelDir } from '../core/paths.js';
@@ -127,15 +127,15 @@ export const opencodeInstaller: ChannelInstaller = {
     }
 
     const dest = channelDir(ctx.loreHome, 'opencode');
-    const ok = await downloadOrSkip({
+    const download = await downloadOrSkipDetailed({
       channel: 'opencode',
       dest,
       releaseVersion: ctx.releaseVersion,
       needInstall: ctx.needInstall,
       run: ctx.run,
     });
-    if (!ok) {
-      return { id: 'opencode', status: 'failed', message: 'OpenCode artifact download failed' };
+    if (!download.ok) {
+      return { id: 'opencode', status: 'failed', message: download.reason ?? 'opencode artifact download failed' };
     }
 
     const source = path.join(dest, 'lore-memory.js');

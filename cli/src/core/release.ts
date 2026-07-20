@@ -92,45 +92,140 @@ export function resolveNeedInstall(args: {
 }
 
 const DEFAULT_REPO = 'FFatTiger/lore';
+const DEFAULT_UA = 'loremem-cli (@loremem/cli)';
+
+function githubHeaders(): HeadersInit {
+  return {
+    'User-Agent': DEFAULT_UA,
+    Accept: 'application/vnd.github+json',
+  };
+}
+
+/** Extract tag from a GitHub release URL / Location header. */
+export function tagFromGithubReleaseUrl(url: string): string | null {
+  // https://github.com/org/repo/releases/tag/v1.2.3
+  const m = url.match(/\/releases\/tag\/([^/?#]+)/);
+  return m?.[1] ? decodeURIComponent(m[1]) : null;
+}
+
+/**
+ * Resolve latest stable tag without API quota:
+ * GET/HEAD https://github.com/{repo}/releases/latest → redirect to .../tag/vX.Y.Z
+ */
+export async function fetchLatestTagViaRedirect(opts: {
+  repo?: string;
+  fetchImpl?: typeof fetch;
+}): Promise<string | null> {
+  const repo = opts.repo || DEFAULT_REPO;
+  const fetchFn = opts.fetchImpl ?? fetch;
+  const url = `https://github.com/${repo}/releases/latest`;
+  try {
+    const res = await fetchFn(url, {
+      method: 'GET',
+      redirect: 'manual',
+      headers: { 'User-Agent': DEFAULT_UA },
+    });
+    const loc = res.headers.get('location') || res.headers.get('Location');
+    if (loc) {
+      const tag = tagFromGithubReleaseUrl(loc);
+      if (tag) return tag;
+    }
+    // Some environments auto-follow redirects; try final URL
+    if (res.url) {
+      const tag = tagFromGithubReleaseUrl(res.url);
+      if (tag) return tag;
+    }
+    // Follow one hop if we got a redirect status but no location (rare)
+    if (res.status >= 300 && res.status < 400) {
+      return null;
+    }
+    // If auto-followed, body/url may still include tag in url
+    return tagFromGithubReleaseUrl(String(res.url || ''));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Pre-release: try API list first; if rate-limited, fall back to latest redirect
+ * (best-effort — may return stable when pre list is unavailable).
+ */
+async function fetchPreTag(opts: {
+  repo: string;
+  fetchImpl: typeof fetch;
+}): Promise<string | null> {
+  try {
+    const res = await opts.fetchImpl(
+      `https://api.github.com/repos/${opts.repo}/releases?per_page=10`,
+      { headers: githubHeaders() },
+    );
+    if (res.ok) {
+      const data: unknown = await res.json();
+      if (Array.isArray(data)) {
+        // Prefer first prerelease, else first item (shell used per_page=1)
+        for (const item of data) {
+          const row = item as { tag_name?: string; prerelease?: boolean };
+          if (row.prerelease && row.tag_name) return row.tag_name;
+        }
+        const first = data[0] as { tag_name?: string } | undefined;
+        if (first?.tag_name) return first.tag_name;
+      }
+    }
+  } catch {
+    // fall through
+  }
+  return fetchLatestTagViaRedirect({ repo: opts.repo, fetchImpl: opts.fetchImpl });
+}
+
+async function fetchStableTag(opts: {
+  repo: string;
+  fetchImpl: typeof fetch;
+}): Promise<string | null> {
+  // 1) Prefer non-API redirect (no rate limit)
+  const viaRedirect = await fetchLatestTagViaRedirect({
+    repo: opts.repo,
+    fetchImpl: opts.fetchImpl,
+  });
+  if (viaRedirect) return viaRedirect;
+
+  // 2) API fallback with UA
+  try {
+    const res = await opts.fetchImpl(
+      `https://api.github.com/repos/${opts.repo}/releases/latest`,
+      { headers: githubHeaders() },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { tag_name?: string };
+    return data.tag_name ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export async function fetchReleaseTag(opts: {
   pre: boolean;
   dev: boolean;
   fetchImpl?: typeof fetch;
   repo?: string;
-}): Promise<{ tag: string | null; needInstallHint: NeedInstall }> {
+}): Promise<{ tag: string | null; needInstallHint: NeedInstall; error?: string }> {
   if (opts.dev) {
     return { tag: 'dev', needInstallHint: 0 };
   }
 
   const repo = opts.repo || DEFAULT_REPO;
   const fetchFn = opts.fetchImpl ?? fetch;
-  const apiUrl = opts.pre
-    ? `https://api.github.com/repos/${repo}/releases?per_page=1`
-    : `https://api.github.com/repos/${repo}/releases/latest`;
 
-  try {
-    const res = await fetchFn(apiUrl);
-    if (!res.ok) {
-      return { tag: null, needInstallHint: 1 };
-    }
-    const data: unknown = await res.json();
-    let tag = '';
-    if (opts.pre) {
-      if (Array.isArray(data) && data.length > 0) {
-        const first = data[0] as { tag_name?: string };
-        tag = first?.tag_name ?? '';
-      }
-    } else {
-      const obj = data as { tag_name?: string };
-      tag = obj?.tag_name ?? '';
-    }
-    if (!tag) {
-      return { tag: null, needInstallHint: 1 };
-    }
-    // needInstallHint here is only network/tag discovery; install decision is resolveNeedInstall
-    return { tag, needInstallHint: 0 };
-  } catch {
-    return { tag: null, needInstallHint: 1 };
+  const tag = opts.pre
+    ? await fetchPreTag({ repo, fetchImpl: fetchFn })
+    : await fetchStableTag({ repo, fetchImpl: fetchFn });
+
+  if (!tag) {
+    return {
+      tag: null,
+      needInstallHint: 1,
+      error:
+        'Could not resolve GitHub release tag (API rate limit or network). Try again, use --pre/--dev, or set a reachable network path to github.com.',
+    };
   }
+  return { tag, needInstallHint: 0 };
 }

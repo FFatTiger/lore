@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { compareRelease, resolveNeedInstall, fetchReleaseTag } from '../src/core/release.ts';
+import {
+  compareRelease,
+  resolveNeedInstall,
+  fetchReleaseTag,
+  tagFromGithubReleaseUrl,
+} from '../src/core/release.ts';
 
 test('compareRelease same stable', () => {
   assert.equal(compareRelease('v1.3.15', 'v1.3.15'), 'same');
@@ -42,17 +47,45 @@ test('fetchReleaseTag dev short-circuits', async () => {
   assert.equal(res.needInstallHint, 0);
 });
 
-test('fetchReleaseTag latest parses tag', async () => {
+test('fetchReleaseTag stable uses releases/latest redirect', async () => {
   const res = await fetchReleaseTag({
     pre: false,
     dev: false,
-    fetchImpl: async () =>
-      new Response(JSON.stringify({ tag_name: 'v1.3.15' }), { status: 200 }),
+    fetchImpl: async (url) => {
+      const u = String(url);
+      if (u.includes('github.com/') && u.endsWith('/releases/latest')) {
+        return new Response(null, {
+          status: 302,
+          headers: {
+            location: 'https://github.com/FFatTiger/lore/releases/tag/v1.3.15',
+          },
+        });
+      }
+      throw new Error(`unexpected url ${u}`);
+    },
   });
   assert.equal(res.tag, 'v1.3.15');
 });
 
-test('fetchReleaseTag network failure => needInstall 1', async () => {
+test('fetchReleaseTag falls back to API when redirect fails', async () => {
+  const res = await fetchReleaseTag({
+    pre: false,
+    dev: false,
+    fetchImpl: async (url) => {
+      const u = String(url);
+      if (u.includes('/releases/latest') && !u.includes('api.github.com')) {
+        return new Response('missing', { status: 404 });
+      }
+      if (u.includes('api.github.com') && u.endsWith('/releases/latest')) {
+        return new Response(JSON.stringify({ tag_name: 'v1.2.0' }), { status: 200 });
+      }
+      throw new Error(`unexpected url ${u}`);
+    },
+  });
+  assert.equal(res.tag, 'v1.2.0');
+});
+
+test('fetchReleaseTag network failure => needInstall 1 + error', async () => {
   const res = await fetchReleaseTag({
     pre: false,
     dev: false,
@@ -62,4 +95,13 @@ test('fetchReleaseTag network failure => needInstall 1', async () => {
   });
   assert.equal(res.tag, null);
   assert.equal(res.needInstallHint, 1);
+  assert.ok(res.error);
+});
+
+test('tagFromGithubReleaseUrl', () => {
+  assert.equal(
+    tagFromGithubReleaseUrl('https://github.com/FFatTiger/lore/releases/tag/v1.3.15'),
+    'v1.3.15',
+  );
+  assert.equal(tagFromGithubReleaseUrl('https://example.com'), null);
 });

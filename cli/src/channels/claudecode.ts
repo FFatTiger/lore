@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { downloadOrSkip } from '../core/artifact.js';
+import { downloadOrSkipDetailed } from '../core/artifact.js';
 import { haveCommand } from '../core/detect.js';
 import { createExec } from '../core/exec.js';
 import { readJsonFile, writeJsonAtomic, ensureDir } from '../core/fs.js';
@@ -31,15 +31,15 @@ export const claudecodeInstaller: ChannelInstaller = {
     }
 
     const dest = channelDir(ctx.loreHome, 'claudecode');
-    const ok = await downloadOrSkip({
+    const download = await downloadOrSkipDetailed({
       channel: 'claudecode',
       dest,
       releaseVersion: ctx.releaseVersion,
       needInstall: ctx.needInstall,
       run: ctx.run,
     });
-    if (!ok) {
-      return { id: 'claudecode', status: 'failed', message: 'Claude artifact download failed' };
+    if (!download.ok) {
+      return { id: 'claudecode', status: 'failed', message: download.reason ?? 'claudecode artifact download failed' };
     }
 
     const homeDir = ctx.homeDir ?? os.homedir();

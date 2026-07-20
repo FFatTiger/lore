@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { downloadOrSkip } from '../core/artifact.js';
+import { downloadOrSkipDetailed } from '../core/artifact.js';
 import { channelDir } from '../core/paths.js';
 import { haveCommand } from '../core/detect.js';
 import { createExec } from '../core/exec.js';
@@ -25,15 +25,15 @@ export const piInstaller: ChannelInstaller = {
     }
 
     const dest = channelDir(ctx.loreHome, 'pi');
-    const ok = await downloadOrSkip({
+    const download = await downloadOrSkipDetailed({
       channel: 'pi',
       dest,
       releaseVersion: ctx.releaseVersion,
       needInstall: ctx.needInstall,
       run: ctx.run,
     });
-    if (!ok) {
-      return { id: 'pi', status: 'failed', message: 'Pi artifact download failed' };
+    if (!download.ok) {
+      return { id: 'pi', status: 'failed', message: download.reason ?? 'pi artifact download failed' };
     }
 
     const script = path.join(dest, 'scripts', 'install-local.sh');

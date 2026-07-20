@@ -19,6 +19,13 @@ export function artifactName(id: ChannelId): string {
   return ARTIFACT_MAP[id];
 }
 
+export type DownloadResult = {
+  ok: boolean;
+  /** Machine-oriented reason when ok=false */
+  reason?: string;
+  url?: string;
+};
+
 async function isDirectory(p: string): Promise<boolean> {
   try {
     const st = await fs.stat(p);
@@ -44,17 +51,32 @@ export async function downloadOrSkip(opts: {
   repo?: string;
   run?: ExecFn;
 }): Promise<boolean> {
+  const res = await downloadOrSkipDetailed(opts);
+  return res.ok;
+}
+
+export async function downloadOrSkipDetailed(opts: {
+  channel: ChannelId;
+  dest: string;
+  releaseVersion?: string;
+  needInstall: NeedInstall;
+  repo?: string;
+  run?: ExecFn;
+}): Promise<DownloadResult> {
   const { channel, dest, needInstall } = opts;
   const releaseVersion = opts.releaseVersion?.trim() || '';
 
   if (needInstall !== 0) {
     if (await isDirectory(dest)) {
-      return true;
+      return { ok: true };
     }
     if (!releaseVersion) {
-      return false;
+      return {
+        ok: false,
+        reason:
+          'No local files and release version is unknown (GitHub tag resolution failed). Cannot download artifacts.',
+      };
     }
-    // fall through to download
   }
 
   return downloadArtifact({
@@ -72,10 +94,18 @@ async function downloadArtifact(opts: {
   releaseVersion: string;
   repo?: string;
   run?: ExecFn;
-}): Promise<boolean> {
+}): Promise<DownloadResult> {
   const artifact = artifactName(opts.channel);
-  if (!artifact) return false;
-  if (!opts.releaseVersion) return false;
+  if (!artifact) {
+    return { ok: false, reason: `No artifact mapping for channel ${opts.channel}` };
+  }
+  if (!opts.releaseVersion) {
+    return {
+      ok: false,
+      reason:
+        'Release version is empty/unknown. Resolve a GitHub release tag before downloading.',
+    };
+  }
 
   const repo = opts.repo || DEFAULT_REPO;
   const url = `https://github.com/${repo}/releases/download/${opts.releaseVersion}/${artifact}`;
@@ -89,24 +119,58 @@ async function downloadArtifact(opts: {
     await fs.rm(tmpRoot, { recursive: true, force: true });
     await fs.mkdir(tmpRoot, { recursive: true });
 
-    const curlRes = await run(['curl', '-fsSL', url, '-o', zipPath]);
+    let curlRes;
+    try {
+      curlRes = await run(['curl', '-fsSL', url, '-o', zipPath]);
+    } catch (err) {
+      await fs.rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
+      return {
+        ok: false,
+        url,
+        reason: `curl failed to start: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
     if (curlRes.code !== 0) {
       await fs.rm(tmpRoot, { recursive: true, force: true });
-      return false;
+      const detail = [curlRes.stderr, curlRes.stdout].filter(Boolean).join(' ').trim();
+      return {
+        ok: false,
+        url,
+        reason: `Download failed (curl exit ${curlRes.code}) from ${url}${detail ? `: ${detail}` : ''}`,
+      };
     }
 
-    const unzipRes = await run(['unzip', '-qo', zipPath, '-d', extracted]);
+    let unzipRes;
+    try {
+      unzipRes = await run(['unzip', '-qo', zipPath, '-d', extracted]);
+    } catch (err) {
+      await fs.rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
+      return {
+        ok: false,
+        url,
+        reason: `unzip failed to start: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
     if (unzipRes.code !== 0) {
       await fs.rm(tmpRoot, { recursive: true, force: true });
-      return false;
+      const detail = [unzipRes.stderr, unzipRes.stdout].filter(Boolean).join(' ').trim();
+      return {
+        ok: false,
+        url,
+        reason: `Extract failed for ${artifact}${detail ? `: ${detail}` : ''}`,
+      };
     }
 
     await fs.rm(opts.dest, { recursive: true, force: true });
     await fs.rename(extracted, opts.dest);
     await fs.rm(tmpRoot, { recursive: true, force: true });
-    return true;
-  } catch {
+    return { ok: true, url };
+  } catch (err) {
     await fs.rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
-    return false;
+    return {
+      ok: false,
+      url,
+      reason: err instanceof Error ? err.message : String(err),
+    };
   }
 }

@@ -1,15 +1,19 @@
 import type { ChannelId } from '../core/types.js';
 import type { ChannelInstaller } from './types.js';
+import { claudecodeInstaller } from './claudecode.js';
+import { codexInstaller } from './codex.js';
 import { hermesInstaller } from './hermes.js';
 import { openclawInstaller } from './openclaw.js';
 import { opencodeInstaller } from './opencode.js';
 import { piInstaller } from './pi.js';
 
 const installers: Partial<Record<ChannelId, ChannelInstaller>> = {
+  claudecode: claudecodeInstaller,
+  codex: codexInstaller,
   pi: piInstaller,
+  openclaw: openclawInstaller,
   hermes: hermesInstaller,
   opencode: opencodeInstaller,
-  openclaw: openclawInstaller,
 };
 
 export function getInstaller(id: ChannelId): ChannelInstaller {

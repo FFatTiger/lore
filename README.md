@@ -14,12 +14,15 @@
 </p>
 
 <p align="center">
+  <a href="https://loremem.com"><img src="https://img.shields.io/badge/website-loremem.com-0f766e?style=flat-square" alt="Website"></a>
   <a href="https://github.com/FFatTiger/lore/releases/latest"><img src="https://img.shields.io/github/v/release/FFatTiger/lore?style=flat-square&label=release" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/FFatTiger/lore?style=flat-square" alt="MIT license"></a>
   <a href="https://hub.docker.com/r/fffattiger/lore"><img src="https://img.shields.io/badge/docker-fffattiger%2Flore-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker image"></a>
 </p>
 
 <p align="center">
+  <a href="https://loremem.com"><strong>Website</strong></a> ·
+  <a href="https://app.loremem.com"><strong>SaaS</strong></a> ·
   <a href="./README.zh-CN.md">中文</a> ·
   <a href="#quick-start">Quick Start</a> ·
   <a href="#supported-runtimes">Runtimes</a> ·
@@ -49,6 +52,8 @@ Most memory layers stop at retrieval. Lore covers the full lifecycle:
 - **Dream** — scheduled maintenance with quality checks and rollback history
 
 ## Quick Start
+
+Prefer managed hosting? Use [Loremem SaaS](https://app.loremem.com) and connect agents with a token — no local Docker required. Self-host below if you want everything on your machine.
 
 ### 1. Install
 

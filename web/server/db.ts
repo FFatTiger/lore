@@ -52,6 +52,10 @@ function getPool(): Pool {
     connectionTimeoutMillis: 10_000,
   });
 
+  pool.on('error', (error) => {
+    console.error('[db] idle client error', (error as Error)?.message || String(error));
+  });
+
   globalThis.__lorePgPool = pool;
   return pool;
 }

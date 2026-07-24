@@ -227,9 +227,6 @@ export async function runInteractiveWizard(opts: RunWizardOptions): Promise<Wiza
           .filter((c) => c.state === 'installed' || c.state === 'partial')
           .map((c) => c.id)
       : opts.snapshot.detectedChannels;
-  if (existing === 'update' && defaults.length === 0) {
-    return { kind: 'exit', lang };
-  }
   const fallback =
     defaults.length > 0
       ? defaults

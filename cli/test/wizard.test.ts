@@ -235,13 +235,13 @@ test('existing install update keeps server and only picks channels', async () =>
   assert.deepEqual(result.plan.channels, ['pi', 'codex']);
 });
 
-test('existing update exits before channel selection when no installed channels exist', async () => {
-  let pickedChannels = false;
+test('existing update without installed channels falls back to detected runtimes', async () => {
+  let pickedDefaults: string[] = [];
   let confirmed = false;
-  const prompt = scriptedPrompt({ existing: 'update' });
-  prompt.pickChannels = async () => {
-    pickedChannels = true;
-    return ['claudecode'];
+  const prompt = scriptedPrompt({ existing: 'update', release: 'pre' });
+  prompt.pickChannels = async (opts) => {
+    pickedDefaults = opts.defaults;
+    return ['pi'];
   };
   prompt.confirm = async () => {
     confirmed = true;
@@ -255,15 +255,19 @@ test('existing update exits before channel selection when no installed channels 
       serverKind: 'external',
       config: { base_url: 'https://core.example', api_token: 'lm_old' },
       channels: ALL_CHANNELS.map((id) => ({ id, state: 'missing' as const, details: [] })),
-      detectedChannels: ['claudecode', 'codex'],
+      detectedChannels: ['pi'],
     }),
     initialLang: 'en',
     langLocked: true,
   });
 
-  assert.deepEqual(result, { kind: 'exit', lang: 'en' });
-  assert.equal(pickedChannels, false);
-  assert.equal(confirmed, false);
+  assert.equal(result.kind, 'install');
+  if (result.kind !== 'install') return;
+  assert.deepEqual(pickedDefaults, ['pi']);
+  assert.deepEqual(result.plan.channels, ['pi']);
+  assert.equal(result.plan.operation, 'update');
+  assert.equal(result.plan.pre, true);
+  assert.equal(confirmed, true);
 });
 
 test('Docker reconfigure is explicit and does not preserve external connection', async () => {

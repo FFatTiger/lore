@@ -1,6 +1,6 @@
 {
   "name": "@local/lore-opencode-plugin",
-  "version": "1.3.22-pre.2",
+  "version": "1.3.22-pre.3",
   "description": "Native OpenCode adapter for Lore memory",
   "type": "module",
   "private": true,

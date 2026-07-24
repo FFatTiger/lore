@@ -1,6 +1,6 @@
 {
   "name": "lore",
-  "version": "1.3.22-pre.2",
+  "version": "1.3.22-pre.3",
   "description": "Long-term Lore memory for Codex via MCP tools, skills, and bundled lifecycle hooks.",
   "author": {
     "name": "FFatTiger"

@@ -8,12 +8,12 @@
     {
       "name": "lore",
       "description": "Long-term Lore memory for AI agents — fixed boot baseline, recall injection, and MCP tools",
-      "version": "1.3.22-pre.2",
+      "version": "1.3.22-pre.3",
       "source": "./",
       "author": {
         "name": "FFatTiger"
       }
     }
   ],
-  "version": "1.3.22-pre.2"
+  "version": "1.3.22-pre.3"
 }

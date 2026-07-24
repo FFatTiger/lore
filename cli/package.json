@@ -1,6 +1,6 @@
 {
   "name": "@loremem/cli",
-  "version": "1.3.22-pre.2",
+  "version": "1.3.22-pre.3",
   "description": "Interactive installer and manager for Lore agent runtime integrations",
   "type": "module",
   "bin": {

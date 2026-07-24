@@ -11,7 +11,7 @@ test('createExec resolves npm-style command shims', async () => {
   await fs.writeFile(
     shim,
     process.platform === 'win32'
-      ? '@echo off\r\n<nul set /p "=shim-ok"\r\n'
+      ? '@echo off\r\necho|set /p="shim-ok"\r\nexit /b 0\r\n'
       : '#!/bin/sh\nprintf shim-ok\n',
   );
   if (process.platform !== 'win32') await fs.chmod(shim, 0o755);

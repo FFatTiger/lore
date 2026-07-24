@@ -243,6 +243,7 @@ async function executeInstallPlan(
   }
 
   const outcome = summarizeChannelResults(results);
+  const updateIncomplete = plan.operation === 'update' && outcome.skipped > 0;
   const versionLabel = releaseVersion ?? 'unknown';
   const shouldBumpVersion =
     Boolean(releaseVersion) &&
@@ -267,7 +268,7 @@ async function executeInstallPlan(
     return 1;
   }
 
-  if (outcome.kind === 'success') {
+  if (outcome.kind === 'success' && !updateIncomplete) {
     log.ok(t(plan.lang, 'install.complete', { version: versionLabel }));
     log.info(t(plan.lang, 'config.path', { path: configPath }));
     log.info(t(plan.lang, 'setup.url', { baseUrl: resolvedBase }));
@@ -275,7 +276,7 @@ async function executeInstallPlan(
     return 0;
   }
 
-  if (outcome.kind === 'partial') {
+  if (outcome.kind === 'partial' || updateIncomplete) {
     log.err(
       t(plan.lang, 'install.partial', {
         version: versionLabel,
@@ -295,7 +296,7 @@ async function executeInstallPlan(
     );
   }
   log.info(t(plan.lang, 'config.path', { path: configPath }));
-  return outcome.exitCode;
+  return updateIncomplete ? 1 : outcome.exitCode;
 }
 
 async function runInstallOperation(

@@ -4,7 +4,7 @@
   "description": "Interactive installer and manager for Lore agent runtime integrations",
   "type": "module",
   "bin": {
-    "loremem": "./dist/bin.js"
+    "loremem": "dist/bin.js"
   },
   "files": [
     "dist",

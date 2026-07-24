@@ -3,6 +3,7 @@ import test from 'node:test';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { zipSync } from 'fflate';
 import { artifactName, downloadOrSkip } from '../src/core/artifact.ts';
 import { detectAgents, haveCommand } from '../src/core/detect.ts';
 import { createExec, type ExecFn } from '../src/core/exec.ts';
@@ -106,6 +107,27 @@ test('downloadOrSkip needInstall=0 downloads via curl/unzip run', async () => {
   assert.ok(calls.some((c) => c[0] === 'unzip'));
   const curl = calls.find((c) => c[0] === 'curl')!;
   assert.ok(curl.includes('https://github.com/FFatTiger/lore/releases/download/v1.0.0/lore-pi.zip'));
+});
+
+test('downloadOrSkip downloads and extracts without system curl or unzip', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-native-dl-'));
+  const dest = path.join(dir, 'pi');
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(zipSync({
+    'nested/plugin.json': new TextEncoder().encode('{"name":"pi"}'),
+  }), { status: 200 });
+  try {
+    const ok = await downloadOrSkip({
+      channel: 'pi',
+      dest,
+      releaseVersion: 'v1.0.0',
+      needInstall: 0,
+    });
+    assert.equal(ok, true);
+    assert.equal(await fs.readFile(path.join(dest, 'nested', 'plugin.json'), 'utf8'), '{"name":"pi"}');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('downloadOrSkip needInstall=2 missing dir downloads when releaseVersion set', async () => {

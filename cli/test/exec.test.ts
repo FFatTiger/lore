@@ -1,6 +1,25 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { runChecked } from '../src/core/exec.ts';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { createExec, runChecked } from '../src/core/exec.ts';
+
+test('createExec resolves npm-style command shims', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-exec-'));
+  const shim = path.join(dir, process.platform === 'win32' ? 'lore-shim.cmd' : 'lore-shim');
+  await fs.writeFile(
+    shim,
+    process.platform === 'win32' ? '@echo off\r\n<nul set /p =shim-ok\r\n' : '#!/bin/sh\nprintf shim-ok\n',
+  );
+  if (process.platform !== 'win32') await fs.chmod(shim, 0o755);
+  const exec = createExec();
+  const result = await exec(['lore-shim'], {
+    env: { ...process.env, PATH: `${dir}${path.delimiter}${process.env.PATH ?? ''}` },
+  });
+  assert.equal(result.code, 0);
+  assert.equal(result.stdout, 'shim-ok');
+});
 
 test('runChecked throws a stage-specific error on non-zero exit', async () => {
   await assert.rejects(

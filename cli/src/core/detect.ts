@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { constants as fsConstants } from 'node:fs';
 import type { ExecFn } from './exec.js';
 
 const AGENT_BINS = [
@@ -28,7 +29,7 @@ export async function haveCommand(
   // Absolute/relative path: direct access check
   if (name.includes('/') || name.includes('\\') || path.isAbsolute(name)) {
     try {
-      await fs.access(name, fs.constants.X_OK);
+      await fs.access(name, process.platform === 'win32' ? fsConstants.F_OK : fsConstants.X_OK);
       return true;
     } catch {
       return false;
@@ -46,7 +47,7 @@ export async function haveCommand(
     for (const cand of candidates) {
       const full = path.join(dir, cand);
       try {
-        await fs.access(full, fs.constants.X_OK);
+        await fs.access(full, process.platform === 'win32' ? fsConstants.F_OK : fsConstants.X_OK);
         return true;
       } catch {
         // try next

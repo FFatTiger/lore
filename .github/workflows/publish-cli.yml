@@ -6,7 +6,26 @@ on:
   workflow_dispatch:
 
 jobs:
+  test-cli:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
   publish-cli:
+    needs: test-cli
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -19,6 +38,13 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
       - run: npm ci
       - run: npm run prepublishOnly
-      - run: npm publish --access public
+      - name: Publish prerelease
+        if: github.event_name == 'release' && github.event.release.prerelease
+        run: npm publish --access public --tag pre
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish stable release
+        if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

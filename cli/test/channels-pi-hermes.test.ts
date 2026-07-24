@@ -97,12 +97,10 @@ test('pi install skips when pi CLI missing', async () => {
   }
 });
 
-test('pi install runs install-local.sh when pi present', async () => {
+test('pi install creates extension link when pi is present', async () => {
   const { home, loreHome } = await tempHome();
   const dest = path.join(loreHome, 'pi');
-  await fs.mkdir(path.join(dest, 'scripts'), { recursive: true });
-  await fs.writeFile(path.join(dest, 'scripts', 'install-local.sh'), '#!/bin/bash\necho ok\n');
-  await fs.chmod(path.join(dest, 'scripts', 'install-local.sh'), 0o755);
+  await fs.mkdir(dest, { recursive: true });
 
   const bin = path.join(home, 'bin');
   await fs.mkdir(bin, { recursive: true });
@@ -111,39 +109,26 @@ test('pi install runs install-local.sh when pi present', async () => {
   const origPath = process.env.PATH;
   process.env.PATH = `${bin}${path.delimiter}${origPath ?? ''}`;
 
-  const calls: string[][] = [];
-  const run: ExecFn = async (argv, opts) => {
-    calls.push(argv);
-    if (argv[0] === 'bash' && argv[1]?.includes('install-local.sh')) {
-      assert.equal(opts?.env?.LORE_BASE_URL, 'http://127.0.0.1:18901');
-      assert.equal(opts?.env?.LORE_API_TOKEN, 'lm_test');
-      return { code: 0, stdout: '', stderr: '' };
-    }
-    return { code: 0, stdout: '', stderr: '' };
-  };
-
   try {
     const result = await piInstaller.install(
-      baseCtx({
-        loreHome,
-        homeDir: home,
-        needInstall: 2,
-        apiToken: 'lm_test',
-        run,
-      }),
+      baseCtx({ loreHome, homeDir: home, needInstall: 2 }),
     );
     assert.equal(result.status, 'ok');
-    assert.ok(calls.some((c) => c[0] === 'bash' && c[1]?.includes('install-local.sh')));
+    const ext = path.join(home, '.pi', 'agent', 'extensions', 'lore');
+    assert.equal((await fs.lstat(ext)).isSymbolicLink(), true);
+    assert.equal(await fs.realpath(ext), await fs.realpath(dest));
   } finally {
     process.env.PATH = origPath;
   }
 });
 
-test('pi install reports checked script failure without token leakage', async () => {
+test('pi install preserves an existing extension directory', async () => {
   const { home, loreHome } = await tempHome();
-  const dest = path.join(loreHome, 'pi');
-  await fs.mkdir(path.join(dest, 'scripts'), { recursive: true });
-  await fs.writeFile(path.join(dest, 'scripts', 'install-local.sh'), '#!/bin/bash\nexit 1\n');
+  await fs.mkdir(path.join(loreHome, 'pi'), { recursive: true });
+  const ext = path.join(home, '.pi', 'agent', 'extensions', 'lore');
+  await fs.mkdir(ext, { recursive: true });
+  await fs.writeFile(path.join(ext, 'keep'), '1');
+
   const bin = path.join(home, 'bin');
   await fs.mkdir(bin, { recursive: true });
   await fs.writeFile(path.join(bin, 'pi'), '#!/bin/bash\nexit 0\n');
@@ -151,17 +136,10 @@ test('pi install reports checked script failure without token leakage', async ()
   const origPath = process.env.PATH;
   process.env.PATH = `${bin}${path.delimiter}${origPath ?? ''}`;
   try {
-    const result = await piInstaller.install(baseCtx({
-      loreHome,
-      homeDir: home,
-      needInstall: 2,
-      apiToken: 'lm_secret',
-      run: async () => ({ code: 1, stdout: '', stderr: 'failed for lm_secret' }),
-    }));
+    const result = await piInstaller.install(baseCtx({ loreHome, homeDir: home, needInstall: 2 }));
     assert.equal(result.status, 'failed');
-    assert.match(result.message ?? '', /Pi local installation failed/i);
-    assert.match(result.message ?? '', /\[REDACTED\]/);
-    assert.doesNotMatch(result.message ?? '', /lm_secret/);
+    assert.match(result.message ?? '', /Target exists/i);
+    assert.equal(await fs.readFile(path.join(ext, 'keep'), 'utf8'), '1');
   } finally {
     process.env.PATH = origPath;
   }

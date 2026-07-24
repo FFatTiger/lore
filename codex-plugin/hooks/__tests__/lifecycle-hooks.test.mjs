@@ -205,7 +205,13 @@ test('legacy install-hooks.sh SessionStart matcher matches bundled startup|resum
   }
 });
 
-test('bundled hooks.json keeps SessionStart matcher startup|resume|clear', () => {
+test('bundled hooks.json keeps portable commands and SessionStart matcher', () => {
   const hooks = JSON.parse(readFileSync(path.join(hooksDir, 'hooks.json'), 'utf8'));
   assert.equal(hooks.hooks.SessionStart[0].matcher, 'startup|resume|clear');
+  const commands = Object.values(hooks.hooks)
+    .flatMap((entries) => entries)
+    .flatMap((entry) => entry.hooks)
+    .map((hook) => hook.command);
+  assert.ok(commands.every((command) => command.startsWith('node "')));
+  assert.ok(commands.every((command) => !command.includes('LORE_BASE_URL=')));
 });

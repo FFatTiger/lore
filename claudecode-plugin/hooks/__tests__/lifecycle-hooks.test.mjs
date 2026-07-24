@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -226,6 +226,16 @@ test('SessionStart preserves source metadata and omits missing session_id', asyn
   } finally {
     await server.close();
   }
+});
+
+test('bundled hooks.json uses portable quoted commands', () => {
+  const hooks = JSON.parse(readFileSync(path.join(hooksDir, 'hooks.json'), 'utf8'));
+  const commands = Object.values(hooks.hooks)
+    .flatMap((entries) => entries)
+    .flatMap((entry) => entry.hooks)
+    .map((hook) => hook.command);
+  assert.ok(commands.every((command) => command.startsWith('npx tsx "')));
+  assert.ok(commands.every((command) => !command.includes('LORE_BASE_URL=')));
 });
 
 test('SessionStart uses conversation_id when session_id is absent', async () => {

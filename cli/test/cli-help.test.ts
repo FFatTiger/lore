@@ -13,8 +13,8 @@ test('run --help exits 0 and does not throw', async () => {
   assert.equal(code, 0);
 });
 
-test('package version is 1.3.21', () => {
-  assert.equal(packageJson.version, '1.3.21');
+test('package version is a valid release version', () => {
+  assert.match(packageJson.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
 });
 
 test('README documents the supported safe install contract', () => {

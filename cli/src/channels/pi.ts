@@ -4,12 +4,27 @@ import os from 'node:os';
 import { downloadOrSkipDetailed } from '../core/artifact.js';
 import { channelDir } from '../core/paths.js';
 import { haveCommand } from '../core/detect.js';
-import { createExec, runChecked } from '../core/exec.js';
 import type { ChannelInstaller, ChannelContext, UninstallContext } from './types.js';
 import type { ChannelResult, ChannelStatus } from '../core/types.js';
 
 function piExtensionPath(homeDir: string): string {
   return path.join(homeDir, '.pi', 'agent', 'extensions', 'lore');
+}
+
+async function installPiExtension(source: string, target: string): Promise<void> {
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  try {
+    const st = await fs.lstat(target);
+    if (!st.isSymbolicLink()) {
+      throw new Error(`Target exists and is not a symbolic link: ${target}`);
+    }
+    await fs.unlink(target);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  }
+
+  const type = process.platform === 'win32' ? 'junction' : 'dir';
+  await fs.symlink(source, target, type);
 }
 
 export const piInstaller: ChannelInstaller = {
@@ -36,30 +51,14 @@ export const piInstaller: ChannelInstaller = {
       return { id: 'pi', status: 'failed', message: download.reason ?? 'pi artifact download failed' };
     }
 
-    const script = path.join(dest, 'scripts', 'install-local.sh');
-    const run = ctx.run ?? createExec();
-    const env = ctx.env ?? process.env;
+    const homeDir = ctx.homeDir ?? os.homedir();
     try {
-      await runChecked(
-        run,
-        'Pi local installation',
-        ['bash', script],
-        {
-          quiet: true,
-          env: {
-            ...env,
-            LORE_BASE_URL: ctx.baseUrl,
-            LORE_API_TOKEN: ctx.apiToken ?? '',
-            HOME: ctx.homeDir ?? env.HOME,
-          },
-        },
-        { redact: [ctx.apiToken ?? ''] },
-      );
+      await installPiExtension(dest, piExtensionPath(homeDir));
     } catch (err) {
       return {
         id: 'pi',
         status: 'failed',
-        message: err instanceof Error ? err.message : String(err),
+        message: err instanceof Error ? `Pi local installation failed: ${err.message}` : String(err),
       };
     }
 

@@ -41,6 +41,7 @@ prepare_version() {
 
   "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" web/package.json
   "${SED_INPLACE[@]}" "s/version: '[^']*'/version: '${VERSION}'/" web/server/mcpServer.ts
+  "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" cli/package.json
 
   "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" claudecode-plugin/.claude-plugin/plugin.json
   "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" claudecode-plugin/.claude-plugin/marketplace.json
@@ -53,6 +54,7 @@ prepare_version() {
 
   python3 - "${VERSION}" \
     web/package-lock.json \
+    cli/package-lock.json \
     openclaw-plugin/package-lock.json \
     opencode-plugin/package-lock.json <<'PYLOCK'
 import json
@@ -77,6 +79,8 @@ verify_versions() {
   grep -n "\"version\"" \
     web/package.json \
     web/package-lock.json \
+    cli/package.json \
+    cli/package-lock.json \
     claudecode-plugin/.claude-plugin/plugin.json \
     claudecode-plugin/.claude-plugin/marketplace.json \
     codex-plugin/.codex-plugin/plugin.json \
@@ -89,14 +93,19 @@ verify_versions() {
   grep -n "version:" web/server/mcpServer.ts | head -1
   grep -n "version:" hermes-plugin/lore_memory/plugin.yaml | head -1
 
-  python3 - "${VERSION}" opencode-plugin/package.json opencode-plugin/package-lock.json <<'PYVERIFY'
+  python3 - "${VERSION}" cli/package.json cli/package-lock.json opencode-plugin/package.json opencode-plugin/package-lock.json <<'PYVERIFY'
 import json
 import sys
 from pathlib import Path
 
-version, manifest_name, lock_name = sys.argv[1:]
+version, cli_manifest_name, cli_lock_name, manifest_name, lock_name = sys.argv[1:]
+cli_manifest = json.loads(Path(cli_manifest_name).read_text())
+cli_lock = json.loads(Path(cli_lock_name).read_text())
 manifest = json.loads(Path(manifest_name).read_text())
 lock = json.loads(Path(lock_name).read_text())
+assert cli_manifest["version"] == version
+assert cli_lock["version"] == version
+assert cli_lock["packages"][""]["version"] == version
 assert manifest["version"] == version
 assert manifest["dependencies"]["@opencode-ai/plugin"] == "1.18.3"
 assert lock["version"] == version

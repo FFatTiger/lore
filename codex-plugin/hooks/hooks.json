@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "LORE_CODEX_PLUGIN_ROOT=\"__LORE_CODEX_PLUGIN_ROOT__\" LORE_BASE_URL=${LORE_BASE_URL:-http://127.0.0.1:18901} node \"__LORE_CODEX_PLUGIN_ROOT__/hooks/rules-inject.mjs\"",
+            "command": "node \"__LORE_CODEX_PLUGIN_ROOT__/hooks/rules-inject.mjs\"",
             "timeout": 10,
             "statusMessage": "Loading Lore lifecycle context"
           }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "LORE_CODEX_PLUGIN_ROOT=\"__LORE_CODEX_PLUGIN_ROOT__\" LORE_BASE_URL=${LORE_BASE_URL:-http://127.0.0.1:18901} node \"__LORE_CODEX_PLUGIN_ROOT__/hooks/recall-inject.mjs\"",
+            "command": "node \"__LORE_CODEX_PLUGIN_ROOT__/hooks/recall-inject.mjs\"",
             "timeout": 10,
             "statusMessage": "Recalling Lore context"
           }

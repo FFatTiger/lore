@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { unzipSync } from 'fflate';
 import type { ChannelId, NeedInstall } from './types.js';
 import type { ExecFn } from './exec.js';
-import { createExec } from './exec.js';
 
 const DEFAULT_REPO = 'FFatTiger/lore';
 
@@ -109,56 +109,45 @@ async function downloadArtifact(opts: {
 
   const repo = opts.repo || DEFAULT_REPO;
   const url = `https://github.com/${repo}/releases/download/${opts.releaseVersion}/${artifact}`;
-  const run = opts.run ?? createExec();
-
   const tmpRoot = `${opts.dest}.tmp`;
   const zipPath = path.join(tmpRoot, artifact);
   const extracted = path.join(tmpRoot, 'extracted');
 
   try {
     await fs.rm(tmpRoot, { recursive: true, force: true });
-    await fs.mkdir(tmpRoot, { recursive: true });
+    await fs.mkdir(extracted, { recursive: true });
 
-    let curlRes;
-    try {
-      curlRes = await run(['curl', '-fsSL', url, '-o', zipPath]);
-    } catch (err) {
-      await fs.rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
-      return {
-        ok: false,
-        url,
-        reason: `curl failed to start: ${err instanceof Error ? err.message : String(err)}`,
-      };
-    }
-    if (curlRes.code !== 0) {
-      await fs.rm(tmpRoot, { recursive: true, force: true });
-      const detail = [curlRes.stderr, curlRes.stdout].filter(Boolean).join(' ').trim();
-      return {
-        ok: false,
-        url,
-        reason: `Download failed (curl exit ${curlRes.code}) from ${url}${detail ? `: ${detail}` : ''}`,
-      };
-    }
+    if (opts.run) {
+      const download = await opts.run(['curl', '-fsSL', url, '-o', zipPath]);
+      if (download.code !== 0) {
+        const detail = [download.stderr, download.stdout].filter(Boolean).join(' ').trim();
+        throw new Error(`Download failed (curl exit ${download.code})${detail ? `: ${detail}` : ''}`);
+      }
+      const extract = await opts.run(['unzip', '-qo', zipPath, '-d', extracted]);
+      if (extract.code !== 0) {
+        const detail = [extract.stderr, extract.stdout].filter(Boolean).join(' ').trim();
+        throw new Error(`Extract failed for ${artifact}${detail ? `: ${detail}` : ''}`);
+      }
+    } else {
+      const response = await fetch(url, { redirect: 'follow' });
+      if (!response.ok) throw new Error(`Download failed (HTTP ${response.status})`);
+      await fs.writeFile(zipPath, Buffer.from(await response.arrayBuffer()));
 
-    let unzipRes;
-    try {
-      unzipRes = await run(['unzip', '-qo', zipPath, '-d', extracted]);
-    } catch (err) {
-      await fs.rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
-      return {
-        ok: false,
-        url,
-        reason: `unzip failed to start: ${err instanceof Error ? err.message : String(err)}`,
-      };
-    }
-    if (unzipRes.code !== 0) {
-      await fs.rm(tmpRoot, { recursive: true, force: true });
-      const detail = [unzipRes.stderr, unzipRes.stdout].filter(Boolean).join(' ').trim();
-      return {
-        ok: false,
-        url,
-        reason: `Extract failed for ${artifact}${detail ? `: ${detail}` : ''}`,
-      };
+      const archive = unzipSync(new Uint8Array(await fs.readFile(zipPath)));
+      for (const [entryName, contents] of Object.entries(archive)) {
+        const normalized = entryName.replace(/\\/g, '/');
+        const target = path.resolve(extracted, normalized);
+        const relative = path.relative(extracted, target);
+        if (relative.startsWith('..') || path.isAbsolute(relative)) {
+          throw new Error(`Unsafe archive entry: ${entryName}`);
+        }
+        if (normalized.endsWith('/')) {
+          await fs.mkdir(target, { recursive: true });
+        } else {
+          await fs.mkdir(path.dirname(target), { recursive: true });
+          await fs.writeFile(target, contents);
+        }
+      }
     }
 
     await fs.rm(opts.dest, { recursive: true, force: true });
@@ -170,7 +159,7 @@ async function downloadArtifact(opts: {
     return {
       ok: false,
       url,
-      reason: err instanceof Error ? err.message : String(err),
+      reason: err instanceof Error ? `${err.message} from ${url}` : String(err),
     };
   }
 }

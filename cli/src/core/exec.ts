@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn } from 'cross-spawn';
 
 export type ExecResult = { code: number; stdout: string; stderr: string };
 export type ExecOptions = { cwd?: string; env?: NodeJS.ProcessEnv; quiet?: boolean };

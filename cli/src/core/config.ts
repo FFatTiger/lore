@@ -23,9 +23,13 @@ export async function writeConfig(
 ): Promise<LoreConfig> {
   await ensureDir(path.dirname(configPath));
   const current = await readConfig(configPath);
-  const next: LoreConfig = { ...current, base_url: patch.base_url.replace(/\/$/, '') };
   const tokenAction = opts.tokenAction ?? (patch.api_token ? 'set' : 'keep');
-  if (tokenAction === 'set' && patch.api_token) next.api_token = patch.api_token;
+  const token = patch.api_token?.trim();
+  if (tokenAction === 'set' && !token) {
+    throw new Error('Token action "set" requires a non-empty API token');
+  }
+  const next: LoreConfig = { ...current, base_url: patch.base_url.replace(/\/$/, '') };
+  if (tokenAction === 'set') next.api_token = token;
   if (tokenAction === 'clear') delete next.api_token;
   if (opts.writeVersion && opts.releaseVersion) {
     next.installed_version = opts.releaseVersion;

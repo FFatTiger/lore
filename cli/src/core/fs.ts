@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -35,7 +36,7 @@ export async function writeJsonAtomic(
 ): Promise<void> {
   await ensureDir(path.dirname(filePath));
   const mode = opts.mode ?? 0o600;
-  const tmp = `${filePath}.tmp.${process.pid}.${Date.now()}`;
+  const tmp = `${filePath}.tmp.${process.pid}.${randomUUID()}`;
   try {
     await fs.writeFile(tmp, `${JSON.stringify(data, null, 2)}\n`, {
       encoding: 'utf8',

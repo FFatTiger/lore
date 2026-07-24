@@ -51,6 +51,26 @@ test('writeConfig clear removes a saved token', async () => {
   assert.equal(cfg.api_token, undefined);
 });
 
+test('writeConfig set rejects a missing or blank token without changing the file', async () => {
+  for (const apiToken of [undefined, '   ']) {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-cli-'));
+    const cfgPath = getConfigPath(dir);
+    await writeConfig(cfgPath, { base_url: 'https://a.example', api_token: 'lm_old' }, {
+      tokenAction: 'set',
+    });
+    const before = await fs.readFile(cfgPath, 'utf8');
+
+    await assert.rejects(
+      writeConfig(cfgPath, { base_url: 'https://b.example', api_token: apiToken }, {
+        tokenAction: 'set',
+      }),
+      /token.*required|requires.*token/i,
+    );
+
+    assert.equal(await fs.readFile(cfgPath, 'utf8'), before);
+  }
+});
+
 test('Lore config is written with mode 0600', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-cli-'));
   const cfgPath = getConfigPath(dir);
@@ -73,6 +93,26 @@ test('readConfig rejects non-object JSON', async () => {
   const cfgPath = getConfigPath(dir);
   await fs.writeFile(cfgPath, '[]\n', 'utf8');
   await assert.rejects(readConfig(cfgPath), /object/i);
+});
+
+test('concurrent writeJsonAtomic calls use independent staging files', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-cli-'));
+  const destination = path.join(dir, 'config.json');
+  const originalNow = Date.now;
+  Date.now = () => 123456789;
+  try {
+    await Promise.all([
+      writeJsonAtomic(destination, { writer: 'first' }),
+      writeJsonAtomic(destination, { writer: 'second' }),
+    ]);
+  } finally {
+    Date.now = originalNow;
+  }
+
+  const data = JSON.parse(await fs.readFile(destination, 'utf8')) as { writer: string };
+  assert.ok(data.writer === 'first' || data.writer === 'second');
+  assert.equal((await fs.stat(destination)).mode & 0o777, 0o600);
+  assert.deepEqual(await fs.readdir(dir), ['config.json']);
 });
 
 test('writeJsonAtomic cleans temporary file when rename fails', async () => {

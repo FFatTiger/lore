@@ -1,5 +1,5 @@
 name: lore
-version: 1.3.22-pre.3
+version: 1.3.22-pre.4
 description: Lore long-term memory system — fixed boot baseline, cross-session recall, and durable project context
 author: FFatTiger
 provides_tools:

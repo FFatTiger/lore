@@ -1,43 +1,50 @@
+import * as p from '@clack/prompts';
 import type { Lang } from '../core/types.js';
 
 export type BannerOptions = {
   write?: (line: string) => void;
 };
 
-const BLUE = '\x1b[0;34m';
+const CYAN = '\x1b[38;2;34;211;238m'; // brand cyan
+const DIM = '\x1b[2m';
 const BOLD = '\x1b[1m';
 const NC = '\x1b[0m';
 
+// figlet "ANSI Shadow" — each line is exactly 63 chars wide, CJK-safe, no tabs.
 const LOGO = [
-  ' _     ____  ____  _____ ',
-  '/ \\   /  _ \\/  __\\/  __/ ',
-  '| |   | / \\||  \\/||  \\   ',
-  '| |_/\\| \\_/||    /|  /_  ',
-  '\\____/\\____/\\_/\\_\\\\____\\ ',
-  '                        ',
+  '██╗      ██████╗ ██████╗ ███████╗███╗   ███╗███████╗███╗   ███╗',
+  '██║     ██╔═══██╗██╔══██╗██╔════╝████╗ ████║██╔════╝████╗ ████║',
+  '██║     ██║   ██║██████╔╝█████╗  ██╔████╔██║█████╗  ██╔████╔██║',
+  '██║     ██║   ██║██╔══██╗██╔══╝  ██║╚██╔╝██║██╔══╝  ██║╚██╔╝██║',
+  '███████╗╚██████╔╝██║  ██║███████╗██║ ╚═╝ ██║███████╗██║ ╚═╝ ██║',
+  '╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝╚══════╝╚═╝     ╚═╝',
 ];
 
-const TAGLINES: Record<Lang, [string, string]> = {
-  en: [
-    '  Lore — long-term memory for AI agents',
-    '  One install script, all agent runtimes.',
-  ],
-  zh: [
-    '  Lore — AI Agent 长期记忆',
-    '  一条安装脚本，接入所有 Agent 运行时',
-  ],
+const TAGLINE: Record<Lang, string> = {
+  en: 'Long-term memory for AI agents',
+  zh: '为 AI Agent 提供长期记忆',
 };
 
-export function banner(lang: Lang, opts: BannerOptions = {}): void {
-  const write = opts.write ?? ((line: string) => console.log(line));
-  const [tag0, tag1] = TAGLINES[lang] ?? TAGLINES.en;
+function bannerLines(lang: Lang): string[] {
+  const tag = TAGLINE[lang] ?? TAGLINE.en;
+  return [
+    ...LOGO.map((line) => `${CYAN}${BOLD}${line}${NC}`),
+    `${DIM}${tag}${NC}`,
+  ];
+}
 
-  write('');
-  write(`${BLUE}${BOLD}${LOGO[0]}${NC}`);
-  write(`${BLUE}${BOLD}${LOGO[1]}${NC}${tag0}`);
-  write(`${BLUE}${BOLD}${LOGO[2]}${NC}`);
-  write(`${BLUE}${BOLD}${LOGO[3]}${NC}${tag1}`);
-  write(`${BLUE}${BOLD}${LOGO[4]}${NC}`);
-  write(`${BLUE}${BOLD}${LOGO[5]}${NC}`);
-  write('');
+/**
+ * Open the interactive flow with a large ASCII brand mark, then hand off to
+ * Clack's guide line. The logo uses figlet "ANSI Shadow" glyphs: each line is
+ * fixed-width so it never misaligns regardless of terminal or CJK width.
+ */
+export function banner(lang: Lang, opts: BannerOptions = {}): void {
+  if (opts.write) {
+    bannerLines(lang).forEach((line) => opts.write!(line));
+    return;
+  }
+  console.log();
+  bannerLines(lang).forEach((line) => console.log(line));
+  console.log();
+  p.intro('');
 }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { formatSnapshot, type InstallSnapshot } from '../src/core/snapshot.ts';
 import { createTTYPrompt } from '../src/ui/prompt.ts';
-import type { InstallSnapshot } from '../src/core/snapshot.ts';
 
 const emptySnapshot: InstallSnapshot = {
   loreHome: '/tmp/x',
@@ -28,6 +28,15 @@ const emptySnapshot: InstallSnapshot = {
   ],
   detectedChannels: ['claudecode', 'pi'],
 };
+
+test('status snapshot is a compact decision summary', () => {
+  const snapshot = formatSnapshot(emptySnapshot, 'en');
+  assert.match(snapshot, /^Connection/m);
+  assert.match(snapshot, /Runtimes/);
+  assert.match(snapshot, /2 detected · 1\/6 integrations installed/);
+  assert.match(snapshot, /Full details: loremem status/);
+  assert.doesNotMatch(snapshot, /\t/);
+});
 
 test('TTY prompt pickLanguage uses selectOne', async () => {
   const prompt = createTTYPrompt({

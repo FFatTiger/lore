@@ -7,6 +7,8 @@ export type ExistingAction = 'update' | 'reconfigure' | 'manage' | 'uninstall' |
 export type FirstRunAction = ConnectionMode;
 export type ReleaseChannel = 'stable' | 'pre' | 'dev';
 
+export const INTERACTIVE_ABORT = 'LORE_INTERACTIVE_ABORT';
+
 export type PromptService = {
   pickLanguage(defaultLang: Lang): Promise<Lang>;
   showStatus(text: string): void;
@@ -53,39 +55,22 @@ function q(lang: Lang, en: string, zh: string): string {
   return lang === 'zh' ? zh : en;
 }
 
-/** Compact same-line keybinding hints (keep short so the left bar stays clean). */
-function keysSelect(lang: Lang): string {
-  return q(lang, '↑/↓  enter', '↑/↓  enter');
-}
-
-function keysMulti(lang: Lang): string {
-  return q(lang, '↑/↓  space  a/n  enter', '↑/↓  space  a/n  enter');
-}
-
-function keysConfirm(lang: Lang): string {
-  return q(lang, '←/→  enter', '←/→  enter');
-}
-
-function keysText(lang: Lang): string {
-  return q(lang, 'type  enter', '输入  enter');
-}
-
-/**
- * Keep key hints on the same line as the title.
- * A newline breaks @clack's left bar and looks like duplicated/glitched chrome.
- */
-function withKeys(message: string, keys: string): string {
-  return `${message}  ·  ${keys}`;
-}
-
 function isCancel(value: unknown): boolean {
   return p.isCancel(value);
 }
 
+function showStatusLines(text: string, lang: Lang): void {
+  p.note(text, lang === 'zh' ? '当前配置' : 'Current setup');
+}
+
+export function isInteractiveAbort(error: unknown): boolean {
+  return error instanceof Error && error.message === INTERACTIVE_ABORT;
+}
+
 function abortOnCancel(value: unknown, lang: Lang): asserts value is Exclude<typeof value, symbol> {
   if (isCancel(value)) {
-    p.cancel(lang === 'zh' ? '已取消。' : 'Aborted.');
-    throw new Error('Aborted');
+    p.cancel(lang === 'zh' ? '已取消' : 'Cancelled', { withGuide: false });
+    throw new Error(INTERACTIVE_ABORT);
   }
 }
 
@@ -129,14 +114,11 @@ export function createTTYPrompt(opts: CreateTTYPromptOptions = {}): PromptServic
     message: string;
     options: Array<{ value: T; label: string; hint?: string }>;
     initialValue?: T;
-    /** Override keybinding hint; default is ↑/↓ · enter */
-    keys?: string;
   }): Promise<T> {
-    const message = withKeys(args.message, args.keys ?? keysSelect(lang));
+    const message = args.message;
     if (opts.selectOne) return opts.selectOne({ ...args, message });
     const value = await p.select({
       message,
-      // clack Option typing is invariant over value; cast for generic helper
       options: args.options as never,
       initialValue: args.initialValue,
     });
@@ -148,9 +130,8 @@ export function createTTYPrompt(opts: CreateTTYPromptOptions = {}): PromptServic
     message: string;
     options: Array<{ value: T; label: string; hint?: string }>;
     initialValues?: T[];
-    keys?: string;
   }): Promise<T[]> {
-    const message = withKeys(args.message, args.keys ?? keysMulti(lang));
+    const message = args.message;
     if (opts.multiSelect) return opts.multiSelect({ ...args, message });
     const value = await p.multiselect({
       message,
@@ -167,15 +148,14 @@ export function createTTYPrompt(opts: CreateTTYPromptOptions = {}): PromptServic
     placeholder?: string;
     defaultValue?: string;
     validate?: (value: string) => string | undefined;
-    keys?: string;
   }): Promise<string> {
-    const message = withKeys(args.message, args.keys ?? keysText(lang));
+    const message = args.message;
     if (opts.text) return opts.text({ ...args, message });
     const value = await p.text({
       message,
       placeholder: args.placeholder,
       defaultValue: args.defaultValue,
-      validate: args.validate,
+      validate: args.validate ? (value) => args.validate!(value ?? '') : undefined,
     });
     abortOnCancel(value, lang);
     return String(value ?? '');
@@ -184,9 +164,8 @@ export function createTTYPrompt(opts: CreateTTYPromptOptions = {}): PromptServic
   async function confirmImpl(args: {
     message: string;
     initialValue?: boolean;
-    keys?: string;
   }): Promise<boolean> {
-    const message = withKeys(args.message, args.keys ?? keysConfirm(lang));
+    const message = args.message;
     if (opts.confirmFn) return opts.confirmFn({ ...args, message });
     const value = await p.confirm({
       message,
@@ -200,7 +179,6 @@ export function createTTYPrompt(opts: CreateTTYPromptOptions = {}): PromptServic
     async pickLanguage(defaultLang) {
       const value = await selectOneImpl({
         message: 'Language / 语言',
-        keys: '↑/↓ · enter  |  ↑/↓ · enter',
         initialValue: defaultLang,
         options: [
           { value: 'en' as Lang, label: 'English' },
@@ -212,8 +190,9 @@ export function createTTYPrompt(opts: CreateTTYPromptOptions = {}): PromptServic
     },
 
     showStatus(text: string) {
-      // Clack note keeps formatting without fighting the spinner/select redraw
-      p.note(text, lang === 'zh' ? '当前状态' : 'Current status');
+      // Do not use p.note(): its box renderer miscalculates CJK/ANSI display width
+      // in several terminal emulators and produces broken vertical borders.
+      showStatusLines(text, lang);
     },
 
     async pickFirstRunAction() {

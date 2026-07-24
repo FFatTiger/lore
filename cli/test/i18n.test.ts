@@ -10,10 +10,7 @@ test('t returns English install complete / restart / docker skip strings', () =>
     t('en', 'restart.next', { baseUrl: 'http://127.0.0.1:18901' }),
     'Next: restart agent runtimes, then open http://127.0.0.1:18901/setup',
   );
-  assert.equal(
-    t('en', 'restart.codex_hooks'),
-    'Codex: open /hooks and trust Lore hooks if prompted',
-  );
+  assert.equal(t('en', 'restart.codex_hooks'), 'Codex: open /hooks and trust Lore hooks if prompted');
   assert.equal(
     t('en', 'restart.codex_plugins'),
     'Codex: if /plugins still shows Lore as installable, install it manually',
@@ -58,7 +55,6 @@ test('createLogger writes shell glyphs for info/ok/warn/err/section', () => {
   log.err('fail');
   log.section('Docker');
 
-  // Allow optional ANSI color codes around glyphs (shell parity).
   assert.match(lines[0]!, /→(?:\x1b\[[0-9;]*m)*\s*hello/);
   assert.match(lines[1]!, /✓(?:\x1b\[[0-9;]*m)*\s*done/);
   assert.match(lines[2]!, /!(?:\x1b\[[0-9;]*m)*\s*careful/);
@@ -67,20 +63,11 @@ test('createLogger writes shell glyphs for info/ok/warn/err/section', () => {
   assert.match(lines[5]!, /──\s*Docker/);
 });
 
-test('banner prints LORE art and language tagline', () => {
+test('banner uses the minimal installer title', () => {
   const lines: string[] = [];
-  const write = (line: string) => lines.push(line);
-
-  banner('en', { write });
-  const en = lines.join('\n');
-  assert.match(en, /____/);
-  assert.match(en, /long-term memory for AI agents/);
-  assert.match(en, /One install script, all agent runtimes/);
-
-  lines.length = 0;
-  banner('zh', { write });
-  const zh = lines.join('\n');
-  assert.match(zh, /____/);
-  assert.match(zh, /AI Agent 长期记忆/);
-  assert.match(zh, /一条安装脚本，接入所有 Agent 运行时/);
+  banner('en', { write: (line) => lines.push(line) });
+  assert.ok(lines.length >= 7);
+  assert.match(lines[0]!, /███████╗/);
+  assert.ok(lines.some((line) => /Long-term memory for AI agents/.test(line)));
+  assert.ok(lines.every((line) => !line.includes('\t')));
 });

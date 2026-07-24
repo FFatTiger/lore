@@ -276,22 +276,22 @@ function formatInstallSummary(
   const release = plan.dev ? 'dev' : plan.pre ? 'pre' : 'stable';
   if (lang === 'zh') {
     return [
-      '将执行：',
-      `  动作:   ${String(mode)}`,
-      `  服务:   ${plan.baseUrl ?? '(Docker / 已保存)'}`,
-      `  Token:  ${plan.apiToken ? '新输入' : plan.keepExistingToken ? '保留已有' : '未设置'}`,
-      `  渠道:   ${plan.channels.join(', ')}`,
-      `  通道:   ${release}`,
-      `  force:  ${plan.force ? '是' : '否'}`,
+      '将执行',
+      `• 动作：${String(mode)}`,
+      `• 服务：${plan.baseUrl ?? '(Docker / 已保存)'}`,
+      `• Token：${plan.apiToken ? '新输入' : plan.keepExistingToken ? '保留已有' : '未设置'}`,
+      `• 渠道：${plan.channels.join(', ')}`,
+      `• 发布通道：${release}`,
+      `• 强制重装：${plan.force ? '是' : '否'}`,
     ].join('\n');
   }
   return [
-    'Will run:',
-    `  action:  ${String(mode)}`,
-    `  server:  ${plan.baseUrl ?? '(Docker / saved)'}`,
-    `  token:   ${plan.apiToken ? 'new' : plan.keepExistingToken ? 'keep existing' : 'absent'}`,
-    `  channels:${plan.channels.join(', ')}`,
-    `  release: ${release}`,
-    `  force:   ${plan.force}`,
+    'Will run',
+    `• Action: ${String(mode)}`,
+    `• Server: ${plan.baseUrl ?? '(Docker / saved)'}`,
+    `• Token: ${plan.apiToken ? 'new' : plan.keepExistingToken ? 'keep existing' : 'absent'}`,
+    `• Channels: ${plan.channels.join(', ')}`,
+    `• Release: ${release}`,
+    `• Force reinstall: ${plan.force ? 'yes' : 'no'}`,
   ].join('\n');
 }

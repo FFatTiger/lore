@@ -68,31 +68,40 @@ export async function collectInstallSnapshot(opts: {
 }
 
 export function formatSnapshot(snapshot: InstallSnapshot, lang: 'en' | 'zh'): string {
-  const lines: string[] = [];
-  const yes = lang === 'zh' ? '是' : 'yes';
-  const no = lang === 'zh' ? '否' : 'no';
-  const set = lang === 'zh' ? '已设置' : 'set';
-  const absent = lang === 'zh' ? '未设置' : 'absent';
+  const installed = snapshot.channels.filter((channel) => channel.state === 'installed').length;
+  const needsAttention = snapshot.channels.filter(
+    (channel) => channel.state === 'partial' || channel.state === 'unknown',
+  ).length;
+  const detected = snapshot.detectedChannels.length;
+  const server = snapshot.config.base_url ?? (lang === 'zh' ? '尚未配置' : 'Not configured');
+  const token = snapshot.config.api_token
+    ? (lang === 'zh' ? '已配置' : 'Configured')
+    : (lang === 'zh' ? '未配置' : 'Not configured');
+  const version = snapshot.config.installed_version ?? (lang === 'zh' ? '未安装' : 'Not installed');
 
-  lines.push(lang === 'zh' ? '当前状态' : 'Current status');
-  lines.push(`  ${lang === 'zh' ? '配置' : 'Config'}:     ${snapshot.hasConfig ? (lang === 'zh' ? '存在' : 'present') : lang === 'zh' ? '无' : 'missing'}`);
-  lines.push(
-    `  ${lang === 'zh' ? '服务' : 'Server'}:     ${snapshot.config.base_url ?? '(unset)'} (${snapshot.serverKind})`,
-  );
-  lines.push(`  Token:      ${snapshot.config.api_token ? set : absent}`);
-  lines.push(`  ${lang === 'zh' ? '版本' : 'Version'}:    ${snapshot.config.installed_version ?? '(unset)'}`);
-  lines.push(
-    `  Docker:     ${snapshot.config.docker_managed ? (lang === 'zh' ? '托管' : 'managed') : lang === 'zh' ? '非托管' : 'not managed'}`,
-  );
-  lines.push('');
-  lines.push(`  CLIs:`);
-  for (const [name, present] of Object.entries(snapshot.agents)) {
-    lines.push(`    ${name.padEnd(10)} ${present ? yes : no}`);
+  if (lang === 'zh') {
+    return [
+      '连接',
+      `  ${server}`,
+      `  Token ${token} · ${version}`,
+      '',
+      '运行时',
+      `  检测到 ${detected} 个 · 已接入 ${installed}/${ALL_CHANNELS.length} 个`,
+      needsAttention ? `  ${needsAttention} 个需要检查` : '  所有已接入插件状态正常',
+      '',
+      '完整明细：loremem status',
+    ].join('\n');
   }
-  lines.push('');
-  lines.push(`  ${lang === 'zh' ? '插件' : 'Channels'}:`);
-  for (const ch of snapshot.channels) {
-    lines.push(`    ${ch.id.padEnd(12)} ${ch.state}`);
-  }
-  return lines.join('\n');
+
+  return [
+    'Connection',
+    `  ${server}`,
+    `  Token ${token} · ${version}`,
+    '',
+    'Runtimes',
+    `  ${detected} detected · ${installed}/${ALL_CHANNELS.length} integrations installed`,
+    needsAttention ? `  ${needsAttention} need attention` : '  All installed integrations look healthy',
+    '',
+    'Full details: loremem status',
+  ].join('\n');
 }

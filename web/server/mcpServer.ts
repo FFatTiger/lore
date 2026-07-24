@@ -166,7 +166,7 @@ export async function createMcpServer(context: McpServerContext = {}): Promise<I
   const server = new McpServer(
     {
       name: 'lore',
-      version: '1.3.22-pre.1',
+      version: '1.3.22-pre.2',
     },
     guidance ? { instructions: guidance } : undefined,
   );

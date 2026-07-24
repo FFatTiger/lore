@@ -149,7 +149,9 @@ test('saved managed Docker updates compose, waits for health, and keeps base', a
     skipped: false,
   });
   assert.equal(await fs.readFile(path.join(dockerPath, 'docker-compose.yml'), 'utf8'), COMPOSE_BODY);
-  assert.equal((await fs.stat(envPath)).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') {
+    assert.equal((await fs.stat(envPath)).mode & 0o777, 0o600);
+  }
   assert.match(await fs.readFile(envPath, 'utf8'), /REDIS_DATA_DIR=/);
   const calls = run.calls.map((call) => call.join(' '));
   assert.ok(calls.includes('docker compose pull'));
@@ -192,7 +194,9 @@ test('fresh Docker start writes secure compose env and waits for health', async 
   const dockerPath = path.join(dir, 'docker');
   const envPath = path.join(dockerPath, '.env');
   const envText = await fs.readFile(envPath, 'utf8');
-  assert.equal((await fs.stat(envPath)).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') {
+    assert.equal((await fs.stat(envPath)).mode & 0o777, 0o600);
+  }
   assert.match(envText, /POSTGRES_DB=lore/);
   assert.match(envText, /WEB_PORT=18901/);
   assert.match(envText, /REDIS_URL=redis:\/\/redis:6379\/0/);
@@ -263,7 +267,9 @@ test('managed update rewrites image tag and secures an existing env', async () =
   });
 
   assert.equal(result.ok, true);
-  assert.equal((await fs.stat(envPath)).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') {
+    assert.equal((await fs.stat(envPath)).mode & 0o777, 0o600);
+  }
   const envText = await fs.readFile(envPath, 'utf8');
   assert.match(envText, /LORE_FRONTEND_IMAGE=fffattiger\/lore:dev-latest/);
   assert.match(envText, /REDIS_DATA_DIR=/);

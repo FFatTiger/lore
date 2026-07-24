@@ -77,7 +77,9 @@ test('Lore config is written with mode 0600', async () => {
   await writeConfig(cfgPath, { base_url: 'https://core.example', api_token: 'lm_x' }, {
     tokenAction: 'set',
   });
-  assert.equal((await fs.stat(cfgPath)).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') {
+    assert.equal((await fs.stat(cfgPath)).mode & 0o777, 0o600);
+  }
 });
 
 test('malformed Lore config fails instead of becoming empty config', async () => {
@@ -111,7 +113,9 @@ test('concurrent writeJsonAtomic calls use independent staging files', async () 
 
   const data = JSON.parse(await fs.readFile(destination, 'utf8')) as { writer: string };
   assert.ok(data.writer === 'first' || data.writer === 'second');
-  assert.equal((await fs.stat(destination)).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') {
+    assert.equal((await fs.stat(destination)).mode & 0o777, 0o600);
+  }
   assert.deepEqual(await fs.readdir(dir), ['config.json']);
 });
 

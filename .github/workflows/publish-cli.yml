@@ -8,6 +8,7 @@ on:
 jobs:
   test-cli:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -25,6 +26,7 @@ jobs:
       - run: npm run build
 
   publish-cli:
+    if: github.event_name == 'release'
     needs: test-cli
     runs-on: ubuntu-latest
     defaults:
@@ -44,7 +46,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Publish stable release
-        if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+        if: github.event_name == 'release' && !github.event.release.prerelease
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

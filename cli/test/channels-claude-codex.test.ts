@@ -29,17 +29,22 @@ function ctx(p: Partial<ChannelContext> & { loreHome: string; homeDir: string })
   };
 }
 
-async function withBin(home: string, name: string, fn: () => Promise<void>) {
+async function withBin(home: string, name: string, fn: (pathEnv: string) => Promise<void>) {
   const bin = path.join(home, 'bin');
   await fs.mkdir(bin, { recursive: true });
-  await fs.writeFile(path.join(bin, name), '#!/bin/bash\nexit 0\n');
-  await fs.chmod(path.join(bin, name), 0o755);
-  const orig = process.env.PATH;
-  process.env.PATH = `${bin}${path.delimiter}${orig ?? ''}`;
+  const executable = path.join(bin, process.platform === 'win32' ? `${name}.cmd` : name);
+  await fs.writeFile(
+    executable,
+    process.platform === 'win32' ? '@exit /b 0\r\n' : '#!/bin/sh\nexit 0\n',
+  );
+  if (process.platform !== 'win32') await fs.chmod(executable, 0o755);
+  const pathEnv = `${bin}${path.delimiter}${process.env.PATH ?? ''}`;
+  const originalPath = process.env.PATH;
+  process.env.PATH = pathEnv;
   try {
-    await fn();
+    await fn(pathEnv);
   } finally {
-    process.env.PATH = orig;
+    process.env.PATH = originalPath;
   }
 }
 
@@ -315,7 +320,7 @@ test('codex replaces an existing marketplace source and patches source, local, a
     const parsed = JSON.parse(raw) as {
       hooks: { SessionStart: Array<{ hooks: Array<{ command: string }> }> };
     };
-    assert.ok(parsed.hooks.SessionStart[0].hooks[0].command.includes(root));
+    assert.ok(parsed.hooks.SessionStart[0].hooks[0].command.includes(root.replace(/\\/g, '/')));
   }
 });
 
@@ -353,7 +358,7 @@ test('codex patches a pre-existing versioned cache after marketplace registratio
 
   const raw = await fs.readFile(path.join(versionRoot, 'hooks', 'hooks.json'), 'utf8');
   assert.doesNotMatch(raw, /__LORE_CODEX_PLUGIN_ROOT__/);
-  assert.ok(raw.includes(versionRoot));
+  assert.ok(raw.includes(versionRoot.replace(/\\/g, '/')));
 });
 
 test('codex final TOML preserves Authorization after host MCP mutation', async () => {
@@ -383,7 +388,9 @@ test('codex final TOML preserves Authorization after host MCP mutation', async (
     assert.match(cfg, /http_headers = \{ Authorization = "Bearer lm_x" \}/);
     assert.match(cfg, /\[plugins\."lore@lore"\]/);
     assert.match(cfg, /hooks = true/);
-    assert.equal((await fs.stat(cfgPath)).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') {
+      assert.equal((await fs.stat(cfgPath)).mode & 0o777, 0o600);
+    }
   });
 });
 
@@ -455,14 +462,17 @@ test('codex installs legacy hooks only when explicitly enabled', async () => {
     }
     return { code: 0, stdout: '', stderr: '' };
   };
-  const env: NodeJS.ProcessEnv = {
-    PATH: process.env.PATH,
-    LORE_CODEX_INSTALL_USER_HOOKS: '1',
-    ONLY_FROM_CONTEXT: 'yes',
-  };
-
-  await withBin(home, 'codex', async () => {
-    const result = await codexInstaller.install(ctx({ loreHome, homeDir: home, run, env }));
+  await withBin(home, 'codex', async (pathEnv) => {
+    const result = await codexInstaller.install(ctx({
+      loreHome,
+      homeDir: home,
+      run,
+      env: {
+        PATH: pathEnv,
+        LORE_CODEX_INSTALL_USER_HOOKS: '1',
+        ONLY_FROM_CONTEXT: 'yes',
+      },
+    }));
     assert.equal(result.status, 'ok');
     assert.ok(hookCall);
     assert.equal(hookCall?.env?.HOME, home);
@@ -543,7 +553,9 @@ test('codex clear token removes stale MCP auth keys', async () => {
     assert.doesNotMatch(cfg, /http_headers/);
     assert.doesNotMatch(cfg, /env_http_headers/);
     assert.match(cfg, /url = "https:\/\/core\.example\/api\/mcp\?client_type=codex"/);
-    assert.equal((await fs.stat(cfgPath)).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') {
+      assert.equal((await fs.stat(cfgPath)).mode & 0o777, 0o600);
+    }
   });
 });
 
@@ -593,7 +605,10 @@ test('codex uninstall preserves non-Lore handlers in a mixed legacy hook entry',
 
 test('codex hook placeholder replacement remains valid JSON for quoted paths', async () => {
   const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-cc-path-'));
-  const home = path.join(parent, 'home "quoted\\segment');
+  const home = path.join(
+    parent,
+    process.platform === 'win32' ? 'home quoted segment' : 'home "quoted\\segment',
+  );
   const loreHome = path.join(home, '.lore');
   await fs.mkdir(loreHome, { recursive: true });
   await seedCodexArtifact(loreHome, {
@@ -621,6 +636,6 @@ test('codex hook placeholder replacement remains valid JSON for quoted paths', a
       hooks: { SessionStart: Array<{ hooks: Array<{ command: string }> }> };
     };
     assert.match(parsed.hooks.SessionStart[0].hooks[0].command, /rules-inject\.mjs/);
-    assert.ok(parsed.hooks.SessionStart[0].hooks[0].command.includes(pluginRoot));
+    assert.ok(parsed.hooks.SessionStart[0].hooks[0].command.includes(pluginRoot.replace(/\\/g, '/')));
   });
 });

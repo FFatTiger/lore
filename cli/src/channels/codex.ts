@@ -37,12 +37,13 @@ async function patchBundledHooks(
   const hooksPath = path.join(pluginRoot, 'hooks', 'hooks.json');
   let hooks = await readJsonFileStrict<unknown>(hooksPath);
   if (hooks === undefined) return;
+  const portablePluginRoot = pluginRoot.replace(/\\/g, '/');
   const replacements = ['__LORE_CODEX_PLUGIN_ROOT__', ...staleRoots]
-    .filter((value, index, values) => value && value !== pluginRoot && values.indexOf(value) === index);
+    .filter((value, index, values) => value && value !== portablePluginRoot && values.indexOf(value) === index);
   const serialized = JSON.stringify(hooks);
   if (!replacements.some((value) => serialized.includes(value))) return;
   for (const staleRoot of replacements) {
-    hooks = replaceStrings(hooks, staleRoot, pluginRoot);
+    hooks = replaceStrings(hooks, staleRoot, portablePluginRoot);
   }
   await writeJsonAtomic(hooksPath, hooks, { mode: 0o644 });
 }

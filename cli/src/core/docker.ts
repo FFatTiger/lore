@@ -1,16 +1,15 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import type { LoreConfig } from './types.js';
+import type { ConnectionMode, LoreConfig } from './types.js';
 import type { ExecFn } from './exec.js';
 import { dockerDir } from './paths.js';
 import { ensureDir } from './fs.js';
+import { normalizeBaseUrl } from './connection.js';
 
-export type DockerResult = {
-  baseUrl: string;
-  dockerManaged: boolean | null; // null = unchanged/unknown
-  skipped: boolean;
-};
+export type DockerResult =
+  | { ok: true; baseUrl: string; dockerManaged: boolean | null; skipped: boolean }
+  | { ok: false; error: string };
 
 const DEFAULT_BASE_URL = 'http://127.0.0.1:18901';
 const DEFAULT_REPO = 'FFatTiger/lore';
@@ -20,6 +19,7 @@ const IMAGE_PREFIX = 'fffattiger/lore';
 
 export type EnsureDockerServerOpts = {
   loreHome: string;
+  connectionMode: ConnectionMode;
   explicitBaseUrl?: string;
   skipDocker: boolean;
   pre: boolean;
@@ -33,8 +33,26 @@ export type EnsureDockerServerOpts = {
   healthPollMs?: number;
 };
 
-function stripTrailingSlash(url: string): string {
-  return url.replace(/\/$/, '');
+function success(
+  baseUrl: string,
+  dockerManaged: boolean | null,
+  skipped: boolean,
+): DockerResult {
+  return { ok: true, baseUrl, dockerManaged, skipped };
+}
+
+function commandDetail(result: { stdout: string; stderr: string }): string {
+  return [result.stderr, result.stdout]
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 300);
+}
+
+function commandFailure(stage: string, result: { stdout: string; stderr: string }): DockerResult {
+  const detail = commandDetail(result);
+  return { ok: false, error: `${stage} failed${detail ? `: ${detail}` : ''}` };
 }
 
 function imageTag(pre: boolean, dev: boolean): string {
@@ -54,17 +72,12 @@ async function commandAvailable(run: ExecFn, argv: string[]): Promise<boolean> {
 
 /** Detect docker compose variant: plugin (`docker compose`) or standalone (`docker-compose`). */
 async function resolveComposeCmd(run: ExecFn): Promise<string[] | null> {
-  if (!(await commandAvailable(run, ['docker', 'version']))) {
-    // still try compose-only tools? shell requires docker first
-    // but docker-compose might exist without docker plugin check path
-  }
   if (await commandAvailable(run, ['docker', 'compose', 'version'])) {
     return ['docker', 'compose'];
   }
   if (await commandAvailable(run, ['docker-compose', 'version'])) {
     return ['docker-compose'];
   }
-  // Some environments only have `docker-compose` without version subcommand success
   if (await commandAvailable(run, ['docker-compose', '--version'])) {
     return ['docker-compose'];
   }
@@ -75,10 +88,7 @@ async function haveDocker(run: ExecFn): Promise<boolean> {
   return commandAvailable(run, ['docker', 'version']);
 }
 
-async function downloadComposeFile(
-  destDir: string,
-  fetchFn: typeof fetch,
-): Promise<boolean> {
+async function downloadComposeFile(destDir: string, fetchFn: typeof fetch): Promise<boolean> {
   try {
     const res = await fetchFn(COMPOSE_URL);
     if (!res.ok) return false;
@@ -135,23 +145,21 @@ async function updateEnvTag(envPath: string, tag: string, dockerPath: string): P
       out.push(line);
     }
   }
-  // Drop pure trailing empty line from split so we control final newline
   while (out.length > 0 && out[out.length - 1] === '') out.pop();
-  if (!found) {
-    out.push(`LORE_FRONTEND_IMAGE=${IMAGE_PREFIX}:${tag}`);
-  }
+  if (!found) out.push(`LORE_FRONTEND_IMAGE=${IMAGE_PREFIX}:${tag}`);
   const keys = envKeySet(out);
-  if (!keys.has('REDIS_DATA_DIR')) {
-    out.push(`REDIS_DATA_DIR=${dockerPath}/data/redis`);
-  }
-  if (!keys.has('REDIS_URL')) {
-    out.push('REDIS_URL=redis://redis:6379/0');
-  }
-  const body = out.join('\n') + '\n';
-  await fs.writeFile(envPath, body, 'utf8');
+  if (!keys.has('REDIS_DATA_DIR')) out.push(`REDIS_DATA_DIR=${dockerPath}/data/redis`);
+  if (!keys.has('REDIS_URL')) out.push('REDIS_URL=redis://redis:6379/0');
+  await fs.writeFile(envPath, `${out.join('\n')}\n`, { encoding: 'utf8', mode: 0o600 });
+  await fs.chmod(envPath, 0o600);
 }
 
-async function writeFreshEnv(envPath: string, dockerPath: string, pre: boolean, dev: boolean): Promise<void> {
+async function writeFreshEnv(
+  envPath: string,
+  dockerPath: string,
+  pre: boolean,
+  dev: boolean,
+): Promise<void> {
   const pgPass = crypto.randomBytes(16).toString('hex');
   const lines = [
     'TZ=Asia/Shanghai',
@@ -166,12 +174,10 @@ async function writeFreshEnv(envPath: string, dockerPath: string, pre: boolean, 
     'REDIS_URL=redis://redis:6379/0',
     `DATABASE_URL=postgresql://lore:${pgPass}@postgres:5432/lore`,
   ];
-  if (dev) {
-    lines.push(`LORE_FRONTEND_IMAGE=${IMAGE_PREFIX}:dev-latest`);
-  } else if (pre) {
-    lines.push(`LORE_FRONTEND_IMAGE=${IMAGE_PREFIX}:pre-latest`);
-  }
-  await fs.writeFile(envPath, lines.join('\n') + '\n', 'utf8');
+  if (dev) lines.push(`LORE_FRONTEND_IMAGE=${IMAGE_PREFIX}:dev-latest`);
+  else if (pre) lines.push(`LORE_FRONTEND_IMAGE=${IMAGE_PREFIX}:pre-latest`);
+  await fs.writeFile(envPath, `${lines.join('\n')}\n`, { encoding: 'utf8', mode: 0o600 });
+  await fs.chmod(envPath, 0o600);
 }
 
 async function waitForHealth(
@@ -190,37 +196,55 @@ async function waitForHealth(
     }
     const remaining = deadline - Date.now();
     if (remaining <= 0) break;
-    await new Promise((r) => setTimeout(r, Math.min(pollMs, remaining)));
+    await new Promise((resolve) => setTimeout(resolve, Math.min(pollMs, remaining)));
   }
   return false;
 }
 
+async function dockerPrerequisites(run: ExecFn): Promise<
+  | { ok: true; composeCmd: string[] }
+  | { ok: false; error: string }
+> {
+  if (!(await haveDocker(run))) return { ok: false, error: 'Docker is not available' };
+  const composeCmd = await resolveComposeCmd(run);
+  if (!composeCmd) return { ok: false, error: 'Docker Compose is not available' };
+  return { ok: true, composeCmd };
+}
+
 async function updateDocker(opts: {
   loreHome: string;
+  baseUrl: string;
   pre: boolean;
   dev: boolean;
   run: ExecFn;
   fetchFn: typeof fetch;
-}): Promise<void> {
-  const dockerPath = dockerDir(opts.loreHome);
-  if (!(await haveDocker(opts.run))) {
-    return;
-  }
-  const composeCmd = await resolveComposeCmd(opts.run);
-  if (!composeCmd) return;
+  healthTimeoutMs: number;
+  healthPollMs: number;
+}): Promise<DockerResult> {
+  const prereq = await dockerPrerequisites(opts.run);
+  if (!prereq.ok) return prereq;
 
-  await downloadComposeFile(dockerPath, opts.fetchFn);
+  const dockerPath = dockerDir(opts.loreHome);
+  if (!(await downloadComposeFile(dockerPath, opts.fetchFn))) {
+    return { ok: false, error: 'Could not download docker-compose.yml' };
+  }
 
   const envPath = path.join(dockerPath, '.env');
   try {
     await fs.access(envPath);
     await updateEnvTag(envPath, imageTag(opts.pre, opts.dev), dockerPath);
   } catch {
-    // no .env — shell only updates when present
+    // Existing managed installs created by older versions may not have an env file.
   }
 
-  await opts.run([...composeCmd, 'pull'], { cwd: dockerPath });
-  await opts.run([...composeCmd, 'up', '-d'], { cwd: dockerPath });
+  const pull = await opts.run([...prereq.composeCmd, 'pull'], { cwd: dockerPath });
+  if (pull.code !== 0) return commandFailure('docker compose pull', pull);
+  const up = await opts.run([...prereq.composeCmd, 'up', '-d'], { cwd: dockerPath });
+  if (up.code !== 0) return commandFailure('docker compose up', up);
+  if (!(await waitForHealth(opts.baseUrl, opts.fetchFn, opts.healthTimeoutMs, opts.healthPollMs))) {
+    return { ok: false, error: `Lore Docker health check timed out for ${opts.baseUrl}` };
+  }
+  return success(opts.baseUrl, null, false);
 }
 
 async function startFreshDocker(opts: {
@@ -233,90 +257,67 @@ async function startFreshDocker(opts: {
   healthTimeoutMs: number;
   healthPollMs: number;
 }): Promise<DockerResult> {
-  if (!(await haveDocker(opts.run))) {
-    return { baseUrl: '', dockerManaged: null, skipped: false };
-  }
-  const composeCmd = await resolveComposeCmd(opts.run);
-  if (!composeCmd) {
-    return { baseUrl: '', dockerManaged: null, skipped: false };
-  }
+  const prereq = await dockerPrerequisites(opts.run);
+  if (!prereq.ok) return prereq;
 
   const dockerPath = dockerDir(opts.loreHome);
   await ensureDir(dockerPath);
-
-  const ok = await downloadComposeFile(dockerPath, opts.fetchFn);
-  if (!ok) {
-    return { baseUrl: '', dockerManaged: null, skipped: false };
+  if (!(await downloadComposeFile(dockerPath, opts.fetchFn))) {
+    return { ok: false, error: 'Could not download docker-compose.yml' };
   }
 
   const envPath = path.join(dockerPath, '.env');
   try {
     await fs.access(envPath);
+    await fs.chmod(envPath, 0o600);
   } catch {
     await writeFreshEnv(envPath, dockerPath, opts.pre, opts.dev);
   }
 
-  const up = await opts.run([...composeCmd, 'up', '-d'], { cwd: dockerPath });
-  if (up.code !== 0) {
-    return { baseUrl: '', dockerManaged: null, skipped: false };
+  const up = await opts.run([...prereq.composeCmd, 'up', '-d'], { cwd: dockerPath });
+  if (up.code !== 0) return commandFailure('docker compose up', up);
+  if (!(await waitForHealth(opts.defaultBaseUrl, opts.fetchFn, opts.healthTimeoutMs, opts.healthPollMs))) {
+    return {
+      ok: false,
+      error: `Lore Docker health check timed out for ${opts.defaultBaseUrl}`,
+    };
   }
-
-  const baseUrl = opts.defaultBaseUrl;
-  await waitForHealth(baseUrl, opts.fetchFn, opts.healthTimeoutMs, opts.healthPollMs);
-
-  return { baseUrl, dockerManaged: true, skipped: false };
+  return success(opts.defaultBaseUrl, true, false);
 }
 
-/**
- * Port of scripts/install.sh start_docker / update_docker.
- *
- * Behavior:
- * 1. skipDocker → explicit or saved base; skipped true
- * 2. explicitBaseUrl → external server, dockerManaged false
- * 3. saved base + docker_managed → updateDocker
- * 4. saved base without docker_managed → use saved external
- * 5. else start fresh compose under loreHome/docker
- */
 export async function ensureDockerServer(opts: EnsureDockerServerOpts): Promise<DockerResult> {
   const defaultBaseUrl = opts.defaultBaseUrl ?? DEFAULT_BASE_URL;
   const fetchFn = opts.fetchImpl ?? fetch;
-  // Shell: 60 attempts * 3s = 180s
   const healthTimeoutMs = opts.healthTimeoutMs ?? 180_000;
-  // Cap default poll so short healthTimeoutMs (tests) still finishes quickly.
   const healthPollMs =
     opts.healthPollMs ?? Math.min(3000, Math.max(10, Math.floor(healthTimeoutMs / 60)));
 
+  if (opts.connectionMode === 'external') {
+    if (!opts.explicitBaseUrl) return { ok: false, error: 'External Lore server URL is required' };
+    return success(normalizeBaseUrl(opts.explicitBaseUrl), false, opts.skipDocker);
+  }
+
   if (opts.skipDocker) {
-    const base =
-      (opts.explicitBaseUrl && stripTrailingSlash(opts.explicitBaseUrl)) ||
-      (opts.saved?.base_url && stripTrailingSlash(opts.saved.base_url)) ||
-      '';
-    return { baseUrl: base, dockerManaged: null, skipped: true };
+    const baseUrl = opts.saved?.base_url || opts.explicitBaseUrl;
+    if (!baseUrl) return { ok: false, error: 'Saved Lore server URL is required' };
+    return success(normalizeBaseUrl(baseUrl), null, true);
   }
 
-  if (opts.explicitBaseUrl) {
-    return {
-      baseUrl: stripTrailingSlash(opts.explicitBaseUrl),
-      dockerManaged: false,
-      skipped: false,
-    };
-  }
-
-  const savedBase = opts.saved?.base_url?.trim();
-  if (savedBase) {
-    const baseUrl = stripTrailingSlash(savedBase);
-    if (opts.saved?.docker_managed === true) {
-      await updateDocker({
-        loreHome: opts.loreHome,
-        pre: opts.pre,
-        dev: opts.dev,
-        run: opts.run,
-        fetchFn,
-      });
-      return { baseUrl, dockerManaged: null, skipped: false };
-    }
-    // saved external
-    return { baseUrl, dockerManaged: null, skipped: false };
+  if (opts.connectionMode === 'preserve') {
+    const savedBase = opts.saved?.base_url?.trim();
+    if (!savedBase) return { ok: false, error: 'Saved Lore server URL is required' };
+    const baseUrl = normalizeBaseUrl(savedBase);
+    if (opts.saved?.docker_managed !== true) return success(baseUrl, null, false);
+    return updateDocker({
+      loreHome: opts.loreHome,
+      baseUrl,
+      pre: opts.pre,
+      dev: opts.dev,
+      run: opts.run,
+      fetchFn,
+      healthTimeoutMs,
+      healthPollMs,
+    });
   }
 
   return startFreshDocker({

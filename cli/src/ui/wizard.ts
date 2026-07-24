@@ -1,4 +1,4 @@
-import type { ChannelId, Lang } from '../core/types.js';
+import type { ChannelId, ConnectionMode as InstallConnectionMode, Lang } from '../core/types.js';
 import { ALL_CHANNELS } from '../core/types.js';
 import type { InstallSnapshot } from '../core/snapshot.js';
 import { formatSnapshot } from '../core/snapshot.js';
@@ -17,6 +17,7 @@ export type WizardResult =
   | { kind: 'exit'; lang: Lang };
 
 export type InstallPlan = {
+  connectionMode: InstallConnectionMode;
   lang: Lang;
   baseUrl?: string;
   apiToken?: string;
@@ -43,8 +44,9 @@ async function collectConnection(
   mode: ConnectionMode,
   snapshot: InstallSnapshot,
   env: NodeJS.ProcessEnv,
-): Promise<Pick<InstallPlan, 'baseUrl' | 'apiToken' | 'skipDocker' | 'explicitBaseUrl' | 'pre' | 'dev' | 'keepExistingToken'> & { release: ReleaseChannel }> {
+): Promise<Pick<InstallPlan, 'connectionMode' | 'baseUrl' | 'apiToken' | 'skipDocker' | 'explicitBaseUrl' | 'pre' | 'dev' | 'keepExistingToken'> & { release: ReleaseChannel }> {
   const hasToken = Boolean(snapshot.config.api_token);
+  let connectionMode: InstallConnectionMode = 'docker';
   let baseUrl: string | undefined;
   let apiToken = '';
   let skipDocker = false;
@@ -53,6 +55,7 @@ async function collectConnection(
   let keepExistingToken = true;
 
   if (mode === 'saas') {
+    connectionMode = 'external';
     baseUrl = defaultSaasBaseUrl(env);
     skipDocker = true;
     explicitBaseUrl = true;
@@ -60,6 +63,7 @@ async function collectConnection(
     keepExistingToken = !apiToken;
     release = await prompt.pickRelease('stable');
   } else if (mode === 'external') {
+    connectionMode = 'external';
     baseUrl = await prompt.askBaseUrl(snapshot.config.base_url || 'http://127.0.0.1:18901');
     skipDocker = true;
     explicitBaseUrl = true;
@@ -67,13 +71,16 @@ async function collectConnection(
     keepExistingToken = !apiToken;
     release = await prompt.pickRelease('stable');
   } else {
-    // docker
+    // An explicit Docker selection never preserves a remote token.
+    connectionMode = 'docker';
+    keepExistingToken = false;
     skipDocker = false;
     explicitBaseUrl = false;
     release = await prompt.pickRelease('stable');
   }
 
   return {
+    connectionMode,
     baseUrl,
     apiToken: apiToken || undefined,
     skipDocker,
@@ -109,6 +116,7 @@ export async function runInteractiveWizard(opts: RunWizardOptions): Promise<Wiza
       purpose: 'install',
     });
     const plan: InstallPlan = {
+      connectionMode: conn.connectionMode,
       lang,
       baseUrl: conn.baseUrl,
       apiToken: conn.apiToken,
@@ -167,6 +175,7 @@ export async function runInteractiveWizard(opts: RunWizardOptions): Promise<Wiza
       purpose: 'install',
     });
     const plan: InstallPlan = {
+      connectionMode: conn.connectionMode,
       lang,
       baseUrl: conn.baseUrl,
       apiToken: conn.apiToken,
@@ -213,6 +222,7 @@ export async function runInteractiveWizard(opts: RunWizardOptions): Promise<Wiza
 
   const kind = opts.snapshot.serverKind;
   const plan: InstallPlan = {
+    connectionMode: 'preserve',
     lang,
     baseUrl: opts.snapshot.config.base_url,
     apiToken: undefined,

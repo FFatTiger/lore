@@ -82,6 +82,7 @@ async function executeInstallPlan(
 
   const docker = await ensureDockerServer({
     loreHome,
+    connectionMode: plan.explicitBaseUrl ? 'external' : 'preserve',
     explicitBaseUrl: plan.explicitBaseUrl ? plan.baseUrl : undefined,
     skipDocker: plan.skipDocker,
     pre: plan.pre,
@@ -92,7 +93,7 @@ async function executeInstallPlan(
   });
 
   const resolvedBase = (
-    docker.baseUrl ||
+    (docker.ok ? docker.baseUrl : '') ||
     plan.baseUrl ||
     saved.base_url ||
     'http://127.0.0.1:18901'
@@ -121,7 +122,8 @@ async function executeInstallPlan(
     { base_url: resolvedBase, api_token: apiToken },
     {
       writeVersion: false,
-      dockerManaged: docker.dockerManaged === null ? undefined : docker.dockerManaged,
+      dockerManaged:
+        docker.ok && docker.dockerManaged !== null ? docker.dockerManaged : undefined,
     },
   );
 
@@ -184,7 +186,8 @@ async function executeInstallPlan(
     {
       writeVersion: shouldBumpVersion,
       releaseVersion,
-      dockerManaged: docker.dockerManaged === null ? undefined : docker.dockerManaged,
+      dockerManaged:
+        docker.ok && docker.dockerManaged !== null ? docker.dockerManaged : undefined,
     },
   );
 

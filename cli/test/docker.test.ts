@@ -9,14 +9,24 @@ import type { ExecFn } from '../src/core/exec.ts';
 const DEFAULT_BASE = 'http://127.0.0.1:18901';
 const COMPOSE_BODY = 'services:\n  web:\n    image: fffattiger/lore:latest\n';
 
-function mockRun(handlers: Array<(argv: string[], opts?: { cwd?: string }) => { code: number; stdout?: string; stderr?: string } | null>): ExecFn {
+function mockRun(
+  handlers: Array<
+    (argv: string[], opts?: { cwd?: string }) =>
+      | { code: number; stdout?: string; stderr?: string }
+      | null
+  >,
+): ExecFn & { calls: string[][] } {
   const calls: string[][] = [];
-  const fn: ExecFn & { calls: string[][] } = (async (argv, opts) => {
+  const fn = (async (argv, opts) => {
     calls.push(argv);
-    for (const h of handlers) {
-      const res = h(argv, opts);
-      if (res) {
-        return { code: res.code, stdout: res.stdout ?? '', stderr: res.stderr ?? '' };
+    for (const handler of handlers) {
+      const result = handler(argv, opts);
+      if (result) {
+        return {
+          code: result.code,
+          stdout: result.stdout ?? '',
+          stderr: result.stderr ?? '',
+        };
       }
     }
     return { code: 0, stdout: '', stderr: '' };
@@ -25,11 +35,11 @@ function mockRun(handlers: Array<(argv: string[], opts?: { cwd?: string }) => { 
   return fn;
 }
 
-function dockerComposeOk(): ExecFn {
+function dockerComposeOk(): ExecFn & { calls: string[][] } {
   return mockRun([
     (argv) => {
-      if (argv[0] === 'docker' && argv[1] === 'version') return { code: 0 };
-      if (argv[0] === 'docker' && argv[1] === 'compose' && argv[2] === 'version') return { code: 0 };
+      if (argv.join(' ') === 'docker version') return { code: 0 };
+      if (argv.join(' ') === 'docker compose version') return { code: 0 };
       if (argv[0] === 'docker' && argv[1] === 'compose') return { code: 0 };
       return null;
     },
@@ -49,112 +59,110 @@ function composeFetch(): typeof fetch {
   };
 }
 
-test('skipDocker uses explicit base and sets skipped', async () => {
+test('external mode uses explicit base without compose', async () => {
   const run = mockRun([]);
-  const res = await ensureDockerServer({
+  const result = await ensureDockerServer({
     loreHome: '/tmp/unused',
+    connectionMode: 'external',
     skipDocker: true,
-    explicitBaseUrl: 'http://example.com:9000',
+    explicitBaseUrl: 'https://lore.example/',
     pre: false,
     dev: false,
     run,
   });
-  assert.equal(res.skipped, true);
-  assert.equal(res.baseUrl, 'http://example.com:9000');
-  assert.equal(res.dockerManaged, null);
-  assert.equal((run as ExecFn & { calls: string[][] }).calls.length, 0);
+  assert.deepEqual(result, {
+    ok: true,
+    baseUrl: 'https://lore.example',
+    dockerManaged: false,
+    skipped: true,
+  });
+  assert.equal(run.calls.length, 0);
 });
 
-test('skipDocker falls back to saved base_url', async () => {
-  const res = await ensureDockerServer({
+test('preserve with skipDocker uses saved base', async () => {
+  const result = await ensureDockerServer({
     loreHome: '/tmp/unused',
+    connectionMode: 'preserve',
     skipDocker: true,
     pre: false,
     dev: false,
     saved: { base_url: 'http://saved.example' },
     run: mockRun([]),
   });
-  assert.equal(res.skipped, true);
-  assert.equal(res.baseUrl, 'http://saved.example');
-  assert.equal(res.dockerManaged, null);
-});
-
-test('explicitBaseUrl uses external server without compose', async () => {
-  const run = mockRun([]);
-  const res = await ensureDockerServer({
-    loreHome: '/tmp/unused',
-    skipDocker: false,
-    explicitBaseUrl: 'https://lore.example/',
-    pre: false,
-    dev: false,
-    run,
+  assert.deepEqual(result, {
+    ok: true,
+    baseUrl: 'http://saved.example',
+    dockerManaged: null,
+    skipped: true,
   });
-  assert.equal(res.skipped, false);
-  assert.equal(res.baseUrl, 'https://lore.example');
-  assert.equal(res.dockerManaged, false);
-  assert.equal((run as ExecFn & { calls: string[][] }).calls.length, 0);
 });
 
-test('saved base + docker_managed updates compose and keeps base', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-docker-'));
-  const dockerPath = path.join(dir, 'docker');
-  await fs.mkdir(dockerPath, { recursive: true });
-  await fs.writeFile(
-    path.join(dockerPath, '.env'),
-    'WEB_PORT=18901\nLORE_FRONTEND_IMAGE=fffattiger/lore:latest\n',
-    'utf8',
-  );
-  await fs.writeFile(path.join(dockerPath, 'docker-compose.yml'), 'old\n', 'utf8');
-
-  const run = dockerComposeOk();
-  const res = await ensureDockerServer({
-    loreHome: dir,
-    skipDocker: false,
-    pre: false,
-    dev: false,
-    saved: { base_url: 'http://127.0.0.1:18901', docker_managed: true },
-    run,
-    fetchImpl: composeFetch(),
-    healthTimeoutMs: 1000,
-  });
-
-  assert.equal(res.skipped, false);
-  assert.equal(res.baseUrl, 'http://127.0.0.1:18901');
-  assert.equal(res.dockerManaged, null);
-
-  const compose = await fs.readFile(path.join(dockerPath, 'docker-compose.yml'), 'utf8');
-  assert.equal(compose, COMPOSE_BODY);
-
-  const calls = (run as ExecFn & { calls: string[][] }).calls.map((c) => c.join(' '));
-  assert.ok(calls.some((c) => c.includes('compose pull') || c === 'docker compose pull'));
-  assert.ok(calls.some((c) => c.includes('compose up -d') || c === 'docker compose up -d'));
-});
-
-test('saved external server does not run compose', async () => {
+test('preserve saved external server does not run compose', async () => {
   const run = mockRun([]);
-  const res = await ensureDockerServer({
+  const result = await ensureDockerServer({
     loreHome: '/tmp/unused',
+    connectionMode: 'preserve',
     skipDocker: false,
     pre: false,
     dev: false,
     saved: { base_url: 'http://remote:18901', docker_managed: false },
     run,
   });
-  assert.equal(res.baseUrl, 'http://remote:18901');
-  assert.equal(res.dockerManaged, null);
-  assert.equal(res.skipped, false);
-  assert.equal((run as ExecFn & { calls: string[][] }).calls.length, 0);
+  assert.deepEqual(result, {
+    ok: true,
+    baseUrl: 'http://remote:18901',
+    dockerManaged: null,
+    skipped: false,
+  });
+  assert.equal(run.calls.length, 0);
 });
 
-test('fresh start writes compose/.env, ups containers, waits for health', async () => {
+test('saved managed Docker updates compose, waits for health, and keeps base', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-docker-'));
+  const dockerPath = path.join(dir, 'docker');
+  const envPath = path.join(dockerPath, '.env');
+  await fs.mkdir(dockerPath, { recursive: true });
+  await fs.writeFile(
+    envPath,
+    'WEB_PORT=18901\nLORE_FRONTEND_IMAGE=fffattiger/lore:latest\n',
+    { encoding: 'utf8', mode: 0o644 },
+  );
+  await fs.writeFile(path.join(dockerPath, 'docker-compose.yml'), 'old\n', 'utf8');
+
+  const run = dockerComposeOk();
+  const result = await ensureDockerServer({
+    loreHome: dir,
+    connectionMode: 'preserve',
+    skipDocker: false,
+    pre: false,
+    dev: false,
+    saved: { base_url: DEFAULT_BASE, docker_managed: true },
+    run,
+    fetchImpl: composeFetch(),
+    healthTimeoutMs: 1000,
+  });
+
+  assert.deepEqual(result, {
+    ok: true,
+    baseUrl: DEFAULT_BASE,
+    dockerManaged: null,
+    skipped: false,
+  });
+  assert.equal(await fs.readFile(path.join(dockerPath, 'docker-compose.yml'), 'utf8'), COMPOSE_BODY);
+  assert.equal((await fs.stat(envPath)).mode & 0o777, 0o600);
+  assert.match(await fs.readFile(envPath, 'utf8'), /REDIS_DATA_DIR=/);
+  const calls = run.calls.map((call) => call.join(' '));
+  assert.ok(calls.includes('docker compose pull'));
+  assert.ok(calls.includes('docker compose up -d'));
+});
+
+test('fresh Docker start writes secure compose env and waits for health', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-docker-'));
   const run = dockerComposeOk();
   let healthHits = 0;
   const fetchImpl: typeof fetch = async (input) => {
     const url = String(input);
-    if (url.includes('docker-compose.yml')) {
-      return new Response(COMPOSE_BODY, { status: 200 });
-    }
+    if (url.includes('docker-compose.yml')) return new Response(COMPOSE_BODY, { status: 200 });
     if (url.includes('/api/health')) {
       healthHits += 1;
       return new Response('ok', { status: 200 });
@@ -162,8 +170,9 @@ test('fresh start writes compose/.env, ups containers, waits for health', async 
     return new Response('no', { status: 404 });
   };
 
-  const res = await ensureDockerServer({
+  const result = await ensureDockerServer({
     loreHome: dir,
+    connectionMode: 'docker',
     skipDocker: false,
     pre: false,
     dev: false,
@@ -173,73 +182,77 @@ test('fresh start writes compose/.env, ups containers, waits for health', async 
     defaultBaseUrl: DEFAULT_BASE,
   });
 
-  assert.equal(res.skipped, false);
-  assert.equal(res.baseUrl, DEFAULT_BASE);
-  assert.equal(res.dockerManaged, true);
+  assert.deepEqual(result, {
+    ok: true,
+    baseUrl: DEFAULT_BASE,
+    dockerManaged: true,
+    skipped: false,
+  });
   assert.ok(healthHits >= 1);
-
   const dockerPath = path.join(dir, 'docker');
-  const compose = await fs.readFile(path.join(dockerPath, 'docker-compose.yml'), 'utf8');
-  assert.equal(compose, COMPOSE_BODY);
-
-  const envText = await fs.readFile(path.join(dockerPath, '.env'), 'utf8');
+  const envPath = path.join(dockerPath, '.env');
+  const envText = await fs.readFile(envPath, 'utf8');
+  assert.equal((await fs.stat(envPath)).mode & 0o777, 0o600);
   assert.match(envText, /POSTGRES_DB=lore/);
   assert.match(envText, /WEB_PORT=18901/);
   assert.match(envText, /REDIS_URL=redis:\/\/redis:6379\/0/);
-  assert.match(envText, new RegExp(`POSTGRES_DATA_DIR=${dockerPath}/data/postgres`.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  // latest channel: no LORE_FRONTEND_IMAGE override (compose default)
   assert.doesNotMatch(envText, /LORE_FRONTEND_IMAGE=/);
-
-  const calls = (run as ExecFn & { calls: string[][] }).calls.map((c) => c.join(' '));
-  assert.ok(calls.some((c) => c === 'docker compose up -d'));
-  assert.ok(!calls.some((c) => c === 'docker compose pull'));
+  assert.ok(run.calls.some((call) => call.join(' ') === 'docker compose up -d'));
+  assert.ok(!run.calls.some((call) => call.join(' ') === 'docker compose pull'));
 });
 
-test('fresh start with --pre writes pre-latest image tag', async () => {
+test('fresh Docker start writes pre-latest image tag', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-docker-'));
-  const res = await ensureDockerServer({
+  const result = await ensureDockerServer({
     loreHome: dir,
+    connectionMode: 'docker',
     skipDocker: false,
     pre: true,
     dev: false,
     run: dockerComposeOk(),
     fetchImpl: composeFetch(),
-    healthTimeoutMs: 5000,
+    healthTimeoutMs: 1000,
   });
-  assert.equal(res.dockerManaged, true);
-  const envText = await fs.readFile(path.join(dir, 'docker', '.env'), 'utf8');
-  assert.match(envText, /LORE_FRONTEND_IMAGE=fffattiger\/lore:pre-latest/);
+  assert.equal(result.ok, true);
+  assert.match(
+    await fs.readFile(path.join(dir, 'docker', '.env'), 'utf8'),
+    /LORE_FRONTEND_IMAGE=fffattiger\/lore:pre-latest/,
+  );
 });
 
-test('fresh start with --dev writes dev-latest image tag', async () => {
+test('fresh Docker start writes dev-latest image tag', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-docker-'));
-  const res = await ensureDockerServer({
+  const result = await ensureDockerServer({
     loreHome: dir,
+    connectionMode: 'docker',
     skipDocker: false,
     pre: false,
     dev: true,
     run: dockerComposeOk(),
     fetchImpl: composeFetch(),
-    healthTimeoutMs: 5000,
+    healthTimeoutMs: 1000,
   });
-  assert.equal(res.dockerManaged, true);
-  const envText = await fs.readFile(path.join(dir, 'docker', '.env'), 'utf8');
-  assert.match(envText, /LORE_FRONTEND_IMAGE=fffattiger\/lore:dev-latest/);
+  assert.equal(result.ok, true);
+  assert.match(
+    await fs.readFile(path.join(dir, 'docker', '.env'), 'utf8'),
+    /LORE_FRONTEND_IMAGE=fffattiger\/lore:dev-latest/,
+  );
 });
 
-test('updateDocker rewrites LORE_FRONTEND_IMAGE for --dev', async () => {
+test('managed update rewrites image tag and secures an existing env', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-docker-'));
   const dockerPath = path.join(dir, 'docker');
+  const envPath = path.join(dockerPath, '.env');
   await fs.mkdir(dockerPath, { recursive: true });
   await fs.writeFile(
-    path.join(dockerPath, '.env'),
+    envPath,
     'WEB_PORT=18901\nLORE_FRONTEND_IMAGE=fffattiger/lore:latest\n',
-    'utf8',
+    { encoding: 'utf8', mode: 0o644 },
   );
-  await fs.writeFile(path.join(dockerPath, 'docker-compose.yml'), 'old\n', 'utf8');
 
-  await ensureDockerServer({
+  const result = await ensureDockerServer({
     loreHome: dir,
+    connectionMode: 'preserve',
     skipDocker: false,
     pre: false,
     dev: true,
@@ -249,26 +262,142 @@ test('updateDocker rewrites LORE_FRONTEND_IMAGE for --dev', async () => {
     healthTimeoutMs: 1000,
   });
 
-  const envText = await fs.readFile(path.join(dockerPath, '.env'), 'utf8');
+  assert.equal(result.ok, true);
+  assert.equal((await fs.stat(envPath)).mode & 0o777, 0o600);
+  const envText = await fs.readFile(envPath, 'utf8');
   assert.match(envText, /LORE_FRONTEND_IMAGE=fffattiger\/lore:dev-latest/);
   assert.match(envText, /REDIS_DATA_DIR=/);
   assert.match(envText, /REDIS_URL=redis:\/\/redis:6379\/0/);
 });
 
-test('no docker available on fresh start returns empty unmanaged result', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-docker-'));
-  const run: ExecFn = async () => {
-    throw new Error('ENOENT docker');
-  };
-  const res = await ensureDockerServer({
-    loreHome: dir,
+test('explicit Docker selection fails when Docker is unavailable', async () => {
+  const result = await ensureDockerServer({
+    loreHome: await fs.mkdtemp(path.join(os.tmpdir(), 'lore-docker-')),
+    connectionMode: 'docker',
+    skipDocker: false,
+    pre: false,
+    dev: false,
+    run: async () => {
+      throw new Error('ENOENT docker');
+    },
+    fetchImpl: composeFetch(),
+  });
+  assert.deepEqual(result, { ok: false, error: 'Docker is not available' });
+});
+
+test('explicit Docker selection fails when Compose is unavailable', async () => {
+  const result = await ensureDockerServer({
+    loreHome: await fs.mkdtemp(path.join(os.tmpdir(), 'lore-docker-')),
+    connectionMode: 'docker',
+    skipDocker: false,
+    pre: false,
+    dev: false,
+    run: mockRun([
+      (argv) => (argv.join(' ') === 'docker version' ? { code: 0 } : { code: 1 }),
+    ]),
+    fetchImpl: composeFetch(),
+  });
+  assert.deepEqual(result, { ok: false, error: 'Docker Compose is not available' });
+});
+
+test('explicit Docker selection fails when compose download fails', async () => {
+  const result = await ensureDockerServer({
+    loreHome: await fs.mkdtemp(path.join(os.tmpdir(), 'lore-docker-')),
+    connectionMode: 'docker',
+    skipDocker: false,
+    pre: false,
+    dev: false,
+    run: dockerComposeOk(),
+    fetchImpl: async () => new Response('no', { status: 503 }),
+  });
+  assert.deepEqual(result, { ok: false, error: 'Could not download docker-compose.yml' });
+});
+
+test('explicit Docker selection reports compose up failure', async () => {
+  const run = mockRun([
+    (argv) => {
+      if (argv.join(' ') === 'docker version') return { code: 0 };
+      if (argv.join(' ') === 'docker compose version') return { code: 0 };
+      if (argv.join(' ') === 'docker compose up -d') {
+        return { code: 17, stderr: 'daemon unavailable' };
+      }
+      return null;
+    },
+  ]);
+  const result = await ensureDockerServer({
+    loreHome: await fs.mkdtemp(path.join(os.tmpdir(), 'lore-docker-')),
+    connectionMode: 'docker',
     skipDocker: false,
     pre: false,
     dev: false,
     run,
     fetchImpl: composeFetch(),
   });
-  assert.equal(res.skipped, false);
-  assert.equal(res.dockerManaged, null);
-  assert.equal(res.baseUrl, '');
+  assert.deepEqual(result, { ok: false, error: 'docker compose up failed: daemon unavailable' });
+});
+
+test('explicit Docker selection reports health timeout', async () => {
+  const fetchImpl: typeof fetch = async (input) => {
+    if (String(input).includes('docker-compose.yml')) return new Response(COMPOSE_BODY, { status: 200 });
+    return new Response('not ready', { status: 503 });
+  };
+  const result = await ensureDockerServer({
+    loreHome: await fs.mkdtemp(path.join(os.tmpdir(), 'lore-docker-')),
+    connectionMode: 'docker',
+    skipDocker: false,
+    pre: false,
+    dev: false,
+    run: dockerComposeOk(),
+    fetchImpl,
+    healthTimeoutMs: 10,
+    healthPollMs: 1,
+  });
+  assert.deepEqual(result, {
+    ok: false,
+    error: `Lore Docker health check timed out for ${DEFAULT_BASE}`,
+  });
+});
+
+test('managed Docker update reports compose pull failure', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-docker-'));
+  const dockerPath = path.join(dir, 'docker');
+  await fs.mkdir(dockerPath, { recursive: true });
+  await fs.writeFile(path.join(dockerPath, '.env'), 'WEB_PORT=18901\n', 'utf8');
+  const run = mockRun([
+    (argv) => {
+      if (argv.join(' ') === 'docker version') return { code: 0 };
+      if (argv.join(' ') === 'docker compose version') return { code: 0 };
+      if (argv.join(' ') === 'docker compose pull') {
+        return { code: 9, stderr: 'registry denied' };
+      }
+      return null;
+    },
+  ]);
+  const result = await ensureDockerServer({
+    loreHome: dir,
+    connectionMode: 'preserve',
+    skipDocker: false,
+    pre: false,
+    dev: false,
+    saved: { base_url: DEFAULT_BASE, docker_managed: true },
+    run,
+    fetchImpl: composeFetch(),
+  });
+  assert.deepEqual(result, { ok: false, error: 'docker compose pull failed: registry denied' });
+});
+
+test('explicit Docker reconfigure ignores a saved external URL', async () => {
+  const result = await ensureDockerServer({
+    loreHome: await fs.mkdtemp(path.join(os.tmpdir(), 'lore-docker-')),
+    connectionMode: 'docker',
+    skipDocker: false,
+    pre: false,
+    dev: false,
+    saved: { base_url: 'https://api.loremem.com', docker_managed: false },
+    run: dockerComposeOk(),
+    fetchImpl: composeFetch(),
+    healthTimeoutMs: 100,
+  });
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.baseUrl, DEFAULT_BASE);
 });

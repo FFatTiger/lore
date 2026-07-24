@@ -88,6 +88,7 @@ test('first-run SaaS asks token only (no custom base url path)', async () => {
   });
   assert.equal(result.kind, 'install');
   if (result.kind !== 'install') return;
+  assert.equal(result.plan.connectionMode, 'external');
   assert.equal(result.plan.baseUrl, 'https://api.loremem.com');
   assert.equal(result.plan.apiToken, 'lm_saas');
   assert.equal(result.plan.skipDocker, true);
@@ -109,6 +110,7 @@ test('first-run external collects URL + token', async () => {
   });
   assert.equal(result.kind, 'install');
   if (result.kind !== 'install') return;
+  assert.equal(result.plan.connectionMode, 'external');
   assert.equal(result.plan.baseUrl, 'https://core.example');
   assert.equal(result.plan.apiToken, 'lm_ext');
 });
@@ -141,10 +143,32 @@ test('existing install update keeps server and only picks channels', async () =>
   });
   assert.equal(result.kind, 'install');
   if (result.kind !== 'install') return;
+  assert.equal(result.plan.connectionMode, 'preserve');
   assert.equal(result.plan.baseUrl, 'https://api.loremem.com');
   assert.equal(result.plan.apiToken, undefined);
   assert.equal(result.plan.keepExistingToken, true);
   assert.deepEqual(result.plan.channels, ['pi', 'codex']);
+});
+
+test('Docker reconfigure is explicit and does not preserve external connection', async () => {
+  const result = await runInteractiveWizard({
+    prompt: scriptedPrompt({
+      existing: 'reconfigure',
+      first: 'docker',
+      channels: ['codex'],
+    }),
+    snapshot: baseSnapshot({
+      hasConfig: true,
+      serverKind: 'saas',
+      config: { base_url: 'https://api.loremem.com', api_token: 'lm_old' },
+    }),
+    initialLang: 'en',
+    langLocked: true,
+  });
+  assert.equal(result.kind, 'install');
+  if (result.kind !== 'install') return;
+  assert.equal(result.plan.connectionMode, 'docker');
+  assert.equal(result.plan.keepExistingToken, false);
 });
 
 test('existing uninstall returns uninstall plan', async () => {

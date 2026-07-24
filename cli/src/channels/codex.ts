@@ -150,7 +150,7 @@ export const codexInstaller: ChannelInstaller = {
   },
 
   async install(ctx: ChannelContext): Promise<ChannelResult> {
-    if (!(await haveCommand('codex'))) {
+    if (!(await haveCommand('codex', ctx.env ?? process.env))) {
       return { id: 'codex', status: 'skipped', message: 'codex CLI not found' };
     }
 

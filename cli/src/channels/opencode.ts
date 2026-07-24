@@ -55,8 +55,9 @@ async function configureCompatibility(
   homeDir: string,
   releaseVersion: string | undefined,
   run: ExecFn,
+  env: NodeJS.ProcessEnv,
 ): Promise<CompatibilityResult> {
-  if (!(await haveCommand('python3'))) return { ok: true };
+  if (!(await haveCommand('python3', env))) return { ok: true };
   const helper = await resolveCompatHelper(loreHome, releaseVersion, run);
   if (!helper) return { ok: true };
 
@@ -152,7 +153,7 @@ export const opencodeInstaller: ChannelInstaller = {
   },
 
   async install(ctx: ChannelContext): Promise<ChannelResult> {
-    if (!(await haveCommand('opencode'))) {
+    if (!(await haveCommand('opencode', ctx.env ?? process.env))) {
       return { id: 'opencode', status: 'skipped', message: 'opencode CLI not found' };
     }
 
@@ -201,7 +202,13 @@ export const opencodeInstaller: ChannelInstaller = {
     await fs.rename(tmp, target);
 
     const run = ctx.run ?? createExec();
-    const compatibility = await configureCompatibility(ctx.loreHome, homeDir, ctx.releaseVersion, run);
+    const compatibility = await configureCompatibility(
+      ctx.loreHome,
+      homeDir,
+      ctx.releaseVersion,
+      run,
+      ctx.env ?? process.env,
+    );
     if (!compatibility.ok) {
       return { id: 'opencode', status: 'failed', message: compatibility.error };
     }

@@ -55,7 +55,7 @@ export const openclawInstaller: ChannelInstaller = {
   },
 
   async install(ctx: ChannelContext): Promise<ChannelResult> {
-    if (!(await haveCommand('openclaw'))) {
+    if (!(await haveCommand('openclaw', ctx.env ?? process.env))) {
       return { id: 'openclaw', status: 'skipped', message: 'openclaw CLI not found' };
     }
 

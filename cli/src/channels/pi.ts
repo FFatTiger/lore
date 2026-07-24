@@ -35,7 +35,7 @@ export const piInstaller: ChannelInstaller = {
   },
 
   async install(ctx: ChannelContext): Promise<ChannelResult> {
-    if (!(await haveCommand('pi'))) {
+    if (!(await haveCommand('pi', ctx.env ?? process.env))) {
       return { id: 'pi', status: 'skipped', message: 'pi CLI not found' };
     }
 

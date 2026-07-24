@@ -63,7 +63,7 @@ export const claudecodeInstaller: ChannelInstaller = {
   },
 
   async install(ctx: ChannelContext): Promise<ChannelResult> {
-    if (!(await haveCommand('claude'))) {
+    if (!(await haveCommand('claude', ctx.env ?? process.env))) {
       return { id: 'claudecode', status: 'skipped', message: 'claude CLI not found' };
     }
 

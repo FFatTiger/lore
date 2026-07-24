@@ -229,11 +229,16 @@ test('non-interactive update defaults to installed and partial channels', async 
   );
   await fs.mkdir(path.join(loreHome, 'hermes', 'lore_memory'), { recursive: true });
   await fs.mkdir(path.join(loreHome, 'pi'), { recursive: true });
+  const fakeBin = path.join(loreHome, 'bin');
+  await fs.mkdir(fakeBin, { recursive: true });
+  const fakePi = path.join(fakeBin, process.platform === 'win32' ? 'pi.cmd' : 'pi');
+  await fs.writeFile(fakePi, process.platform === 'win32' ? '@exit /b 0\r\n' : '#!/bin/sh\nexit 0\n');
+  if (process.platform !== 'win32') await fs.chmod(fakePi, 0o755);
   const { lines, log } = silentLog();
 
   const exit = await runUpdate(parseArgv(['update']), {
     isTTY: false,
-    env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome, PATH: '' },
+    env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome, PATH: fakeBin },
     log,
     fetchImpl: async (input) => {
       if (String(input).endsWith('/releases/latest')) {

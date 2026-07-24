@@ -44,6 +44,10 @@ test('haveCommand finds binary via PATH fs.access', async () => {
   }
 });
 
+test('haveCommand uses the explicitly supplied PATH', async () => {
+  assert.equal(await haveCommand('node', { PATH: '' }), false);
+});
+
 test('downloadOrSkip needInstall=2 reuses existing dir', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-art-'));
   const dest = path.join(dir, 'pi');

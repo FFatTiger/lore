@@ -8,6 +8,7 @@ import { ALL_CHANNELS } from '../core/types.js';
 import type { InstallSnapshot } from '../core/snapshot.js';
 import { formatSnapshot } from '../core/snapshot.js';
 import { defaultSaasBaseUrl } from '../core/saas.js';
+import { normalizeBaseUrl } from '../core/connection.js';
 import type {
   ConnectionMode,
   ExistingAction,
@@ -45,36 +46,46 @@ export type RunWizardOptions = {
   env?: NodeJS.ProcessEnv;
 };
 
+function canKeepExistingToken(snapshot: InstallSnapshot, baseUrl: string | undefined): boolean {
+  if (!baseUrl || !snapshot.config.base_url || !snapshot.config.api_token) return false;
+  try {
+    return normalizeBaseUrl(baseUrl) === normalizeBaseUrl(snapshot.config.base_url);
+  } catch {
+    return false;
+  }
+}
+
 async function collectConnection(
   prompt: PromptService,
   mode: ConnectionMode,
   snapshot: InstallSnapshot,
   env: NodeJS.ProcessEnv,
 ): Promise<Pick<InstallPlan, 'connectionMode' | 'baseUrl' | 'apiToken' | 'skipDocker' | 'explicitBaseUrl' | 'pre' | 'dev' | 'keepExistingToken'> & { release: ReleaseChannel }> {
-  const hasToken = Boolean(snapshot.config.api_token);
   let connectionMode: InstallConnectionMode = 'docker';
   let baseUrl: string | undefined;
   let apiToken = '';
   let skipDocker = false;
   let explicitBaseUrl = false;
   let release: ReleaseChannel = 'stable';
-  let keepExistingToken = true;
+  let keepExistingToken = false;
 
   if (mode === 'saas') {
     connectionMode = 'external';
     baseUrl = defaultSaasBaseUrl(env);
     skipDocker = true;
     explicitBaseUrl = true;
-    apiToken = await prompt.askToken({ required: !hasToken, hasExisting: hasToken });
-    keepExistingToken = !apiToken;
+    const canKeep = canKeepExistingToken(snapshot, baseUrl);
+    apiToken = await prompt.askToken({ required: !canKeep, hasExisting: canKeep });
+    keepExistingToken = !apiToken && canKeep;
     release = await prompt.pickRelease('stable');
   } else if (mode === 'external') {
     connectionMode = 'external';
     baseUrl = await prompt.askBaseUrl(snapshot.config.base_url || 'http://127.0.0.1:18901');
     skipDocker = true;
     explicitBaseUrl = true;
-    apiToken = await prompt.askToken({ required: false, hasExisting: hasToken });
-    keepExistingToken = !apiToken;
+    const canKeep = canKeepExistingToken(snapshot, baseUrl);
+    apiToken = await prompt.askToken({ required: false, hasExisting: canKeep });
+    keepExistingToken = !apiToken && canKeep;
     release = await prompt.pickRelease('stable');
   } else {
     // An explicit Docker selection never preserves a remote token.

@@ -386,6 +386,27 @@ test('managed Docker update reports compose pull failure', async () => {
   assert.deepEqual(result, { ok: false, error: 'docker compose pull failed: registry denied' });
 });
 
+test('managed Docker update fails when its env cannot be read securely', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-docker-'));
+  const dockerPath = path.join(dir, 'docker');
+  const envPath = path.join(dockerPath, '.env');
+  await fs.mkdir(envPath, { recursive: true });
+
+  const result = await ensureDockerServer({
+    loreHome: dir,
+    connectionMode: 'preserve',
+    skipDocker: false,
+    pre: false,
+    dev: false,
+    saved: { base_url: DEFAULT_BASE, docker_managed: true },
+    run: dockerComposeOk(),
+    fetchImpl: composeFetch(),
+  });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.error, /Docker environment update failed/i);
+});
+
 test('explicit Docker reconfigure ignores a saved external URL', async () => {
   const result = await ensureDockerServer({
     loreHome: await fs.mkdtemp(path.join(os.tmpdir(), 'lore-docker-')),

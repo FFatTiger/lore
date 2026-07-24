@@ -91,9 +91,27 @@ test('first-run SaaS asks token only (no custom base url path)', async () => {
   assert.equal(result.plan.connectionMode, 'external');
   assert.equal(result.plan.baseUrl, 'https://api.loremem.com');
   assert.equal(result.plan.apiToken, 'lm_saas');
+  assert.equal(result.plan.keepExistingToken, false);
   assert.equal(result.plan.skipDocker, true);
   assert.equal(result.plan.explicitBaseUrl, true);
   assert.deepEqual(result.plan.channels, ['claudecode']);
+});
+
+test('first-run external without a saved token does not claim it will keep one', async () => {
+  const result = await runInteractiveWizard({
+    prompt: scriptedPrompt({
+      first: 'external',
+      baseUrl: 'https://core.example',
+      token: '',
+      channels: ['pi'],
+    }),
+    snapshot: baseSnapshot(),
+    initialLang: 'en',
+    langLocked: true,
+  });
+  assert.equal(result.kind, 'install');
+  if (result.kind !== 'install') return;
+  assert.equal(result.plan.keepExistingToken, false);
 });
 
 test('first-run external collects URL + token', async () => {
@@ -113,6 +131,73 @@ test('first-run external collects URL + token', async () => {
   assert.equal(result.plan.connectionMode, 'external');
   assert.equal(result.plan.baseUrl, 'https://core.example');
   assert.equal(result.plan.apiToken, 'lm_ext');
+});
+
+test('external reconfigure clears the keep-token summary when the URL changes', async () => {
+  const result = await runInteractiveWizard({
+    prompt: scriptedPrompt({
+      existing: 'reconfigure',
+      first: 'external',
+      baseUrl: 'https://new-core.example',
+      token: '',
+      channels: ['pi'],
+    }),
+    snapshot: baseSnapshot({
+      hasConfig: true,
+      serverKind: 'external',
+      config: { base_url: 'https://old-core.example', api_token: 'lm_old' },
+    }),
+    initialLang: 'en',
+    langLocked: true,
+  });
+  assert.equal(result.kind, 'install');
+  if (result.kind !== 'install') return;
+  assert.equal(result.plan.keepExistingToken, false);
+});
+
+test('SaaS reconfigure clears the keep-token summary when the URL changes', async () => {
+  const result = await runInteractiveWizard({
+    prompt: scriptedPrompt({
+      existing: 'reconfigure',
+      first: 'saas',
+      token: '',
+      channels: ['codex'],
+    }),
+    snapshot: baseSnapshot({
+      hasConfig: true,
+      serverKind: 'external',
+      config: { base_url: 'https://old-core.example', api_token: 'lm_old' },
+    }),
+    initialLang: 'en',
+    langLocked: true,
+    env: { LORE_SAAS_BASE_URL: 'https://saas-new.example' },
+  });
+  assert.equal(result.kind, 'install');
+  if (result.kind !== 'install') return;
+  assert.equal(result.plan.baseUrl, 'https://saas-new.example');
+  assert.equal(result.plan.keepExistingToken, false);
+});
+
+test('external reconfigure keeps a saved token for the same normalized URL', async () => {
+  const result = await runInteractiveWizard({
+    prompt: scriptedPrompt({
+      existing: 'reconfigure',
+      first: 'external',
+      baseUrl: 'https://CORE.example/',
+      token: '',
+      channels: ['pi'],
+    }),
+    snapshot: baseSnapshot({
+      hasConfig: true,
+      serverKind: 'external',
+      config: { base_url: 'https://core.example', api_token: 'lm_old' },
+    }),
+    initialLang: 'en',
+    langLocked: true,
+  });
+  assert.equal(result.kind, 'install');
+  if (result.kind !== 'install') return;
+  assert.equal(result.plan.keepExistingToken, true);
 });
 
 test('existing install update keeps server and only picks channels', async () => {

@@ -130,13 +130,14 @@ function envKeySet(lines: string[]): Set<string> {
   return keys;
 }
 
+function formatFailure(stage: string, err: unknown): DockerResult {
+  const raw = err instanceof Error ? err.message : String(err);
+  const detail = raw.replace(/\s+/g, ' ').slice(0, 300);
+  return { ok: false, error: `${stage} failed${detail ? `: ${detail}` : ''}` };
+}
+
 async function updateEnvTag(envPath: string, tag: string, dockerPath: string): Promise<void> {
-  let text = '';
-  try {
-    text = await fs.readFile(envPath, 'utf8');
-  } catch {
-    return;
-  }
+  const text = await fs.readFile(envPath, 'utf8');
   const lines = parseEnvLines(text);
   const out: string[] = [];
   let found = false;
@@ -234,10 +235,11 @@ async function updateDocker(opts: {
 
   const envPath = path.join(dockerPath, '.env');
   try {
-    await fs.access(envPath);
     await updateEnvTag(envPath, imageTag(opts.pre, opts.dev), dockerPath);
-  } catch {
-    // Existing managed installs created by older versions may not have an env file.
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      return formatFailure('Docker environment update', err);
+    }
   }
 
   const pullFailure = await runDockerCommand(
@@ -281,10 +283,17 @@ async function startFreshDocker(opts: {
 
   const envPath = path.join(dockerPath, '.env');
   try {
-    await fs.access(envPath);
     await fs.chmod(envPath, 0o600);
-  } catch {
-    await writeFreshEnv(envPath, dockerPath, opts.pre, opts.dev);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      try {
+        await writeFreshEnv(envPath, dockerPath, opts.pre, opts.dev);
+      } catch (writeErr) {
+        return formatFailure('Docker environment creation', writeErr);
+      }
+    } else {
+      return formatFailure('Docker environment permission update', err);
+    }
   }
 
   const upFailure = await runDockerCommand(

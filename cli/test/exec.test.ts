@@ -42,3 +42,26 @@ test('runChecked bounds and normalizes subprocess diagnostics', async () => {
     },
   );
 });
+
+test('runChecked sanitizes rejected subprocess errors', async () => {
+  const token = 'lm_rejected_secret';
+  await assert.rejects(
+    runChecked(
+      async () => {
+        throw new Error(`spawn failed\nBearer ${token} ${'x'.repeat(500)}`);
+      },
+      'Codex marketplace registration',
+      ['codex', 'plugin', 'marketplace', 'add', token],
+      undefined,
+      { redact: [token] },
+    ),
+    (err: Error) => {
+      assert.match(err.message, /^Codex marketplace registration failed:/);
+      assert.ok(err.message.includes('[REDACTED]'));
+      assert.ok(!err.message.includes(token));
+      assert.doesNotMatch(err.message, /\n/);
+      assert.ok(err.message.length <= 'Codex marketplace registration failed: '.length + 300);
+      return true;
+    },
+  );
+});

@@ -8,12 +8,16 @@ export type ExecFn = (
   opts?: ExecOptions,
 ) => Promise<ExecResult>;
 
-function boundedDetail(result: ExecResult, redact: string[]): string {
-  let detail = [result.stderr, result.stdout].filter(Boolean).join(' ').trim();
+function sanitizeDetail(value: string, redact: string[]): string {
+  let detail = value.trim();
   for (const secret of redact.filter(Boolean)) {
     detail = detail.split(secret).join('[REDACTED]');
   }
   return detail.replace(/\s+/g, ' ').slice(0, 300);
+}
+
+function boundedDetail(result: ExecResult, redact: string[]): string {
+  return sanitizeDetail([result.stderr, result.stdout].filter(Boolean).join(' '), redact);
 }
 
 export async function runChecked(
@@ -23,9 +27,17 @@ export async function runChecked(
   opts?: ExecOptions,
   safety: { redact?: string[] } = {},
 ): Promise<ExecResult> {
-  const result = await run(argv, opts);
+  const redact = safety.redact ?? [];
+  let result: ExecResult;
+  try {
+    result = await run(argv, opts);
+  } catch (err) {
+    const raw = err instanceof Error ? err.message : String(err);
+    const detail = sanitizeDetail(raw, redact);
+    throw new Error(`${stage} failed${detail ? `: ${detail}` : ''}`);
+  }
   if (result.code !== 0) {
-    const detail = boundedDetail(result, safety.redact ?? []);
+    const detail = boundedDetail(result, redact);
     throw new Error(`${stage} failed (exit ${result.code})${detail ? `: ${detail}` : ''}`);
   }
   return result;

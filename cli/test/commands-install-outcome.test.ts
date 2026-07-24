@@ -3,6 +3,7 @@ import test from 'node:test';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { zipSync } from 'fflate';
 import { runInstall, runUpdate } from '../src/commands/install.ts';
 import { parseArgv } from '../src/core/args.ts';
 import { getConfigPath } from '../src/core/paths.ts';
@@ -151,10 +152,11 @@ test('failed selected channel prevents global version advancement', async () => 
           }
           return new Response('ok', { status: 200 });
         },
-        run: async (argv) => {
+        artifactRun: async (argv) => {
           if (argv[0] === 'curl') return { code: 22, stdout: '', stderr: 'download failed' };
           return { code: 0, stdout: '', stderr: '' };
         },
+        run: async () => ({ code: 0, stdout: '', stderr: '' }),
       },
     );
     assert.equal(exit, 1);
@@ -162,6 +164,53 @@ test('failed selected channel prevents global version advancement', async () => 
   } finally {
     process.env.PATH = oldPath;
   }
+});
+
+test('production install keeps artifact downloads on the native Node path', async () => {
+  const loreHome = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-native-artifact-'));
+  const fakeBin = path.join(loreHome, 'bin');
+  await fs.mkdir(fakeBin, { recursive: true });
+  const fakePi = path.join(fakeBin, process.platform === 'win32' ? 'pi.cmd' : 'pi');
+  await fs.writeFile(fakePi, process.platform === 'win32' ? '@exit /b 0\r\n' : '#!/bin/sh\nexit 0\n');
+  if (process.platform !== 'win32') await fs.chmod(fakePi, 0o755);
+
+  const commands: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(zipSync({
+    'index.ts': new TextEncoder().encode('export default {};\n'),
+  }), { status: 200 });
+  let exit: number;
+  try {
+    exit = await runInstall(
+      parseArgv([
+        'install', '--base-url', 'https://core.example', '--api-token', 'lm_x',
+        '--channels', 'pi', '--skip-docker',
+      ]),
+      {
+        isTTY: false,
+        env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome, PATH: fakeBin },
+        fetchImpl: async (input) => {
+          if (String(input).endsWith('/releases/latest')) {
+            return new Response(null, {
+              status: 302,
+              headers: { location: 'https://github.com/FFatTiger/lore/releases/tag/v1.3.19' },
+            });
+          }
+          return new Response('ok', { status: 200 });
+        },
+        run: async (argv) => {
+          commands.push(argv[0] ?? '');
+          return { code: 0, stdout: '', stderr: '' };
+        },
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(exit, 0);
+  assert.equal(commands.includes('curl'), false);
+  assert.equal(commands.includes('unzip'), false);
 });
 
 test('update with an ok and a skipped channel is incomplete', async () => {
@@ -192,7 +241,7 @@ test('update with an ok and a skipped channel is incomplete', async () => {
         }
         return new Response('ok', { status: 200 });
       },
-      run: async (argv) => {
+      artifactRun: async (argv) => {
         if (argv[0] === 'curl') {
           const output = argv[argv.indexOf('-o') + 1];
           await fs.mkdir(path.dirname(output), { recursive: true });

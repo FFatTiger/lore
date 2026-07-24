@@ -73,7 +73,7 @@ export const claudecodeInstaller: ChannelInstaller = {
       dest,
       releaseVersion: ctx.releaseVersion,
       needInstall: ctx.needInstall,
-      run: ctx.run,
+      run: ctx.artifactRun,
     });
     if (!download.ok) {
       return { id: 'claudecode', status: 'failed', message: download.reason ?? 'claudecode artifact download failed' };

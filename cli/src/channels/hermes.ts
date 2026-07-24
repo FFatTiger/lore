@@ -21,7 +21,7 @@ export const hermesInstaller: ChannelInstaller = {
       dest,
       releaseVersion: ctx.releaseVersion,
       needInstall: ctx.needInstall,
-      run: ctx.run,
+      run: ctx.artifactRun,
     });
     if (!download.ok) {
       return { id: 'hermes', status: 'failed', message: download.reason ?? 'hermes artifact download failed' };

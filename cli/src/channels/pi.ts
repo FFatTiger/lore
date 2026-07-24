@@ -45,7 +45,7 @@ export const piInstaller: ChannelInstaller = {
       dest,
       releaseVersion: ctx.releaseVersion,
       needInstall: ctx.needInstall,
-      run: ctx.run,
+      run: ctx.artifactRun,
     });
     if (!download.ok) {
       return { id: 'pi', status: 'failed', message: download.reason ?? 'pi artifact download failed' };

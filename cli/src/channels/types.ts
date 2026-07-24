@@ -12,8 +12,10 @@ export type ChannelContext = {
   lang: Lang;
   /** Environment propagated to host-specific helpers. */
   env?: NodeJS.ProcessEnv;
-  /** Injectable command runner (default: createExec). */
+  /** Injectable command runner for host CLI operations (default: createExec). */
   run?: ExecFn;
+  /** Injectable artifact runner for curl/unzip compatibility tests. Production uses Node fetch + ZIP extraction. */
+  artifactRun?: ExecFn;
   /** Override home directory for tests (default: os.homedir()). */
   homeDir?: string;
 };

@@ -80,7 +80,8 @@ test('flag install with mocked deps writes config', async () => {
   const exit = await runInstall(args, {
     isTTY: false,
     env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome },
-    run: runExec,
+    artifactRun: runExec,
+    run: async () => ({ code: 0, stdout: '', stderr: '' }),
     fetchImpl: async (url) => {
       if (String(url).includes('api.github.com')) {
         return new Response(JSON.stringify({ tag_name: 'v1.3.15' }), { status: 200 });
@@ -150,7 +151,8 @@ test('interactive SaaS path never asks base URL and uses api.loremem.com', async
     isTTY: true,
     prompt,
     env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome },
-    run: runExec,
+    artifactRun: runExec,
+    run: async () => ({ code: 0, stdout: '', stderr: '' }),
     fetchImpl: async (url) => {
       if (String(url).includes('api.github.com')) {
         return new Response(JSON.stringify({ tag_name: 'v1.3.16' }), { status: 200 });
@@ -193,7 +195,7 @@ test('same explicit base keeps a saved token when no new token is supplied', asy
     {
       isTTY: false,
       env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome },
-      run: artifactRun(),
+      artifactRun: artifactRun(),
       fetchImpl: stableRelease(),
     },
   );
@@ -224,7 +226,7 @@ test('changed explicit base clears a saved token', async () => {
     {
       isTTY: false,
       env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome },
-      run: artifactRun(),
+      artifactRun: artifactRun(),
       fetchImpl: stableRelease(),
     },
   );
@@ -249,7 +251,7 @@ test('non-interactive SaaS install without a token fails before channel effects'
     {
       isTTY: false,
       env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome },
-      run: artifactRun(),
+      artifactRun: artifactRun(),
       fetchImpl: stableRelease(),
     },
   );
@@ -274,7 +276,7 @@ test('non-loopback HTTP with a token fails before channel effects', async () => 
     {
       isTTY: false,
       env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome },
-      run: artifactRun(),
+      artifactRun: artifactRun(),
       fetchImpl: stableRelease(),
     },
   );
@@ -322,6 +324,7 @@ test('interactive Docker reconfigure ignores saved SaaS connection and clears to
     prompt,
     env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome },
     run,
+    artifactRun: artifactRun(),
     fetchImpl,
     log: { info() {}, ok() {}, warn() {}, err() {}, section() {} },
   });

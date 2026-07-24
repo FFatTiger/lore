@@ -65,7 +65,7 @@ export const openclawInstaller: ChannelInstaller = {
       dest,
       releaseVersion: ctx.releaseVersion,
       needInstall: ctx.needInstall,
-      run: ctx.run,
+      run: ctx.artifactRun,
     });
     if (!download.ok) {
       return { id: 'openclaw', status: 'failed', message: download.reason ?? 'openclaw artifact download failed' };

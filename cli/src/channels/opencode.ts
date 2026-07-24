@@ -163,7 +163,7 @@ export const opencodeInstaller: ChannelInstaller = {
       dest,
       releaseVersion: ctx.releaseVersion,
       needInstall: ctx.needInstall,
-      run: ctx.run,
+      run: ctx.artifactRun,
     });
     if (!download.ok) {
       return { id: 'opencode', status: 'failed', message: download.reason ?? 'opencode artifact download failed' };

@@ -162,7 +162,7 @@ export const codexInstaller: ChannelInstaller = {
       dest: marketDir,
       releaseVersion: ctx.releaseVersion,
       needInstall: ctx.needInstall,
-      run: ctx.run,
+      run: ctx.artifactRun,
     });
     if (!download.ok) {
       return { id: 'codex', status: 'failed', message: download.reason ?? 'codex artifact download failed' };

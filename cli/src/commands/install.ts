@@ -29,6 +29,7 @@ import { runStatus } from './status.js';
 export type InstallDeps = {
   env?: NodeJS.ProcessEnv;
   run?: ExecFn;
+  artifactRun?: ExecFn;
   fetchImpl?: typeof fetch;
   isTTY?: boolean;
   prompt?: PromptService | null;
@@ -80,13 +81,14 @@ async function executeInstallPlan(
   deps: {
     env: NodeJS.ProcessEnv;
     run: ExecFn;
+    artifactRun?: ExecFn;
     fetchImpl: typeof fetch;
     log: ReturnType<typeof createLogger>;
     loreHome: string;
     configPath: string;
   },
 ): Promise<number> {
-  const { env, run, fetchImpl, log, loreHome, configPath } = deps;
+  const { env, run, artifactRun, fetchImpl, log, loreHome, configPath } = deps;
 
   if (!plan.channels.length) {
     log.err(t(plan.lang, 'install.no_channels'));
@@ -228,6 +230,7 @@ async function executeInstallPlan(
         force: plan.force,
         lang: plan.lang,
         run,
+        artifactRun,
         env,
         homeDir: env.HOME || undefined,
       });
@@ -306,6 +309,7 @@ async function runInstallOperation(
 ): Promise<number> {
   const env = deps.env ?? process.env;
   const run = deps.run ?? createExec();
+  const artifactRun = deps.artifactRun;
   const fetchImpl = deps.fetchImpl ?? fetch;
   const isTTY = deps.isTTY ?? Boolean(process.stdin.isTTY && process.stdout.isTTY);
   const log = deps.log ?? createLogger();
@@ -382,7 +386,7 @@ async function runInstallOperation(
           force: plan.force,
           skipDocker: plan.skipDocker,
         },
-        { env, run, fetchImpl, log, loreHome, configPath },
+        { env, run, artifactRun, fetchImpl, log, loreHome, configPath },
       );
     }
   }
@@ -429,7 +433,7 @@ async function runInstallOperation(
       force: args.force,
       skipDocker: args.skipDocker,
     },
-    { env, run, fetchImpl, log, loreHome, configPath },
+    { env, run, artifactRun, fetchImpl, log, loreHome, configPath },
   );
 }
 

@@ -285,6 +285,139 @@ test('non-loopback HTTP with a token fails before channel effects', async () => 
   await assert.rejects(fs.access(path.join(loreHome, 'hermes')));
 });
 
+test('non-loopback HTTP with a token succeeds only with the explicit per-run flag', async () => {
+  const loreHome = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-insecure-http-allowed-'));
+  const exit = await runInstall(
+    parseArgv([
+      'install',
+      '--base-url',
+      'http://192.168.1.5:18901',
+      '--api-token',
+      'lm_x',
+      '--channels',
+      'hermes',
+      '--skip-docker',
+      '--allow-insecure-http',
+    ]),
+    {
+      isTTY: false,
+      env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome },
+      artifactRun: artifactRun(),
+      fetchImpl: stableRelease(),
+    },
+  );
+
+  assert.equal(exit, 0);
+  const cfg = await readConfig(getConfigPath(loreHome));
+  assert.equal(cfg.base_url, 'http://192.168.1.5:18901');
+  assert.equal(cfg.api_token, 'lm_x');
+  assert.equal('allow_insecure_http' in cfg, false);
+  await fs.access(path.join(loreHome, 'hermes'));
+});
+
+test('interactive insecure HTTP approval propagates through the execution safety gate', async () => {
+  const loreHome = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-insecure-http-wizard-'));
+  let riskConfirmed = false;
+  const prompt: PromptService = {
+    async pickLanguage() { return 'en'; },
+    showStatus() {},
+    async pickFirstRunAction() { return 'external'; },
+    async pickExistingAction() { return 'update'; },
+    async askBaseUrl() { return 'http://192.168.1.5:18901'; },
+    async askToken() { return 'lm_x'; },
+    async pickChannels() { return ['hermes']; },
+    async pickRelease() { return 'stable'; },
+    async confirm() { return true; },
+    async askYesNo(question, defaultYes) {
+      assert.equal(defaultYes, false);
+      assert.match(question, /http:\/\/192\.168\.1\.5:18901/);
+      riskConfirmed = true;
+      return true;
+    },
+  };
+
+  const exit = await runInstall(parseArgv([]), {
+    isTTY: true,
+    prompt,
+    env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome },
+    artifactRun: artifactRun(),
+    fetchImpl: stableRelease(),
+    log: { info() {}, ok() {}, warn() {}, err() {}, section() {} },
+  });
+
+  assert.equal(exit, 0);
+  assert.equal(riskConfirmed, true);
+  const cfg = await readConfig(getConfigPath(loreHome));
+  assert.equal(cfg.base_url, 'http://192.168.1.5:18901');
+  assert.equal(cfg.api_token, 'lm_x');
+  assert.equal('allow_insecure_http' in cfg, false);
+});
+
+test('--yes does not authorize non-loopback HTTP with a token', async () => {
+  const loreHome = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-insecure-http-yes-'));
+  const exit = await runInstall(
+    parseArgv([
+      'install',
+      '--base-url',
+      'http://192.168.1.5:18901',
+      '--api-token',
+      'lm_x',
+      '--channels',
+      'hermes',
+      '--skip-docker',
+      '--yes',
+    ]),
+    {
+      isTTY: true,
+      env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome },
+      prompt: {
+        async pickLanguage() { throw new Error('parameter mode must not prompt'); },
+        showStatus() { throw new Error('parameter mode must not prompt'); },
+        async pickFirstRunAction() { throw new Error('parameter mode must not prompt'); },
+        async pickExistingAction() { throw new Error('parameter mode must not prompt'); },
+        async askBaseUrl() { throw new Error('parameter mode must not prompt'); },
+        async askToken() { throw new Error('parameter mode must not prompt'); },
+        async pickChannels() { throw new Error('parameter mode must not prompt'); },
+        async pickRelease() { throw new Error('parameter mode must not prompt'); },
+        async confirm() { throw new Error('parameter mode must not prompt'); },
+        async askYesNo() { throw new Error('parameter mode must not prompt'); },
+      },
+      artifactRun: artifactRun(),
+      fetchImpl: stableRelease(),
+    },
+  );
+
+  assert.equal(exit, 2);
+  await assert.rejects(fs.access(path.join(loreHome, 'hermes')));
+});
+
+test('TTY install with an explicit command or flag remains parameter mode and never opens the wizard', async () => {
+  for (const argv of [['install'], ['install', '--yes']]) {
+    const loreHome = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-tty-flags-'));
+    const exit = await runInstall(parseArgv(argv), {
+      isTTY: true,
+      env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome },
+      prompt: {
+        async pickLanguage() { throw new Error('parameter mode must not prompt'); },
+        showStatus() { throw new Error('parameter mode must not prompt'); },
+        async pickFirstRunAction() { throw new Error('parameter mode must not prompt'); },
+        async pickExistingAction() { throw new Error('parameter mode must not prompt'); },
+        async askBaseUrl() { throw new Error('parameter mode must not prompt'); },
+        async askToken() { throw new Error('parameter mode must not prompt'); },
+        async pickChannels() { throw new Error('parameter mode must not prompt'); },
+        async pickRelease() { throw new Error('parameter mode must not prompt'); },
+        async confirm() { throw new Error('parameter mode must not prompt'); },
+        async askYesNo() { throw new Error('parameter mode must not prompt'); },
+      },
+      run: async (command) => command[0] === 'docker'
+        ? { code: 1, stdout: '', stderr: 'docker unavailable' }
+        : { code: 0, stdout: '', stderr: '' },
+      fetchImpl: stableRelease(),
+    });
+    assert.equal(exit, 1);
+  }
+});
+
 test('interactive Docker reconfigure ignores saved SaaS connection and clears token', async () => {
   const loreHome = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-docker-reconfigure-'));
   await writeConfig(

@@ -39,17 +39,27 @@ export function resolveTokenDecision(input: {
     : { action: 'clear', apiToken: undefined };
 }
 
-export function assertTokenTransport(baseUrl: string, apiToken?: string): void {
-  if (!apiToken) return;
+export function isInsecureHttpTokenTransport(baseUrl: string, apiToken?: string): boolean {
+  if (!apiToken) return false;
   const parsed = new URL(normalizeBaseUrl(baseUrl));
-  if (parsed.protocol === 'https:') return;
+  if (parsed.protocol !== 'http:') return false;
   const host = parsed.hostname.toLowerCase();
   const loopback =
     host === 'localhost' ||
     host === '::1' ||
     host === '[::1]' ||
     /^127(?:\.\d{1,3}){3}$/.test(host);
-  if (!loopback) {
-    throw new Error('API tokens require HTTPS for non-loopback Lore servers');
+  return !loopback;
+}
+
+export function assertTokenTransport(
+  baseUrl: string,
+  apiToken?: string,
+  opts: { allowInsecureHttp?: boolean } = {},
+): void {
+  if (isInsecureHttpTokenTransport(baseUrl, apiToken) && !opts.allowInsecureHttp) {
+    throw new Error(
+      'API tokens require HTTPS for non-loopback Lore servers (pass --allow-insecure-http to explicitly accept the risk for this run)',
+    );
   }
 }

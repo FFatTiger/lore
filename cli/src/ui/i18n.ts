@@ -22,6 +22,8 @@ const en: Messages = {
   'docker.saved_external': 'Using saved external server',
   'config.path': 'Config: {path}',
   'setup.url': 'Setup: {baseUrl}/setup',
+  'security.insecure_http_token_warning':
+    'Security warning: {baseUrl} uses plain HTTP on a non-loopback host. Your API token could be intercepted or changed in transit. Allow this insecure connection for this run only?',
 };
 
 const zh: Messages = {
@@ -42,6 +44,8 @@ const zh: Messages = {
   'docker.saved_external': '使用已保存的外部服务',
   'config.path': '配置：{path}',
   'setup.url': '设置：{baseUrl}/setup',
+  'security.insecure_http_token_warning':
+    '安全警告：{baseUrl} 在非回环地址上使用明文 HTTP。API Token 可能在传输途中被窃取或篡改。是否仅为本次执行放行此不安全连接？',
 };
 
 const tables: Record<Lang, Messages> = { en, zh };

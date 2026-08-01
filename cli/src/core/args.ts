@@ -11,11 +11,13 @@ export type GlobalArgs = {
   dev: boolean;
   lang?: Lang;
   yes: boolean;
+  allowInsecureHttp: boolean;
   purge: boolean;
   help: boolean;
   explicitBaseUrl: boolean;
   explicitApiToken: boolean;
   interactiveDefault: boolean;
+  parameterMode: boolean;
 };
 
 const COMMANDS = new Set(['install', 'update', 'uninstall', 'status', 'help', 'connect']);
@@ -53,11 +55,13 @@ export function parseArgv(argv: string[]): GlobalArgs {
     pre: false,
     dev: false,
     yes: false,
+    allowInsecureHttp: false,
     purge: false,
     help: false,
     explicitBaseUrl: false,
     explicitApiToken: false,
     interactiveDefault: false,
+    parameterMode: false,
   };
 
   let i = 0;
@@ -116,6 +120,9 @@ export function parseArgv(argv: string[]): GlobalArgs {
       case '--dev':
         result.dev = true;
         break;
+      case '--allow-insecure-http':
+        result.allowInsecureHttp = true;
+        break;
       case '--yes':
       case '-y':
         result.yes = true;
@@ -132,6 +139,8 @@ export function parseArgv(argv: string[]): GlobalArgs {
     }
     i += 1;
   }
+
+  result.parameterMode = sawCommand || sawAnyFlag;
 
   // No command + no flags → interactive default install
   if (!sawCommand && !sawAnyFlag) {

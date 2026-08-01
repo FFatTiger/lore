@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   assertTokenTransport,
+  isInsecureHttpTokenTransport,
   normalizeBaseUrl,
   resolveTokenDecision,
 } from '../src/core/connection.ts';
@@ -60,8 +61,18 @@ test('force clear overrides same-server token reuse', () => {
   );
 });
 
-test('rejects tokens over non-loopback HTTP', () => {
+test('detects token transport over non-loopback HTTP', () => {
+  assert.equal(isInsecureHttpTokenTransport('http://192.168.1.5:18901', 'lm_x'), true);
+  assert.equal(isInsecureHttpTokenTransport('http://localhost:18901', 'lm_x'), false);
+  assert.equal(isInsecureHttpTokenTransport('https://core.example', 'lm_x'), false);
+  assert.equal(isInsecureHttpTokenTransport('http://core.example', undefined), false);
+});
+
+test('rejects tokens over non-loopback HTTP unless explicitly allowed', () => {
   assert.throws(() => assertTokenTransport('http://192.168.1.5:18901', 'lm_x'), /HTTPS/i);
+  assert.doesNotThrow(() =>
+    assertTokenTransport('http://192.168.1.5:18901', 'lm_x', { allowInsecureHttp: true }),
+  );
   assert.doesNotThrow(() => assertTokenTransport('http://localhost:18901', 'lm_x'));
   assert.doesNotThrow(() => assertTokenTransport('http://127.9.8.7:18901', 'lm_x'));
   assert.doesNotThrow(() => assertTokenTransport('http://[::1]:18901', 'lm_x'));

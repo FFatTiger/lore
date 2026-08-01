@@ -38,6 +38,9 @@ function scriptedPrompt(script: {
   confirm?: boolean;
   force?: boolean;
   purge?: boolean;
+  insecureApproval?: boolean;
+  onRiskQuestion?: (question: string, defaultYes: boolean) => void;
+  onConfirm?: () => void;
 }): PromptService {
   return {
     async pickLanguage(def) {
@@ -63,12 +66,14 @@ function scriptedPrompt(script: {
       return script.release ?? def;
     },
     async confirm() {
+      script.onConfirm?.();
       return script.confirm ?? true;
     },
     async askYesNo(_q, def = true) {
       if (_q.toLowerCase().includes('purge') || _q.includes('清除')) return script.purge ?? false;
       if (_q.toLowerCase().includes('force') || _q.includes('强制')) return script.force ?? false;
-      return def;
+      script.onRiskQuestion?.(_q, def);
+      return script.insecureApproval ?? def;
     },
   };
 }
@@ -95,6 +100,92 @@ test('first-run SaaS asks token only (no custom base url path)', async () => {
   assert.equal(result.plan.skipDocker, true);
   assert.equal(result.plan.explicitBaseUrl, true);
   assert.deepEqual(result.plan.channels, ['claudecode']);
+});
+
+test('interactive external HTTP + new token requires separate default-No risk approval before summary', async () => {
+  const events: string[] = [];
+  let warning = '';
+  const result = await runInteractiveWizard({
+    prompt: scriptedPrompt({
+      first: 'external',
+      baseUrl: 'http://192.168.1.5:18901',
+      token: 'lm_secret_must_not_leak',
+      channels: ['pi'],
+      insecureApproval: true,
+      onRiskQuestion(question, defaultYes) {
+        events.push('risk');
+        warning = question;
+        assert.equal(defaultYes, false);
+      },
+      onConfirm() {
+        events.push('confirm');
+      },
+    }),
+    snapshot: baseSnapshot(),
+    initialLang: 'en',
+    langLocked: true,
+  });
+  assert.equal(result.kind, 'install');
+  if (result.kind !== 'install') return;
+  assert.equal(result.plan.allowInsecureHttp, true);
+  assert.deepEqual(events, ['risk', 'confirm']);
+  assert.match(warning, /http:\/\/192\.168\.1\.5:18901/);
+  assert.match(warning, /intercepted|transit/i);
+  assert.doesNotMatch(warning, /lm_secret_must_not_leak/);
+});
+
+test('interactive insecure HTTP risk rejection exits before ordinary confirmation', async () => {
+  let ordinaryConfirmCalled = false;
+  const result = await runInteractiveWizard({
+    prompt: scriptedPrompt({
+      first: 'external',
+      baseUrl: 'http://core.lan:18901',
+      token: 'lm_x',
+      channels: ['pi'],
+      insecureApproval: false,
+      onConfirm() {
+        ordinaryConfirmCalled = true;
+      },
+    }),
+    snapshot: baseSnapshot(),
+    initialLang: 'en',
+    langLocked: true,
+  });
+  assert.equal(result.kind, 'exit');
+  assert.equal(ordinaryConfirmCalled, false);
+});
+
+test('interactive update checks the final saved token and asks localized HTTP risk approval', async () => {
+  let warning = '';
+  const result = await runInteractiveWizard({
+    prompt: scriptedPrompt({
+      existing: 'update',
+      channels: ['pi'],
+      insecureApproval: true,
+      onRiskQuestion(question, defaultYes) {
+        warning = question;
+        assert.equal(defaultYes, false);
+      },
+    }),
+    snapshot: baseSnapshot({
+      hasConfig: true,
+      serverKind: 'external',
+      config: { base_url: 'http://core.lan:18901', api_token: 'lm_saved' },
+      channels: ALL_CHANNELS.map((id) => ({
+        id,
+        state: id === 'pi' ? 'installed' as const : 'missing' as const,
+        details: [],
+      })),
+    }),
+    initialLang: 'zh',
+    langLocked: true,
+  });
+  assert.equal(result.kind, 'install');
+  if (result.kind !== 'install') return;
+  assert.equal(result.plan.allowInsecureHttp, true);
+  assert.match(warning, /安全警告/);
+  assert.match(warning, /http:\/\/core\.lan:18901/);
+  assert.doesNotMatch(warning, /lm_saved/);
 });
 
 test('first-run external without a saved token does not claim it will keep one', async () => {

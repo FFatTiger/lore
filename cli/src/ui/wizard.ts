@@ -8,7 +8,8 @@ import { ALL_CHANNELS } from '../core/types.js';
 import type { InstallSnapshot } from '../core/snapshot.js';
 import { formatSnapshot } from '../core/snapshot.js';
 import { defaultSaasBaseUrl } from '../core/saas.js';
-import { normalizeBaseUrl } from '../core/connection.js';
+import { isInsecureHttpTokenTransport, normalizeBaseUrl } from '../core/connection.js';
+import { t } from './i18n.js';
 import type {
   ConnectionMode,
   ExistingAction,
@@ -36,6 +37,8 @@ export type InstallPlan = {
   explicitBaseUrl: boolean;
   /** Keep existing token if wizard left it blank. */
   keepExistingToken: boolean;
+  /** Runtime-only approval; never persisted to config. */
+  allowInsecureHttp: boolean;
 };
 
 export type RunWizardOptions = {
@@ -53,6 +56,41 @@ function canKeepExistingToken(snapshot: InstallSnapshot, baseUrl: string | undef
   } catch {
     return false;
   }
+}
+
+function effectivePlanToken(plan: InstallPlan, snapshot: InstallSnapshot): string | undefined {
+  if (plan.apiToken) return plan.apiToken;
+  return plan.keepExistingToken ? snapshot.config.api_token : undefined;
+}
+
+async function confirmInstallPlan(
+  prompt: PromptService,
+  plan: InstallPlan,
+  snapshot: InstallSnapshot,
+  summary: string,
+): Promise<boolean> {
+  const token = effectivePlanToken(plan, snapshot);
+  if (plan.baseUrl) {
+    let normalizedBaseUrl: string;
+    try {
+      normalizedBaseUrl = normalizeBaseUrl(plan.baseUrl);
+    } catch {
+      // Preserve the existing flow: the execution-layer URL validation reports this later.
+      return prompt.confirm(summary);
+    }
+    if (!isInsecureHttpTokenTransport(normalizedBaseUrl, token)) {
+      return prompt.confirm(summary);
+    }
+    const allowed = await prompt.askYesNo(
+      t(plan.lang, 'security.insecure_http_token_warning', {
+        baseUrl: normalizedBaseUrl,
+      }),
+      false,
+    );
+    if (!allowed) return false;
+    plan.allowInsecureHttp = true;
+  }
+  return prompt.confirm(summary);
 }
 
 async function collectConnection(
@@ -145,9 +183,10 @@ export async function runInteractiveWizard(opts: RunWizardOptions): Promise<Wiza
       skipDocker: conn.skipDocker,
       explicitBaseUrl: conn.explicitBaseUrl,
       keepExistingToken: conn.keepExistingToken,
+      allowInsecureHttp: false,
     };
     const summary = formatInstallSummary(plan, action, lang);
-    const ok = await prompt.confirm(summary);
+    const ok = await confirmInstallPlan(prompt, plan, opts.snapshot, summary);
     if (!ok) return { kind: 'exit', lang };
     return { kind: 'install', plan };
   }
@@ -205,8 +244,14 @@ export async function runInteractiveWizard(opts: RunWizardOptions): Promise<Wiza
       skipDocker: conn.skipDocker,
       explicitBaseUrl: conn.explicitBaseUrl,
       keepExistingToken: conn.keepExistingToken,
+      allowInsecureHttp: false,
     };
-    const ok = await prompt.confirm(formatInstallSummary(plan, mode, lang));
+    const ok = await confirmInstallPlan(
+      prompt,
+      plan,
+      opts.snapshot,
+      formatInstallSummary(plan, mode, lang),
+    );
     if (!ok) return { kind: 'exit', lang };
     return { kind: 'install', plan };
   }
@@ -253,12 +298,16 @@ export async function runInteractiveWizard(opts: RunWizardOptions): Promise<Wiza
     skipDocker: kind !== 'docker',
     explicitBaseUrl: kind === 'saas' || kind === 'external',
     keepExistingToken: true,
+    allowInsecureHttp: false,
   };
   if (kind === 'saas' || kind === 'external') {
     plan.baseUrl = opts.snapshot.config.base_url;
   }
 
-  const ok = await prompt.confirm(
+  const ok = await confirmInstallPlan(
+    prompt,
+    plan,
+    opts.snapshot,
     formatInstallSummary(plan, existing === 'update' ? 'update' : 'manage', lang),
   );
   if (!ok) return { kind: 'exit', lang };

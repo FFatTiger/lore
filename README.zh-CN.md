@@ -86,6 +86,7 @@ npx @loremem/cli
 | `--channels CH,...` | 只装部分运行时：`claudecode`、`codex`、`pi`、`openclaw`、`hermes`、`opencode` |
 | `--base-url URL` | 使用已有 Lore 服务，跳过本地 Docker |
 | `--api-token TOKEN` | 服务端 API token |
+| `--allow-insecure-http` | 仅为本次执行显式放行“非回环 HTTP + token” |
 | `--skip-docker` | 只配置 agent |
 | `--force` | 即使版本未变也强制重装 |
 | `--lang en\|zh` | 安装器语言 |
@@ -97,8 +98,11 @@ npx @loremem/cli
 npx @loremem/cli install --lang zh --pre
 
 # 外部服务
+# 风险：明文 HTTP 可能导致 API Token 在传输途中被窃取或篡改，请优先使用 HTTPS。
+# 此显式放行仅对本次执行有效，不会写入配置。
 npx @loremem/cli install --lang zh \
-  --base-url http://192.168.1.100:18901 --api-token my-token
+  --base-url http://192.168.1.100:18901 --api-token my-token \
+  --allow-insecure-http
 
 # 只装 Claude Code + Pi
 npx @loremem/cli install --lang zh --channels claudecode,pi

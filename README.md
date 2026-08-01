@@ -86,6 +86,7 @@ Common flags:
 | `--channels CH,...` | Install only some runtimes: `claudecode`, `codex`, `pi`, `openclaw`, `hermes`, `opencode` |
 | `--base-url URL` | Use an existing Lore server and skip local Docker |
 | `--api-token TOKEN` | API token for the server |
+| `--allow-insecure-http` | Explicitly allow a token over non-loopback HTTP for this run only |
 | `--skip-docker` | Configure agents only |
 | `--force` | Reinstall even when the version is unchanged |
 | `--lang en\|zh` | Installer language |
@@ -97,8 +98,11 @@ Examples:
 npx @loremem/cli install --pre
 
 # External server
+# Warning: plain HTTP can expose or alter the API token in transit. Prefer HTTPS.
+# This explicit approval applies only to this run and is never saved.
 npx @loremem/cli install \
-  --base-url http://192.168.1.100:18901 --api-token my-token
+  --base-url http://192.168.1.100:18901 --api-token my-token \
+  --allow-insecure-http
 
 # Claude Code + Pi only
 npx @loremem/cli install --channels claudecode,pi

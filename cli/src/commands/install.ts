@@ -48,6 +48,7 @@ type ExecutionPlan = {
   dev: boolean;
   force: boolean;
   skipDocker: boolean;
+  allowInsecureHttp: boolean;
 };
 
 function resolveLang(args: GlobalArgs, env: NodeJS.ProcessEnv): Lang {
@@ -57,7 +58,7 @@ function resolveLang(args: GlobalArgs, env: NodeJS.ProcessEnv): Lang {
 }
 
 function shouldPrompt(args: GlobalArgs, isTTY: boolean): boolean {
-  if (!isTTY) return false;
+  if (!isTTY || args.parameterMode) return false;
   if (args.interactiveDefault) return true;
   return (
     args.command === 'install' &&
@@ -157,7 +158,9 @@ async function executeInstallPlan(
     if (isSaasBaseUrl(resolvedBase, env) && !apiToken) {
       throw new Error('Loremem SaaS requires an API token');
     }
-    assertTokenTransport(resolvedBase, apiToken);
+    assertTokenTransport(resolvedBase, apiToken, {
+      allowInsecureHttp: plan.allowInsecureHttp,
+    });
   } catch (error) {
     return usageError(log, error);
   }
@@ -385,6 +388,7 @@ async function runInstallOperation(
           dev: plan.dev,
           force: plan.force,
           skipDocker: plan.skipDocker,
+          allowInsecureHttp: plan.allowInsecureHttp,
         },
         { env, run, artifactRun, fetchImpl, log, loreHome, configPath },
       );
@@ -432,6 +436,7 @@ async function runInstallOperation(
       dev: args.dev,
       force: args.force,
       skipDocker: args.skipDocker,
+      allowInsecureHttp: args.allowInsecureHttp,
     },
     { env, run, artifactRun, fetchImpl, log, loreHome, configPath },
   );

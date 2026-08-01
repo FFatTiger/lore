@@ -14,13 +14,15 @@ Commands:
 Common flags:
   --base-url URL       External/SaaS Lore server (skips Docker)
   --api-token TOKEN    API token written to ~/.lore/config.json
+  --allow-insecure-http
+                         Allow token over non-loopback HTTP for this run only
   --channels LIST      claudecode,codex,pi,openclaw,hermes,opencode
   --skip-docker        Do not manage Docker
   --force              Reinstall even if version unchanged
   --pre | --dev        Release channel
   --lang en|zh
   --purge              Uninstall only: remove config + docker data
-  -y, --yes            Skip confirmations
+  -y, --yes            Skip ordinary confirmations (not insecure HTTP approval)
   -h, --help
 
 Primary invocation: npx @loremem/cli`;

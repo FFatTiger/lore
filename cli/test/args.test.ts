@@ -6,11 +6,13 @@ test('empty argv defaults to install with interactiveDefault', () => {
   const args = parseArgv([]);
   assert.equal(args.command, 'install');
   assert.equal(args.interactiveDefault, true);
+  assert.equal(args.parameterMode, false);
   assert.equal(args.skipDocker, false);
   assert.equal(args.force, false);
   assert.equal(args.pre, false);
   assert.equal(args.dev, false);
   assert.equal(args.yes, false);
+  assert.equal(args.allowInsecureHttp, false);
   assert.equal(args.purge, false);
   assert.equal(args.help, false);
   assert.equal(args.explicitBaseUrl, false);
@@ -27,10 +29,11 @@ test('connect is an alias for install', () => {
   assert.equal(args.interactiveDefault, false);
 });
 
-test('explicit install command is not interactiveDefault', () => {
+test('explicit install command is parameter mode, not interactiveDefault', () => {
   const args = parseArgv(['install']);
   assert.equal(args.command, 'install');
   assert.equal(args.interactiveDefault, false);
+  assert.equal(args.parameterMode, true);
 });
 
 test('update/uninstall/status/help commands', () => {
@@ -78,6 +81,7 @@ test('parses boolean flags including short -y', () => {
     '--force',
     '--pre',
     '--yes',
+    '--allow-insecure-http',
     '--purge',
     '-y',
     '--help',
@@ -88,8 +92,15 @@ test('parses boolean flags including short -y', () => {
   assert.equal(args.pre, true);
   assert.equal(args.dev, false);
   assert.equal(args.yes, true);
+  assert.equal(args.allowInsecureHttp, true);
   assert.equal(args.purge, true);
   assert.equal(args.help, true);
+});
+
+test('an explicit command or any flag selects parameter mode', () => {
+  assert.equal(parseArgv(['install']).parameterMode, true);
+  assert.equal(parseArgv(['install', '--yes']).parameterMode, true);
+  assert.equal(parseArgv(['--allow-insecure-http']).parameterMode, true);
 });
 
 test('--pre and --dev cannot be combined', () => {

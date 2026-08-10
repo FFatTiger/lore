@@ -12,6 +12,6 @@
     "skipLibCheck": true,
     "strict": false
   },
-  "include": ["index.ts", "api.ts", "tools.ts", "hooks.ts", "uri.ts", "formatters.ts"],
+  "include": ["index.ts", "api.ts", "tools.ts", "hooks.ts", "uri.ts", "formatters.ts", "skills.ts"],
   "exclude": ["dist", "__tests__", "node_modules"]
 }

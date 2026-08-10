@@ -1,7 +1,7 @@
 {
   "id": "lore",
   "name": "Lore",
-  "description": "Primary Lore memory system for fixed boot baseline, recall, and cross-session project knowledge.",
+  "description": "Primary Lore memory system for fixed boot baseline, recall, cross-session project knowledge, and skill work copies.",
   "version": "1.3.23",
   "activation": {
     "onStartup": true
@@ -16,7 +16,14 @@
       "lore_create_node",
       "lore_update_node",
       "lore_delete_node",
-      "lore_move_node"
+      "lore_move_node",
+      "lore_skill_list",
+      "lore_skill_search",
+      "lore_skill_get",
+      "lore_skill_create",
+      "lore_skill_update",
+      "lore_skill_delete",
+      "lore_skill_status"
     ]
   },
   "configSchema": {
@@ -38,6 +45,9 @@
         "maximum": 120000
       },
       "defaultDomain": {
+        "type": "string"
+      },
+      "loreHome": {
         "type": "string"
       },
       "injectPromptGuidance": {
@@ -82,6 +92,11 @@
     "defaultDomain": {
       "label": "Default Domain",
       "placeholder": "core"
+    },
+    "loreHome": {
+      "label": "Lore Home",
+      "placeholder": "~/.lore",
+      "help": "Local root for skill work copies. Falls back to LORE_HOME, then ~/.lore."
     },
     "injectPromptGuidance": {
       "label": "Inject Prompt Guidance"

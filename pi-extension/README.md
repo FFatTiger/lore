@@ -10,9 +10,11 @@ This extension connects Pi agent to Lore long-term memory.
 - Injects per-prompt recall context as a hidden custom message.
 - Tracks session reads for `lore_get_node`.
 - Registers server-side Skill CRUD/search/status tools without prescribing when the agent should use them.
-- Reconciles enabled Skill revisions into project-scoped, read-only mirrors under `~/.lore/skills/<project-id>/installed/` (or `LORE_HOME`).
-- Verifies Skill identity, version, revision, manifest, file hashes, and local path integrity before adding a matched `SKILL.md` path to hidden recall context.
-- Creates writable, local-only Skill artifact directories under `~/.lore/skill-artifacts/`; artifacts are never uploaded by the extension.
+- Lifecycle Skill recall discovers matching Skill candidates only (skill_id, name, description, version). It does not auto-download, reconcile, or inject local paths.
+- `lore_skill_get(skill_id)` materializes a complete writable local work copy at `~/.lore/skill-artifacts/<project-id>/<skill-name>/` (or `LORE_HOME`) when missing or when the server version differs.
+- Same-version work copies preserve all local Agent edits and outputs; server version upgrades replace only server-managed paths and prune obsolete managed files.
+- Transport validation covers safe paths, required `SKILL.md`, per-file hashes/sizes, and optional manifest hashes. Unmanaged local directories are never overwritten.
+- Skill outputs live inside the writable work copy directory (no separate artifact tree).
 
 ## Local Install
 
@@ -24,4 +26,4 @@ Then run `/reload` inside Pi or restart Pi.
 
 Pi discovers extensions from `~/.pi/agent/extensions/*/index.ts`.
 
-Managed Skill mirrors are not editable in place. Console or agent tools update the canonical server Skill, Core creates a new revision, and the extension replaces the verified local mirror atomically. Pi's native `/skill` inventory may require `/reload` or restart after a newly synchronized Skill appears; Lore can still provide its verified absolute `SKILL.md` path immediately through prompt recall.
+Writable Skill work copies are editable in place. Console or agent tools update the canonical server Skill; a later `lore_skill_get` refreshes the local work copy only when the server version differs. Pi's native `/skill` inventory may require `/reload` or restart after a newly materialized Skill appears; Lore returns the absolute `skill_dir` and `SKILL.md` content immediately from `lore_skill_get`.

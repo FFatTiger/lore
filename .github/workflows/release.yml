@@ -113,10 +113,15 @@ jobs:
 
       - name: Build Claude Code artifact
         run: |
+          node scripts/sync-skill-workcopy.mjs --check
           mkdir -p dist
+          # Bundle local skills MCP + vendor work-copy helpers into the Claude plugin zip.
+          rm -rf claudecode-plugin/local-skills-mcp
+          cp -a local-skills-mcp claudecode-plugin/local-skills-mcp
           cd claudecode-plugin
           zip -r ../dist/lore-claudecode.zip \
-            .claude-plugin .mcp.json hooks
+            .claude-plugin .mcp.json hooks local-skills-mcp \
+            -x 'local-skills-mcp/__tests__/*' 'local-skills-mcp/node_modules/*'
 
       - name: Build Codex artifact
         run: |
@@ -129,6 +134,10 @@ jobs:
               cp -a "codex-plugin/$d" "dist/codex-marketplace/plugins/lore/$d"
             fi
           done
+          # Bundle local skills MCP + vendor module so stdio lore-skills is runnable after extract.
+          cp -a local-skills-mcp dist/codex-marketplace/plugins/lore/local-skills-mcp
+          rm -rf dist/codex-marketplace/plugins/lore/local-skills-mcp/__tests__
+          rm -rf dist/codex-marketplace/plugins/lore/local-skills-mcp/node_modules
           cd dist/codex-marketplace
           zip -r ../lore-codex.zip .
 

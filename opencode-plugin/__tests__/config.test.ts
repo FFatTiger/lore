@@ -42,7 +42,17 @@ describe('OpenCode plugin configuration', () => {
       startupTimeoutMs: 8_000,
       requestTimeoutMs: 30_000,
       defaultDomain: 'core',
+      loreHome: join(home, '.lore'),
     });
+  });
+
+  it('resolves loreHome from LORE_HOME else <home>/.lore', () => {
+    const home = temporaryHome();
+    const custom = join(home, 'custom-lore-home');
+
+    expect(loadLorePluginConfig({}, home).loreHome).toBe(join(home, '.lore'));
+    expect(loadLorePluginConfig({ LORE_HOME: custom }, home).loreHome).toBe(custom);
+    expect(loadLorePluginConfig({ LORE_HOME: '  ' }, home).loreHome).toBe(join(home, '.lore'));
   });
 
   it('falls through blank or invalid shared values to Lore environment values', () => {
@@ -76,6 +86,7 @@ describe('OpenCode Lore API URL construction', () => {
     startupTimeoutMs: 8_000,
     requestTimeoutMs: 30_000,
     defaultDomain: 'core',
+    loreHome: '/tmp/lore-home',
   };
 
   it('normalizes browse routes under /api and adds OpenCode identity', () => {

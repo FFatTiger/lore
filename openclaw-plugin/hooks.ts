@@ -1,6 +1,11 @@
 import { execSync } from "node:child_process";
 import { basename } from "node:path";
 import { fetchJson, hasRecallConfig } from "./api";
+import {
+  appendSkillBlockToPrependContext,
+  createSkillsSession,
+  type SkillsSession,
+} from "./skills";
 
 // ---- Message text extraction helpers ----
 
@@ -68,11 +73,13 @@ async function fetchStartupLifecycle(pluginCfg: any, sessionId: string) {
 }
 
 async function fetchPromptLifecycle(pluginCfg: any, prompt: string, sessionId: string | undefined) {
-  if (!hasRecallConfig(pluginCfg)) return null;
+  // Prompt lifecycle also carries independent Skill candidates/catalog identity,
+  // so it must remain available when Memory recall injection is disabled.
   return fetchLifecycleEvent(pluginCfg, {
     protocol_version: "lore.lifecycle.v1",
     runtime: { runtime_id: "openclaw", runtime_family: "openclaw" },
     event: { name: "prompt.submit", native_name: "before_prompt_build" },
+    features: { memory_recall: hasRecallConfig(pluginCfg) },
     normalized: { session_id: sessionId, prompt },
   });
 }
@@ -89,10 +96,11 @@ function usableSessionId(value: unknown): string | undefined {
 
 // ---- Hook registration ----
 
-export function registerHooks(api: any, pluginCfg: any) {
+export function registerHooks(api: any, pluginCfg: any, skillsSession?: SkillsSession) {
   const startupStates = new Map<string, { appendSystemContext: string; consumed: boolean }>();
   const startupRequests = new Map<string, { promise: Promise<void>; token: object }>();
   const endedTokens = new WeakSet<object>();
+  const skills = skillsSession || createSkillsSession(pluginCfg);
 
   api.registerGatewayMethod("lore.status", async ({ respond }: any) => {
     try {
@@ -129,7 +137,14 @@ export function registerHooks(api: any, pluginCfg: any) {
     const token = {};
     const request = (async () => {
       try {
-        const value = readReturnValue(await fetchStartupLifecycle(pluginCfg, sessionId));
+        const lifecycleResponse = await fetchStartupLifecycle(pluginCfg, sessionId);
+        // Record project/catalog identity only — never auto-download or reconcile skills.
+        try {
+          await skills.onSessionStart(lifecycleResponse);
+        } catch (error: any) {
+          api.logger.debug?.(`lore: skill catalog identity on session_start failed: ${error.message}`);
+        }
+        const value = readReturnValue(lifecycleResponse);
         const appendSystemContext = typeof value?.appendSystemContext === "string"
           ? value.appendSystemContext.trim()
           : "";
@@ -171,10 +186,24 @@ export function registerHooks(api: any, pluginCfg: any) {
 
     if (typeof event?.prompt === "string" && event.prompt.trim()) {
       try {
-        const value = readReturnValue(await fetchPromptLifecycle(pluginCfg, event.prompt, sessionId));
-        if (typeof value?.prependContext === "string" && value.prependContext.trim()) {
-          out.prependContext = value.prependContext.trim();
+        const lifecycleResponse = await fetchPromptLifecycle(pluginCfg, event.prompt, sessionId);
+        const value = readReturnValue(lifecycleResponse);
+        let prependContext = typeof value?.prependContext === "string"
+          ? value.prependContext.trim()
+          : "";
+
+        // Discovery only: append skill candidate identities to prependContext.
+        // Never download, reconcile, or inject local paths here.
+        try {
+          const skillPatch = await skills.onPromptLifecycle(lifecycleResponse);
+          if (skillPatch?.skillBlock) {
+            prependContext = appendSkillBlockToPrependContext(prependContext, skillPatch.skillBlock);
+          }
+        } catch (error: any) {
+          api.logger.debug?.(`lore: skill prompt discovery failed: ${error.message}`);
         }
+
+        if (prependContext) out.prependContext = prependContext;
       } catch (error: any) {
         api.logger.debug?.(`lore: lifecycle recall failed: ${error.message}`);
       }
@@ -182,4 +211,6 @@ export function registerHooks(api: any, pluginCfg: any) {
 
     return Object.keys(out).length > 0 ? out : undefined;
   });
+
+  return { skills };
 }

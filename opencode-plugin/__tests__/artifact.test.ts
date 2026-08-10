@@ -20,6 +20,12 @@ describe('OpenCode release bundle', () => {
     const output = readFileSync(join(root, 'dist/lore-memory.js'), 'utf8');
     expect(output).toContain('@lore-managed-opencode-plugin');
     expect(output).toContain(`version=${packageVersion}`);
+    expect(output).toContain('ensureSkillWorkCopy');
+    expect(output).toContain('lore.skill.workcopy.v1');
+    expect(output).toContain('lore_skill_get');
+    // Vendor work-copy is inlined into the single managed ESM file (esbuild may keep a path comment).
+    expect(output).not.toMatch(/from ['"].*vendor\/skill-workcopy/);
+    expect(output).not.toMatch(/require\(['"].*vendor\/skill-workcopy/);
     expect(output).not.toContain('/Users/proxy/');
     expect(output).not.toContain('LORE_API_TOKEN=');
   });

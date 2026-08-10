@@ -11,6 +11,7 @@ into Hermes via the native memory provider interface:
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import re
@@ -22,6 +23,7 @@ from agent.memory_provider import MemoryProvider
 
 from .client import LoreClient, LoreError
 from . import formatters
+from . import skill_workcopy
 
 logger = logging.getLogger(__name__)
 RECALL_GET_NODE_DESCRIPTION = "Open a memory node. REQUIRED when opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag."
@@ -89,6 +91,10 @@ class LoreMemoryProvider(MemoryProvider):
         self._ready_key: Optional[str] = None
         self._ready_result: str = ""
         self._inflight: Dict[str, "_PrefetchFlight"] = {}
+        # Skill session identity (catalog only; no auto-download).
+        self._skill_project_id: str = ""
+        self._skill_catalog_revision: str = ""
+        self._skill_last_error: str = ""
 
     @property
     def name(self) -> str:
@@ -123,6 +129,11 @@ class LoreMemoryProvider(MemoryProvider):
             system_context = str((value or {}).get("system_context") or "").strip()
             if system_context:
                 self._boot_block = system_context
+            # Record project/catalog identity only — never auto-download skills.
+            catalog = skill_workcopy.read_skill_catalog(lifecycle)
+            if catalog and catalog.get("project_id"):
+                self._skill_project_id = catalog["project_id"]
+                self._skill_catalog_revision = catalog.get("catalog_revision") or ""
         except Exception as e:
             logger.debug("Lore lifecycle startup failed: %s", e)
 
@@ -323,7 +334,12 @@ class LoreMemoryProvider(MemoryProvider):
         self._claim_or_join(sid, query, for_queue=True)
 
     def _do_recall(self, query: str, session_id: str) -> str:
-        """Execute recall API and return formatted block. Thread-safe."""
+        """Execute recall API and return formatted block. Thread-safe.
+
+        Appends discovery-only <lore-skills> candidates from the lifecycle
+        response (no auto-download / no local path). Skill discovery is returned
+        even when memory host context is empty.
+        """
         payload = self._payload_prompt(query)
         if not payload:
             return ""
@@ -335,7 +351,23 @@ class LoreMemoryProvider(MemoryProvider):
             )
             output = lifecycle.get("host_output", {}) or {}
             value = output.get("value", {}) if output.get("mode") == "return_value" else {}
-            return str((value or {}).get("context") or "").strip()
+            context = str((value or {}).get("context") or "").strip()
+
+            # Catalog identity may update on prompt lifecycle without download.
+            catalog = skill_workcopy.read_skill_catalog(lifecycle)
+            if catalog and catalog.get("project_id"):
+                self._skill_project_id = catalog["project_id"]
+                self._skill_catalog_revision = catalog.get("catalog_revision") or ""
+
+            candidates = skill_workcopy.read_skill_candidates(lifecycle)
+            discovered = skill_workcopy.discovery_candidate_entries(candidates)
+            skill_block = skill_workcopy.format_skill_candidate_block(discovered).strip()
+
+            if context and skill_block:
+                return f"{context}\n\n{skill_block}"
+            if skill_block:
+                return skill_block
+            return context
         except Exception as e:
             logger.debug("Lore lifecycle recall failed: %s", e)
             return ""
@@ -484,6 +516,176 @@ class LoreMemoryProvider(MemoryProvider):
                 "description": "Browse the top-level memory domains available in the memory system",
                 "parameters": {"type": "object", "properties": {}, "required": []},
             },
+            {
+                "name": "lore_skill_list",
+                "description": "List Lore skills for the active project, including disabled skills when requested.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "include_disabled": {
+                            "type": "boolean",
+                            "description": "Include disabled skills (default true).",
+                        },
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "lore_skill_search",
+                "description": "Search or recall Lore skills by query.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search query."},
+                        "limit": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 50,
+                            "description": "Max candidates.",
+                        },
+                    },
+                    "required": ["query"],
+                },
+            },
+            {
+                "name": "lore_skill_get",
+                "description": (
+                    "Fetch a Lore skill and materialize a writable local work copy when missing "
+                    "or when the server version differs. Returns local SKILL.md content and absolute "
+                    "skill_dir. Same-version local edits are preserved."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "skill_id": {"type": "string", "description": "Skill id."},
+                    },
+                    "required": ["skill_id"],
+                },
+            },
+            {
+                "name": "lore_skill_create",
+                "description": (
+                    "Create a Lore skill on the server. Does not auto-materialize a local work copy; "
+                    "call lore_skill_get later if needed."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Skill name."},
+                        "enabled": {
+                            "type": "boolean",
+                            "description": "Whether the skill is enabled (default true).",
+                        },
+                        "files": {
+                            "type": "array",
+                            "description": "Skill files; must include SKILL.md.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "path": {
+                                        "type": "string",
+                                        "description": "Relative path inside the skill (must include SKILL.md).",
+                                    },
+                                    "content": {
+                                        "type": "string",
+                                        "description": "UTF-8 file content.",
+                                    },
+                                    "content_base64": {
+                                        "type": "string",
+                                        "description": "Base64 file content for binary files.",
+                                    },
+                                    "media_type": {
+                                        "type": "string",
+                                        "description": "Optional media type.",
+                                    },
+                                },
+                                "required": ["path"],
+                            },
+                        },
+                    },
+                    "required": ["name", "files"],
+                },
+            },
+            {
+                "name": "lore_skill_update",
+                "description": (
+                    "Update a Lore skill on the server with optimistic concurrency via expected_version. "
+                    "Does not auto-reconcile the local work copy; call lore_skill_get later if the version differs."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "skill_id": {"type": "string", "description": "Skill id."},
+                        "expected_version": {
+                            "type": "number",
+                            "description": "Expected current integer version (optimistic concurrency).",
+                        },
+                        "enabled": {
+                            "type": "boolean",
+                            "description": "Enable or disable the skill.",
+                        },
+                        "upsert_files": {
+                            "type": "array",
+                            "description": "Files to create or replace.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "path": {
+                                        "type": "string",
+                                        "description": "Relative path inside the skill (must include SKILL.md).",
+                                    },
+                                    "content": {
+                                        "type": "string",
+                                        "description": "UTF-8 file content.",
+                                    },
+                                    "content_base64": {
+                                        "type": "string",
+                                        "description": "Base64 file content for binary files.",
+                                    },
+                                    "media_type": {
+                                        "type": "string",
+                                        "description": "Optional media type.",
+                                    },
+                                },
+                                "required": ["path"],
+                            },
+                        },
+                        "delete_paths": {
+                            "type": "array",
+                            "description": "Paths to delete.",
+                            "items": {
+                                "type": "string",
+                                "description": "Relative path to delete.",
+                            },
+                        },
+                    },
+                    "required": ["skill_id", "expected_version"],
+                },
+            },
+            {
+                "name": "lore_skill_delete",
+                "description": "Archive/delete a Lore skill on the server. Does not auto-remove the local work copy.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "skill_id": {"type": "string", "description": "Skill id."},
+                    },
+                    "required": ["skill_id"],
+                },
+            },
+            {
+                "name": "lore_skill_status",
+                "description": (
+                    "Report local writable skill work-copy states (ready/missing/outdated/unmanaged/invalid). "
+                    "Read-only: never mutates or reconciles work copies."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": False,
+                    "required": [],
+                },
+            },
         ]
 
     # -- Tool dispatch -----------------------------------------------------
@@ -498,8 +700,15 @@ class LoreMemoryProvider(MemoryProvider):
                 return handler(args)
             return f'{{"error": "Unknown tool: {tool_name}"}}'
         except LoreError as e:
+            if tool_name.startswith("lore_skill_"):
+                self._skill_last_error = str(e)
+            return f'"Error: {e}"'
+        except skill_workcopy.SkillWorkCopyError as e:
+            self._skill_last_error = str(e)
             return f'"Error: {e}"'
         except Exception as e:
+            if tool_name.startswith("lore_skill_"):
+                self._skill_last_error = str(e)
             logger.warning("lore %s failed: %s", tool_name, e, exc_info=True)
             return f'"Error: {e}"'
 
@@ -613,6 +822,167 @@ class LoreMemoryProvider(MemoryProvider):
     def _tool_lore_list_domains(self, args: Dict) -> str:
         data = self._client.list_domains()
         return formatters.format_domains(data)
+
+    # -- Skill tools -------------------------------------------------------
+
+    def _tool_lore_skill_list(self, args: Dict) -> str:
+        include_disabled = args.get("include_disabled") is not False
+        data = self._client.list_skills(include_disabled=include_disabled)
+        if data.get("project_id"):
+            self._skill_project_id = str(data["project_id"])
+        if data.get("catalog_revision") is not None:
+            self._skill_catalog_revision = str(data.get("catalog_revision") or "")
+        skills = data.get("skills") or []
+        lines = []
+        for s in skills:
+            if not isinstance(s, dict):
+                continue
+            enabled = "disabled" if s.get("enabled") is False else "enabled"
+            skill_id = skill_workcopy.skill_id_of(s)
+            version = skill_workcopy.skill_version_of(s)
+            lines.append(f"- {s.get('name')} ({skill_id}) {enabled} v{version if version is not None else '?'}")
+        project_id = data.get("project_id") or "?"
+        rev = data.get("catalog_revision") or "?"
+        if lines:
+            return f"Project {project_id} rev {rev}\n" + "\n".join(lines)
+        return f"Project {project_id} rev {rev}\nNo skills."
+
+    def _tool_lore_skill_search(self, args: Dict) -> str:
+        query = str(args.get("query") or "")
+        limit = args.get("limit")
+        data = self._client.search_skills(query, limit=limit if isinstance(limit, (int, float)) else None)
+        if isinstance(data.get("candidates"), list):
+            data = dict(data)
+            data["candidates"] = [
+                skill_workcopy.normalize_skill_candidate(c)
+                for c in data["candidates"]
+                if isinstance(c, dict)
+            ]
+        return json.dumps(data, indent=2, ensure_ascii=False)
+
+    def _tool_lore_skill_get(self, args: Dict) -> str:
+        skill_id = str(args.get("skill_id") or "").strip()
+        if not skill_id:
+            raise LoreError("skill_id is required")
+        lore_home = skill_workcopy.resolve_lore_home()
+
+        def load_skill(sid: str):
+            return skill_workcopy.normalize_skill_detail(self._client.get_skill(sid))
+
+        def load_catalog():
+            return self._client.list_skills(include_disabled=True)
+
+        result = skill_workcopy.ensure_skill_work_copy(
+            skill_id=skill_id,
+            load_skill=load_skill,
+            lore_home=lore_home,
+            project_id=self._skill_project_id or None,
+            load_catalog=load_catalog,
+        )
+        if result.get("project_id"):
+            self._skill_project_id = str(result["project_id"])
+        skill = result.get("skill") or {}
+        lines = [
+            f"Skill work copy ready: {skill.get('name') or skill_id}",
+            f"skill_dir: {result['skill_dir']}",
+            f"server_version: {result.get('server_version') if result.get('server_version') is not None else '?'}",
+            f"local_version: {result.get('local_version')}",
+            f"downloaded: {result.get('downloaded')}",
+            "",
+            result.get("skill_md") or "",
+        ]
+        return "\n".join(lines)
+
+    def _tool_lore_skill_create(self, args: Dict) -> str:
+        name = str(args.get("name") or "").strip()
+        if not name:
+            raise LoreError("name is required")
+        body = {
+            "name": name,
+            "enabled": args.get("enabled") is not False,
+            "files": args.get("files") if isinstance(args.get("files"), list) else [],
+        }
+        data = skill_workcopy.normalize_skill_detail(self._client.create_skill(body))
+        if data.get("project_id"):
+            self._skill_project_id = str(data["project_id"])
+        skill_id = skill_workcopy.skill_id_of(data) or "?"
+        version = skill_workcopy.skill_version_of(data)
+        if version is not None and version != "":
+            return f"Created skill {data.get('name') or name} (skill_id: {skill_id}, version: {version})"
+        return f"Created skill {data.get('name') or name} (skill_id: {skill_id})"
+
+    def _tool_lore_skill_update(self, args: Dict) -> str:
+        skill_id = str(args.get("skill_id") or "").strip()
+        if not skill_id:
+            raise LoreError("skill_id is required")
+        expected_raw = args.get("expected_version")
+        # Accept int-like values; reject bools and non-positive.
+        expected: Optional[int] = None
+        if isinstance(expected_raw, bool):
+            expected = None
+        elif isinstance(expected_raw, int):
+            expected = expected_raw
+        elif isinstance(expected_raw, float) and expected_raw.is_integer():
+            expected = int(expected_raw)
+        if expected is None or expected < 1:
+            raise LoreError("expected_version is required and must be a positive integer")
+        body: Dict[str, Any] = {"expected_version": expected}
+        if isinstance(args.get("enabled"), bool):
+            body["enabled"] = args["enabled"]
+        if isinstance(args.get("upsert_files"), list):
+            body["upsert_files"] = args["upsert_files"]
+        if isinstance(args.get("delete_paths"), list):
+            body["delete_paths"] = args["delete_paths"]
+        data = skill_workcopy.normalize_skill_detail(self._client.update_skill(skill_id, body))
+        updated_id = skill_workcopy.skill_id_of(data) or skill_id
+        version = skill_workcopy.skill_version_of(data)
+        if version is not None and version != "":
+            return f"Updated skill {data.get('name') or skill_id} (skill_id: {updated_id}, version: {version})"
+        return f"Updated skill {data.get('name') or skill_id} (skill_id: {updated_id})"
+
+    def _tool_lore_skill_delete(self, args: Dict) -> str:
+        skill_id = str(args.get("skill_id") or "").strip()
+        if not skill_id:
+            raise LoreError("skill_id is required")
+        data = self._client.delete_skill(skill_id) or {}
+        if data.get("project_id"):
+            self._skill_project_id = str(data["project_id"])
+        if data.get("catalog_revision") is not None:
+            self._skill_catalog_revision = str(data.get("catalog_revision") or "")
+        return f"Deleted skill {skill_id}"
+
+    def _tool_lore_skill_status(self, args: Dict) -> str:
+        project_id = self._skill_project_id
+        catalog_revision = self._skill_catalog_revision
+        if not project_id and self._client:
+            try:
+                catalog = self._client.list_skills(include_disabled=True)
+                if catalog.get("project_id"):
+                    project_id = str(catalog["project_id"])
+                    self._skill_project_id = project_id
+                    catalog_revision = str(catalog.get("catalog_revision") or "")
+                    self._skill_catalog_revision = catalog_revision
+            except Exception:
+                pass
+        lore_home = skill_workcopy.resolve_lore_home()
+        work_copies = (
+            skill_workcopy.list_local_work_copy_statuses(lore_home, project_id)
+            if project_id
+            else skill_workcopy.list_all_local_work_copy_statuses(lore_home)
+        )
+        lines = []
+        for m in work_copies:
+            ver = f" v{m['version']}" if m.get("version") is not None else ""
+            msg = f" — {m['message']}" if m.get("message") else ""
+            project = m.get("project_id")
+            project_label = f" [{project}]" if project else ""
+            lines.append(f"- {m.get('name')}{project_label}: {m.get('state')}{ver}{msg}")
+        header = f"project={project_id or '?'} catalog_revision={catalog_revision or '?'}"
+        parts = [header] + (lines if lines else ["(no local work copies)"])
+        if self._skill_last_error:
+            parts.append(f"last_error: {self._skill_last_error}")
+        return "\n".join(parts)
+
 
 # ---------------------------------------------------------------------------
 # Plugin registration entry point

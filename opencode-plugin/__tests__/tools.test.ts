@@ -1,6 +1,17 @@
 import type { ToolContext, ToolResult } from '@opencode-ai/plugin';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createLoreTools, OPEN_CODE_TOOL_NAMES } from '../tools.js';
+
+const loreHomes: string[] = [];
+
+function tempLoreHome(): string {
+  const home = mkdtempSync(join(tmpdir(), 'lore-opencode-skills-'));
+  loreHomes.push(home);
+  return home;
+}
 
 const config = {
   baseUrl: 'https://api.example.test',
@@ -8,6 +19,7 @@ const config = {
   startupTimeoutMs: 8_000,
   requestTimeoutMs: 30_000,
   defaultDomain: 'core',
+  loreHome: tempLoreHome(),
 };
 
 function context(abort = new AbortController()): ToolContext {
@@ -36,6 +48,7 @@ function resultOutput(result: ToolResult): string {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  for (const home of loreHomes.splice(0)) rmSync(home, { force: true, recursive: true });
 });
 
 describe('native OpenCode Lore tools', () => {
@@ -52,8 +65,21 @@ describe('native OpenCode Lore tools', () => {
       'lore_update_node',
       'lore_delete_node',
       'lore_move_node',
+      'lore_skill_list',
+      'lore_skill_search',
+      'lore_skill_get',
+      'lore_skill_create',
+      'lore_skill_update',
+      'lore_skill_delete',
+      'lore_skill_status',
     ]);
   });
+
+  it('does not register an artifact tool',
+    () => {
+      const names = Object.keys(createLoreTools(config));
+      expect(names.some((name) => name.includes('artifact'))).toBe(false);
+    });
 
   it('maps every native tool directly to Lore REST with identity and cancellation', async () => {
     const calls: Array<{ url: URL; init: RequestInit }> = [];
@@ -163,6 +189,83 @@ describe('native OpenCode Lore tools', () => {
 
     controller.abort();
     for (const { init } of calls) expect(init.signal?.aborted).toBe(true);
+  });
+
+  it('lore_skill_get materializes a work copy via ensureSkillWorkCopy and returns SKILL.md + skill_dir', async () => {
+    const loreHome = tempLoreHome();
+    const skillConfig = { ...config, loreHome };
+    const skillMd = '# Demo Skill\n\nDo the thing.\n';
+    const contentSha = (await import('node:crypto')).createHash('sha256').update(skillMd, 'utf8').digest('hex');
+    const detail = {
+      project_id: 'project-1',
+      id: 'skill-1',
+      skill_id: 'skill-1',
+      name: 'demo-skill',
+      description: 'Demo',
+      enabled: true,
+      version: 1,
+      files: [{
+        path: 'SKILL.md',
+        content: skillMd,
+        sha256: contentSha,
+        size: Buffer.byteLength(skillMd, 'utf8'),
+      }],
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === '/api/skills/skill-1') return jsonResponse(detail);
+      throw new Error(`unexpected request: ${url}`);
+    });
+
+    const tools = createLoreTools(skillConfig);
+    const result = await tools.lore_skill_get.execute({ skill_id: 'skill-1' }, context());
+    const output = resultOutput(result);
+
+    expect(output).toContain('Skill work copy ready: demo-skill');
+    expect(output).toContain('skill_dir:');
+    expect(output).toContain(skillMd.trim());
+    expect(output).toContain('downloaded: true');
+
+    const skillDir = join(loreHome, 'skill-artifacts', 'project-1', 'demo-skill');
+    expect(readFileSync(join(skillDir, 'SKILL.md'), 'utf8')).toBe(skillMd);
+
+    // Same-version local edits are preserved on subsequent get.
+    writeFileSync(join(skillDir, 'SKILL.md'), '# local edit\n', 'utf8');
+    const second = await tools.lore_skill_get.execute({ skill_id: 'skill-1' }, context());
+    expect(resultOutput(second)).toContain('# local edit');
+    expect(resultOutput(second)).toContain('downloaded: false');
+    expect(readFileSync(join(skillDir, 'SKILL.md'), 'utf8')).toBe('# local edit\n');
+  });
+
+  it('lore_skill_update requires a positive integer expected_version', async () => {
+    const tools = createLoreTools({ ...config, loreHome: tempLoreHome() });
+    await expect(tools.lore_skill_update.execute({
+      skill_id: 'skill-1',
+      expected_version: 0,
+    }, context())).rejects.toThrow(/positive integer/);
+
+    await expect(tools.lore_skill_update.execute({
+      skill_id: 'skill-1',
+      expected_version: 1.5,
+    }, context())).rejects.toThrow(/positive integer/);
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
+      id: 'skill-1',
+      skill_id: 'skill-1',
+      name: 'demo-skill',
+      version: 2,
+      files: [],
+    }));
+
+    const ok = await tools.lore_skill_update.execute({
+      skill_id: 'skill-1',
+      expected_version: 1,
+      enabled: true,
+    }, context());
+    expect(resultOutput(ok)).toContain('Updated skill demo-skill');
+    expect(resultOutput(ok)).toContain('skill_id: skill-1');
+    expect(resultOutput(ok)).toContain('version: 2');
   });
 
   it('keeps node output when best-effort adoption marking fails and falls back to ToolContext sessionID', async () => {

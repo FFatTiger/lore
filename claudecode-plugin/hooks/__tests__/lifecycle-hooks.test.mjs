@@ -255,3 +255,48 @@ test('SessionStart uses conversation_id when session_id is absent', async () => 
     await server.close();
   }
 });
+
+
+test('UserPromptSubmit appends <lore-skills> for Claude text host_output', async () => {
+  const server = await withServer(() => ({
+    skill_candidates: [
+      { skill_id: 's-9', name: 'gamma', expected_version: 5, description: 'Gamma' },
+    ],
+    host_output: { mode: 'stdout_text', value: 'CLAUDE_MEMORY' },
+  }));
+  try {
+    const result = await runHook(recallHook, {
+      prompt: 'need skill',
+      session_id: 'c1',
+    }, {
+      LORE_BASE_URL: server.baseUrl,
+    });
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stdout, /CLAUDE_MEMORY/);
+    assert.match(result.stdout, /<lore-skills>/);
+    assert.match(result.stdout, /skill_id: s-9/);
+    assert.match(result.stdout, /lore_skill_get/);
+  } finally {
+    await server.close();
+  }
+});
+
+test('UserPromptSubmit adds missing additionalContext in Claude structured host_output', async () => {
+  const server = await withServer(() => ({
+    skill_candidates: [{ skill_id: 's-10', name: 'delta', version: 1 }],
+    host_output: {
+      mode: 'stdout_json',
+      value: { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', decision: 'allow' } },
+    },
+  }));
+  try {
+    const result = await runHook(recallHook, { prompt: 'structured skill' }, {
+      LORE_BASE_URL: server.baseUrl,
+    });
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.hookSpecificOutput.decision, 'allow');
+    assert.match(output.hookSpecificOutput.additionalContext, /skill_id: s-10/);
+  } finally {
+    await server.close();
+  }
+});

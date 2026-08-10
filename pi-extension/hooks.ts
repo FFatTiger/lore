@@ -109,11 +109,7 @@ export function registerHooks(pi: any, pluginCfg: any, skillsSession?: SkillsSes
     }
 
     if (!pluginCfg.injectPromptGuidance) {
-      try {
-        await skills.syncFromCatalog();
-      } catch (error: any) {
-        pi.logger?.debug?.(`lore: skill sync on session_start failed: ${error.message}`);
-      }
+      // No automatic skill sync. Catalog identity is recorded only when lifecycle returns it.
       return;
     }
     const sessionId = getSessionId(ctx);
@@ -129,11 +125,11 @@ export function registerHooks(pi: any, pluginCfg: any, skillsSession?: SkillsSes
     const request = (async () => {
       try {
         const lifecycleResponse = await fetchStartupLifecycle(pluginCfg, sessionId);
-        // Fail-open skill sync when catalog identity is present.
+        // Record project/catalog identity only — never auto-download or reconcile skills.
         try {
           await skills.onSessionStart(lifecycleResponse);
         } catch (error: any) {
-          pi.logger?.debug?.(`lore: skill sync on session_start failed: ${error.message}`);
+          pi.logger?.debug?.(`lore: skill catalog identity on session_start failed: ${error.message}`);
         }
         const value = readReturnValue(lifecycleResponse);
         const systemPromptAppend = typeof value?.systemPromptAppend === 'string'
@@ -170,7 +166,8 @@ export function registerHooks(pi: any, pluginCfg: any, skillsSession?: SkillsSes
         const value = readReturnValue(lifecycleResponse);
         let message = value?.message;
 
-        // Reconcile skills from catalog revision / ensure candidates; append ready skill block.
+        // Discovery only: append skill candidate identities to the existing hidden recall message.
+        // Never download, reconcile, or inject local paths here.
         try {
           const skillPatch = await skills.onPromptLifecycle(lifecycleResponse);
           if (skillPatch?.messagePatch) {
@@ -184,7 +181,7 @@ export function registerHooks(pi: any, pluginCfg: any, skillsSession?: SkillsSes
             };
           }
         } catch (error: any) {
-          pi.logger?.debug?.(`lore: skill prompt sync failed: ${error.message}`);
+          pi.logger?.debug?.(`lore: skill prompt discovery failed: ${error.message}`);
         }
 
         if (message) out.message = message;

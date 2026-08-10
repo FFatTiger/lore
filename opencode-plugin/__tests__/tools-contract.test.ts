@@ -31,6 +31,7 @@ describe('native OpenCode tool contract parity', () => {
       startupTimeoutMs: 8_000,
       requestTimeoutMs: 30_000,
       defaultDomain: 'core',
+      loreHome: '/tmp/lore-home',
     });
 
     expect(Object.keys(tools)).toEqual(contracts.map((contract) => contract.name));

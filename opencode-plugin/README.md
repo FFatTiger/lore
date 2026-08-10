@@ -1,6 +1,6 @@
 # Lore for OpenCode
 
-Native OpenCode plugin bundle for Lore memory.
+Native OpenCode plugin bundle for Lore memory and Skills.
 
 ## Install
 
@@ -23,3 +23,7 @@ The compatibility edit preserves unrelated settings and JSONC comments, records 
 Set `LORE_OPENCODE_ALLOW_MCP=1` when running the installer and starting OpenCode only when you explicitly need the legacy generic MCP fallback alongside the native plugin. Re-running the installer with this escape hatch restores any compatibility value previously changed by Lore.
 
 This bundle is built against `@opencode-ai/plugin@1.18.3`.
+
+## Skills
+
+OpenCode registers native `lore_skill_list/search/get/create/update/delete/status` tools. Prompt lifecycle only adds discovery candidates. `lore_skill_get(skill_id)` downloads the complete Skill package into a writable work copy under `~/.lore/skill-artifacts/<project-id>/<skill-name>/` when missing or when its server version changes, then returns `SKILL.md` and the absolute directory. Same-version local edits and outputs are preserved; server upgrades replace only managed paths. There is no separate Artifact tool.

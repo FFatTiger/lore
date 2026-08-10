@@ -179,5 +179,111 @@
         "required": true
       }
     ]
+  },
+  {
+    "name": "lore_skill_list",
+    "description": "List Lore skills for the active project, including disabled skills when requested.",
+    "parameters": [
+      {
+        "name": "include_disabled",
+        "description": "Include disabled skills (default true).",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "lore_skill_search",
+    "description": "Search or recall Lore skills by query.",
+    "parameters": [
+      {
+        "name": "query",
+        "description": "Search query.",
+        "required": true
+      },
+      {
+        "name": "limit",
+        "description": "Max candidates.",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "lore_skill_get",
+    "description": "Fetch a Lore skill and materialize a writable local work copy when missing or when the server version differs. Returns local SKILL.md content and absolute skill_dir. Same-version local edits are preserved.",
+    "parameters": [
+      {
+        "name": "skill_id",
+        "description": "Skill id.",
+        "required": true
+      }
+    ]
+  },
+  {
+    "name": "lore_skill_create",
+    "description": "Create a Lore skill on the server. Does not auto-materialize a local work copy; call lore_skill_get later if needed.",
+    "parameters": [
+      {
+        "name": "name",
+        "description": "Skill name.",
+        "required": true
+      },
+      {
+        "name": "enabled",
+        "description": "Whether the skill is enabled (default true).",
+        "required": false
+      },
+      {
+        "name": "files",
+        "description": "Skill files; must include SKILL.md.",
+        "required": true
+      }
+    ]
+  },
+  {
+    "name": "lore_skill_update",
+    "description": "Update a Lore skill on the server with optimistic concurrency via expected_version. Does not auto-reconcile the local work copy; call lore_skill_get later if the version differs.",
+    "parameters": [
+      {
+        "name": "skill_id",
+        "description": "Skill id.",
+        "required": true
+      },
+      {
+        "name": "expected_version",
+        "description": "Expected current integer version (optimistic concurrency).",
+        "required": true
+      },
+      {
+        "name": "enabled",
+        "description": "Enable or disable the skill.",
+        "required": false
+      },
+      {
+        "name": "upsert_files",
+        "description": "Files to create or replace.",
+        "required": false
+      },
+      {
+        "name": "delete_paths",
+        "description": "Paths to delete.",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "lore_skill_delete",
+    "description": "Archive/delete a Lore skill on the server. Does not auto-remove the local work copy.",
+    "parameters": [
+      {
+        "name": "skill_id",
+        "description": "Skill id.",
+        "required": true
+      }
+    ]
+  },
+  {
+    "name": "lore_skill_status",
+    "description": "Report local writable skill work-copy states (ready/missing/outdated/unmanaged/invalid). Read-only: never mutates or reconciles work copies.",
+    "parameters": []
   }
 ]

@@ -212,7 +212,17 @@ export const codexInstaller: ChannelInstaller = {
       await patchCachedLoreHooks(cHome, [sourcePlugin, pluginRoot]);
 
       const mcpUrl = `${ctx.baseUrl.replace(/\/$/, '')}/api/mcp?client_type=codex`;
+      const skillsServer = path.join(pluginRoot, 'local-skills-mcp', 'src', 'server.mjs');
+      try {
+        const stat = await fs.lstat(skillsServer);
+        if (!stat.isFile() || stat.isSymbolicLink()) {
+          throw new Error(`Codex artifact has invalid local Skills MCP entry: ${skillsServer}`);
+        }
+      } catch (err) {
+        throw new Error(`Codex artifact missing local Skills MCP entry: ${skillsServer}`, { cause: err });
+      }
       await run(['codex', 'mcp', 'remove', 'lore'], commandOpts).catch(() => undefined);
+      await run(['codex', 'mcp', 'remove', 'lore-skills'], commandOpts).catch(() => undefined);
       await runChecked(
         run,
         'Codex MCP registration',
@@ -220,6 +230,8 @@ export const codexInstaller: ChannelInstaller = {
         commandOpts,
         { redact },
       );
+      // Prefer TOML for stdio lore-skills so env (token/home/base URL) is not embedded in argv.
+      // Host CLIs that support `codex mcp add --command` remain optional; config.toml is source of truth.
 
       const cfgPath = path.join(cHome, 'config.toml');
       await ensureDir(path.dirname(cfgPath));
@@ -239,7 +251,38 @@ export const codexInstaller: ChannelInstaller = {
         'http_headers',
         'env_http_headers',
         'url',
+        'command',
+        'args',
+        'env',
       ]);
+
+      // Pass home/base via env table; token only in env (never in command/args).
+      // Codex TOML env maps are inline tables of string values.
+      const skillsEnvParts = [
+        `LORE_HOME = ${JSON.stringify(ctx.loreHome)}`,
+        `LORE_BASE_URL = ${JSON.stringify(ctx.baseUrl.replace(/\/$/, ''))}`,
+        'LORE_CLIENT_TYPE = "codex"',
+      ];
+      if (ctx.apiToken) {
+        // Prefer env var indirection: host inherits LORE_API_TOKEN from process env when set;
+        // also materialize from shared config into the MCP env table without putting it in command args.
+        skillsEnvParts.push(`LORE_API_TOKEN = ${JSON.stringify(ctx.apiToken)}`);
+      }
+      const skillsKeys: Record<string, string> = {
+        command: JSON.stringify('node'),
+        args: JSON.stringify([skillsServer, '--client-type', 'codex']),
+        env: `{ ${skillsEnvParts.join(', ')} }`,
+      };
+      cfg = setTomlSectionKeys(cfg, '[mcp_servers.lore-skills]', skillsKeys, [
+        'url',
+        'http_headers',
+        'env_http_headers',
+        'bearer_token_env_var',
+        'command',
+        'args',
+        'env',
+      ]);
+
       cfg = setTomlSectionKeys(cfg, '[features]', { hooks: 'true' }, ['hooks', 'codex_hooks']);
       await fs.writeFile(cfgPath, cfg, { encoding: 'utf8', mode: 0o600 });
       await fs.chmod(cfgPath, 0o600);
@@ -281,6 +324,7 @@ export const codexInstaller: ChannelInstaller = {
     if (await haveCommand('codex')) {
       await run(['codex', 'plugin', 'marketplace', 'remove', 'lore'], { quiet: true });
       await run(['codex', 'mcp', 'remove', 'lore'], { quiet: true });
+      await run(['codex', 'mcp', 'remove', 'lore-skills'], { quiet: true });
     }
 
     await fs.rm(path.join(cHome, 'plugins', 'lore-local-marketplace'), { recursive: true, force: true }).catch(() => undefined);
@@ -300,6 +344,7 @@ export const codexInstaller: ChannelInstaller = {
       const cfg = await fs.readFile(cfgPath, 'utf8');
       let next = removeTomlSection(cfg, '[plugins."lore@lore"]');
       next = removeTomlSection(next, '[mcp_servers.lore]');
+      next = removeTomlSection(next, '[mcp_servers.lore-skills]');
       await fs.writeFile(cfgPath, next, 'utf8');
     } catch {
       // ignore

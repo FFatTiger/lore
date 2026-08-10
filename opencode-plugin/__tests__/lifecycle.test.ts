@@ -57,6 +57,7 @@ const lifecycleConfig = {
   startupTimeoutMs: 8_000,
   requestTimeoutMs: 30_000,
   defaultDomain: 'core',
+  loreHome: '/tmp/lore-home',
 };
 
 function session(id: string): Session {
@@ -361,6 +362,59 @@ describe('OpenCode lifecycle adapter', () => {
     await lifecycle.hooks['chat.message']?.(input, output);
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(output.parts).toHaveLength(2);
+  });
+
+  it('appends discovery-only <lore-skills> to promptContext and works without memory promptContext', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
+      skill_catalog: { project_id: 'project-1', catalog_revision: 'rev-9' },
+      skill_candidates: [
+        {
+          skill_id: 'skill-1',
+          name: 'demo-skill',
+          version: 2,
+          description: 'A demo skill',
+        },
+      ],
+      host_output: {
+        mode: 'return_value',
+        value: {
+          promptContext: '<recall session_id="ses-1" query_id="q-1" phase="prompt">\n0.9 | core://agent\n</recall>',
+        },
+      },
+    }));
+    const lifecycle = adapter();
+    const [input, output] = fixture([textPart('prt-1', 'Use the demo skill')]);
+
+    await lifecycle.hooks['chat.message']?.(input, output);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(output.parts).toHaveLength(2);
+    const injected = output.parts[1] as { text: string };
+    expect(injected.text).toContain('<recall session_id="ses-1"');
+    expect(injected.text).toContain('<lore-skills>');
+    expect(injected.text).toContain('lore_skill_get');
+    expect(injected.text).toContain('skill_id: skill-1');
+    expect(injected.text).toContain('demo-skill');
+    expect(injected.text).not.toMatch(/skill_dir|\/skills\//);
+
+    // Skills-only path: no memory promptContext, still injects discovery block.
+    fetchMock.mockResolvedValueOnce(jsonResponse({
+      skill_catalog: { project_id: 'project-1', catalog_revision: 'rev-9' },
+      skill_candidates: [
+        { id: 'skill-2', name: 'other-skill', expected_version: 1 },
+      ],
+      host_output: { mode: 'return_value', value: {} },
+    }));
+    const [input2, output2] = fixture(
+      [textPart('prt-2', 'Skills only', { messageID: 'msg-2' })],
+      { messageID: 'msg-2' },
+      { id: 'msg-2' },
+    );
+    await lifecycle.hooks['chat.message']?.(input2, output2);
+    expect(output2.parts).toHaveLength(2);
+    const skillsOnly = output2.parts[1] as { text: string };
+    expect(skillsOnly.text).toContain('<lore-skills>');
+    expect(skillsOnly.text).toContain('skill_id: skill-2');
+    expect(skillsOnly.text).not.toContain('<recall');
   });
 
   it('fails open without mutating outputs and warns once for incompatible system-hook shapes', async () => {

@@ -1,0 +1,18 @@
+{
+  "name": "@local/lore-skills-mcp",
+  "version": "1.3.23",
+  "description": "Client-local stdio MCP adapter for Lore skills (Codex / Claude Code)",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "lore-skills-mcp": "./src/server.mjs"
+  },
+  "scripts": {
+    "start": "node ./src/server.mjs",
+    "test": "node --test __tests__/**/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

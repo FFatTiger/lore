@@ -55,6 +55,8 @@ async function seedCodexArtifact(
   const market = path.join(loreHome, 'codex', 'plugins', 'lore');
   await fs.mkdir(path.join(market, 'hooks'), { recursive: true });
   await fs.mkdir(path.join(market, 'scripts'), { recursive: true });
+  await fs.mkdir(path.join(market, 'local-skills-mcp', 'src'), { recursive: true });
+  await fs.writeFile(path.join(market, 'local-skills-mcp', 'src', 'server.mjs'), '#!/usr/bin/env node\n');
   await fs.writeFile(path.join(market, 'hooks', 'hooks.json'), `${JSON.stringify(hooks, null, 2)}\n`);
   await fs.writeFile(path.join(market, 'scripts', 'install-hooks.sh'), '#!/bin/bash\nexit 0\n');
   await fs.chmod(path.join(market, 'scripts', 'install-hooks.sh'), 0o755);
@@ -67,7 +69,8 @@ async function readCodexConfig(home: string): Promise<string> {
 
 test('claude install writes settings and mcp args', async () => {
   const { home, loreHome } = await tempHome();
-  await fs.mkdir(path.join(loreHome, 'claudecode'), { recursive: true });
+  await fs.mkdir(path.join(loreHome, 'claudecode', 'local-skills-mcp', 'src'), { recursive: true });
+  await fs.writeFile(path.join(loreHome, 'claudecode', 'local-skills-mcp', 'src', 'server.mjs'), '#!/usr/bin/env node\n');
   const calls: string[] = [];
   const run: ExecFn = async (argv) => {
     calls.push(argv.join(' '));
@@ -82,17 +85,28 @@ test('claude install writes settings and mcp args', async () => {
     assert.equal(result.status, 'ok');
     assert.ok(calls.some((c) => c.includes('claude plugin marketplace add')));
     assert.ok(calls.some((c) => c.includes('claude mcp add') && c.includes('Authorization: Bearer lm_x')));
+    assert.ok(calls.some((c) =>
+      c.includes('claude mcp add') &&
+      c.includes('lore-skills') &&
+      c.includes('stdio') &&
+      c.includes('local-skills-mcp') &&
+      c.includes('--client-type claudecode') &&
+      !c.includes('lm_x'),
+    ));
     const settings = JSON.parse(
       await fs.readFile(path.join(home, '.claude', 'settings.json'), 'utf8'),
-    ) as { env: { LORE_BASE_URL: string; LORE_API_TOKEN: string } };
+    ) as { env: { LORE_BASE_URL: string; LORE_API_TOKEN: string; LORE_HOME: string; LORE_CLIENT_TYPE: string } };
     assert.equal(settings.env.LORE_BASE_URL, 'https://core.example');
     assert.equal(settings.env.LORE_API_TOKEN, 'lm_x');
+    assert.equal(settings.env.LORE_HOME, loreHome);
+    assert.equal(settings.env.LORE_CLIENT_TYPE, 'claudecode');
   });
 });
 
 test('Claude preserves host configuration written during installation', async () => {
   const { home, loreHome } = await tempHome();
-  await fs.mkdir(path.join(loreHome, 'claudecode'), { recursive: true });
+  await fs.mkdir(path.join(loreHome, 'claudecode', 'local-skills-mcp', 'src'), { recursive: true });
+  await fs.writeFile(path.join(loreHome, 'claudecode', 'local-skills-mcp', 'src', 'server.mjs'), '#!/usr/bin/env node\n');
   const settingsPath = path.join(home, '.claude', 'settings.json');
   await fs.mkdir(path.dirname(settingsPath), { recursive: true });
   await fs.writeFile(settingsPath, JSON.stringify({ before: true }), 'utf8');
@@ -127,7 +141,8 @@ test('Claude preserves host configuration written during installation', async ()
 
 test('Claude marketplace failure returns failed with token redacted', async () => {
   const { home, loreHome } = await tempHome();
-  await fs.mkdir(path.join(loreHome, 'claudecode'), { recursive: true });
+  await fs.mkdir(path.join(loreHome, 'claudecode', 'local-skills-mcp', 'src'), { recursive: true });
+  await fs.writeFile(path.join(loreHome, 'claudecode', 'local-skills-mcp', 'src', 'server.mjs'), '#!/usr/bin/env node\n');
   const run: ExecFn = async (argv) => {
     if (argv.slice(0, 4).join(' ') === 'claude plugin marketplace add') {
       return { code: 1, stdout: '', stderr: 'marketplace rejected lm_x' };
@@ -146,7 +161,8 @@ test('Claude marketplace failure returns failed with token redacted', async () =
 
 test('Claude MCP add failure returns failed without leaking token', async () => {
   const { home, loreHome } = await tempHome();
-  await fs.mkdir(path.join(loreHome, 'claudecode'), { recursive: true });
+  await fs.mkdir(path.join(loreHome, 'claudecode', 'local-skills-mcp', 'src'), { recursive: true });
+  await fs.writeFile(path.join(loreHome, 'claudecode', 'local-skills-mcp', 'src', 'server.mjs'), '#!/usr/bin/env node\n');
   const run: ExecFn = async (argv) => {
     if (argv.join(' ') === 'claude plugin list') {
       return { code: 0, stdout: 'lore@lore', stderr: '' };
@@ -168,7 +184,8 @@ test('Claude MCP add failure returns failed without leaking token', async () => 
 
 test('Claude clear token removes settings token and omits MCP header', async () => {
   const { home, loreHome } = await tempHome();
-  await fs.mkdir(path.join(loreHome, 'claudecode'), { recursive: true });
+  await fs.mkdir(path.join(loreHome, 'claudecode', 'local-skills-mcp', 'src'), { recursive: true });
+  await fs.writeFile(path.join(loreHome, 'claudecode', 'local-skills-mcp', 'src', 'server.mjs'), '#!/usr/bin/env node\n');
   const settingsPath = path.join(home, '.claude', 'settings.json');
   await fs.mkdir(path.dirname(settingsPath), { recursive: true });
   await fs.writeFile(settingsPath, JSON.stringify({
@@ -209,7 +226,8 @@ test('Claude clear token removes settings token and omits MCP header', async () 
 
 test('Claude malformed settings fail without overwriting the file', async () => {
   const { home, loreHome } = await tempHome();
-  await fs.mkdir(path.join(loreHome, 'claudecode'), { recursive: true });
+  await fs.mkdir(path.join(loreHome, 'claudecode', 'local-skills-mcp', 'src'), { recursive: true });
+  await fs.writeFile(path.join(loreHome, 'claudecode', 'local-skills-mcp', 'src', 'server.mjs'), '#!/usr/bin/env node\n');
   const settingsPath = path.join(home, '.claude', 'settings.json');
   await fs.mkdir(path.dirname(settingsPath), { recursive: true });
   await fs.writeFile(settingsPath, '{broken', 'utf8');
@@ -234,7 +252,8 @@ test('Claude uninstall removes legacy guidance imports and preserves unrelated c
   const claudeMd = path.join(claudeDir, 'CLAUDE.md');
   const guidance = path.join(claudeDir, 'lore-guidance.md');
   await fs.mkdir(claudeDir, { recursive: true });
-  await fs.mkdir(path.join(loreHome, 'claudecode'), { recursive: true });
+  await fs.mkdir(path.join(loreHome, 'claudecode', 'local-skills-mcp', 'src'), { recursive: true });
+  await fs.writeFile(path.join(loreHome, 'claudecode', 'local-skills-mcp', 'src', 'server.mjs'), '#!/usr/bin/env node\n');
   await fs.writeFile(guidance, 'legacy guidance\n', 'utf8');
   await fs.writeFile(
     claudeMd,
@@ -388,6 +407,15 @@ test('codex final TOML preserves Authorization after host MCP mutation', async (
     assert.match(cfg, /http_headers = \{ Authorization = "Bearer lm_x" \}/);
     assert.match(cfg, /\[plugins\."lore@lore"\]/);
     assert.match(cfg, /hooks = true/);
+    assert.match(cfg, /\[mcp_servers\.lore-skills\]/);
+    assert.match(cfg, /command = "node"/);
+    assert.match(cfg, /local-skills-mcp/);
+    assert.match(cfg, /--client-type/);
+    assert.match(cfg, /LORE_CLIENT_TYPE = "codex"/);
+    // Token may appear in env table for MCP process inheritance, but not in command argv strings.
+    const argsLine = cfg.split('\n').find((line) => line.trim().startsWith('args ='));
+    assert.ok(argsLine);
+    assert.doesNotMatch(argsLine!, /lm_x/);
     if (process.platform !== 'win32') {
       assert.equal((await fs.stat(cfgPath)).mode & 0o777, 0o600);
     }
@@ -534,7 +562,10 @@ test('codex clear token removes stale MCP auth keys', async () => {
       'url = "https://old.example/api/mcp"\n' +
       'bearer_token_env_var = "OLD_TOKEN"\n' +
       'http_headers = { Authorization = "Bearer old" }\n' +
-      'env_http_headers = { Authorization = "OLD_TOKEN" }\n',
+      'env_http_headers = { Authorization = "OLD_TOKEN" }\n' +
+      '[mcp_servers.lore-skills]\n' +
+      'command = "node"\n' +
+      'env = { LORE_API_TOKEN = "old" }\n',
     'utf8',
   );
   const run: ExecFn = async () => ({ code: 0, stdout: '', stderr: '' });
@@ -553,6 +584,8 @@ test('codex clear token removes stale MCP auth keys', async () => {
     assert.doesNotMatch(cfg, /http_headers/);
     assert.doesNotMatch(cfg, /env_http_headers/);
     assert.match(cfg, /url = "https:\/\/core\.example\/api\/mcp\?client_type=codex"/);
+    assert.match(cfg, /\[mcp_servers\.lore-skills\]/);
+    assert.doesNotMatch(cfg, /LORE_API_TOKEN/);
     if (process.platform !== 'win32') {
       assert.equal((await fs.stat(cfgPath)).mode & 0o777, 0o600);
     }

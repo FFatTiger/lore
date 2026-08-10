@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 const DEFAULT_BASE_URL = 'http://127.0.0.1:18901';
 const DEFAULT_DOMAIN = 'core';
@@ -18,6 +18,8 @@ export interface LorePluginConfig {
   startupTimeoutMs: number;
   requestTimeoutMs: number;
   defaultDomain: string;
+  /** Writable skill work-copy root: LORE_HOME, else <home>/.lore. */
+  loreHome: string;
 }
 
 function firstNonBlank(...values: unknown[]): string {
@@ -38,6 +40,12 @@ function readSharedLoreConfig(homeDir: string): SharedLoreConfig {
   }
 }
 
+function resolveLoreHome(env: NodeJS.ProcessEnv, homeDir: string): string {
+  const fromEnv = firstNonBlank(env.LORE_HOME);
+  if (fromEnv) return resolve(fromEnv);
+  return resolve(join(homeDir, '.lore'));
+}
+
 export function loadLorePluginConfig(
   env: NodeJS.ProcessEnv = process.env,
   homeDir: string = homedir(),
@@ -52,5 +60,6 @@ export function loadLorePluginConfig(
     startupTimeoutMs: STARTUP_TIMEOUT_MS,
     requestTimeoutMs: REQUEST_TIMEOUT_MS,
     defaultDomain: firstNonBlank(env.LORE_DEFAULT_DOMAIN, DEFAULT_DOMAIN),
+    loreHome: resolveLoreHome(env, homeDir),
   };
 }

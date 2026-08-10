@@ -122,6 +122,7 @@ export const claudecodeInstaller: ChannelInstaller = {
 
       const mcpUrl = `${ctx.baseUrl.replace(/\/$/, '')}/api/mcp?client_type=claudecode`;
       await run(['claude', 'mcp', 'remove', 'lore'], commandOpts).catch(() => undefined);
+      await run(['claude', 'mcp', 'remove', 'lore-skills'], commandOpts).catch(() => undefined);
       const mcpArgs = [
         'claude',
         'mcp',
@@ -138,11 +139,41 @@ export const claudecodeInstaller: ChannelInstaller = {
       }
       await runChecked(run, 'Claude MCP registration', mcpArgs, commandOpts, { redact });
 
+      // Local skills stdio MCP: command points into the installed channel artifact.
+      // Token/base URL come from Claude settings env / process env, not from command argv.
+      const skillsServer = path.join(dest, 'local-skills-mcp', 'src', 'server.mjs');
+      try {
+        const stat = await fs.lstat(skillsServer);
+        if (!stat.isFile() || stat.isSymbolicLink()) {
+          throw new Error(`Claude artifact has invalid local Skills MCP entry: ${skillsServer}`);
+        }
+      } catch (err) {
+        throw new Error(`Claude artifact missing local Skills MCP entry: ${skillsServer}`, { cause: err });
+      }
+      const skillsArgs = [
+        'claude',
+        'mcp',
+        'add',
+        '--transport',
+        'stdio',
+        '--scope',
+        'user',
+        'lore-skills',
+        '--',
+        'node',
+        skillsServer,
+        '--client-type',
+        'claudecode',
+      ];
+      await runChecked(run, 'Claude skills MCP registration', skillsArgs, commandOpts, { redact });
+
       await ensureDir(path.dirname(sf));
       const latestSettings = await readJsonFileStrict<unknown>(sf);
       const settings = latestSettings === undefined ? {} : asSettings(latestSettings, sf);
       const settingsEnv = (settings.env ??= {});
       settingsEnv.LORE_BASE_URL = ctx.baseUrl.replace(/\/$/, '');
+      settingsEnv.LORE_HOME = ctx.loreHome;
+      settingsEnv.LORE_CLIENT_TYPE = 'claudecode';
       if (ctx.apiToken) settingsEnv.LORE_API_TOKEN = ctx.apiToken;
       else if (ctx.tokenAction === 'clear') delete settingsEnv.LORE_API_TOKEN;
       await writeJsonAtomic(sf, settings);
@@ -162,6 +193,7 @@ export const claudecodeInstaller: ChannelInstaller = {
     if (await haveCommand('claude')) {
       await run(['claude', 'plugins', 'uninstall', 'lore@lore'], { quiet: true });
       await run(['claude', 'mcp', 'remove', 'lore'], { quiet: true });
+      await run(['claude', 'mcp', 'remove', 'lore-skills'], { quiet: true });
     }
 
     const sf = settingsPath(homeDir);
@@ -170,6 +202,8 @@ export const claudecodeInstaller: ChannelInstaller = {
       if (settings.env) {
         delete settings.env.LORE_BASE_URL;
         delete settings.env.LORE_API_TOKEN;
+        delete settings.env.LORE_HOME;
+        delete settings.env.LORE_CLIENT_TYPE;
         if (Object.keys(settings.env).length === 0) delete settings.env;
         await writeJsonAtomic(sf, settings);
       }

@@ -7,6 +7,7 @@ const config = {
   startupTimeoutMs: 8_000,
   requestTimeoutMs: 30_000,
   defaultDomain: 'core',
+  loreHome: '/tmp/lore-home',
 };
 
 function jsonResponse(value: unknown, init: ResponseInit = {}): Response {

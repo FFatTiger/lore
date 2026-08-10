@@ -625,12 +625,12 @@ install_claudecode() {
     ok "Claude plugin already enabled"
   fi
 
-  # settings.json env (for MCP URL)
+  # settings.json env (for MCP URL and local Skills MCP)
   local sf="$HOME/.claude/settings.json"
   if have_command python3; then
-    python3 - "$sf" "$BASE_URL" "$API_TOKEN" <<'PY'
+    python3 - "$sf" "$BASE_URL" "$API_TOKEN" "$LORE_HOME" <<'PY'
 import sys, json, os
-path, base_url, api_token = sys.argv[1], sys.argv[2], sys.argv[3]
+path, base_url, api_token, lore_home = sys.argv[1:5]
 data = {}
 if os.path.exists(path):
     try:
@@ -639,6 +639,8 @@ if os.path.exists(path):
 if not isinstance(data, dict): data = {}
 data.setdefault("env", {})
 data["env"]["LORE_BASE_URL"] = base_url
+data["env"]["LORE_HOME"] = lore_home
+data["env"]["LORE_CLIENT_TYPE"] = "claudecode"
 if api_token: data["env"]["LORE_API_TOKEN"] = api_token
 with open(path, 'w') as f: json.dump(data, f, indent=2, ensure_ascii=False)
 PY
@@ -663,6 +665,18 @@ PY
   fi
   if [[ "$claude_mcp_configured" == "1" ]]; then
     ok "Claude MCP configured"
+  fi
+
+  local claude_skills_server="$plugin_dir/local-skills-mcp/src/server.mjs"
+  if [[ ! -f "$claude_skills_server" || -L "$claude_skills_server" ]]; then
+    warn "Claude artifact missing local Skills MCP: $claude_skills_server"
+  else
+    run_quiet claude mcp remove lore-skills || true
+    if run_quiet claude mcp add --transport stdio --scope user lore-skills -- node "$claude_skills_server" --client-type claudecode; then
+      ok "Claude local Skills MCP configured"
+    else
+      warn "Claude: configure local Lore Skills MCP manually"
+    fi
   fi
 
   # Legacy local guidance is no longer installed; lifecycle context comes from the Lore server.
@@ -742,64 +756,75 @@ PY
     ok "Codex plugin enabled"
   fi
 
-  # MCP
+  # Remote Memory MCP + client-local Skills MCP.
   local mcp_url="${BASE_URL}/api/mcp?client_type=codex"
+  local codex_skills_server="$installed_plugin_root/local-skills-mcp/src/server.mjs"
   run_quiet codex mcp remove lore || true
+  run_quiet codex mcp remove lore-skills || true
   run_quiet codex mcp add lore --url "$mcp_url" || true
+  if [[ ! -f "$codex_skills_server" || -L "$codex_skills_server" ]]; then
+    warn "Codex artifact missing local Skills MCP: $codex_skills_server"
+  fi
   if have_command python3; then
-    python3 - "$cfg" "$mcp_url" "$API_TOKEN" <<'PY'
+    python3 - "$cfg" "$mcp_url" "$API_TOKEN" "$codex_skills_server" "$LORE_HOME" "$BASE_URL" <<'PYCODEX'
 import json
+import os
 import sys
 
-path, mcp_url, api_token = sys.argv[1], sys.argv[2], sys.argv[3]
+path, mcp_url, api_token, skills_server, lore_home, base_url = sys.argv[1:7]
 try:
     with open(path, encoding='utf-8') as handle:
         lines = handle.read().splitlines()
 except FileNotFoundError:
     lines = []
 
-section = '[mcp_servers.lore]'
-out = []
-idx = 0
-found = False
-while idx < len(lines):
-    line = lines[idx]
-    if line.strip() == section:
-        found = True
+def upsert(lines, section, body):
+    out = []
+    idx = 0
+    found = False
+    while idx < len(lines):
+        line = lines[idx]
+        if line.strip() == section:
+            found = True
+            out.append(line)
+            idx += 1
+            while idx < len(lines) and not lines[idx].lstrip().startswith('['):
+                idx += 1
+            out.extend(body)
+            continue
         out.append(line)
         idx += 1
-        url_written = False
-        while idx < len(lines) and not lines[idx].lstrip().startswith('['):
-            stripped = lines[idx].strip()
-            if stripped.startswith('url'):
-                out.append(f'url = {json.dumps(mcp_url)}')
-                url_written = True
-            elif stripped.startswith('bearer_token_env_var') or stripped.startswith('http_headers') or stripped.startswith('env_http_headers'):
-                pass
-            else:
-                out.append(lines[idx])
-            idx += 1
-        if not url_written:
-            out.append(f'url = {json.dumps(mcp_url)}')
-        if api_token:
-            out.append(f'http_headers = {{ Authorization = {json.dumps("Bearer " + api_token)} }}')
-        continue
-    out.append(line)
-    idx += 1
+    if not found:
+        if out and out[-1] != '': out.append('')
+        out.append(section)
+        out.extend(body)
+    return out
 
-if not found:
-    if out and out[-1] != '':
-        out.append('')
-    out.append(section)
-    out.append(f'url = {json.dumps(mcp_url)}')
-    if api_token:
-        out.append(f'http_headers = {{ Authorization = {json.dumps("Bearer " + api_token)} }}')
+remote = [f'url = {json.dumps(mcp_url)}']
+if api_token:
+    remote.append(f'http_headers = {{ Authorization = {json.dumps("Bearer " + api_token)} }}')
+lines = upsert(lines, '[mcp_servers.lore]', remote)
 
+skills_env = [
+    f'LORE_HOME = {json.dumps(lore_home)}',
+    f'LORE_BASE_URL = {json.dumps(base_url.rstrip("/"))}',
+    'LORE_CLIENT_TYPE = "codex"',
+]
+if api_token:
+    skills_env.append(f'LORE_API_TOKEN = {json.dumps(api_token)}')
+skills = [
+    'command = "node"',
+    f'args = {json.dumps([skills_server, "--client-type", "codex"])}',
+    f'env = {{ {", ".join(skills_env)} }}',
+]
+lines = upsert(lines, '[mcp_servers.lore-skills]', skills)
+
+os.makedirs(os.path.dirname(path), exist_ok=True)
 with open(path, 'w', encoding='utf-8') as handle:
-    handle.write('\n'.join(out).rstrip() + '\n')
-PY
+    handle.write('\n'.join(lines).rstrip() + '\n')
+PYCODEX
   fi
-  ok "MCP configured"
+  ok "Memory and local Skills MCP configured"
 
   # Enable official Codex lifecycle hooks support for plugin-bundled hooks.
   mkdir -p "$(dirname "$cfg")"

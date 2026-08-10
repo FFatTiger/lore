@@ -11,6 +11,12 @@ fail() {
   exit 1
 }
 
+grep -Fq 'node scripts/sync-skill-workcopy.mjs --check' "$WORKFLOW" || fail 'shared Skill work-copy vendor parity check missing'
+grep -Fq 'name: Build Claude Code artifact' "$WORKFLOW" || fail 'Claude Code artifact step missing'
+grep -Fq 'local-skills-mcp' "$WORKFLOW" || fail 'local-skills-mcp must be packaged into Codex/Claude artifacts'
+grep -Fq 'local-skills-mcp/package.json' "$ROOT/scripts/release.sh" || fail 'release versioning must include local-skills-mcp manifest'
+grep -Fq 'local-skills-mcp/src/server.mjs' "$ROOT/scripts/release.sh" || fail 'release versioning must include local-skills-mcp serverInfo'
+grep -Fq 'name: Build Codex artifact' "$WORKFLOW" || fail 'Codex artifact step missing'
 grep -Fq 'name: Build OpenCode artifact' "$WORKFLOW" || fail 'OpenCode artifact step missing'
 grep -Fq 'cd opencode-plugin' "$WORKFLOW" || fail 'OpenCode package directory missing'
 grep -Fq 'npm ci' "$WORKFLOW" || fail 'OpenCode npm ci missing'

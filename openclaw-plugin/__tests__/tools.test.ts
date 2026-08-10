@@ -29,12 +29,12 @@ const RECALL_SESSION_ID_DESCRIPTION = 'REQUIRED when the URI came from <recall>:
 const RECALL_QUERY_ID_DESCRIPTION = 'REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag.';
 
 describe('registerTools — tool registration', () => {
-  it('registers all 9 tools', () => {
+  it('registers all 16 tools including skills', () => {
     const api = makeMockApi();
     const cfg = makePluginCfg();
     registerTools(api as any, cfg);
     const names = Object.keys(api.tools);
-    expect(names).toHaveLength(9);
+    expect(names).toHaveLength(16);
     expect(names).toContain('lore_status');
     expect(names).toContain('lore_boot');
     expect(names).toContain('lore_get_node');
@@ -44,6 +44,14 @@ describe('registerTools — tool registration', () => {
     expect(names).toContain('lore_update_node');
     expect(names).toContain('lore_delete_node');
     expect(names).toContain('lore_move_node');
+    expect(names).toContain('lore_skill_list');
+    expect(names).toContain('lore_skill_search');
+    expect(names).toContain('lore_skill_get');
+    expect(names).toContain('lore_skill_create');
+    expect(names).toContain('lore_skill_update');
+    expect(names).toContain('lore_skill_delete');
+    expect(names).toContain('lore_skill_status');
+    expect(names).not.toContain('lore_skill_artifact_create');
     expect(names).not.toContain('lore_list_session_reads');
     expect(names).not.toContain('lore_clear_session_reads');
   });

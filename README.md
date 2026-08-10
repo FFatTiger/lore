@@ -40,7 +40,7 @@
 
 ## What Lore is
 
-Lore is a self-hosted memory service for coding agents and other LLM runtimes. It gives agents a durable graph of memories, a fixed startup baseline, per-prompt recall, and guarded write tools.
+Lore is a self-hosted memory and Skill service for coding agents and other LLM runtimes. It gives agents a durable graph of memories, a fixed startup baseline, per-prompt recall, guarded write tools, and versioned Skills that materialize as writable local work copies only when an agent opens them.
 
 Most memory layers stop at retrieval. Lore covers the full lifecycle:
 
@@ -50,6 +50,7 @@ Most memory layers stop at retrieval. Lore covers the full lifecycle:
 - **URI-first graph** — durable addresses such as `core://agent`, `preferences://user`, `project://my_project`
 - **Disclosure** — each memory states when it should surface
 - **Dream** — scheduled maintenance with quality checks and rollback history
+- **Skills** — Console and agents edit the same versioned server package; recall discovers candidates, and `lore_skill_get` downloads or refreshes a writable local copy on demand
 
 ## Quick Start
 
@@ -143,12 +144,12 @@ Then open `/settings` only if you want to tune recall weights, Dream schedule, b
 
 | Runtime | Integration | What you get |
 | --- | --- | --- |
-| **Pi** | `pi-extension/` | Extension tools, startup boot, per-prompt recall. Best fit when you want Lore as the primary memory layer. |
-| **Claude Code** | `claudecode-plugin/` | Marketplace plugin, MCP tools, SessionStart boot, per-prompt recall hooks |
-| **Codex** | `codex-plugin/` | Local marketplace plugin, MCP config, boot/recall hooks |
-| **OpenClaw** | `openclaw-plugin/` | Runtime plugin with boot, recall, and Lore tools |
-| **Hermes** | `hermes-plugin/` | MemoryProvider plugin with Lore tools and recall |
-| **OpenCode** | `opencode-plugin/` | Native plugin at `~/.config/opencode/plugins/lore-memory.js` with exact `lore_*` tools |
+| **Pi** | `pi-extension/` | Extension tools, startup boot, per-prompt recall, and writable Skill work copies. |
+| **Claude Code** | `claudecode-plugin/` | Marketplace plugin, remote Memory MCP, local Skills MCP, SessionStart boot, and recall hooks |
+| **Codex** | `codex-plugin/` | Local marketplace plugin, remote Memory MCP, local Skills MCP, and boot/recall hooks |
+| **OpenClaw** | `openclaw-plugin/` | Runtime plugin with boot, recall, Lore tools, and native Skill work copies |
+| **Hermes** | `hermes-plugin/` | MemoryProvider plugin with Lore tools, recall, and Python-native Skill work copies |
+| **OpenCode** | `opencode-plugin/` | Native plugin with exact `lore_*` tools, recall, and bundled Skill work copies |
 | **Generic MCP** | `/api/mcp` | Streamable HTTP endpoint for clients that can attach remote tools |
 
 After install, restart each runtime. Useful notes:
@@ -165,13 +166,22 @@ http://your-host:18901/api/mcp?client_type=mcp
 
 ## Daily use
 
-Once connected, the agent flow is:
+Once connected, the Memory flow is:
 
 1. load boot memories at session start
 2. receive `<recall>` candidates before prompts
 3. open relevant nodes with `lore_get_node`
 4. create or update durable memories when something should survive the session
 5. use the Web UI for graph editing, recall inspection, Dream, backup, and settings
+
+The Skill flow is separate:
+
+1. Skill recall emits a discovery-only `<lore-skills>` candidate with `skill_id` and `version`
+2. the agent calls `lore_skill_get(skill_id)`
+3. the runtime downloads the complete package into `${LORE_HOME:-~/.lore}/skill-artifacts/<project-id>/<skill-name>/` when missing, or refreshes server-managed files when the server version changed
+4. the tool returns the full `SKILL.md` content and absolute `skill_dir`
+5. the agent uses that writable directory like a normal local Skill; reports, caches, and other outputs remain inside it
+6. same-version local edits are preserved; an upgrade replaces only server-managed paths and preserves extra local outputs
 
 Useful pages:
 

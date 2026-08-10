@@ -2,6 +2,7 @@ import { Type } from "@sinclair/typebox";
 import { textResult, fetchJson, hasRecallConfig } from "./api";
 import { resolveMemoryLocator, splitParentPathAndTitle, trimSlashes } from "./uri";
 import { formatNode, formatBootView, normalizeSearchResults, normalizeKeywordList } from "./formatters";
+import { registerSkillTools, type SkillsSession } from "./skills";
 
 // Shared TypeBox schemas for tool parameters
 const EmptySchema = Type.Object({});
@@ -20,7 +21,7 @@ const QueryIdParam = Type.String({
   description: "REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag.",
 });
 
-export function registerTools(api: any, pluginCfg: any) {
+export function registerTools(api: any, pluginCfg: any, skillsSession?: SkillsSession) {
   api.logger?.info?.("lore: registerTools() starting");
   api.registerTool({
     name: "lore_status",
@@ -317,4 +318,5 @@ export function registerTools(api: any, pluginCfg: any) {
     },
   });
 
+  registerSkillTools(api, pluginCfg, skillsSession);
 }

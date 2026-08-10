@@ -1,0 +1,47 @@
+# Lore local skills MCP (stdio)
+
+Client-local MCP adapter that owns **all** `lore_skill_*` tools for Codex and Claude Code:
+
+- `lore_skill_list`
+- `lore_skill_search`
+- `lore_skill_get` (materializes a writable local work copy; returns `SKILL.md` + absolute `skill_dir`)
+- `lore_skill_create`
+- `lore_skill_update` (requires positive integer `expected_version`)
+- `lore_skill_delete`
+- `lore_skill_status` (local read-only; can list existing copies without contacting Core)
+
+Remote Core MCP (`lore`) continues to serve memory tools only for these client types; skills are not duplicated.
+
+## Run
+
+```bash
+node src/server.mjs --client-type codex
+# or
+LORE_CLIENT_TYPE=claudecode node src/server.mjs
+```
+
+Configuration is resolved from env / `~/.lore/config.json` (never put tokens in argv):
+
+| Source | Keys |
+|--------|------|
+| Env | `LORE_HOME`, `LORE_BASE_URL`, `LORE_API_TOKEN`, `LORE_CLIENT_TYPE`, `LORE_TIMEOUT_MS` |
+| Shared config | `base_url`, `api_token` |
+
+HTTP calls go to `${LORE_BASE_URL}/api/skills*` with `Authorization: Bearer …` and `client_type=codex|claudecode`.
+
+## Host protocol
+
+- JSON-RPC 2.0 over stdio
+- **Primary framing:** MCP/LSP `Content-Length` headers
+- **Also accepted:** newline-delimited JSON (NDJSON); responses mirror the peer’s framing once detected
+- Methods: `initialize`, `notifications/initialized`, `tools/list`, `tools/call`, `ping`
+- Tool failures return `{ content, isError: true }` without crashing the process
+
+## Packaging
+
+Release ZIPs for Codex / Claude Code include this directory (and `vendor/skill-workcopy.mjs`). Installers register:
+
+- remote HTTP MCP as `lore` (memory)
+- local stdio MCP as `lore-skills` (skills)
+
+Work-copy materialization uses vendored helpers under `vendor/` (or `shared/skill-workcopy` when present in the monorepo) and stores copies at `${LORE_HOME:-~/.lore}/skill-artifacts/<project-id>/<skill-name>/`.

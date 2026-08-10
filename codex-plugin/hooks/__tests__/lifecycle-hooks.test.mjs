@@ -215,3 +215,74 @@ test('bundled hooks.json keeps portable commands and SessionStart matcher', () =
   assert.ok(commands.every((command) => command.startsWith('node "')));
   assert.ok(commands.every((command) => !command.includes('LORE_BASE_URL=')));
 });
+
+
+test('UserPromptSubmit appends <lore-skills> to host_output and preserves Memory context', async () => {
+  const server = await withServer(() => ({
+    skill_candidates: [
+      { skill_id: 's-1', name: 'alpha', version: 2, description: 'Alpha skill' },
+    ],
+    host_output: {
+      mode: 'stdout_json',
+      value: {
+        hookSpecificOutput: {
+          hookEventName: 'UserPromptSubmit',
+          additionalContext: 'MEMORY_RECALL',
+        },
+      },
+    },
+  }));
+
+  try {
+    const result = await runHook(recallHook, {
+      prompt: 'use a skill',
+      session_id: 'sess-1',
+    }, {
+      LORE_CODEX_HOOK_BASE_URL: server.baseUrl,
+    });
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stdout, /MEMORY_RECALL/);
+    assert.match(result.stdout, /<lore-skills>/);
+    assert.match(result.stdout, /skill_id: s-1/);
+    assert.match(result.stdout, /lore_skill_get/);
+    assert.match(result.stdout, /alpha/);
+  } finally {
+    await server.close();
+  }
+});
+
+test('UserPromptSubmit adds missing additionalContext in structured host_output', async () => {
+  const server = await withServer(() => ({
+    skill_candidates: [{ skill_id: 's-2', name: 'beta', version: 3 }],
+    host_output: {
+      mode: 'stdout_json',
+      value: { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', decision: 'allow' } },
+    },
+  }));
+  try {
+    const result = await runHook(recallHook, { prompt: 'structured skill' }, {
+      LORE_CODEX_HOOK_BASE_URL: server.baseUrl,
+    });
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.hookSpecificOutput.decision, 'allow');
+    assert.match(output.hookSpecificOutput.additionalContext, /skill_id: s-2/);
+  } finally {
+    await server.close();
+  }
+});
+
+test('UserPromptSubmit skill discovery fails open when candidates malformed', async () => {
+  const server = await withServer(() => ({
+    skill_candidates: 'not-an-array',
+    host_output: { mode: 'stdout_text', value: 'ONLY_MEMORY' },
+  }));
+  try {
+    const result = await runHook(recallHook, { prompt: 'x' }, {
+      LORE_CODEX_HOOK_BASE_URL: server.baseUrl,
+    });
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.stdout, 'ONLY_MEMORY');
+  } finally {
+    await server.close();
+  }
+});

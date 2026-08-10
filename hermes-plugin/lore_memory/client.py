@@ -285,6 +285,45 @@ class LoreClient:
             "success": success
         }
         return self._request("POST", "/browse/recall/usage", data=data) or {}
+
+    # ---- Skills ----
+
+    def list_skills(self, include_disabled: bool = True) -> Dict:
+        """List Lore skills for the active project."""
+        params = {"include_disabled": "true" if include_disabled else "false"}
+        data = self._request("GET", "/skills", params=params) or {}
+        return {
+            "project_id": str(data.get("project_id") or ""),
+            "catalog_revision": str(data.get("catalog_revision") or ""),
+            "skills": data.get("skills") if isinstance(data.get("skills"), list) else [],
+        }
+
+    def search_skills(self, query: str, limit: Optional[int] = None) -> Dict:
+        """Search or recall Lore skills by query."""
+        params: Dict[str, Any] = {"query": query or ""}
+        if limit is not None:
+            params["limit"] = int(limit)
+        return self._request("GET", "/skills/recall", params=params) or {}
+
+    def get_skill(self, skill_id: str) -> Dict:
+        """Fetch a single skill detail by id."""
+        return self._request("GET", f"/skills/{skill_id}") or {}
+
+    def create_skill(self, body: Dict[str, Any]) -> Dict:
+        """Create a Lore skill on the server."""
+        return self._request("POST", "/skills", data=body) or {}
+
+    def update_skill(self, skill_id: str, body: Dict[str, Any]) -> Dict:
+        """Update a Lore skill with optimistic concurrency (expected_version required)."""
+        expected = body.get("expected_version") if isinstance(body, dict) else None
+        # bool is a subclass of int in Python; reject True/False explicitly.
+        if type(expected) is not int or expected < 1:
+            raise LoreError("expected_version is required and must be a positive integer")
+        return self._request("PATCH", f"/skills/{skill_id}", data=body) or {}
+
+    def delete_skill(self, skill_id: str) -> Dict:
+        """Archive/delete a Lore skill on the server."""
+        return self._request("DELETE", f"/skills/{skill_id}") or {}
     
     # ---- URI Helpers ----
     

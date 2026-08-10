@@ -40,9 +40,11 @@ describe('pickPluginConfig', () => {
     expect(cfg.recallEnabled).toBe(true);
     expect(cfg.injectPromptGuidance).toBe(true);
     expect(cfg.startupHealthcheck).toBe(true);
+    expect(cfg.loreHome).toBe(path.join(tempHome, '.lore'));
   });
 
   it('picks values from pluginConfig', () => {
+    const customHome = path.join(tempHome, 'custom-lore');
     const cfg = pickPluginConfig({
       pluginConfig: {
         baseUrl: 'http://custom:9000',
@@ -51,6 +53,7 @@ describe('pickPluginConfig', () => {
         recallEnabled: false,
         injectPromptGuidance: false,
         startupHealthcheck: false,
+        loreHome: customHome,
       },
     });
     expect(cfg.baseUrl).toBe('http://custom:9000');
@@ -59,6 +62,7 @@ describe('pickPluginConfig', () => {
     expect(cfg.recallEnabled).toBe(false);
     expect(cfg.injectPromptGuidance).toBe(false);
     expect(cfg.startupHealthcheck).toBe(false);
+    expect(cfg.loreHome).toBe(path.resolve(customHome));
   });
 
   it('loads base URL and API token from shared Lore config', () => {

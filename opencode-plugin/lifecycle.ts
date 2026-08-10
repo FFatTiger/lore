@@ -4,6 +4,11 @@ import type { Hooks } from '@opencode-ai/plugin';
 import type { Part } from '@opencode-ai/sdk';
 import { LoreApiError, loreFetchJson } from './api.js';
 import type { LorePluginConfig } from './config.js';
+import {
+  readSkillCatalog,
+  skillDiscoveryBlockFromResponse,
+  type SkillCatalog,
+} from './skills.js';
 
 export const LORE_RECALL_MARKER = 'lore:prompt-context';
 
@@ -90,6 +95,9 @@ interface HostOutputResponse {
       promptContext?: unknown;
     };
   };
+  /** Skill lane is independent of memory host_output. */
+  skill_catalog?: unknown;
+  skill_candidates?: unknown;
 }
 
 interface SessionState {
@@ -98,6 +106,7 @@ interface SessionState {
   systemContext?: string;
   retryAt: number;
   promptMessageIDs: Set<string>;
+  skillCatalog?: SkillCatalog;
 }
 
 export interface OpenCodeLifecycleAdapter {
@@ -208,6 +217,8 @@ export function createOpenCodeLifecycleAdapter(args: {
       timeoutMs: config.startupTimeoutMs,
     })
       .then((response) => {
+        const catalog = readSkillCatalog(response);
+        if (catalog) state.skillCatalog = catalog;
         const systemContext = hostValue(response, 'systemContext');
         if (systemContext) state.systemContext = systemContext;
         return systemContext;
@@ -268,14 +279,25 @@ export function createOpenCodeLifecycleAdapter(args: {
         signal: state.abortController.signal,
         timeoutMs: config.requestTimeoutMs,
       });
+
+      // Skill lane is independent of memory host_output; record catalog identity only.
+      const catalog = readSkillCatalog(response);
+      if (catalog) state.skillCatalog = catalog;
+
+      // Discovery-only: never download or inject local paths.
+      const skillBlock = skillDiscoveryBlockFromResponse(response);
       const promptContext = hostValue(response, 'promptContext');
-      if (!promptContext) return;
+
+      // Append discovery block to promptContext even when memory recall is absent.
+      const combined = [promptContext, skillBlock].filter(nonEmpty).join('\n\n');
+      if (!combined) return;
+
       output.parts.push({
         id: `prt_lore_${randomUUID().replaceAll('-', '')}`,
         sessionID: prompt.sessionID,
         messageID: prompt.messageID,
         type: 'text',
-        text: promptContext,
+        text: combined,
         synthetic: true,
         metadata: { lore_injected: true, marker: LORE_RECALL_MARKER },
       });

@@ -69,6 +69,14 @@ copy_source_layout() {
       cp -a "$source_plugin_root/$entry" "$TARGET_ROOT.tmp/plugins/$PLUGIN_NAME/$entry"
     fi
   done
+  if [ -d "$source_plugin_root/local-skills-mcp" ]; then
+    cp -a "$source_plugin_root/local-skills-mcp" "$TARGET_ROOT.tmp/plugins/$PLUGIN_NAME/local-skills-mcp"
+  elif [ -d "$source_plugin_root/../local-skills-mcp" ]; then
+    cp -a "$source_plugin_root/../local-skills-mcp" "$TARGET_ROOT.tmp/plugins/$PLUGIN_NAME/local-skills-mcp"
+  else
+    echo "Cannot locate local-skills-mcp beside $source_plugin_root" >&2
+    exit 1
+  fi
 
   rm -rf "$TARGET_ROOT"
   mv "$TARGET_ROOT.tmp" "$TARGET_ROOT"
@@ -191,60 +199,69 @@ PY
 configure_mcp() {
   local url="${LORE_BASE_URL%/}/api/mcp?client_type=codex"
   local token="${LORE_API_TOKEN:-${API_TOKEN:-}}"
+  local skills_server="${INSTALLED_PLUGIN_ROOT}/local-skills-mcp/src/server.mjs"
+  local lore_home="${LORE_HOME:-$HOME/.lore}"
 
   codex mcp remove lore >/dev/null 2>&1 || true
+  codex mcp remove lore-skills >/dev/null 2>&1 || true
   codex mcp add lore --url "$url"
 
-  python3 - "$CODEX_CONFIG" "$url" "$token" <<'PY'
+  python3 - "$CODEX_CONFIG" "$url" "$token" "$skills_server" "$lore_home" "${LORE_BASE_URL%/}" <<'PY'
 import json
 import sys
 
-path, url, token = sys.argv[1], sys.argv[2], sys.argv[3]
+path, url, token, skills_server, lore_home, base_url = sys.argv[1:7]
 try:
     with open(path, encoding="utf-8") as handle:
         lines = handle.read().splitlines()
 except FileNotFoundError:
     lines = []
 
-section = "[mcp_servers.lore]"
-out = []
-idx = 0
-found = False
-while idx < len(lines):
-    line = lines[idx]
-    if line.strip() == section:
-        found = True
+def upsert_section(lines, section, body_lines):
+    out = []
+    idx = 0
+    found = False
+    while idx < len(lines):
+        line = lines[idx]
+        if line.strip() == section:
+            found = True
+            out.append(line)
+            idx += 1
+            while idx < len(lines) and not lines[idx].lstrip().startswith("["):
+                idx += 1
+            out.extend(body_lines)
+            continue
         out.append(line)
         idx += 1
-        url_written = False
-        while idx < len(lines) and not lines[idx].lstrip().startswith("["):
-            stripped = lines[idx].strip()
-            if stripped.startswith("url"):
-                out.append(f"url = {json.dumps(url)}")
-                url_written = True
-            elif stripped.startswith("bearer_token_env_var") or stripped.startswith("http_headers") or stripped.startswith("env_http_headers"):
-                pass
-            else:
-                out.append(lines[idx])
-            idx += 1
-        if not url_written:
-            out.append(f"url = {json.dumps(url)}")
-        if token:
-            out.append(f"http_headers = {{ Authorization = {json.dumps('Bearer ' + token)} }}")
-        continue
-    out.append(line)
-    idx += 1
+    if not found:
+        if out and out[-1] != "":
+            out.append("")
+        out.append(section)
+        out.extend(body_lines)
+    return out
 
-if not found:
-    if out and out[-1] != "":
-        out.append("")
-    out.append(section)
-    out.append(f"url = {json.dumps(url)}")
-    if token:
-        out.append(f"http_headers = {{ Authorization = {json.dumps('Bearer ' + token)} }}")
+lore_body = [f"url = {json.dumps(url)}"]
+if token:
+    lore_body.append(f"http_headers = {{ Authorization = {json.dumps('Bearer ' + token)} }}")
+
+skills_env_parts = [
+    f"LORE_HOME = {json.dumps(lore_home)}",
+    f"LORE_BASE_URL = {json.dumps(base_url)}",
+    'LORE_CLIENT_TYPE = "codex"',
+]
+if token:
+    skills_env_parts.append(f"LORE_API_TOKEN = {json.dumps(token)}")
+skills_body = [
+    'command = "node"',
+    f"args = {json.dumps([skills_server, '--client-type', 'codex'])}",
+    f"env = {{ {', '.join(skills_env_parts)} }}",
+]
+
+lines = upsert_section(lines, "[mcp_servers.lore]", lore_body)
+lines = upsert_section(lines, "[mcp_servers.lore-skills]", skills_body)
 
 with open(path, "w", encoding="utf-8") as handle:
-    handle.write("\n".join(out).rstrip() + "\n")
+    handle.write("\n".join(lines).rstrip() + "\n")
 PY
 }
 
@@ -304,6 +321,8 @@ patch_hook_placeholders "$INSTALLED_PLUGIN_ROOT"
 patch_hook_placeholders "$TARGET_ROOT/plugins/$PLUGIN_NAME"
 jq -e '.plugins[0].source.path == "./plugins/lore"' "$TARGET_ROOT/.agents/plugins/marketplace.json" >/dev/null
 jq -e '.mcpServers.lore.url | contains("client_type=codex")' "$INSTALLED_PLUGIN_ROOT/.mcp.json" >/dev/null
+jq -e '.mcpServers["lore-skills"].args | join(" ") | contains("local-skills-mcp")' "$INSTALLED_PLUGIN_ROOT/.mcp.json" >/dev/null
+[ -f "$INSTALLED_PLUGIN_ROOT/local-skills-mcp/src/server.mjs" ]
 
 register_marketplace
 enable_plugin_config

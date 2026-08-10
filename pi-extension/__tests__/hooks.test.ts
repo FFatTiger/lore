@@ -33,6 +33,36 @@ describe('Pi extension hooks', () => {
     expect(pi.events.session_shutdown).toBeUndefined();
   });
 
+  it('keeps prompt lifecycle available for skills when memory recall is disabled', async () => {
+    const pi = makeMockPi();
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => JSON.stringify({
+        host_output: { mode: 'none', value: null },
+        skill_catalog: { project_id: 'project-1', catalog_revision: 0 },
+        skill_candidates: [],
+      }),
+    })));
+
+    registerHooks(pi as any, {
+      baseUrl: 'http://host',
+      timeoutMs: 1000,
+      injectPromptGuidance: false,
+      recallEnabled: false,
+      startupHealthcheck: false,
+    });
+    await pi.events.before_agent_start({ prompt: 'check skill', systemPrompt: 'base' }, {
+      sessionManager: { getSessionId: () => 'sess-skills' },
+    });
+    const bodies = (fetch as any).mock.calls
+      .map((call: any[]) => JSON.parse(String(call[1]?.body || '{}')))
+      .filter((body: any) => body?.event?.name);
+    expect(bodies.map((body: any) => body.event.name)).toContain('prompt.submit');
+    expect(bodies.find((body: any) => body.event.name === 'prompt.submit')?.features).toEqual({ memory_recall: false });
+  });
+
   it('coalesces duplicate session starts for the active binding', async () => {
     const pi = makeMockPi();
     let resolveStart!: (response: any) => void;

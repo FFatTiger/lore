@@ -64,7 +64,7 @@ function skillDetail(overrides: Record<string, unknown> = {}) {
         const buf = f.content_base64
           ? Buffer.from(f.content_base64, 'base64')
           : Buffer.from(String(f.content || ''), 'utf-8');
-        return { path: f.path, sha256: f.sha256 || sha256Buffer(buf) };
+        return { path: f.path, sha256: f.sha256 || sha256Buffer(buf), size: buf.length };
       }),
     );
   const { content: _content, files: _files, manifest_hash: _mh, ...rest } = overrides;
@@ -88,20 +88,23 @@ describe('skills path and hash validation', () => {
     expect(() => validateSafeRelativePath('refs/../SKILL.md')).toThrow(/traversal/);
     expect(() => validateSafeRelativePath('../SKILL.md')).toThrow(/traversal/);
     expect(() => validateSafeRelativePath('/abs/SKILL.md')).toThrow(/absolute/);
+    expect(() => validateSafeRelativePath('C:/abs/SKILL.md')).toThrow(/absolute/);
+    expect(() => validateSafeRelativePath('refs\\notes.md')).toThrow(/backslashes/);
+    expect(() => validateSafeRelativePath('a//b.md')).toThrow(/empty path segments/);
     expect(() => validateSafeRelativePath('')).toThrow(/required/);
   });
 
   it('computes deterministic manifest hashes', () => {
     const a = computeManifestHash([
-      { path: 'b.md', sha256: 'bb' },
-      { path: 'a.md', sha256: 'aa' },
+      { path: 'b.md', sha256: 'bb', size: 2 },
+      { path: 'a.md', sha256: 'aa', size: 1 },
     ]);
     const b = computeManifestHash([
-      { path: 'a.md', sha256: 'aa' },
-      { path: 'b.md', sha256: 'bb' },
+      { path: 'a.md', sha256: 'aa', size: 1 },
+      { path: 'b.md', sha256: 'bb', size: 2 },
     ]);
     expect(a).toBe(b);
-    expect(a).toBe(sha256Text('a.md:aa\nb.md:bb'));
+    expect(a).toBe(sha256Text('a.md\naa\n1\nb.md\nbb\n2\n'));
   });
 
   it('resolves LORE_HOME', () => {
@@ -274,6 +277,26 @@ describe('skills local mirror lifecycle', () => {
     vi.unstubAllGlobals();
   });
 
+  it('detects marker identity mismatch and symlink tampering', () => {
+    const detail = skillDetail();
+    const { installPath } = writeSkillMirrorAtomic({ loreHome, projectId, detail });
+    if (process.platform !== 'win32') fs.chmodSync(installPath, 0o755);
+    const markerPath = path.join(installPath, LORE_SKILL_MARKER);
+    const marker = JSON.parse(fs.readFileSync(markerPath, 'utf-8'));
+    marker.project_id = 'other-project';
+    fs.chmodSync(markerPath, 0o644);
+    fs.writeFileSync(markerPath, JSON.stringify(marker));
+    expect(inspectLocalMirror(loreHome, projectId, 'demo-skill').state).toBe('invalid');
+
+    // Restore valid mirror, then add a symlink; special entries count as tampering.
+    writeSkillMirrorAtomic({ loreHome, projectId, detail });
+    if (process.platform !== 'win32') {
+      fs.chmodSync(installPath, 0o755);
+      fs.symlinkSync(path.join(installPath, 'SKILL.md'), path.join(installPath, 'linked.md'));
+      expect(inspectLocalMirror(loreHome, projectId, 'demo-skill').state).toBe('invalid');
+    }
+  });
+
   it('artifact path stays outside installed mirror', () => {
     const artifact = createSkillArtifactDir({
       loreHome,
@@ -303,19 +326,20 @@ describe('skills lifecycle candidate blocks', () => {
   });
 
   it('emits candidate block only for ready matching revision', () => {
+    const detail = skillDetail({ name: 'ready-skill', id: 's-ready', revision_hash: 'rev-ready' });
     writeSkillMirrorAtomic({
       loreHome,
       projectId,
-      detail: skillDetail({ name: 'ready-skill', id: 's-ready', revision_hash: 'rev-ready' }),
+      detail,
     });
     // outdated local for another candidate name not installed
     const ready = readyCandidateEntries({
       loreHome,
       projectId,
       candidates: [
-        { name: 'ready-skill', id: 's-ready', revision_hash: 'rev-ready', description: 'ok', version: '1' },
-        { name: 'missing-skill', id: 's-missing', revision_hash: 'rev-x', description: 'nope' },
-        { name: 'ready-skill', id: 's-ready', revision_hash: 'rev-other', description: 'stale rev' },
+        { name: 'ready-skill', id: 's-ready', revision_hash: 'rev-ready', manifest_hash: detail.manifest_hash, description: 'ok', version: '1' },
+        { name: 'missing-skill', id: 's-missing', revision_hash: 'rev-x', manifest_hash: 'missing-manifest', description: 'nope' },
+        { name: 'ready-skill', id: 's-ready', revision_hash: 'rev-other', manifest_hash: detail.manifest_hash, description: 'stale rev' },
       ],
     });
     expect(ready.map((r) => r.name)).toEqual(['ready-skill']);
@@ -324,6 +348,31 @@ describe('skills lifecycle candidate blocks', () => {
     expect(block).toContain('ready-skill');
     expect(block).toContain(path.join(loreHome, 'skills', projectId, 'installed', 'ready-skill', 'SKILL.md'));
     expect(block).not.toContain('missing-skill');
+
+    // Modifying both a file and the local marker cannot bypass the canonical
+    // manifest carried by the Core recall candidate.
+    const installPath = path.join(loreHome, 'skills', projectId, 'installed', 'ready-skill');
+    if (process.platform !== 'win32') {
+      fs.chmodSync(installPath, 0o755);
+      fs.chmodSync(path.join(installPath, 'SKILL.md'), 0o644);
+      fs.chmodSync(path.join(installPath, LORE_SKILL_MARKER), 0o644);
+    }
+    fs.writeFileSync(path.join(installPath, 'SKILL.md'), '# forged local body\n', 'utf-8');
+    const forgedMarker = JSON.parse(fs.readFileSync(path.join(installPath, LORE_SKILL_MARKER), 'utf-8'));
+    forgedMarker.manifest_hash = hashLocalSkillFiles(installPath).manifest_hash;
+    fs.writeFileSync(path.join(installPath, LORE_SKILL_MARKER), JSON.stringify(forgedMarker), 'utf-8');
+    const forged = readyCandidateEntries({
+      loreHome,
+      projectId,
+      candidates: [{
+        skill_id: 's-ready',
+        name: 'ready-skill',
+        expected_version: '1',
+        expected_revision_hash: 'rev-ready',
+        manifest_hash: detail.manifest_hash,
+      }],
+    });
+    expect(forged).toHaveLength(0);
   });
 
   it('appends skill block to existing hidden recall message or creates one', () => {
@@ -392,11 +441,12 @@ describe('skills lifecycle candidate blocks', () => {
             },
             skill_catalog: { project_id: projectId, catalog_revision: 'cat-1' },
             skill_candidates: [{
-              id: 's-prompt',
+              skill_id: 's-prompt',
               name: 'prompt-skill',
               description: 'for prompts',
-              version: '1',
-              revision_hash: 'rev-p',
+              expected_version: '1',
+              expected_revision_hash: 'rev-p',
+              manifest_hash: detail.manifest_hash,
             }],
           }),
         };
@@ -483,7 +533,7 @@ describe('skills lifecycle candidate blocks', () => {
               },
             },
             skill_catalog: { project_id: projectId, catalog_revision: 'cat-x' },
-            skill_candidates: [{ id: 's-x', name: 'broken', revision_hash: 'r' }],
+            skill_candidates: [{ skill_id: 's-x', name: 'broken', expected_revision_hash: 'r', manifest_hash: 'missing-manifest' }],
           }),
         };
       }

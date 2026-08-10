@@ -63,11 +63,13 @@ async function fetchStartupLifecycle(pluginCfg: any, sessionId: string | undefin
 }
 
 async function fetchPromptLifecycle(pluginCfg: any, prompt: string, sessionId: string | undefined) {
-  if (!hasRecallConfig(pluginCfg)) return null;
+  // Prompt lifecycle also carries independent Skill candidates/catalog identity,
+  // so it must remain available when Memory recall injection is disabled.
   return fetchLifecycleEvent(pluginCfg, {
     protocol_version: 'lore.lifecycle.v1',
     runtime: { runtime_id: 'pi', runtime_family: 'pi' },
     event: { name: 'prompt.submit', native_name: 'before_agent_start' },
+    features: { memory_recall: hasRecallConfig(pluginCfg) },
     normalized: { session_id: sessionId, prompt },
   });
 }
@@ -106,7 +108,14 @@ export function registerHooks(pi: any, pluginCfg: any, skillsSession?: SkillsSes
       }
     }
 
-    if (!pluginCfg.injectPromptGuidance) return;
+    if (!pluginCfg.injectPromptGuidance) {
+      try {
+        await skills.syncFromCatalog();
+      } catch (error: any) {
+        pi.logger?.debug?.(`lore: skill sync on session_start failed: ${error.message}`);
+      }
+      return;
+    }
     const sessionId = getSessionId(ctx);
     if (!sessionId) return;
 

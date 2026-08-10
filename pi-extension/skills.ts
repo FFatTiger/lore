@@ -18,12 +18,16 @@ export type MirrorState =
   | 'sync_error';
 
 export interface SkillSummary {
+  project_id?: string;
   id: string;
+  skill_id?: string;
   name: string;
   description?: string;
   enabled?: boolean;
   version?: string | number;
+  expected_version?: string | number;
   revision_hash?: string;
+  expected_revision_hash?: string;
   manifest_hash?: string;
   [key: string]: unknown;
 }
@@ -32,7 +36,9 @@ export interface SkillFile {
   path: string;
   media_type?: string;
   size?: number;
+  size_bytes?: number;
   sha256?: string;
+  content_sha256?: string;
   content?: string;
   content_base64?: string;
 }
@@ -52,7 +58,10 @@ export interface SkillCandidate {
   name?: string;
   description?: string;
   version?: string | number;
+  expected_version?: string | number;
   revision_hash?: string;
+  expected_revision_hash?: string;
+  manifest_hash?: string;
   [key: string]: unknown;
 }
 
@@ -132,7 +141,7 @@ export function sanitizeSegment(value: string): string {
   const cleaned = String(value || '').trim();
   if (!cleaned) throw new Error('path segment is required');
   if (cleaned === '.' || cleaned === '..') throw new Error(`invalid path segment: ${cleaned}`);
-  if (cleaned.includes('/') || cleaned.includes('\\') || cleaned.includes('\0')) {
+  if (!/^[A-Za-z0-9._-]+$/.test(cleaned) || cleaned.includes('\0')) {
     throw new Error(`invalid path segment: ${cleaned}`);
   }
   return cleaned;
@@ -143,15 +152,18 @@ export function sanitizeSegment(value: string): string {
  * Returns the normalized relative path using forward slashes.
  */
 export function validateSafeRelativePath(rawPath: string): string {
-  const input = String(rawPath || '').trim().replace(/\\/g, '/');
+  const raw = String(rawPath || '').trim();
+  if (raw.includes('\\')) throw new Error(`backslashes are not allowed in file paths: ${rawPath}`);
+  const input = raw;
   if (!input) throw new Error('file path is required');
-  if (path.isAbsolute(input) || input.startsWith('/')) {
+  if (path.isAbsolute(input) || input.startsWith('/') || /^[A-Za-z]:\//.test(input)) {
     throw new Error(`absolute paths are not allowed: ${rawPath}`);
   }
   if (input.includes('\0')) throw new Error('null bytes are not allowed in file paths');
-  // Empty middle segments (//) are stripped; trailing slash is ok to strip.
-  const segments = input.split('/').filter((s) => s.length > 0);
-  if (segments.length === 0) throw new Error('file path is required');
+  const segments = input.split('/');
+  if (segments.length === 0 || segments.some((segment) => segment.length === 0)) {
+    throw new Error(`empty path segments are not allowed: ${rawPath}`);
+  }
   for (const segment of segments) {
     if (segment === '.' || segment === '..') {
       throw new Error(`path traversal is not allowed: ${rawPath}`);
@@ -159,6 +171,53 @@ export function validateSafeRelativePath(rawPath: string): string {
     if (segment.includes('\0')) throw new Error('null bytes are not allowed in file paths');
   }
   return segments.join('/');
+}
+
+export function skillIdOf(value: SkillSummary | SkillCandidate | SkillDetail | null | undefined): string {
+  return String(value?.skill_id || value?.id || '').trim();
+}
+
+export function skillVersionOf(value: SkillSummary | SkillCandidate | SkillDetail | null | undefined): string | number | undefined {
+  return value?.expected_version ?? value?.version;
+}
+
+export function skillRevisionOf(value: SkillSummary | SkillCandidate | SkillDetail | null | undefined): string {
+  return String(value?.expected_revision_hash || value?.revision_hash || '').trim();
+}
+
+function normalizeSkillFile(file: SkillFile): SkillFile {
+  return {
+    ...file,
+    size: Number.isFinite(file.size_bytes) ? Number(file.size_bytes) : file.size,
+    sha256: String(file.content_sha256 || file.sha256 || '').trim() || undefined,
+  };
+}
+
+export function normalizeSkillSummary(value: any): SkillSummary {
+  return {
+    ...value,
+    id: skillIdOf(value),
+    version: skillVersionOf(value),
+    revision_hash: skillRevisionOf(value),
+    manifest_hash: typeof value?.manifest_hash === 'string' ? value.manifest_hash : undefined,
+  };
+}
+
+export function normalizeSkillDetail(value: any): SkillDetail {
+  return {
+    ...normalizeSkillSummary(value),
+    files: Array.isArray(value?.files) ? value.files.map(normalizeSkillFile) : [],
+  };
+}
+
+export function normalizeSkillCandidate(value: any): SkillCandidate {
+  return {
+    ...value,
+    id: skillIdOf(value),
+    version: skillVersionOf(value),
+    revision_hash: skillRevisionOf(value),
+    manifest_hash: typeof value?.manifest_hash === 'string' ? value.manifest_hash : undefined,
+  };
 }
 
 export function sha256Buffer(buf: Buffer): string {
@@ -170,7 +229,7 @@ export function sha256Text(text: string): string {
 }
 
 export function decodeSkillFileContent(file: SkillFile): Buffer {
-  if (typeof file.content_base64 === 'string' && file.content_base64.length > 0) {
+  if (typeof file.content_base64 === 'string') {
     return Buffer.from(file.content_base64, 'base64');
   }
   if (typeof file.content === 'string') {
@@ -179,11 +238,15 @@ export function decodeSkillFileContent(file: SkillFile): Buffer {
   throw new Error(`skill file missing content: ${file.path || '(unknown)'}`);
 }
 
-export function computeManifestHash(files: Array<{ path: string; sha256: string }>): string {
+export function computeManifestHash(files: Array<{ path: string; sha256: string; size?: number }>): string {
   const normalized = files
-    .map((f) => ({ path: validateSafeRelativePath(f.path), sha256: String(f.sha256 || '').toLowerCase() }))
+    .map((f) => ({
+      path: validateSafeRelativePath(f.path),
+      sha256: String(f.sha256 || '').toLowerCase(),
+      size: Number.isFinite(f.size) ? Number(f.size) : 0,
+    }))
     .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  const payload = normalized.map((f) => `${f.path}:${f.sha256}`).join('\n');
+  const payload = normalized.map((f) => `${f.path}\n${f.sha256}\n${f.size}\n`).join('');
   return sha256Text(payload);
 }
 
@@ -236,29 +299,29 @@ function isDirectory(target: string): boolean {
 }
 
 function collectRelativeFiles(root: string, current = root, out: string[] = []): string[] {
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(current, { withFileTypes: true });
-  } catch {
-    return out;
-  }
+  const entries = fs.readdirSync(current, { withFileTypes: true });
   for (const entry of entries) {
     if (entry.name === LORE_SKILL_MARKER) continue;
     const full = path.join(current, entry.name);
+    if (entry.isSymbolicLink()) {
+      throw new Error(`symbolic links are not allowed in managed skill mirrors: ${path.relative(root, full)}`);
+    }
     if (entry.isDirectory()) {
       collectRelativeFiles(root, full, out);
     } else if (entry.isFile()) {
       out.push(path.relative(root, full).split(path.sep).join('/'));
+    } else {
+      throw new Error(`unsupported filesystem entry in managed skill mirror: ${path.relative(root, full)}`);
     }
   }
   return out;
 }
 
-export function hashLocalSkillFiles(dir: string): { files: Array<{ path: string; sha256: string }>; manifest_hash: string } {
+export function hashLocalSkillFiles(dir: string): { files: Array<{ path: string; sha256: string; size: number }>; manifest_hash: string } {
   const relPaths = collectRelativeFiles(dir).sort();
   const files = relPaths.map((rel) => {
     const buf = fs.readFileSync(path.join(dir, ...rel.split('/')));
-    return { path: rel, sha256: sha256Buffer(buf) };
+    return { path: rel, sha256: sha256Buffer(buf), size: buf.length };
   });
   return { files, manifest_hash: computeManifestHash(files) };
 }
@@ -284,6 +347,29 @@ export function inspectLocalMirror(
       state: 'unmanaged',
       path: dir,
       message: 'directory exists without .lore-skill.json; left untouched',
+    };
+  }
+
+  if (marker.schema !== LORE_SKILL_SCHEMA) {
+    return {
+      name: skillName,
+      skill_id: marker.skill_id,
+      state: 'invalid',
+      path: dir,
+      version: marker.version,
+      revision_hash: marker.revision_hash,
+      message: `unsupported mirror marker schema: ${marker.schema}`,
+    };
+  }
+  if (marker.project_id !== projectId || marker.name !== skillName) {
+    return {
+      name: skillName,
+      skill_id: marker.skill_id,
+      state: 'invalid',
+      path: dir,
+      version: marker.version,
+      revision_hash: marker.revision_hash,
+      message: 'mirror marker identity does not match its managed path',
     };
   }
 
@@ -348,6 +434,18 @@ export function inspectLocalMirror(
       version: marker.version,
       revision_hash: marker.revision_hash,
       message: `revision outdated: local ${marker.revision_hash} vs expected ${expected.revision_hash}`,
+    };
+  }
+
+  if (expected?.version !== undefined && String(marker.version) !== String(expected.version)) {
+    return {
+      name: skillName,
+      skill_id: marker.skill_id,
+      state: 'outdated',
+      path: dir,
+      version: marker.version,
+      revision_hash: marker.revision_hash,
+      message: `version outdated: local ${marker.version} vs expected ${expected.version}`,
     };
   }
 
@@ -427,19 +525,22 @@ export function validateSkillPayload(detail: SkillDetail): {
 } {
   const name = String(detail.name || '').trim();
   if (!name) throw new Error('skill detail missing name');
-  const skillId = String(detail.id || '').trim();
-  if (!skillId) throw new Error('skill detail missing id');
-  const revision = String(detail.revision_hash || '').trim();
-  if (!revision) throw new Error('skill detail missing revision_hash');
+  const skillId = skillIdOf(detail);
+  if (!skillId) throw new Error('skill detail missing skill_id');
+  const revision = skillRevisionOf(detail);
+  if (!revision) throw new Error('skill detail missing expected_revision_hash');
 
   const rawFiles = Array.isArray(detail.files) ? detail.files : [];
   if (rawFiles.length === 0) throw new Error('skill detail has no files');
 
   const files: Array<{ path: string; buffer: Buffer; sha256: string; media_type?: string }> = [];
+  const seenPaths = new Set<string>();
   let hasSkillMd = false;
   for (const file of rawFiles) {
     const rel = validateSafeRelativePath(String(file.path || ''));
-    if (rel === SKILL_MD || rel.endsWith(`/${SKILL_MD}`)) hasSkillMd = true;
+    if (seenPaths.has(rel)) throw new Error(`duplicate skill file path: ${rel}`);
+    seenPaths.add(rel);
+    if (rel === SKILL_MD) hasSkillMd = true;
     if (rel === LORE_SKILL_MARKER) {
       throw new Error(`${LORE_SKILL_MARKER} may not be supplied as a skill file`);
     }
@@ -457,9 +558,16 @@ export function validateSkillPayload(detail: SkillDetail): {
     files.push({ path: rel, buffer, sha256: sha, media_type: file.media_type });
   }
   if (!hasSkillMd) throw new Error('skill must include SKILL.md');
+  for (const rel of seenPaths) {
+    const segments = rel.split('/');
+    for (let i = 1; i < segments.length; i += 1) {
+      const parent = segments.slice(0, i).join('/');
+      if (seenPaths.has(parent)) throw new Error(`skill file path ${rel} conflicts with parent file ${parent}`);
+    }
+  }
 
   const serverManifest = typeof detail.manifest_hash === 'string' ? detail.manifest_hash.toLowerCase() : '';
-  const manifest_hash = computeManifestHash(files.map((f) => ({ path: f.path, sha256: f.sha256 })));
+  const manifest_hash = computeManifestHash(files.map((f) => ({ path: f.path, sha256: f.sha256, size: f.buffer.length })));
   if (serverManifest && serverManifest !== manifest_hash) {
     throw new Error(`manifest_hash mismatch: expected ${serverManifest}, got ${manifest_hash}`);
   }
@@ -504,10 +612,10 @@ export function writeSkillMirrorAtomic(opts: {
     const marker: MirrorMarker = {
       schema: LORE_SKILL_SCHEMA,
       project_id: projectId,
-      skill_id: String(detail.id),
+      skill_id: skillIdOf(detail),
       name: skillName,
-      version: detail.version ?? '',
-      revision_hash: String(detail.revision_hash),
+      version: skillVersionOf(detail) ?? '',
+      revision_hash: skillRevisionOf(detail),
       manifest_hash,
       synced_at: new Date().toISOString(),
     };
@@ -572,19 +680,23 @@ export async function listSkillsApi(pluginCfg: any, includeDisabled = true): Pro
   return {
     project_id: String(data?.project_id || ''),
     catalog_revision: String(data?.catalog_revision || ''),
-    skills: Array.isArray(data?.skills) ? data.skills : [],
+    skills: Array.isArray(data?.skills) ? data.skills.map(normalizeSkillSummary) : [],
   };
 }
 
 export async function getSkillApi(pluginCfg: any, skillId: string): Promise<SkillDetail> {
   const data = await fetchJson(pluginCfg, `/skills/${encodeURIComponent(skillId)}`, { method: 'GET' });
-  return data as SkillDetail;
+  return normalizeSkillDetail(data);
 }
 
 export async function searchSkillsApi(pluginCfg: any, query: string, limit?: number): Promise<any> {
   const qs = new URLSearchParams({ query: query || '' });
   if (Number.isFinite(limit)) qs.set('limit', String(limit));
-  return fetchJson(pluginCfg, `/skills/recall?${qs.toString()}`, { method: 'GET' });
+  const data = await fetchJson(pluginCfg, `/skills/recall?${qs.toString()}`, { method: 'GET' });
+  if (Array.isArray(data?.candidates)) {
+    return { ...data, candidates: data.candidates.map(normalizeSkillCandidate) };
+  }
+  return data;
 }
 
 export async function createSkillApi(pluginCfg: any, body: Record<string, unknown>): Promise<any> {
@@ -621,7 +733,7 @@ export async function installSkillFromDetail(
     if (error?.code === 'UNMANAGED_CONFLICT') {
       return {
         name: String(detail.name || ''),
-        skill_id: String(detail.id || ''),
+        skill_id: skillIdOf(detail),
         state: 'unmanaged',
         path: skillInstallPath(loreHome, projectId, String(detail.name || '')),
         message: error.message,
@@ -629,7 +741,7 @@ export async function installSkillFromDetail(
     }
     return {
       name: String(detail.name || ''),
-      skill_id: String(detail.id || ''),
+      skill_id: skillIdOf(detail),
       state: 'sync_error',
       message: error?.message || String(error),
     };
@@ -670,7 +782,7 @@ export async function reconcileSkills(opts: {
     const enabledById = new Map<string, SkillSummary>();
     for (const skill of enabled) {
       const name = String(skill.name || '').trim();
-      const id = String(skill.id || '').trim();
+      const id = skillIdOf(skill);
       if (name) enabledByName.set(name, skill);
       if (id) enabledById.set(id, skill);
     }
@@ -725,9 +837,9 @@ export async function reconcileSkills(opts: {
     // Install / repair / update desired skills.
     for (const [name, summary] of desired) {
       const expected = {
-        skill_id: String(summary.id || ''),
-        revision_hash: summary.revision_hash ? String(summary.revision_hash) : undefined,
-        version: summary.version,
+        skill_id: skillIdOf(summary),
+        revision_hash: skillRevisionOf(summary) || undefined,
+        version: skillVersionOf(summary),
         manifest_hash: typeof summary.manifest_hash === 'string' ? summary.manifest_hash : undefined,
       };
       const status = inspectLocalMirror(loreHome, projectId, name, expected);
@@ -741,7 +853,7 @@ export async function reconcileSkills(opts: {
         continue;
       }
 
-      const skillId = String(summary.id || status.skill_id || '').trim();
+      const skillId = skillIdOf(summary) || status.skill_id || '';
       if (!skillId) {
         result.ok = false;
         result.errors.push({ name, error: 'missing skill id for sync' });
@@ -838,18 +950,20 @@ export function readyCandidateEntries(opts: {
   const out: Array<{ name: string; version?: string | number; description?: string; skillMdPath: string; revision_hash?: string }> = [];
   for (const candidate of opts.candidates || []) {
     const name = String(candidate.name || '').trim();
-    const skillId = String(candidate.skill_id || candidate.id || '').trim();
-    if (!name) continue;
+    const skillId = skillIdOf(candidate);
+    const serverManifest = typeof candidate.manifest_hash === 'string' ? candidate.manifest_hash.trim() : '';
+    if (!name || !skillId || !serverManifest) continue;
     const expected = {
       skill_id: skillId || undefined,
-      revision_hash: candidate.revision_hash ? String(candidate.revision_hash) : undefined,
-      version: candidate.version,
+      revision_hash: skillRevisionOf(candidate) || undefined,
+      version: skillVersionOf(candidate),
+      manifest_hash: serverManifest,
     };
     const status = inspectLocalMirror(opts.loreHome, opts.projectId, name, expected);
     if (status.state !== 'ready' || !status.path) continue;
     out.push({
       name,
-      version: status.version ?? candidate.version,
+      version: status.version ?? skillVersionOf(candidate),
       description: typeof candidate.description === 'string' ? candidate.description : undefined,
       skillMdPath: path.join(status.path, SKILL_MD),
       revision_hash: status.revision_hash,
@@ -904,10 +1018,10 @@ export function createSkillsSession(pluginCfg: any) {
 
   async function syncFromCatalog(catalog?: SkillCatalog | null, ensure?: SkillCandidate[]): Promise<SyncResult> {
     const ensureSkills = (ensure || []).map((c) => ({
-      id: String(c.skill_id || c.id || ''),
+      id: skillIdOf(c),
       name: String(c.name || ''),
-      revision_hash: c.revision_hash ? String(c.revision_hash) : undefined,
-      version: c.version,
+      revision_hash: skillRevisionOf(c) || undefined,
+      version: skillVersionOf(c),
     }));
     const result = await reconcileSkills({
       pluginCfg,
@@ -947,8 +1061,8 @@ export function createSkillsSession(pluginCfg: any) {
           const name = String(c.name || '').trim();
           if (!name || !catalog.project_id) return false;
           const status = inspectLocalMirror(loreHome(), catalog.project_id, name, {
-            skill_id: String(c.skill_id || c.id || '') || undefined,
-            revision_hash: c.revision_hash ? String(c.revision_hash) : undefined,
+            skill_id: skillIdOf(c) || undefined,
+            revision_hash: skillRevisionOf(c) || undefined,
           });
           return status.state !== 'ready';
         });
@@ -1027,7 +1141,9 @@ export function readSkillCatalog(lifecycleResponse: any): SkillCatalog | null {
 export function readSkillCandidates(lifecycleResponse: any): SkillCandidate[] {
   const raw = lifecycleResponse?.skill_candidates;
   if (!Array.isArray(raw)) return [];
-  return raw.filter((item) => item && typeof item === 'object');
+  return raw
+    .filter((item) => item && typeof item === 'object')
+    .map(normalizeSkillCandidate);
 }
 
 // ---- tool registration ----
@@ -1079,7 +1195,7 @@ export function registerSkillTools(pi: any, pluginCfg: any, skillsSession?: Skil
         if (data.catalog_revision) session.state.catalogRevision = data.catalog_revision;
         const lines = (data.skills || []).map((s) => {
           const enabled = s.enabled === false ? 'disabled' : 'enabled';
-          return `- ${s.name} (${s.id}) ${enabled} v${s.version ?? '?'} rev=${s.revision_hash || '?'}`;
+          return `- ${s.name} (${skillIdOf(s)}) ${enabled} v${skillVersionOf(s) ?? '?'} rev=${skillRevisionOf(s) || '?'}`;
         });
         const text = lines.length > 0
           ? `Project ${data.project_id} rev ${data.catalog_revision}\n${lines.join('\n')}`
@@ -1147,9 +1263,19 @@ export function registerSkillTools(pi: any, pluginCfg: any, skillsSession?: Skil
       };
       try {
         if (!body.name) throw new Error('name is required');
-        const data = await createSkillApi(pluginCfg, body);
+        const data = normalizeSkillDetail(await createSkillApi(pluginCfg, body));
+        if (data?.project_id && !session.state.projectId) {
+          session.state.projectId = String(data.project_id);
+        }
+        try {
+          const catalog = await listSkillsApi(pluginCfg, true);
+          if (catalog.project_id) session.state.projectId = catalog.project_id;
+          if (catalog.catalog_revision) session.state.catalogRevision = catalog.catalog_revision;
+        } catch {
+          // server mutation already succeeded; mirror reconciliation remains fail-open
+        }
         await afterWrite();
-        return textResult(`Created skill ${data?.name || body.name} (${data?.id || '?'})`, { ok: true, result: data });
+        return textResult(`Created skill ${data?.name || body.name} (${skillIdOf(data) || '?'})`, { ok: true, result: data });
       } catch (error: any) {
         return textResult(`Lore skill create failed: ${error.message}`, { ok: false, error: error.message, body });
       }
@@ -1178,7 +1304,14 @@ export function registerSkillTools(pi: any, pluginCfg: any, skillsSession?: Skil
       try {
         if (!id) throw new Error('id is required');
         if (!body.expected_revision_hash) throw new Error('expected_revision_hash is required');
-        const data = await updateSkillApi(pluginCfg, id, body);
+        const data = normalizeSkillDetail(await updateSkillApi(pluginCfg, id, body));
+        try {
+          const catalog = await listSkillsApi(pluginCfg, true);
+          if (catalog.project_id) session.state.projectId = catalog.project_id;
+          if (catalog.catalog_revision) session.state.catalogRevision = catalog.catalog_revision;
+        } catch {
+          // server mutation already succeeded; mirror reconciliation remains fail-open
+        }
         await afterWrite();
         return textResult(`Updated skill ${data?.name || id}`, { ok: true, result: data });
       } catch (error: any) {
@@ -1199,6 +1332,8 @@ export function registerSkillTools(pi: any, pluginCfg: any, skillsSession?: Skil
         const id = String(params?.id || '').trim();
         if (!id) throw new Error('id is required');
         const data = await deleteSkillApi(pluginCfg, id);
+        if (data?.project_id) session.state.projectId = String(data.project_id);
+        if (data?.catalog_revision !== undefined) session.state.catalogRevision = String(data.catalog_revision);
         await afterWrite();
         return textResult(`Deleted skill ${id}`, { ok: true, result: data });
       } catch (error: any) {

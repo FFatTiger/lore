@@ -1,6 +1,7 @@
 import { execSync } from 'node:child_process';
 import { basename } from 'node:path';
 import { fetchJson, hasRecallConfig } from './api';
+import { createSkillsSession, type SkillsSession } from './skills';
 
 // ---- Message text extraction helpers ----
 
@@ -88,11 +89,12 @@ function getSessionId(ctx: any): string | undefined {
 
 // ---- Hook registration ----
 
-export function registerHooks(pi: any, pluginCfg: any) {
+export function registerHooks(pi: any, pluginCfg: any, skillsSession?: SkillsSession) {
   const startupRequests = new Map<string, Promise<void>>();
   let activeSessionId: string | undefined;
   let activeStartup: { sessionId: string; systemPromptAppend: string; token: object } | undefined;
   let activeToken: object | undefined;
+  const skills = skillsSession || createSkillsSession(pluginCfg);
 
   pi.on('session_start', async (_event: any, ctx: any) => {
     if (pluginCfg.startupHealthcheck) {
@@ -117,7 +119,14 @@ export function registerHooks(pi: any, pluginCfg: any) {
     activeStartup = undefined;
     const request = (async () => {
       try {
-        const value = readReturnValue(await fetchStartupLifecycle(pluginCfg, sessionId));
+        const lifecycleResponse = await fetchStartupLifecycle(pluginCfg, sessionId);
+        // Fail-open skill sync when catalog identity is present.
+        try {
+          await skills.onSessionStart(lifecycleResponse);
+        } catch (error: any) {
+          pi.logger?.debug?.(`lore: skill sync on session_start failed: ${error.message}`);
+        }
+        const value = readReturnValue(lifecycleResponse);
         const systemPromptAppend = typeof value?.systemPromptAppend === 'string'
           ? value.systemPromptAppend.trim()
           : '';
@@ -148,8 +157,28 @@ export function registerHooks(pi: any, pluginCfg: any) {
 
     if (typeof event?.prompt === 'string' && event.prompt.trim()) {
       try {
-        const value = readReturnValue(await fetchPromptLifecycle(pluginCfg, event.prompt, sessionId));
-        if (value?.message) out.message = value.message;
+        const lifecycleResponse = await fetchPromptLifecycle(pluginCfg, event.prompt, sessionId);
+        const value = readReturnValue(lifecycleResponse);
+        let message = value?.message;
+
+        // Reconcile skills from catalog revision / ensure candidates; append ready skill block.
+        try {
+          const skillPatch = await skills.onPromptLifecycle(lifecycleResponse);
+          if (skillPatch?.messagePatch) {
+            message = skillPatch.messagePatch;
+          } else if (skillPatch?.skillBlock) {
+            message = {
+              customType: 'lore-recall',
+              content: skillPatch.skillBlock,
+              display: false,
+              details: { source: 'lore-skills' },
+            };
+          }
+        } catch (error: any) {
+          pi.logger?.debug?.(`lore: skill prompt sync failed: ${error.message}`);
+        }
+
+        if (message) out.message = message;
       } catch (error: any) {
         pi.logger?.debug?.(`lore: lifecycle recall failed: ${error.message}`);
       }
@@ -157,4 +186,6 @@ export function registerHooks(pi: any, pluginCfg: any) {
 
     return Object.keys(out).length > 0 ? out : undefined;
   });
+
+  return { skills };
 }

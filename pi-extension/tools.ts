@@ -1,6 +1,7 @@
 import { textResult, fetchJson, hasRecallConfig } from './api';
 import { resolveMemoryLocator, splitParentPathAndTitle, trimSlashes } from './uri';
 import { formatNode, formatBootView, normalizeSearchResults, normalizeKeywordList } from './formatters';
+import { registerSkillTools, type SkillsSession } from './skills';
 
 const Type = {
   String: (meta?: Record<string, unknown>) => ({ type: 'string', ...meta }),
@@ -19,7 +20,7 @@ const RECALL_GET_NODE_DESCRIPTION = 'Open a memory node. REQUIRED when opening a
 const RECALL_SESSION_ID_DESCRIPTION = 'REQUIRED when the URI came from <recall>: copy the exact session_id from that <recall> tag.';
 const RECALL_QUERY_ID_DESCRIPTION = 'REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag.';
 
-export function registerTools(pi: any, pluginCfg: any) {
+export function registerTools(pi: any, pluginCfg: any, skillsSession?: SkillsSession) {
   pi.registerTool({
     name: 'lore_status',
     label: 'Lore status',
@@ -324,4 +325,5 @@ export function registerTools(pi: any, pluginCfg: any) {
     },
   });
 
+  registerSkillTools(pi, pluginCfg, skillsSession);
 }

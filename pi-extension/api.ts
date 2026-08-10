@@ -10,11 +10,22 @@ const CLIENT_TYPE = 'pi';
 interface SharedLoreConfig {
   base_url?: string;
   api_token?: string;
+  lore_home?: string;
+}
+
+export function resolveLoreHome(env: NodeJS.ProcessEnv = process.env): string {
+  const fromEnv = typeof env.LORE_HOME === 'string' ? env.LORE_HOME.trim() : '';
+  if (fromEnv) return path.resolve(fromEnv);
+  return path.join(os.homedir(), '.lore');
+}
+
+function sharedConfigPath(env: NodeJS.ProcessEnv = process.env): string {
+  return path.join(resolveLoreHome(env), 'config.json');
 }
 
 function readSharedLoreConfig(): SharedLoreConfig {
   try {
-    const raw = fs.readFileSync(path.join(os.homedir(), '.lore', 'config.json'), 'utf-8');
+    const raw = fs.readFileSync(sharedConfigPath(), 'utf-8');
     const data = JSON.parse(raw);
     return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
   } catch {
@@ -38,6 +49,9 @@ function pickBaseUrl(cfg: any) {
 export function pickPluginConfig(pi: any) {
   const cfg = pi?.pluginConfig ?? {};
   const shared = readSharedLoreConfig();
+  const loreHome = pickString(cfg.loreHome)
+    || pickString(shared.lore_home)
+    || resolveLoreHome();
   return {
     baseUrl: pickBaseUrl(cfg),
     apiToken: pickString(cfg.apiToken)
@@ -49,6 +63,7 @@ export function pickPluginConfig(pi: any) {
     injectPromptGuidance: cfg.injectPromptGuidance !== false,
     startupHealthcheck: cfg.startupHealthcheck !== false,
     recallEnabled: cfg.recallEnabled !== false,
+    loreHome: path.resolve(loreHome),
   };
 }
 

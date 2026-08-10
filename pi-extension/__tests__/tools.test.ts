@@ -45,6 +45,14 @@ describe('Pi extension tools', () => {
       'lore_update_node',
       'lore_delete_node',
       'lore_move_node',
+      'lore_skill_list',
+      'lore_skill_search',
+      'lore_skill_get',
+      'lore_skill_create',
+      'lore_skill_update',
+      'lore_skill_delete',
+      'lore_skill_status',
+      'lore_skill_artifact_create',
     ]);
     expect(pi.tools.lore_search.promptSnippet).toContain('Search Lore');
     expect(pi.tools.lore_get_node.promptGuidelines.join('\n')).toContain('lore_get_node');

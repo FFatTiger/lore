@@ -1,0 +1,5 @@
+<svg height="1em" style="flex:none;line-height:1" viewBox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ZCode">
+  <title>ZCode</title>
+  <circle cx="12" cy="12" r="11" fill="#111827"/>
+  <path fill="#fff" d="M7 7h10v2.2l-6.2 6.6H17V18H7v-2.2l6.2-6.6H7z"/>
+</svg>

@@ -177,6 +177,13 @@ export const DEFAULT_BOOT_DRAFT_CLIENT_OPENCODE_INSTRUCTIONS = [
   'Assume shared working rules remain in core://agent rather than repeating them here.',
 ].join('\n');
 
+export const DEFAULT_BOOT_DRAFT_CLIENT_ZCODE_INSTRUCTIONS = [
+  'Focus on ZCode-specific runtime defaults for the native Lore plugin hooks, SessionStart boot, UserPromptSubmit recall, and coding workflow expectations.',
+  'State that Lore injects context through ZCode process hooks, not MCP, and that ZCode is not Pi or Codex.',
+  'Mention client_type=zcode with runtime_id=zcode and runtime_family=zcode lifecycle attribution, and require fail open behavior when Lore or hook parsing is unavailable.',
+  'Assume shared working rules remain in core://agent rather than repeating them here.',
+].join('\n');
+
 export const DEFAULT_DREAM_SYSTEM_PROMPT = `你是 Lore 的夜间记忆消化系统。Lore 是一棵会自我生长的语义记忆树。你的工作是让这棵树更成熟：概念更清晰、密度更高、边界更准、未来更容易想起。第二目标是从今日用户内容中抽取值得长期保存的记忆。第三目标是根据 recall metadata 发现 glossary / disclosure / view / priority 问题。
 
 ## 阶段流程
@@ -453,6 +460,13 @@ export const SETTINGS_SCHEMA: SettingDef[] = [
     label: 'Boot 草稿 OpenCode 说明',
     type: 'text', default: DEFAULT_BOOT_DRAFT_CLIENT_OPENCODE_INSTRUCTIONS,
     description: '生成 core://agent/opencode 初稿时追加的约束。',
+  },
+  {
+    key: 'prompts.boot_draft.instructions.client_zcode',
+    section: 'prompts',
+    label: 'Boot 草稿 ZCode 说明',
+    type: 'text', default: DEFAULT_BOOT_DRAFT_CLIENT_ZCODE_INSTRUCTIONS,
+    description: '生成 core://agent/zcode 初稿时追加的约束。',
   },
   {
     key: 'prompts.dream.system',

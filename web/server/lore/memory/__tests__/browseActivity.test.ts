@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../../db', () => ({ sql: vi.fn() }));
 vi.mock('../../../auth', () => ({
-  CLIENT_TYPES: ['claudecode', 'openclaw', 'hermes', 'codex', 'pi', 'opencode', 'mcp', 'admin'],
+  CLIENT_TYPES: ['claudecode', 'openclaw', 'hermes', 'codex', 'pi', 'opencode', 'zcode', 'mcp', 'admin'],
   normalizeClientType: vi.fn((value: string | null) => value || null),
 }));
 
@@ -124,7 +124,7 @@ describe('browseActivity helpers', () => {
     const query = String(mockSql.mock.calls[0][0]);
     expect(query).toContain('COUNT(*) AS event_count');
     expect(query).toContain('GROUP BY node_uuid');
-    expect(query).toContain("LOWER(BTRIM(COALESCE(details->>'client_type', ''))) IN ('claudecode', 'openclaw', 'hermes', 'codex', 'pi', 'opencode', 'mcp', 'admin')");
+    expect(query).toContain("LOWER(BTRIM(COALESCE(details->>'client_type', ''))) IN ('claudecode', 'openclaw', 'hermes', 'codex', 'pi', 'opencode', 'zcode', 'mcp', 'admin')");
     expect(query).toContain('ORDER BY node_uuid ASC, MAX(created_at) DESC, COUNT(*) DESC, source ASC');
   });
 });

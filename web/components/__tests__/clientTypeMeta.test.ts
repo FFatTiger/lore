@@ -27,4 +27,11 @@ describe('clientTypeMeta', () => {
     const digest = createHash('sha256').update(readFileSync(asset)).digest('hex');
     expect(digest).toBe('7cfa6e9d6726f7c9fa26c7d9aef0dfec52d20a137380454340f30f12ccbfd302');
   });
+
+  it('exposes ZCode display metadata', () => {
+    expect(KNOWN_CLIENT_TYPES).toContain('zcode');
+    expect(clientTypeLabel('zcode')).toBe('ZCode');
+    expect(clientTypeAssetPath('zcode')).toBe('/channel-icons/zcode.svg');
+    expect(clientTypeInitials('zcode')).toBe('ZC');
+  });
 });

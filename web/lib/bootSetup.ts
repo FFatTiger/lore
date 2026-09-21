@@ -5,7 +5,7 @@ export type BootNodeRole = 'agent' | 'soul' | 'user';
 export type BootNodeState = 'missing' | 'empty' | 'initialized';
 export type BootOverallState = 'uninitialized' | 'partial' | 'complete';
 export type BootNodeScope = 'global' | 'client';
-export type BootClientType = 'claudecode' | 'openclaw' | 'hermes' | 'codex' | 'pi' | 'opencode';
+export type BootClientType = 'claudecode' | 'openclaw' | 'hermes' | 'codex' | 'pi' | 'opencode' | 'zcode';
 export type BootSaveStatus = 'created' | 'updated' | 'unchanged' | 'failed';
 export type BootDraftStatus = 'generated' | 'failed';
 export type SetupStepId = string;
@@ -32,6 +32,7 @@ const CLIENT_BOOT_URIS = [
   'core://agent/codex',
   'core://agent/pi',
   'core://agent/opencode',
+  'core://agent/zcode',
 ] as const;
 
 const DEFAULT_BOOT_CONTENT: Record<string, string> = {
@@ -82,6 +83,13 @@ Boot 内容只通过 experimental.chat.system.transform 放入 system context。
 Lore 在 OpenCode 中原生注册 lore_guidance、lore_status、lore_boot、lore_get_node、lore_search、lore_list_domains、lore_create_node、lore_update_node、lore_delete_node、lore_move_node。所有 Lore API 活动使用 client_type=opencode，并携带 runtime_id=opencode 与 runtime_family=opencode 的生命周期身份。
 
 Lore 服务或实验性 system hook 不可用时必须 fail open：保留 OpenCode 正常对话、原生工具和可用的 prompt Recall，不因记忆集成失败阻断用户请求。`,
+  'core://agent/zcode': `# ZCode 运行时约束
+
+ZCode 会把这个节点与 core://agent 一起加载。共享工作流规则保留在 core://agent；这里只记录 ZCode 专属差异。
+
+Lore 通过 ZCode 原生插件 hooks 注入生命周期上下文：SessionStart（startup|resume|clear）加载 boot，UserPromptSubmit 为非空 prompt 注入 recall。不要把 ZCode 当成 Pi 或 Codex。
+
+所有 Lore 生命周期请求使用 client_type=zcode，并携带 runtime_id=zcode 与 runtime_family=zcode。Lore 服务或 hook 解析失败时必须 fail open：保留 ZCode 正常对话，不因记忆集成失败阻断用户请求。`,
 };
 
 export function getDefaultBootContent(uri: string | null | undefined): string {

@@ -87,12 +87,19 @@ function findScrollParent(element: HTMLElement | null): HTMLElement | null {
   return null;
 }
 
+/** Scroll distance (px) after which the back-to-top button appears. */
+const BACK_TO_TOP_THRESHOLD = 480;
+
 /** Tracks which section is under the top of the page's scroll container. */
 export function useSettingsScrollSpy(sectionIds: string[]): {
   activeId: string | null;
   scrollTo: (sectionId: string) => void;
+  scrolledDown: boolean;
+  scrollToTop: () => void;
 } {
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [scrolledDown, setScrolledDown] = useState(false);
+  const containerRef = useRef<HTMLElement | null>(null);
   const idsKey = sectionIds.join('|');
 
   useEffect(() => {
@@ -100,8 +107,10 @@ export function useSettingsScrollSpy(sectionIds: string[]): {
     const first = document.getElementById(settingsSectionAnchor(sectionIds[0]));
     const container = findScrollParent(first);
     if (!container) return undefined;
+    containerRef.current = container;
 
     const update = (): void => {
+      setScrolledDown(container.scrollTop > BACK_TO_TOP_THRESHOLD);
       const top = container.getBoundingClientRect().top + 96;
       let current = sectionIds[0];
       for (const id of sectionIds) {
@@ -133,7 +142,12 @@ export function useSettingsScrollSpy(sectionIds: string[]): {
     setActiveId(sectionId);
   }, []);
 
-  return { activeId, scrollTo };
+  const scrollToTop = useCallback(() => {
+    containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  }, []);
+
+  return { activeId, scrollTo, scrolledDown, scrollToTop };
 }
 
 interface SettingsOutlineProps {
@@ -151,27 +165,88 @@ function DirtyBadge({ count }: { count: number }): React.JSX.Element | null {
   );
 }
 
-/** Sticky sidebar outline for wide screens. */
+/**
+ * Sidebar outline for wide screens. It scrolls on its own when taller than the
+ * viewport (without dragging the page along), fades the clipped edges, and keeps
+ * the active entry in view.
+ */
 export function SettingsOutlineSidebar({ groups, activeId, onSelect }: SettingsOutlineProps): React.JSX.Element {
   const { t } = useT();
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [fade, setFade] = useState({ top: false, bottom: false });
+
+  const updateFade = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    setFade({
+      top: el.scrollTop > 1,
+      bottom: el.scrollTop + el.clientHeight < el.scrollHeight - 1,
+    });
+  }, []);
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return undefined;
+    updateFade();
+    el.addEventListener('scroll', updateFade, { passive: true });
+    const observer = new ResizeObserver(updateFade);
+    observer.observe(el);
+    return () => {
+      el.removeEventListener('scroll', updateFade);
+      observer.disconnect();
+    };
+  }, [updateFade]);
+
+  // Scroll only the sidebar (never the page) so the active entry stays visible.
+  // Instant on purpose: Chrome interrupts a smooth scroll here while the page
+  // container above it is itself smooth-scrolling (nav clicks, back to top).
+  const entryIds = groups.flatMap((group) => group.entries.map((entry) => entry.id));
+  const activeIndex = activeId ? entryIds.indexOf(activeId) : -1;
+  useEffect(() => {
+    const el = scrollerRef.current;
+    // Group headings aren't buttons, so entries map 1:1 onto the buttons in order.
+    const item = el && activeIndex >= 0 ? el.querySelectorAll<HTMLElement>('button')[activeIndex] : null;
+    if (!el || !item) return;
+    if (activeIndex === 0) {
+      el.scrollTop = 0;
+      return;
+    }
+    const margin = 32;
+    const top = item.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
+    const bottom = top + item.offsetHeight;
+    if (top < el.scrollTop + margin) {
+      const target = top - margin;
+      el.scrollTop = target < margin ? 0 : target;
+    } else if (bottom > el.scrollTop + el.clientHeight - margin) {
+      el.scrollTop = bottom - el.clientHeight + margin;
+    }
+  }, [activeIndex]);
+
   return (
-    <OutlineNavShell title={t('Contents')} ariaLabel={t('Settings sections')}>
-      {groups.map((group) => (
-        <OutlineNavGroup key={group.id} label={t(group.label)}>
-          {group.entries.map((entry) => (
-            <OutlineNavItem
-              key={entry.id}
-              active={entry.id === activeId}
-              onClick={() => onSelect(entry.id)}
-              title={entry.label}
-              right={<DirtyBadge count={entry.dirtyCount} />}
-            >
-              {entry.label}
-            </OutlineNavItem>
-          ))}
-        </OutlineNavGroup>
-      ))}
-    </OutlineNavShell>
+    <div
+      ref={scrollerRef}
+      className="quiet-scroll max-h-[calc(100vh-8rem)] overflow-y-auto py-1 pr-2"
+      data-fade-top={fade.top}
+      data-fade-bottom={fade.bottom}
+    >
+      <OutlineNavShell ariaLabel={t('Settings sections')}>
+        {groups.map((group) => (
+          <OutlineNavGroup key={group.id} label={t(group.label)}>
+            {group.entries.map((entry) => (
+              <OutlineNavItem
+                key={entry.id}
+                active={entry.id === activeId}
+                onClick={() => onSelect(entry.id)}
+                title={entry.label}
+                right={<DirtyBadge count={entry.dirtyCount} />}
+              >
+                {entry.label}
+              </OutlineNavItem>
+            ))}
+          </OutlineNavGroup>
+        ))}
+      </OutlineNavShell>
+    </div>
   );
 }
 

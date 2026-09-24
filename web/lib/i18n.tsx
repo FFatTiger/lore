@@ -573,6 +573,7 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
 
     // ── settings outline
     'Settings sections': '设置分组',
+    'Back to top': '返回顶部',
     'General': '通用',
     'Model services': '模型服务',
     'Maintenance': '维护',

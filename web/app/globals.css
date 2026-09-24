@@ -202,6 +202,23 @@
 .hover-scrollbar:hover::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); }
 .hover-scrollbar:hover::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 
+/* Constant-width thin scrollbar whose thumb only shows on hover (no layout shift),
+   with top/bottom fades when more content is out of view. */
+.quiet-scroll {
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.quiet-scroll:hover { scrollbar-color: var(--scrollbar-thumb) transparent; }
+.quiet-scroll::-webkit-scrollbar { width: 6px; }
+.quiet-scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
+.quiet-scroll:hover::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); }
+.quiet-scroll[data-fade-top='true'] { mask-image: linear-gradient(to bottom, transparent, #000 28px); }
+.quiet-scroll[data-fade-bottom='true'] { mask-image: linear-gradient(to top, transparent, #000 28px); }
+.quiet-scroll[data-fade-top='true'][data-fade-bottom='true'] {
+  mask-image: linear-gradient(to bottom, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
+
 /* ── focus ring ─────────────────────────────────────────── */
 
 :where(button, [role="button"], [role="checkbox"], [role="menuitem"], a[href], summary):focus-visible {

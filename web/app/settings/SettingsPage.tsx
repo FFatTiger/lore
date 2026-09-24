@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
+import { ArrowUp } from 'lucide-react';
 import { AxiosError } from 'axios';
 import { api } from '@/lib/api';
 import { PageCanvas, PageTitle, Section, Badge, Button, LoadingBlock, Notice } from '@/components/ui';
@@ -83,7 +84,7 @@ export default function SettingsPage(): React.JSX.Element {
       : []),
     [data, grouped, loading],
   );
-  const { activeId, scrollTo } = useSettingsScrollSpy(outlineIds);
+  const { activeId, scrollTo, scrolledDown, scrollToTop } = useSettingsScrollSpy(outlineIds);
 
   const weightSum = useMemo((): number | null => {
     if (!data) return null;
@@ -135,6 +136,21 @@ export default function SettingsPage(): React.JSX.Element {
 
   return (
     <PageCanvas maxWidth="7xl">
+      {scrolledDown && (
+        <button
+          type="button"
+          onClick={scrollToTop}
+          aria-label={t('Back to top')}
+          title={t('Back to top')}
+          className={clsx(
+            'press fixed right-6 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-separator-thin bg-surface-primary/95 text-txt-secondary shadow backdrop-blur-sm transition-[bottom,color] hover:text-txt-primary animate-in',
+            // Clear the mobile nav dock, and sit above the unsaved-changes bar when it shows.
+            dirtyKeys.length > 0 ? 'bottom-36 md:bottom-20' : 'bottom-24 md:bottom-6',
+          )}
+        >
+          <ArrowUp size={16} strokeWidth={2.2} />
+        </button>
+      )}
       {dirtyKeys.length > 0 && (
         <div className="fixed bottom-6 right-6 z-30">
           <div className="flex items-center gap-2 rounded-full bg-surface-primary/95 px-3 py-1.5 shadow backdrop-blur-sm">
@@ -174,7 +190,8 @@ export default function SettingsPage(): React.JSX.Element {
       {data && !loading && (
         <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-10">
           <aside className="hidden lg:block">
-            <div className="hover-scrollbar sticky top-6 max-h-[calc(100vh-8rem)] overflow-y-auto pr-1">
+            {/* Sticks with the page; no inner scroll area of its own. */}
+            <div className="sticky top-6">
               <SettingsOutlineSidebar groups={outline} activeId={activeId} onSelect={scrollTo} />
             </div>
           </aside>

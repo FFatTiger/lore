@@ -14,15 +14,19 @@ import {
   type SectionGroup,
 } from '@/components/settings/SettingsSectionEditor';
 import { SettingsConnectionTestButton } from '@/components/settings/SettingsConnectionTestButton';
+import {
+  BACKUP_ACTIONS_SECTION_ID,
+  buildSettingsOutline,
+  settingsSectionAnchor,
+  SettingsOutlineChips,
+  SettingsOutlineSidebar,
+  useSettingsScrollSpy,
+} from '@/components/settings/SettingsOutline';
 import { useSettingsFlow } from '@/components/settings/useSettingsFlow';
 
 interface ToastState {
   type: 'success' | 'error';
   text: string;
-}
-
-function settingsSectionAnchor(sectionId: string): string {
-  return `settings-section-${sectionId}`;
 }
 
 export default function SettingsPage(): React.JSX.Element {
@@ -58,6 +62,15 @@ export default function SettingsPage(): React.JSX.Element {
   }, [toast]);
 
   const grouped = useMemo(() => groupSettingsSections(data), [data]);
+  const outline = useMemo(
+    () => buildSettingsOutline(grouped, draft, t('Backup Actions')),
+    [grouped, draft, t],
+  );
+  const outlineIds = useMemo(
+    () => (data && !loading ? [...grouped.map((section) => section.id), BACKUP_ACTIONS_SECTION_ID] : []),
+    [data, grouped, loading],
+  );
+  const { activeId, scrollTo } = useSettingsScrollSpy(outlineIds);
 
   const weightSum = useMemo((): number | null => {
     if (!data) return null;
@@ -108,7 +121,7 @@ export default function SettingsPage(): React.JSX.Element {
   }, [data, draft, handleRebuild, rebuilding, saving, t, weightSum]);
 
   return (
-    <PageCanvas maxWidth="5xl">
+    <PageCanvas maxWidth="7xl">
       {dirtyKeys.length > 0 && (
         <div className="fixed bottom-6 right-6 z-30">
           <div className="flex items-center gap-2 rounded-full bg-surface-primary/95 px-3 py-1.5 shadow backdrop-blur-sm">
@@ -146,28 +159,41 @@ export default function SettingsPage(): React.JSX.Element {
       {loading && <LoadingBlock />}
 
       {data && !loading && (
-        <div className="space-y-5">
-          {grouped.map((section, index) => (
-            <div
-              key={section.id}
-              id={settingsSectionAnchor(section.id)}
-              className={clsx('scroll-mt-6 animate-in', `stagger-${Math.min(index + 1, 6)}`)}
-            >
-              <Section>
-                <SettingsSectionEditor
-                  section={section}
-                  data={data}
-                  draft={draft}
-                  saving={saving}
-                  onChange={handleChange}
-                  onReset={(key) => void handleReset(key)}
-                  right={sectionRight(section)}
-                />
-              </Section>
+        <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-10">
+          <aside className="hidden lg:block">
+            <div className="hover-scrollbar sticky top-6 max-h-[calc(100vh-8rem)] overflow-y-auto pr-1">
+              <SettingsOutlineSidebar groups={outline} activeId={activeId} onSelect={scrollTo} />
             </div>
-          ))}
-          <div id={settingsSectionAnchor('backup-actions')} className="scroll-mt-6">
-            <BackupActionPanel />
+          </aside>
+
+          <div className="min-w-0">
+            <div className="sticky top-0 z-20 -mx-4 mb-3 bg-bg-system/90 px-4 backdrop-blur-md lg:hidden">
+              <SettingsOutlineChips groups={outline} activeId={activeId} onSelect={scrollTo} />
+            </div>
+            <div className="space-y-5">
+              {grouped.map((section, index) => (
+                <div
+                  key={section.id}
+                  id={settingsSectionAnchor(section.id)}
+                  className={clsx('scroll-mt-16 lg:scroll-mt-6 animate-in', `stagger-${Math.min(index + 1, 6)}`)}
+                >
+                  <Section>
+                    <SettingsSectionEditor
+                      section={section}
+                      data={data}
+                      draft={draft}
+                      saving={saving}
+                      onChange={handleChange}
+                      onReset={(key) => void handleReset(key)}
+                      right={sectionRight(section)}
+                    />
+                  </Section>
+                </div>
+              ))}
+              <div id={settingsSectionAnchor(BACKUP_ACTIONS_SECTION_ID)} className="scroll-mt-16 lg:scroll-mt-6">
+                <BackupActionPanel />
+              </div>
+            </div>
           </div>
         </div>
       )}

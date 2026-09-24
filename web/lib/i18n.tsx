@@ -550,6 +550,13 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
     'another node': '其他节点',
     'blocked the action': '已拦截',
 
+    // ── settings outline
+    'Settings sections': '设置分组',
+    'General': '通用',
+    'Model services': '模型服务',
+    'Maintenance': '维护',
+    'Other': '其他',
+
     // ── backup
     'Backup Actions': '备份操作',
     'Manual backup and restore operations': '手动备份与恢复操作',

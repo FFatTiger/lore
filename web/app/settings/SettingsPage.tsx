@@ -30,7 +30,7 @@ interface ToastState {
 }
 
 export default function SettingsPage(): React.JSX.Element {
-  const { t } = useT();
+  const { t, lang } = useT();
   const [toast, setToast] = useState<ToastState | null>(null);
   const { confirm: confirmDialog } = useConfirm();
   const notify = useCallback((text: string, type: 'success' | 'error') => {
@@ -63,8 +63,8 @@ export default function SettingsPage(): React.JSX.Element {
 
   const grouped = useMemo(() => groupSettingsSections(data), [data]);
   const outline = useMemo(
-    () => buildSettingsOutline(grouped, draft, t('Backup Actions')),
-    [grouped, draft, t],
+    () => buildSettingsOutline(grouped, draft, t('Backup Actions'), lang),
+    [grouped, draft, t, lang],
   );
   const outlineIds = useMemo(
     () => (data && !loading ? [...grouped.map((section) => section.id), BACKUP_ACTIONS_SECTION_ID] : []),

@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { OutlineNavGroup, OutlineNavItem, OutlineNavShell } from '@/components/ui';
 import { useT } from '@/lib/i18n';
-import type { SectionGroup } from './SettingsSectionEditor';
+import { localizedLabel, type SectionGroup } from './SettingsSectionEditor';
 
 export const BACKUP_ACTIONS_SECTION_ID = 'backup-actions';
 
@@ -47,12 +47,13 @@ export function buildSettingsOutline(
   sections: SectionGroup[],
   draft: Record<string, unknown>,
   backupActionsLabel: string,
+  lang: 'zh' | 'en' = 'zh',
 ): SettingsOutlineGroup[] {
   const entries = new Map<string, SettingsOutlineEntry>();
   for (const section of sections) {
     entries.set(section.id, {
       id: section.id,
-      label: section.label,
+      label: localizedLabel(section, lang),
       dirtyCount: section.items.filter((item) => item.key in draft).length,
     });
   }

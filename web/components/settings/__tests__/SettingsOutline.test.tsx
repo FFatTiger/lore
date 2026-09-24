@@ -54,6 +54,16 @@ describe('buildSettingsOutline', () => {
     expect(entries.find((entry) => entry.id === 'cache')?.dirtyCount).toBe(1);
     expect(entries.find((entry) => entry.id === 'embedding')?.dirtyCount).toBe(0);
   });
+
+  it('uses English section labels when the UI language is English', () => {
+    const withEnglish = sections.map((s) => (s.id === 'cache' ? { ...s, label_en: 'Cache' } : s));
+    const en = buildSettingsOutline(withEnglish, {}, 'Backup Actions', 'en').flatMap((g) => g.entries);
+    const zh = buildSettingsOutline(withEnglish, {}, 'Backup Actions', 'zh').flatMap((g) => g.entries);
+    expect(en.find((entry) => entry.id === 'cache')?.label).toBe('Cache');
+    expect(zh.find((entry) => entry.id === 'cache')?.label).toBe('缓存');
+    // Falls back to the authored label when no English copy exists.
+    expect(en.find((entry) => entry.id === 'embedding')?.label).toBe('Embedding 服务');
+  });
 });
 
 describe('SettingsOutline views', () => {

@@ -2,15 +2,15 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Sun, Moon, Waves, Languages } from 'lucide-react';
+import { Sun, Moon, Waves, Languages, Check } from 'lucide-react';
 import clsx from 'clsx';
 import { getDomains, getSetupFlowStatus, AUTH_ERROR_EVENT } from '../lib/api';
 import { getSetupFlowDecision, SETUP_STATUS_CHANGED_EVENT, type SetupFlowStatus } from '@/lib/bootSetup';
-import { LanguageProvider, useT } from '../lib/i18n';
+import { LANGUAGES, LanguageProvider, useT } from '../lib/i18n';
 import { ThemeProvider, useTheme } from '../lib/theme';
 import TokenAuth from './TokenAuth';
 import { ConfirmProvider, useConfirm } from './ConfirmDialog';
-import { AppUIProvider, AuroraBackdrop, Button } from './ui';
+import { AppUIProvider, AuroraBackdrop, Button, DropdownMenu } from './ui';
 import { AxiosError } from 'axios';
 
 const BOOT_SETUP_ACK_KEY = 'lore-boot-setup-confirmed';
@@ -67,8 +67,6 @@ export function NavDock(): React.JSX.Element {
   const pathname = usePathname() || '';
   const router = useRouter();
   const { t, lang, setLang } = useT();
-  // Name the target language in that language, so it's readable either way.
-  const nextLangLabel = lang === 'zh' ? 'Switch to English' : '切换到中文';
   const { auroraBackgroundEnabled, theme, toggleAuroraBackground, toggleTheme } = useTheme();
   const navRef = useRef<HTMLElement>(null);
   const tabRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
@@ -201,14 +199,29 @@ export function NavDock(): React.JSX.Element {
           </button>
         </div>
 
-        <button
-          onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}
-          aria-label={nextLangLabel}
-          title={nextLangLabel}
-          className="press hidden sm:flex h-9 w-9 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-full text-txt-secondary hover:bg-fill-quaternary hover:text-txt-primary transition-colors"
-        >
-          <Languages size={15} strokeWidth={2} />
-        </button>
+        <div className="hidden sm:flex">
+          <DropdownMenu
+            items={LANGUAGES.map((language) => ({
+              key: language.code,
+              label: (
+                <span className="flex min-w-[7.5rem] items-center gap-4" lang={language.code}>
+                  {language.label}
+                  {language.code === lang ? <Check size={14} className="ml-auto text-sys-blue" aria-hidden /> : null}
+                </span>
+              ),
+              onClick: () => setLang(language.code),
+            }))}
+          >
+            <button
+              aria-label={t('Language')}
+              title={t('Language')}
+              aria-haspopup="menu"
+              className="press flex h-9 w-9 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-full text-txt-secondary hover:bg-fill-quaternary hover:text-txt-primary transition-colors"
+            >
+              <Languages size={15} strokeWidth={2} />
+            </button>
+          </DropdownMenu>
+        </div>
       </div>
     </header>
   );

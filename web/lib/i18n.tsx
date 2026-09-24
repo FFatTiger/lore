@@ -2,7 +2,20 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
 
-type Lang = 'zh' | 'en';
+/**
+ * Languages offered in the UI language menu. To add one: append it here, give
+ * it a table in DICT, and handle it in translate().
+ */
+export const LANGUAGES = [
+  { code: 'zh', label: '简体中文' },
+  { code: 'en', label: 'English' },
+] as const;
+
+export type Lang = (typeof LANGUAGES)[number]['code'];
+
+function isLang(value: unknown): value is Lang {
+  return LANGUAGES.some((language) => language.code === value);
+}
 
 type TranslationKey = string;
 
@@ -380,6 +393,7 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
     'Add': '添加',
     'Switch to light': '切换到亮色',
     'Switch to dark': '切换到暗色',
+    'Language': '语言',
     'Enable Aurora Background': '打开流光背景',
     'Disable Aurora Background': '关闭流光背景',
     'Tree': '目录',
@@ -641,7 +655,7 @@ export function LanguageProvider({ children }: LanguageProviderProps): React.JSX
   useEffect(() => {
     try {
       const saved = typeof window !== 'undefined' && window.localStorage.getItem('lore-lang');
-      if (saved === 'zh' || saved === 'en') setLangState(saved);
+      if (isLang(saved)) setLangState(saved);
     } catch { /* ignore */ }
   }, []);
 

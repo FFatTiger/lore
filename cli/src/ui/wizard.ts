@@ -4,10 +4,9 @@ import type {
   InstallOperation,
   Lang,
 } from '../core/types.js';
-import { ALL_CHANNELS } from '../core/types.js';
 import type { InstallSnapshot } from '../core/snapshot.js';
-import { formatSnapshot } from '../core/snapshot.js';
-import { defaultSaasBaseUrl } from '../core/saas.js';
+import { formatSnapshot, selectableChannels } from '../core/snapshot.js';
+import { defaultSaasBaseUrl, isSaasBaseUrl } from '../core/saas.js';
 import { isInsecureHttpTokenTransport, normalizeBaseUrl } from '../core/connection.js';
 import { t } from './i18n.js';
 import type {
@@ -21,7 +20,7 @@ export type WizardResult =
   | { kind: 'install'; plan: InstallPlan }
   | { kind: 'uninstall'; channels: ChannelId[]; purge: boolean; lang: Lang }
   | { kind: 'status'; lang: Lang }
-  | { kind: 'exit'; lang: Lang };
+  | { kind: 'exit'; lang: Lang; reason?: string };
 
 export type InstallPlan = {
   operation: InstallOperation;
@@ -41,12 +40,24 @@ export type InstallPlan = {
   allowInsecureHttp: boolean;
 };
 
+/** Command-line values that preselect wizard answers; every one stays editable. */
+export type WizardPresets = {
+  baseUrl?: string;
+  apiToken?: string;
+  channels?: ChannelId[];
+  docker?: boolean;
+  release?: ReleaseChannel;
+  force?: boolean;
+  allowInsecureHttp?: boolean;
+};
+
 export type RunWizardOptions = {
   prompt: PromptService;
   snapshot: InstallSnapshot;
   initialLang: Lang;
   langLocked: boolean;
   env?: NodeJS.ProcessEnv;
+  presets?: WizardPresets;
 };
 
 function canKeepExistingToken(snapshot: InstallSnapshot, baseUrl: string | undefined): boolean {
@@ -63,11 +74,31 @@ function effectivePlanToken(plan: InstallPlan, snapshot: InstallSnapshot): strin
   return plan.keepExistingToken ? snapshot.config.api_token : undefined;
 }
 
+function presetConnectionMode(
+  presets: WizardPresets,
+  env: NodeJS.ProcessEnv,
+): ConnectionMode | undefined {
+  if (presets.docker) return 'docker';
+  if (presets.baseUrl) return isSaasBaseUrl(presets.baseUrl, env) ? 'saas' : 'external';
+  return undefined;
+}
+
+function noRuntimesReason(lang: Lang): string {
+  return lang === 'zh'
+    ? '未检测到任何受支持的 Agent 运行时（claude、codex、pi、openclaw、opencode、hermes）。请先安装后再运行，或用 --channels 指定。'
+    : 'No supported agent runtimes detected (claude, codex, pi, openclaw, opencode, hermes). Install one first or pass --channels.';
+}
+
+function noChannelsReason(lang: Lang): string {
+  return t(lang, 'install.no_channels');
+}
+
 async function confirmInstallPlan(
   prompt: PromptService,
   plan: InstallPlan,
   snapshot: InstallSnapshot,
   summary: string,
+  presets: WizardPresets,
 ): Promise<boolean> {
   const token = effectivePlanToken(plan, snapshot);
   if (plan.baseUrl) {
@@ -85,7 +116,7 @@ async function confirmInstallPlan(
       t(plan.lang, 'security.insecure_http_token_warning', {
         baseUrl: normalizedBaseUrl,
       }),
-      false,
+      presets.allowInsecureHttp ?? false,
     );
     if (!allowed) return false;
     plan.allowInsecureHttp = true;
@@ -98,41 +129,38 @@ async function collectConnection(
   mode: ConnectionMode,
   snapshot: InstallSnapshot,
   env: NodeJS.ProcessEnv,
+  presets: WizardPresets,
 ): Promise<Pick<InstallPlan, 'connectionMode' | 'baseUrl' | 'apiToken' | 'skipDocker' | 'explicitBaseUrl' | 'pre' | 'dev' | 'keepExistingToken'> & { release: ReleaseChannel }> {
   let connectionMode: InstallConnectionMode = 'docker';
   let baseUrl: string | undefined;
   let apiToken = '';
   let skipDocker = false;
   let explicitBaseUrl = false;
-  let release: ReleaseChannel = 'stable';
   let keepExistingToken = false;
 
-  if (mode === 'saas') {
+  if (mode === 'saas' || mode === 'external') {
     connectionMode = 'external';
-    baseUrl = defaultSaasBaseUrl(env);
     skipDocker = true;
     explicitBaseUrl = true;
+    baseUrl =
+      mode === 'saas'
+        ? defaultSaasBaseUrl(env)
+        : await prompt.askBaseUrl(
+            presets.baseUrl || snapshot.config.base_url || 'http://127.0.0.1:18901',
+          );
     const canKeep = canKeepExistingToken(snapshot, baseUrl);
-    apiToken = await prompt.askToken({ required: !canKeep, hasExisting: canKeep });
+    const hasPreset = Boolean(presets.apiToken);
+    const typed = await prompt.askToken({
+      required: mode === 'saas' && !canKeep && !hasPreset,
+      hasExisting: canKeep,
+      hasPreset,
+    });
+    apiToken = typed || presets.apiToken || '';
     keepExistingToken = !apiToken && canKeep;
-    release = await prompt.pickRelease('stable');
-  } else if (mode === 'external') {
-    connectionMode = 'external';
-    baseUrl = await prompt.askBaseUrl(snapshot.config.base_url || 'http://127.0.0.1:18901');
-    skipDocker = true;
-    explicitBaseUrl = true;
-    const canKeep = canKeepExistingToken(snapshot, baseUrl);
-    apiToken = await prompt.askToken({ required: false, hasExisting: canKeep });
-    keepExistingToken = !apiToken && canKeep;
-    release = await prompt.pickRelease('stable');
-  } else {
-    // An explicit Docker selection never preserves a remote token.
-    connectionMode = 'docker';
-    keepExistingToken = false;
-    skipDocker = false;
-    explicitBaseUrl = false;
-    release = await prompt.pickRelease('stable');
   }
+  // An explicit Docker selection never preserves a remote token.
+
+  const release = await prompt.pickRelease(presets.release ?? 'stable');
 
   return {
     connectionMode,
@@ -147,9 +175,24 @@ async function collectConnection(
   };
 }
 
+/** Channel picker for installs: only runtimes found on this machine (plus explicit presets). */
+async function pickInstallChannels(
+  prompt: PromptService,
+  snapshot: InstallSnapshot,
+  defaults: ChannelId[],
+): Promise<ChannelId[]> {
+  return prompt.pickChannels({
+    choices: selectableChannels(snapshot, defaults),
+    defaults,
+    snapshot,
+    purpose: 'install',
+  });
+}
+
 export async function runInteractiveWizard(opts: RunWizardOptions): Promise<WizardResult> {
   const env = opts.env ?? process.env;
   const prompt = opts.prompt;
+  const presets = opts.presets ?? {};
   let lang = opts.initialLang;
 
   if (!opts.langLocked) {
@@ -158,86 +201,92 @@ export async function runInteractiveWizard(opts: RunWizardOptions): Promise<Wiza
 
   prompt.showStatus(formatSnapshot(opts.snapshot, lang));
 
+  const installDefaults = presets.channels ?? opts.snapshot.detectedChannels;
+
   if (!opts.snapshot.hasConfig) {
-    const action = await prompt.pickFirstRunAction();
-    const conn = await collectConnection(prompt, action, opts.snapshot, env);
-    const defaults =
-      opts.snapshot.detectedChannels.length > 0
-        ? opts.snapshot.detectedChannels
-        : [...ALL_CHANNELS];
-    const channels = await prompt.pickChannels({
-      defaults,
-      snapshot: opts.snapshot,
-      purpose: 'install',
+    if (selectableChannels(opts.snapshot, installDefaults).length === 0) {
+      return { kind: 'exit', lang, reason: noRuntimesReason(lang) };
+    }
+    const action = await prompt.pickFirstRunAction({
+      initial: presetConnectionMode(presets, env),
+      dockerAvailable: opts.snapshot.agents.docker,
     });
+    const conn = await collectConnection(prompt, action, opts.snapshot, env, presets);
+    const channels = await pickInstallChannels(prompt, opts.snapshot, installDefaults);
+    if (!channels.length) return { kind: 'exit', lang, reason: noChannelsReason(lang) };
     const plan: InstallPlan = {
       operation: 'install',
       connectionMode: conn.connectionMode,
       lang,
       baseUrl: conn.baseUrl,
       apiToken: conn.apiToken,
-      channels: channels.length ? channels : defaults,
+      channels,
       pre: conn.pre,
       dev: conn.dev,
-      force: false,
+      force: presets.force ?? false,
       skipDocker: conn.skipDocker,
       explicitBaseUrl: conn.explicitBaseUrl,
       keepExistingToken: conn.keepExistingToken,
       allowInsecureHttp: false,
     };
     const summary = formatInstallSummary(plan, action, lang);
-    const ok = await confirmInstallPlan(prompt, plan, opts.snapshot, summary);
+    const ok = await confirmInstallPlan(prompt, plan, opts.snapshot, summary, presets);
     if (!ok) return { kind: 'exit', lang };
     return { kind: 'install', plan };
   }
 
   // Existing install
-  const existing = await prompt.pickExistingAction();
+  const presetMode = presetConnectionMode(presets, env);
+  const existing = await prompt.pickExistingAction(presetMode ? 'reconfigure' : 'update');
   if (existing === 'exit' || existing === 'status') {
     return { kind: existing === 'status' ? 'status' : 'exit', lang };
   }
 
   if (existing === 'uninstall') {
-    const defaults = opts.snapshot.channels
+    const installed = opts.snapshot.channels
       .filter((c) => c.state === 'installed' || c.state === 'partial')
       .map((c) => c.id);
+    const defaults = presets.channels ?? installed;
+    const choices = selectableChannels(opts.snapshot, defaults);
+    if (!choices.length) return { kind: 'exit', lang, reason: noChannelsReason(lang) };
     const channels = await prompt.pickChannels({
-      defaults: defaults.length ? defaults : [...ALL_CHANNELS],
+      choices,
+      defaults,
       snapshot: opts.snapshot,
       purpose: 'uninstall',
     });
+    if (!channels.length) return { kind: 'exit', lang, reason: noChannelsReason(lang) };
     const purge = await prompt.askYesNo(
       lang === 'zh' ? '是否同时清除 ~/.lore 配置与 Docker 数据？' : 'Also purge ~/.lore config and Docker data?',
       false,
     );
     const ok = await prompt.confirm(
       lang === 'zh'
-        ? `将卸载：${channels.join(', ') || '（无）'}\npurge: ${purge ? '是' : '否'}`
-        : `Will uninstall: ${channels.join(', ') || '(none)'}\npurge: ${purge}`,
+        ? `将卸载：${channels.join(', ')}\npurge: ${purge ? '是' : '否'}`
+        : `Will uninstall: ${channels.join(', ')}\npurge: ${purge}`,
     );
     if (!ok) return { kind: 'exit', lang };
     return { kind: 'uninstall', channels, purge, lang };
   }
 
   if (existing === 'reconfigure') {
-    const mode = await prompt.pickFirstRunAction();
-    const conn = await collectConnection(prompt, mode, opts.snapshot, env);
-    const defaults =
-      opts.snapshot.detectedChannels.length > 0
-        ? opts.snapshot.detectedChannels
-        : [...ALL_CHANNELS];
-    const channels = await prompt.pickChannels({
-      defaults,
-      snapshot: opts.snapshot,
-      purpose: 'install',
+    if (selectableChannels(opts.snapshot, installDefaults).length === 0) {
+      return { kind: 'exit', lang, reason: noRuntimesReason(lang) };
+    }
+    const mode = await prompt.pickFirstRunAction({
+      initial: presetMode ?? (opts.snapshot.serverKind === 'unknown' ? undefined : opts.snapshot.serverKind),
+      dockerAvailable: opts.snapshot.agents.docker,
     });
+    const conn = await collectConnection(prompt, mode, opts.snapshot, env, presets);
+    const channels = await pickInstallChannels(prompt, opts.snapshot, installDefaults);
+    if (!channels.length) return { kind: 'exit', lang, reason: noChannelsReason(lang) };
     const plan: InstallPlan = {
       operation: 'install',
       connectionMode: conn.connectionMode,
       lang,
       baseUrl: conn.baseUrl,
       apiToken: conn.apiToken,
-      channels: channels.length ? channels : defaults,
+      channels,
       pre: conn.pre,
       dev: conn.dev,
       force: true,
@@ -251,6 +300,7 @@ export async function runInteractiveWizard(opts: RunWizardOptions): Promise<Wiza
       plan,
       opts.snapshot,
       formatInstallSummary(plan, mode, lang),
+      presets,
     );
     if (!ok) return { kind: 'exit', lang };
     return { kind: 'install', plan };
@@ -261,28 +311,22 @@ export async function runInteractiveWizard(opts: RunWizardOptions): Promise<Wiza
     existing === 'update'
       ? await prompt.askYesNo(
           lang === 'zh' ? '强制重装（即使版本相同）？' : 'Force reinstall even if version unchanged?',
-          false,
+          presets.force ?? false,
         )
       : true;
 
-  const release = await prompt.pickRelease('stable');
+  const release = await prompt.pickRelease(presets.release ?? 'stable');
+  const installed = opts.snapshot.channels
+    .filter((c) => c.state === 'installed' || c.state === 'partial')
+    .map((c) => c.id);
   const defaults =
-    existing === 'update'
-      ? opts.snapshot.channels
-          .filter((c) => c.state === 'installed' || c.state === 'partial')
-          .map((c) => c.id)
-      : opts.snapshot.detectedChannels;
-  const fallback =
-    defaults.length > 0
-      ? defaults
-      : opts.snapshot.detectedChannels.length
-        ? opts.snapshot.detectedChannels
-        : [...ALL_CHANNELS];
-  const channels = await prompt.pickChannels({
-    defaults: fallback,
-    snapshot: opts.snapshot,
-    purpose: 'install',
-  });
+    presets.channels ??
+    (existing === 'update' && installed.length ? installed : opts.snapshot.detectedChannels);
+  if (selectableChannels(opts.snapshot, defaults).length === 0) {
+    return { kind: 'exit', lang, reason: noRuntimesReason(lang) };
+  }
+  const channels = await pickInstallChannels(prompt, opts.snapshot, defaults);
+  if (!channels.length) return { kind: 'exit', lang, reason: noChannelsReason(lang) };
 
   const kind = opts.snapshot.serverKind;
   const plan: InstallPlan = {
@@ -291,7 +335,7 @@ export async function runInteractiveWizard(opts: RunWizardOptions): Promise<Wiza
     lang,
     baseUrl: opts.snapshot.config.base_url,
     apiToken: undefined,
-    channels: channels.length ? channels : fallback,
+    channels,
     pre: release === 'pre',
     dev: release === 'dev',
     force,
@@ -300,15 +344,13 @@ export async function runInteractiveWizard(opts: RunWizardOptions): Promise<Wiza
     keepExistingToken: true,
     allowInsecureHttp: false,
   };
-  if (kind === 'saas' || kind === 'external') {
-    plan.baseUrl = opts.snapshot.config.base_url;
-  }
 
   const ok = await confirmInstallPlan(
     prompt,
     plan,
     opts.snapshot,
     formatInstallSummary(plan, existing === 'update' ? 'update' : 'manage', lang),
+    presets,
   );
   if (!ok) return { kind: 'exit', lang };
   return { kind: 'install', plan };

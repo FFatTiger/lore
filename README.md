@@ -71,11 +71,11 @@ npx @loremem/cli --lang zh
 
 One command:
 
-- starts Lore with Docker Compose (`postgres` + `redis` + `web`) when needed
-- connects supported agent runtimes
+- connects to an existing Lore server, or deploys one locally with Docker Compose (`postgres` + `redis` + `web`) when you choose to
+- connects the agent runtimes detected on this machine
 - writes `~/.lore/config.json`
 
-Bare `npx @loremem/cli` opens the interactive installer on a TTY. Pass flags for non-interactive installs. Re-run anytime to update. Missing agent CLIs are skipped without failing the rest.
+On a TTY, `npx @loremem/cli` always opens the interactive installer; any flags you pass are preselected and can still be changed. Add `-y` to run straight from flags: unset options use defaults (channels default to detected runtimes), and the server must come from `--base-url`, `--docker`, or a saved config. Re-run anytime to update.
 
 Common flags:
 
@@ -85,7 +85,9 @@ Common flags:
 | `--dev` | Dev channel (`dev-latest` image) |
 | `--channels CH,...` | Install only some runtimes: `claudecode`, `codex`, `pi`, `openclaw`, `hermes`, `opencode` |
 | `--base-url URL` | Use an existing Lore server and skip local Docker |
+| `--docker` | Deploy the Lore server on this machine with Docker |
 | `--api-token TOKEN` | API token for the server |
+| `-y`, `--yes` | Non-interactive: run straight from flags |
 | `--allow-insecure-http` | Explicitly allow a token over non-loopback HTTP for this run only |
 | `--skip-docker` | Configure agents only |
 | `--force` | Reinstall even when the version is unchanged |

@@ -1,5 +1,5 @@
 import * as p from '@clack/prompts';
-import { ALL_CHANNELS, type ChannelId, type Lang } from '../core/types.js';
+import type { ChannelId, Lang } from '../core/types.js';
 import type { InstallSnapshot } from '../core/snapshot.js';
 
 export type ConnectionMode = 'saas' | 'external' | 'docker';
@@ -12,11 +12,15 @@ export const INTERACTIVE_ABORT = 'LORE_INTERACTIVE_ABORT';
 export type PromptService = {
   pickLanguage(defaultLang: Lang): Promise<Lang>;
   showStatus(text: string): void;
-  pickFirstRunAction(): Promise<FirstRunAction>;
-  pickExistingAction(): Promise<ExistingAction>;
+  pickFirstRunAction(opts?: { initial?: FirstRunAction; dockerAvailable?: boolean }): Promise<FirstRunAction>;
+  pickExistingAction(initial?: ExistingAction): Promise<ExistingAction>;
   askBaseUrl(defaultValue?: string): Promise<string>;
-  askToken(opts?: { required?: boolean; hasExisting?: boolean }): Promise<string>;
+  /** Empty answer means "keep existing" / "use the command-line token". */
+  askToken(opts?: { required?: boolean; hasExisting?: boolean; hasPreset?: boolean }): Promise<string>;
   pickChannels(opts: {
+    /** Channels offered in the picker. */
+    choices: ChannelId[];
+    /** Channels preselected in the picker. */
     defaults: ChannelId[];
     snapshot: InstallSnapshot;
     purpose: 'install' | 'uninstall';
@@ -80,11 +84,11 @@ export function createNullPrompt(): PromptService {
       return defaultLang;
     },
     showStatus() {},
-    async pickFirstRunAction() {
-      return 'saas';
+    async pickFirstRunAction(opts) {
+      return opts?.initial ?? 'external';
     },
-    async pickExistingAction() {
-      return 'update';
+    async pickExistingAction(initial = 'update') {
+      return initial;
     },
     async askBaseUrl(defaultValue = 'http://127.0.0.1:18901') {
       return defaultValue;
@@ -93,7 +97,7 @@ export function createNullPrompt(): PromptService {
       return '';
     },
     async pickChannels(opts) {
-      return opts.defaults.length ? opts.defaults : [...ALL_CHANNELS];
+      return opts.defaults.filter((id) => opts.choices.includes(id));
     },
     async pickRelease(defaultRelease = 'stable') {
       return defaultRelease;
@@ -137,7 +141,7 @@ export function createTTYPrompt(opts: CreateTTYPromptOptions = {}): PromptServic
       message,
       options: args.options as never,
       initialValues: args.initialValues,
-      required: false,
+      required: true,
     });
     abortOnCancel(value, lang);
     return value as T[];
@@ -147,6 +151,7 @@ export function createTTYPrompt(opts: CreateTTYPromptOptions = {}): PromptServic
     message: string;
     placeholder?: string;
     defaultValue?: string;
+    initialValue?: string;
     validate?: (value: string) => string | undefined;
   }): Promise<string> {
     const message = args.message;
@@ -155,6 +160,7 @@ export function createTTYPrompt(opts: CreateTTYPromptOptions = {}): PromptServic
       message,
       placeholder: args.placeholder,
       defaultValue: args.defaultValue,
+      initialValue: args.initialValue,
       validate: args.validate ? (value) => args.validate!(value ?? '') : undefined,
     });
     abortOnCancel(value, lang);
@@ -195,33 +201,45 @@ export function createTTYPrompt(opts: CreateTTYPromptOptions = {}): PromptServic
       showStatusLines(text, lang);
     },
 
-    async pickFirstRunAction() {
+    async pickFirstRunAction(actionOpts = {}) {
+      const dockerAvailable = actionOpts.dockerAvailable ?? true;
       return selectOneImpl({
-        message: q(lang, 'What do you want to do?', '你要做什么？'),
-        initialValue: 'saas' as FirstRunAction,
+        message: q(lang, 'Where is your Lore server?', 'Lore 服务端在哪里？'),
+        initialValue: actionOpts.initial ?? ('external' as FirstRunAction),
         options: [
+          {
+            value: 'external' as const,
+            label: q(
+              lang,
+              'Connect to an existing server (client only)',
+              '连接已有服务（仅配置客户端）',
+            ),
+            hint: q(lang, 'URL + token', '地址 + Token'),
+          },
           {
             value: 'saas' as const,
             label: q(lang, 'Connect Loremem SaaS', '连接 Loremem SaaS'),
             hint: q(lang, 'token only', '只填 Token'),
           },
           {
-            value: 'external' as const,
-            label: q(lang, 'Connect external server', '连接外部服务'),
-            hint: q(lang, 'URL + token', '地址 + Token'),
-          },
-          {
             value: 'docker' as const,
-            label: q(lang, 'Local Docker self-host', '本机 Docker 自托管'),
+            label: q(
+              lang,
+              'Deploy the server on this machine with Docker',
+              '在本机用 Docker 部署服务端',
+            ),
+            hint: dockerAvailable
+              ? q(lang, 'runs docker compose', '会执行 docker compose')
+              : q(lang, 'Docker not detected', '未检测到 Docker'),
           },
         ],
       });
     },
 
-    async pickExistingAction() {
+    async pickExistingAction(initial = 'update') {
       return selectOneImpl({
         message: q(lang, 'What do you want to do?', '你要做什么？'),
-        initialValue: 'update' as ExistingAction,
+        initialValue: initial,
         options: [
           {
             value: 'update' as const,
@@ -253,6 +271,7 @@ export function createTTYPrompt(opts: CreateTTYPromptOptions = {}): PromptServic
       const value = await textImpl({
         message: q(lang, 'Server base URL', '服务地址'),
         defaultValue,
+        initialValue: defaultValue,
         placeholder: defaultValue,
         validate: (v) => {
           const s = (v ?? '').trim() || defaultValue;
@@ -266,31 +285,39 @@ export function createTTYPrompt(opts: CreateTTYPromptOptions = {}): PromptServic
     async askToken(tokenOpts = {}) {
       const required = tokenOpts.required ?? false;
       const hasExisting = tokenOpts.hasExisting ?? false;
-      const message = hasExisting
-        ? q(lang, 'API token (Enter keeps existing)', 'API Token（回车保留已有）')
-        : q(lang, 'API token', 'API Token');
+      const hasPreset = tokenOpts.hasPreset ?? false;
+      // The command-line token wins over the saved one when left blank; never echo either.
+      const message = hasPreset
+        ? q(lang, 'API token (Enter uses --api-token)', 'API Token（回车使用 --api-token 传入的值）')
+        : hasExisting
+          ? q(lang, 'API token (Enter keeps existing)', 'API Token（回车保留已有）')
+          : q(lang, 'API token', 'API Token');
+      const placeholder = hasPreset
+        ? q(lang, 'leave empty to use --api-token', '留空使用 --api-token')
+        : hasExisting
+          ? q(lang, 'leave empty to keep', '留空保留')
+          : 'lm_...';
 
       for (;;) {
         const value = await textImpl({
           message,
-          placeholder: hasExisting ? q(lang, 'leave empty to keep', '留空保留') : 'lm_...',
+          placeholder,
           defaultValue: '',
         });
         if (value.trim()) return value.trim();
-        if (!required || hasExisting) return '';
+        if (!required || hasExisting || hasPreset) return '';
         p.log.error(q(lang, 'Token is required for SaaS.', 'SaaS 必须填写 Token。'));
       }
     },
 
     async pickChannels(opts) {
-      const defaults = opts.defaults.length ? opts.defaults : [...ALL_CHANNELS];
-      const options = ALL_CHANNELS.map((id) => {
+      const options = opts.choices.map((id) => {
         const st = opts.snapshot.channels.find((c) => c.id === id);
         const cliOn = opts.snapshot.detectedChannels.includes(id);
         return {
           value: id,
           label: id,
-          hint: `CLI:${cliOn ? 'yes' : 'no'} · ${st?.state ?? 'unknown'}`,
+          hint: `${cliOn ? q(lang, 'detected', '已检测到') : q(lang, 'CLI not found', '未检测到 CLI')} · ${st?.state ?? 'unknown'}`,
         };
       });
       return multiSelectImpl({
@@ -300,7 +327,7 @@ export function createTTYPrompt(opts: CreateTTYPromptOptions = {}): PromptServic
           `选择渠道（${opts.purpose === 'uninstall' ? '卸载' : '安装'}）`,
         ),
         options,
-        initialValues: defaults,
+        initialValues: opts.defaults.filter((id) => opts.choices.includes(id)),
       });
     },
 

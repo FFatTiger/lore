@@ -7,6 +7,8 @@ test('empty argv defaults to install with interactiveDefault', () => {
   assert.equal(args.command, 'install');
   assert.equal(args.interactiveDefault, true);
   assert.equal(args.parameterMode, false);
+  assert.equal(args.bare, true);
+  assert.equal(args.docker, false);
   assert.equal(args.skipDocker, false);
   assert.equal(args.force, false);
   assert.equal(args.pre, false);
@@ -26,14 +28,15 @@ test('empty argv defaults to install with interactiveDefault', () => {
 test('connect is an alias for install', () => {
   const args = parseArgv(['connect']);
   assert.equal(args.command, 'install');
-  assert.equal(args.interactiveDefault, false);
+  assert.equal(args.interactiveDefault, true);
 });
 
-test('explicit install command is parameter mode, not interactiveDefault', () => {
+test('explicit install command still opens the wizard', () => {
   const args = parseArgv(['install']);
   assert.equal(args.command, 'install');
-  assert.equal(args.interactiveDefault, false);
-  assert.equal(args.parameterMode, true);
+  assert.equal(args.interactiveDefault, true);
+  assert.equal(args.parameterMode, false);
+  assert.equal(args.bare, false);
 });
 
 test('update/uninstall/status/help commands', () => {
@@ -47,11 +50,24 @@ test('unknown command throws', () => {
   assert.throws(() => parseArgv(['nope']), /unknown command/i);
 });
 
-test('no command with flags still defaults to install without interactiveDefault', () => {
-  const args = parseArgv(['--pre']);
-  assert.equal(args.command, 'install');
-  assert.equal(args.interactiveDefault, false);
-  assert.equal(args.pre, true);
+test('install flags only preselect wizard answers', () => {
+  for (const argv of [
+    ['--pre'],
+    ['--lang', 'zh'],
+    ['--base-url', 'https://core.example', '--channels', 'pi'],
+    ['install', '--docker', '--force'],
+  ]) {
+    const args = parseArgv(argv);
+    assert.equal(args.command, 'install');
+    assert.equal(args.interactiveDefault, true, argv.join(' '));
+    assert.equal(args.parameterMode, false, argv.join(' '));
+  }
+});
+
+test('--docker is parsed and conflicts with an external server', () => {
+  assert.equal(parseArgv(['--docker']).docker, true);
+  assert.throws(() => parseArgv(['--docker', '--base-url', 'https://x.example']), /--docker/);
+  assert.throws(() => parseArgv(['--docker', '--skip-docker']), /--docker/);
 });
 
 test('parses value flags and explicit markers', () => {
@@ -97,10 +113,12 @@ test('parses boolean flags including short -y', () => {
   assert.equal(args.help, true);
 });
 
-test('an explicit command or any flag selects parameter mode', () => {
-  assert.equal(parseArgv(['install']).parameterMode, true);
+test('--yes or a non-install command selects parameter mode', () => {
   assert.equal(parseArgv(['install', '--yes']).parameterMode, true);
-  assert.equal(parseArgv(['--allow-insecure-http']).parameterMode, true);
+  assert.equal(parseArgv(['-y', '--base-url', 'https://x.example']).parameterMode, true);
+  assert.equal(parseArgv(['update']).parameterMode, true);
+  assert.equal(parseArgv(['uninstall']).parameterMode, true);
+  assert.equal(parseArgv(['--allow-insecure-http']).parameterMode, false);
 });
 
 test('--pre and --dev cannot be combined', () => {

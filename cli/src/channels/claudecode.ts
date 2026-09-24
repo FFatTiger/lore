@@ -11,8 +11,23 @@ import type { ChannelContext, ChannelInstaller, UninstallContext } from './types
 
 type ClaudeSettings = {
   env?: Record<string, string>;
+  extraKnownMarketplaces?: Record<string, { source?: { source?: string; path?: string } }>;
   [k: string]: unknown;
 };
+
+/**
+ * `claude plugin marketplace add` records an absolute path, which breaks when
+ * settings.json is shared across machines. Claude Code expands `~`, so store
+ * the marketplace path relative to home when it lives there.
+ */
+function portableMarketplacePath(settings: ClaudeSettings, dest: string, homeDir: string): void {
+  const source = settings.extraKnownMarketplaces?.lore?.source;
+  if (!source || source.source !== 'directory' || !source.path) return;
+  if (path.resolve(source.path) !== path.resolve(dest)) return;
+  const rel = path.relative(homeDir, dest);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return;
+  source.path = `~/${rel.split(path.sep).join('/')}`;
+}
 
 function settingsPath(homeDir: string): string {
   return path.join(homeDir, '.claude', 'settings.json');
@@ -120,27 +135,16 @@ export const claudecodeInstaller: ChannelInstaller = {
         );
       }
 
-      const mcpUrl = `${ctx.baseUrl.replace(/\/$/, '')}/api/mcp?client_type=claudecode`;
-      await run(['claude', 'mcp', 'remove', 'lore'], commandOpts).catch(() => undefined);
-      const mcpArgs = [
-        'claude',
-        'mcp',
-        'add',
-        '--transport',
-        'http',
-        '--scope',
-        'user',
-        'lore',
-        mcpUrl,
-      ];
-      if (ctx.apiToken) {
-        mcpArgs.push('--header', `Authorization: Bearer ${ctx.apiToken}`);
-      }
-      await runChecked(run, 'Claude MCP registration', mcpArgs, commandOpts, { redact });
+      // The plugin ships its own MCP server (auth via LORE_API_TOKEN); drop the
+      // legacy user-scope duplicate registered by older installers.
+      await run(['claude', 'mcp', 'remove', '--scope', 'user', 'lore'], commandOpts).catch(
+        () => undefined,
+      );
 
       await ensureDir(path.dirname(sf));
       const latestSettings = await readJsonFileStrict<unknown>(sf);
       const settings = latestSettings === undefined ? {} : asSettings(latestSettings, sf);
+      portableMarketplacePath(settings, dest, homeDir);
       const settingsEnv = (settings.env ??= {});
       settingsEnv.LORE_BASE_URL = ctx.baseUrl.replace(/\/$/, '');
       if (ctx.apiToken) settingsEnv.LORE_API_TOKEN = ctx.apiToken;

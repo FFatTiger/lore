@@ -113,6 +113,15 @@ describe('AppShell theme contrast', () => {
     expect(html).toContain('hidden md:flex items-center gap-2');
   });
 
+  it('renders the language switch as a single icon button naming the other language', () => {
+    const html = renderToStaticMarkup(<NavDock />);
+
+    expect(html).toContain('aria-label="Switch to English"');
+    expect(html).toContain('lucide-languages');
+    expect(html).not.toMatch(/>ZH</);
+    expect(html).not.toMatch(/>EN</);
+  });
+
   it('renders the aurora nav toggle as active when enabled', () => {
     themeMock.auroraBackgroundEnabled = true;
 

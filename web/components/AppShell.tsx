@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Sun, Moon, Waves } from 'lucide-react';
+import { Sun, Moon, Waves, Languages } from 'lucide-react';
 import clsx from 'clsx';
 import { getDomains, getSetupFlowStatus, AUTH_ERROR_EVENT } from '../lib/api';
 import { getSetupFlowDecision, SETUP_STATUS_CHANGED_EVENT, type SetupFlowStatus } from '@/lib/bootSetup';
@@ -67,6 +67,8 @@ export function NavDock(): React.JSX.Element {
   const pathname = usePathname() || '';
   const router = useRouter();
   const { t, lang, setLang } = useT();
+  // Name the target language in that language, so it's readable either way.
+  const nextLangLabel = lang === 'zh' ? 'Switch to English' : '切换到中文';
   const { auroraBackgroundEnabled, theme, toggleAuroraBackground, toggleTheme } = useTheme();
   const navRef = useRef<HTMLElement>(null);
   const tabRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
@@ -199,20 +201,14 @@ export function NavDock(): React.JSX.Element {
           </button>
         </div>
 
-        <div className="hidden sm:flex items-center rounded-full bg-fill-quaternary p-[3px]">
-          {(['zh', 'en'] as const).map((code) => (
-            <button
-              key={code}
-              onClick={() => setLang(code)}
-              className={clsx(
-                'press rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-wide transition-colors',
-                lang === code ? 'bg-bg-raised text-txt-primary shadow-sm' : 'text-txt-tertiary hover:text-txt-secondary',
-              )}
-            >
-              {code.toUpperCase()}
-            </button>
-          ))}
-        </div>
+        <button
+          onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}
+          aria-label={nextLangLabel}
+          title={nextLangLabel}
+          className="press hidden sm:flex h-9 w-9 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-full text-txt-secondary hover:bg-fill-quaternary hover:text-txt-primary transition-colors"
+        >
+          <Languages size={15} strokeWidth={2} />
+        </button>
       </div>
     </header>
   );

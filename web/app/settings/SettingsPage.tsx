@@ -14,7 +14,9 @@ import {
   type SectionGroup,
 } from '@/components/settings/SettingsSectionEditor';
 import { SettingsConnectionTestButton } from '@/components/settings/SettingsConnectionTestButton';
+import { SettingsAboutPanel } from '@/components/settings/SettingsAboutPanel';
 import {
+  ABOUT_SECTION_ID,
   BACKUP_ACTIONS_SECTION_ID,
   buildSettingsOutline,
   settingsSectionAnchor,
@@ -63,11 +65,22 @@ export default function SettingsPage(): React.JSX.Element {
 
   const grouped = useMemo(() => groupSettingsSections(data), [data]);
   const outline = useMemo(
-    () => buildSettingsOutline(grouped, draft, t('Backup Actions'), lang),
+    () => buildSettingsOutline(
+      grouped,
+      draft,
+      [
+        { id: BACKUP_ACTIONS_SECTION_ID, label: t('Backup Actions') },
+        { id: ABOUT_SECTION_ID, label: t('About') },
+      ],
+      lang,
+    ),
     [grouped, draft, t, lang],
   );
+  // DOM order: schema sections, then the page-only panels.
   const outlineIds = useMemo(
-    () => (data && !loading ? [...grouped.map((section) => section.id), BACKUP_ACTIONS_SECTION_ID] : []),
+    () => (data && !loading
+      ? [...grouped.map((section) => section.id), BACKUP_ACTIONS_SECTION_ID, ABOUT_SECTION_ID]
+      : []),
     [data, grouped, loading],
   );
   const { activeId, scrollTo } = useSettingsScrollSpy(outlineIds);
@@ -192,6 +205,9 @@ export default function SettingsPage(): React.JSX.Element {
               ))}
               <div id={settingsSectionAnchor(BACKUP_ACTIONS_SECTION_ID)} className="scroll-mt-16 lg:scroll-mt-6">
                 <BackupActionPanel />
+              </div>
+              <div id={settingsSectionAnchor(ABOUT_SECTION_ID)} className="scroll-mt-16 lg:scroll-mt-6">
+                <SettingsAboutPanel />
               </div>
             </div>
           </div>

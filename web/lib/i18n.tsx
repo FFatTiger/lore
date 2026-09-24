@@ -580,6 +580,26 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
     'Runtime parameters for lifecycle injection, recall, model services, and maintenance. Changes take effect immediately.':
       '生命周期注入、召回、模型服务与维护相关的运行时参数，修改后立即生效。',
 
+    // ── settings about
+    'About': '关于',
+    'Version, service status, and project links': '版本、服务状态与项目链接',
+    'Version': '版本',
+    'Checking for updates…': '正在检查更新…',
+    'Up to date': '已是最新',
+    'Update available': '有新版本',
+    'View release': '查看发布说明',
+    'Update check unavailable': '无法检查更新',
+    'Service status': '服务状态',
+    'Database': '数据库',
+    'Cache': '缓存',
+    'Connected': '已连接',
+    'Disconnected': '未连接',
+    'Website': '官网',
+    'Source code': '源代码',
+    'Release notes': '发布说明',
+    'Report an issue': '问题反馈',
+    'License': '许可证',
+
     // ── memory node
     'root': '根节点',
     'More': '更多',

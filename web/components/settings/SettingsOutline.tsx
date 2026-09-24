@@ -7,6 +7,7 @@ import { useT } from '@/lib/i18n';
 import { localizedLabel, type SectionGroup } from './SettingsSectionEditor';
 
 export const BACKUP_ACTIONS_SECTION_ID = 'backup-actions';
+export const ABOUT_SECTION_ID = 'about';
 
 export function settingsSectionAnchor(sectionId: string): string {
   return `settings-section-${sectionId}`;
@@ -35,18 +36,19 @@ const OUTLINE_GROUPS: Array<{ id: string; label: string; sections: string[] }> =
   {
     id: 'maintenance',
     label: 'Maintenance',
-    sections: ['policy', 'dream', 'backup', BACKUP_ACTIONS_SECTION_ID, 'review'],
+    sections: ['policy', 'dream', 'backup', BACKUP_ACTIONS_SECTION_ID, 'review', ABOUT_SECTION_ID],
   },
 ];
 
 /**
- * Group settings sections for the page outline. Sections the server adds later
- * land in an "Other" group so they stay reachable.
+ * Group settings sections for the page outline. `pagePanels` are page-only
+ * panels (backup actions, about) that aren't part of the server schema.
+ * Sections the server adds later land in an "Other" group so they stay reachable.
  */
 export function buildSettingsOutline(
   sections: SectionGroup[],
   draft: Record<string, unknown>,
-  backupActionsLabel: string,
+  pagePanels: Array<{ id: string; label: string }>,
   lang: 'zh' | 'en' = 'zh',
 ): SettingsOutlineGroup[] {
   const entries = new Map<string, SettingsOutlineEntry>();
@@ -57,7 +59,7 @@ export function buildSettingsOutline(
       dirtyCount: section.items.filter((item) => item.key in draft).length,
     });
   }
-  entries.set(BACKUP_ACTIONS_SECTION_ID, { id: BACKUP_ACTIONS_SECTION_ID, label: backupActionsLabel, dirtyCount: 0 });
+  for (const panel of pagePanels) entries.set(panel.id, { ...panel, dirtyCount: 0 });
 
   const groups: SettingsOutlineGroup[] = [];
   const placed = new Set<string>();

@@ -402,3 +402,118 @@ test('existing uninstall returns uninstall plan', async () => {
   assert.deepEqual(result.channels, ['opencode']);
   assert.equal(result.purge, true);
 });
+
+test('first run with no detected runtimes exits before asking anything', async () => {
+  let asked = false;
+  const prompt = scriptedPrompt({});
+  prompt.pickFirstRunAction = async () => {
+    asked = true;
+    return 'external';
+  };
+  const result = await runInteractiveWizard({
+    prompt,
+    snapshot: baseSnapshot({ detectedChannels: [] }),
+    initialLang: 'en',
+    langLocked: true,
+  });
+  assert.equal(result.kind, 'exit');
+  if (result.kind !== 'exit') return;
+  assert.match(result.reason ?? '', /No supported agent runtimes/);
+  assert.equal(asked, false);
+});
+
+test('install picker offers detected runtimes only, all preselected', async () => {
+  let offered: string[] = [];
+  let preselected: string[] = [];
+  const prompt = scriptedPrompt({ first: 'external', baseUrl: 'https://core.example' });
+  prompt.pickChannels = async (opts) => {
+    offered = opts.choices;
+    preselected = opts.defaults;
+    return opts.defaults;
+  };
+  const result = await runInteractiveWizard({
+    prompt,
+    snapshot: baseSnapshot(),
+    initialLang: 'en',
+    langLocked: true,
+  });
+  assert.equal(result.kind, 'install');
+  assert.deepEqual(offered, ['claudecode', 'codex']);
+  assert.deepEqual(preselected, ['claudecode', 'codex']);
+});
+
+test('an empty channel selection exits instead of installing everything', async () => {
+  const result = await runInteractiveWizard({
+    prompt: scriptedPrompt({ first: 'external', baseUrl: 'https://core.example', channels: [] }),
+    snapshot: baseSnapshot(),
+    initialLang: 'en',
+    langLocked: true,
+  });
+  assert.equal(result.kind, 'exit');
+});
+
+test('command-line presets preselect answers and a blank token uses --api-token', async () => {
+  let firstInitial: string | undefined;
+  let urlDefault = '';
+  let releaseDefault = '';
+  const prompt = scriptedPrompt({ token: '' });
+  prompt.pickFirstRunAction = async (opts) => {
+    firstInitial = opts?.initial;
+    return opts?.initial ?? 'saas';
+  };
+  prompt.askBaseUrl = async (def = '') => {
+    urlDefault = def;
+    return def;
+  };
+  prompt.pickRelease = async (def = 'stable') => {
+    releaseDefault = def;
+    return def;
+  };
+  const result = await runInteractiveWizard({
+    prompt,
+    snapshot: baseSnapshot(),
+    initialLang: 'en',
+    langLocked: true,
+    presets: {
+      baseUrl: 'https://core.example',
+      apiToken: 'lm_cli',
+      channels: ['pi'],
+      release: 'pre',
+    },
+  });
+  assert.equal(firstInitial, 'external');
+  assert.equal(urlDefault, 'https://core.example');
+  assert.equal(releaseDefault, 'pre');
+  assert.equal(result.kind, 'install');
+  if (result.kind !== 'install') return;
+  assert.equal(result.plan.apiToken, 'lm_cli');
+  assert.deepEqual(result.plan.channels, ['pi']);
+  assert.equal(result.plan.pre, true);
+});
+
+test('--docker preset preselects Docker and existing installs default to reconfigure', async () => {
+  let existingInitial: string | undefined;
+  let firstInitial: string | undefined;
+  const prompt = scriptedPrompt({ confirm: false });
+  prompt.pickExistingAction = async (initial) => {
+    existingInitial = initial;
+    return initial ?? 'update';
+  };
+  prompt.pickFirstRunAction = async (opts) => {
+    firstInitial = opts?.initial;
+    return opts?.initial ?? 'saas';
+  };
+  await runInteractiveWizard({
+    prompt,
+    snapshot: baseSnapshot({
+      hasConfig: true,
+      serverKind: 'external',
+      config: { base_url: 'https://core.example' },
+    }),
+    initialLang: 'en',
+    langLocked: true,
+    presets: { docker: true },
+  });
+  assert.equal(existingInitial, 'reconfigure');
+  assert.equal(firstInitial, 'docker');
+});

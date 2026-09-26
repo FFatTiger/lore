@@ -391,8 +391,106 @@ test('--yes does not authorize non-loopback HTTP with a token', async () => {
   await assert.rejects(fs.access(path.join(loreHome, 'hermes')));
 });
 
-test('TTY install with an explicit command or flag remains parameter mode and never opens the wizard', async () => {
-  for (const argv of [['install'], ['install', '--yes']]) {
+function recordingPrompt(calls: string[], over: Partial<PromptService> = {}): PromptService {
+  return {
+    async pickLanguage(def) { calls.push('lang'); return def; },
+    showStatus() { calls.push('status'); },
+    async pickFirstRunAction(opts) { calls.push(`first:${opts?.initial ?? ''}`); return opts?.initial ?? 'external'; },
+    async pickExistingAction(initial = 'update') { calls.push(`existing:${initial}`); return initial; },
+    async askBaseUrl(def = '') { calls.push(`url:${def}`); return def; },
+    async askToken() { calls.push('token'); return ''; },
+    async pickChannels(opts) { calls.push(`channels:${opts.defaults.join(',')}`); return opts.defaults; },
+    async pickRelease(def = 'stable') { calls.push(`release:${def}`); return def; },
+    async confirm() { calls.push('confirm'); return false; },
+    async askYesNo(_q, def = true) { calls.push('yesno'); return def; },
+    ...over,
+  };
+}
+
+test('TTY install with flags opens the wizard with flag values preselected', async () => {
+  for (const argv of [
+    ['install'],
+    ['--lang', 'zh'],
+    ['install', '--base-url', 'https://core.example', '--channels', 'hermes', '--pre'],
+  ]) {
+    const loreHome = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-tty-wizard-'));
+    const calls: string[] = [];
+    const exit = await runInstall(parseArgv(argv), {
+      isTTY: true,
+      env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome, LORE_INSTALL_LANG: 'en' },
+      prompt: recordingPrompt(calls),
+      run: async () => { throw new Error('wizard declined; nothing may run'); },
+      fetchImpl: stableRelease(),
+      log: { info() {}, ok() {}, warn() {}, err() {}, section() {} },
+    });
+    assert.equal(exit, 1, argv.join(' '));
+    assert.ok(calls.includes('status'), argv.join(' '));
+    if (argv.includes('--base-url')) {
+      assert.ok(calls.includes('first:external'));
+      assert.ok(calls.includes('url:https://core.example'));
+      assert.ok(calls.includes('channels:hermes'));
+      assert.ok(calls.includes('release:pre'));
+    }
+  }
+});
+
+test('non-interactive install without a server errors instead of deploying Docker', async () => {
+  const loreHome = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-no-server-'));
+  const ran: string[] = [];
+  const errors: string[] = [];
+  const exit = await runInstall(parseArgv(['install', '--yes', '--channels', 'hermes']), {
+    isTTY: true,
+    env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome },
+    run: async (argv) => { ran.push(argv.join(' ')); return { code: 0, stdout: '', stderr: '' }; },
+    fetchImpl: stableRelease(),
+    log: { info() {}, ok() {}, warn() {}, err(m: string) { errors.push(m); }, section() {} },
+  });
+  assert.equal(exit, 2);
+  assert.deepEqual(ran, []);
+  assert.match(errors.join('\n'), /--base-url.*--docker/);
+  await assert.rejects(fs.access(path.join(loreHome, 'docker')));
+});
+
+test('non-interactive install defaults to detected runtimes only', async () => {
+  const loreHome = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-detected-'));
+  const bin = path.join(loreHome, 'bin');
+  await fs.mkdir(bin, { recursive: true });
+  const exe = path.join(bin, process.platform === 'win32' ? 'hermes.cmd' : 'hermes');
+  await fs.writeFile(exe, process.platform === 'win32' ? '@exit /b 0\r\n' : '#!/bin/sh\nexit 0\n');
+  if (process.platform !== 'win32') await fs.chmod(exe, 0o755);
+  const infos: string[] = [];
+  const exit = await runInstall(
+    parseArgv(['-y', '--base-url', 'https://core.example']),
+    {
+      isTTY: false,
+      env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome, PATH: bin, Path: bin },
+      artifactRun: artifactRun(),
+      fetchImpl: stableRelease(),
+      log: { info(m: string) { infos.push(m); }, ok() {}, warn() {}, err() {}, section() {} },
+    },
+  );
+  assert.equal(exit, 0);
+  assert.ok(infos.some((m) => /^Channels: hermes \(/.test(m)), infos.join('\n'));
+});
+
+test('non-interactive install with nothing detected asks for --channels', async () => {
+  const loreHome = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-none-detected-'));
+  const empty = path.join(loreHome, 'empty-bin');
+  await fs.mkdir(empty, { recursive: true });
+  const exit = await runInstall(
+    parseArgv(['-y', '--base-url', 'https://core.example']),
+    {
+      isTTY: false,
+      env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome, PATH: empty, Path: empty },
+      fetchImpl: stableRelease(),
+      log: { info() {}, ok() {}, warn() {}, err() {}, section() {} },
+    },
+  );
+  assert.equal(exit, 2);
+});
+
+test('TTY install with --yes stays parameter mode and never opens the wizard', async () => {
+  for (const argv of [['install', '--yes', '--docker', '--channels', 'hermes']]) {
     const loreHome = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-tty-flags-'));
     const exit = await runInstall(parseArgv(argv), {
       isTTY: true,

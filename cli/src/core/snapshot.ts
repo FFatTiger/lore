@@ -24,7 +24,7 @@ export async function collectInstallSnapshot(opts: {
   env?: NodeJS.ProcessEnv;
 }): Promise<InstallSnapshot> {
   const env = opts.env ?? process.env;
-  const agents = await detectAgents();
+  const agents = await detectAgents(undefined, env);
   const detectedChannels: ChannelId[] = (
     [
       ['claudecode', agents.claude],
@@ -65,6 +65,18 @@ export async function collectInstallSnapshot(opts: {
     channels,
     detectedChannels,
   };
+}
+
+/**
+ * Channels worth offering in a picker: runtimes detected on this machine,
+ * integrations already present, and anything explicitly requested.
+ */
+export function selectableChannels(snapshot: InstallSnapshot, requested: ChannelId[] = []): ChannelId[] {
+  return ALL_CHANNELS.filter((id) => {
+    if (snapshot.detectedChannels.includes(id) || requested.includes(id)) return true;
+    const state = snapshot.channels.find((channel) => channel.id === id)?.state;
+    return state === 'installed' || state === 'partial';
+  });
 }
 
 export function formatSnapshot(snapshot: InstallSnapshot, lang: 'en' | 'zh'): string {

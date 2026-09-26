@@ -7,6 +7,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { Button, LoadingBlock, Notice, surfaceCardClassName } from '@/components/ui';
 import {
   findSettingsSection,
+  localizedLabel,
   SettingsSectionEditor,
   type FieldSchema,
 } from '@/components/settings/SettingsSectionEditor';
@@ -55,7 +56,7 @@ function getPreviousStepPath(setupStatus: SetupFlowStatus | null, stepId: 'embed
 
 export default function SettingsSetupStep({ sectionId }: SettingsSetupStepProps): React.JSX.Element {
   const meta = getStepMeta(sectionId);
-  const { t } = useT();
+  const { t, lang } = useT();
   const router = useRouter();
   const pathname = usePathname() || '';
   const { confirm: confirmDialog, toast } = useConfirm();
@@ -127,7 +128,7 @@ export default function SettingsSetupStep({ sectionId }: SettingsSetupStepProps)
     setValidationError(null);
     const missing = findMissingRequiredFields();
     if (missing.length > 0) {
-      setValidationError(`${t('Fill every field on this page before continuing.')} ${missing.map((field) => field.label).join(', ')}`);
+      setValidationError(`${t('Fill every field on this page before continuing.')} ${missing.map((field) => localizedLabel(field, lang)).join(', ')}`);
       return;
     }
     if (dirtyKeys.length > 0) {
@@ -137,7 +138,7 @@ export default function SettingsSetupStep({ sectionId }: SettingsSetupStepProps)
     const nextSetupStatus = await refreshSetupOnly();
     dispatchSetupStatusChanged();
     goAdvance(nextSetupStatus);
-  }, [dirtyKeys.length, findMissingRequiredFields, goAdvance, handleSave, refreshSetupOnly, t]);
+  }, [dirtyKeys.length, findMissingRequiredFields, goAdvance, handleSave, lang, refreshSetupOnly, t]);
 
   const topNotice = useMemo(() => {
     if (!setupStatus) return null;

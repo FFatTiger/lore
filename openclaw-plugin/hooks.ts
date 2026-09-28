@@ -1,11 +1,7 @@
 import { execSync } from "node:child_process";
 import { basename } from "node:path";
 import { fetchJson, hasRecallConfig } from "./api";
-import {
-  appendSkillBlockToPrependContext,
-  createSkillsSession,
-  type SkillsSession,
-} from "./skills";
+import { createSkillsSession, type SkillsSession } from "./skills";
 
 // ---- Message text extraction helpers ----
 
@@ -62,24 +58,26 @@ async function fetchLifecycleEvent(pluginCfg: any, body: Record<string, unknown>
   });
 }
 
-async function fetchStartupLifecycle(pluginCfg: any, sessionId: string) {
+async function fetchStartupLifecycle(pluginCfg: any, sessionId: string, skills: boolean) {
   return fetchLifecycleEvent(pluginCfg, {
     protocol_version: "lore.lifecycle.v1",
     runtime: { runtime_id: "openclaw", runtime_family: "openclaw" },
     event: { name: "session.start", native_name: "session_start" },
+    // Lore appends the Skills catalog only for clients that expose Skills tools.
+    ...(skills ? { features: { skills: true } } : {}),
     normalized: { session_id: sessionId },
     project: detectProjectInfo(),
   });
 }
 
-async function fetchPromptLifecycle(pluginCfg: any, prompt: string, sessionId: string | undefined) {
-  // Prompt lifecycle also carries independent Skill candidates/catalog identity,
-  // so it must remain available when Memory recall injection is disabled.
+async function fetchPromptLifecycle(pluginCfg: any, prompt: string, sessionId: string | undefined, skills: boolean) {
+  // Prompt lifecycle also carries explicit `$skill-name` invocations, so it must
+  // remain available when Memory recall injection is disabled.
   return fetchLifecycleEvent(pluginCfg, {
     protocol_version: "lore.lifecycle.v1",
     runtime: { runtime_id: "openclaw", runtime_family: "openclaw" },
     event: { name: "prompt.submit", native_name: "before_prompt_build" },
-    features: { memory_recall: hasRecallConfig(pluginCfg) },
+    features: { memory_recall: hasRecallConfig(pluginCfg), ...(skills ? { skills: true } : {}) },
     normalized: { session_id: sessionId, prompt },
   });
 }
@@ -100,7 +98,7 @@ export function registerHooks(api: any, pluginCfg: any, skillsSession?: SkillsSe
   const startupStates = new Map<string, { appendSystemContext: string; consumed: boolean }>();
   const startupRequests = new Map<string, { promise: Promise<void>; token: object }>();
   const endedTokens = new WeakSet<object>();
-  const skills = skillsSession || createSkillsSession(pluginCfg);
+  const skills = skillsSession;
 
   api.registerGatewayMethod("lore.status", async ({ respond }: any) => {
     try {
@@ -137,12 +135,14 @@ export function registerHooks(api: any, pluginCfg: any, skillsSession?: SkillsSe
     const token = {};
     const request = (async () => {
       try {
-        const lifecycleResponse = await fetchStartupLifecycle(pluginCfg, sessionId);
+        const lifecycleResponse = await fetchStartupLifecycle(pluginCfg, sessionId, Boolean(skills));
         // Record project/catalog identity only — never auto-download or reconcile skills.
-        try {
-          await skills.onSessionStart(lifecycleResponse);
-        } catch (error: any) {
-          api.logger.debug?.(`lore: skill catalog identity on session_start failed: ${error.message}`);
+        if (skills) {
+          try {
+            await skills.onSessionStart(lifecycleResponse);
+          } catch (error: any) {
+            api.logger.debug?.(`lore: skill catalog identity on session_start failed: ${error.message}`);
+          }
         }
         const value = readReturnValue(lifecycleResponse);
         const appendSystemContext = typeof value?.appendSystemContext === "string"
@@ -186,23 +186,11 @@ export function registerHooks(api: any, pluginCfg: any, skillsSession?: SkillsSe
 
     if (typeof event?.prompt === "string" && event.prompt.trim()) {
       try {
-        const lifecycleResponse = await fetchPromptLifecycle(pluginCfg, event.prompt, sessionId);
+        const lifecycleResponse = await fetchPromptLifecycle(pluginCfg, event.prompt, sessionId, Boolean(skills));
         const value = readReturnValue(lifecycleResponse);
-        let prependContext = typeof value?.prependContext === "string"
+        const prependContext = typeof value?.prependContext === "string"
           ? value.prependContext.trim()
           : "";
-
-        // Discovery only: append skill candidate identities to prependContext.
-        // Never download, reconcile, or inject local paths here.
-        try {
-          const skillPatch = await skills.onPromptLifecycle(lifecycleResponse);
-          if (skillPatch?.skillBlock) {
-            prependContext = appendSkillBlockToPrependContext(prependContext, skillPatch.skillBlock);
-          }
-        } catch (error: any) {
-          api.logger.debug?.(`lore: skill prompt discovery failed: ${error.message}`);
-        }
-
         if (prependContext) out.prependContext = prependContext;
       } catch (error: any) {
         api.logger.debug?.(`lore: lifecycle recall failed: ${error.message}`);

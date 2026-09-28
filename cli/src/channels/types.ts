@@ -1,4 +1,5 @@
 import type { ChannelId, ChannelResult, ChannelStatus, Lang, NeedInstall, TokenAction } from '../core/types.js';
+import type { LoreCapabilities } from '../core/capabilities.js';
 import type { ExecFn } from '../core/exec.js';
 
 export type ChannelContext = {
@@ -8,6 +9,7 @@ export type ChannelContext = {
   tokenAction: TokenAction;
   releaseVersion?: string;
   needInstall: NeedInstall;
+  capabilities: LoreCapabilities;
   force: boolean;
   lang: Lang;
   /** Environment propagated to host-specific helpers. */

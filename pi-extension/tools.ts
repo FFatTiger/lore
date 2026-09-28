@@ -325,5 +325,5 @@ export function registerTools(pi: any, pluginCfg: any, skillsSession?: SkillsSes
     },
   });
 
-  registerSkillTools(pi, pluginCfg, skillsSession);
+  if (pluginCfg.skillsEnabled) registerSkillTools(pi, pluginCfg, skillsSession);
 }

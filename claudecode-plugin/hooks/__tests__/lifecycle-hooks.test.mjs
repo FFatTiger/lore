@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -257,46 +257,40 @@ test('SessionStart uses conversation_id when session_id is absent', async () => 
 });
 
 
-test('UserPromptSubmit appends <lore-skills> for Claude text host_output', async () => {
-  const server = await withServer(() => ({
-    skill_candidates: [
-      { skill_id: 's-9', name: 'gamma', expected_version: 5, description: 'Gamma' },
-    ],
-    host_output: { mode: 'stdout_text', value: 'CLAUDE_MEMORY' },
+test('Skills-enabled hooks declare features.skills and write Lore host output through', async () => {
+  const server = await withServer((body) => ({
+    host_output: {
+      mode: 'stdout_text',
+      value: body.event.name === 'session.start' ? '<available_skills>catalog</available_skills>' : '<skill_invocation>x</skill_invocation>',
+    },
   }));
   try {
-    const result = await runHook(recallHook, {
-      prompt: 'need skill',
-      session_id: 'c1',
-    }, {
-      LORE_BASE_URL: server.baseUrl,
-    });
-    assert.equal(result.code, 0, result.stderr);
-    assert.match(result.stdout, /CLAUDE_MEMORY/);
-    assert.match(result.stdout, /<lore-skills>/);
-    assert.match(result.stdout, /skill_id: s-9/);
-    assert.match(result.stdout, /lore_skill_get/);
+    const env = { LORE_BASE_URL: server.baseUrl, LORE_SKILLS_ENABLED: '1' };
+    const start = await runHook(rulesHook, { session_id: 's1', hook_event_name: 'SessionStart' }, env);
+    const prompt = await runHook(recallHook, { prompt: 'run $deploy', session_id: 's1' }, env);
+    assert.equal(start.stdout, '<available_skills>catalog</available_skills>');
+    assert.equal(prompt.stdout, '<skill_invocation>x</skill_invocation>');
+    assert.deepEqual(server.requests.map((body) => body.features), [{ skills: true }, { skills: true }]);
   } finally {
     await server.close();
   }
 });
 
-test('UserPromptSubmit adds missing additionalContext in Claude structured host_output', async () => {
-  const server = await withServer(() => ({
-    skill_candidates: [{ skill_id: 's-10', name: 'delta', version: 1 }],
-    host_output: {
-      mode: 'stdout_json',
-      value: { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', decision: 'allow' } },
-    },
-  }));
+test('Skills stay off unless the configured server advertises them', async () => {
+  const server = await withServer();
+  const home = mkdtempSync(path.join(tmpdir(), 'lore-claude-hook-profile-'));
   try {
-    const result = await runHook(recallHook, { prompt: 'structured skill' }, {
-      LORE_BASE_URL: server.baseUrl,
-    });
-    const output = JSON.parse(result.stdout);
-    assert.equal(output.hookSpecificOutput.decision, 'allow');
-    assert.match(output.hookSpecificOutput.additionalContext, /skill_id: s-10/);
+    mkdirSync(path.join(home, '.lore'));
+    writeFileSync(path.join(home, '.lore', 'config.json'), JSON.stringify({
+      base_url: server.baseUrl,
+      server_profile: { base_url: `${server.baseUrl}/`, capabilities: { skills: true } },
+    }));
+    await runHook(rulesHook, { session_id: 's1' }, { HOME: home });
+    await runHook(recallHook, { prompt: 'hello', session_id: 's1' }, { HOME: home, LORE_SKILLS_ENABLED: '0' });
+    await runHook(recallHook, { prompt: 'hello', session_id: 's1' }, { LORE_BASE_URL: server.baseUrl });
+    assert.deepEqual(server.requests.map((body) => body.features), [{ skills: true }, undefined, undefined]);
   } finally {
+    rmSync(home, { recursive: true, force: true });
     await server.close();
   }
 });

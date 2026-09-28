@@ -196,7 +196,10 @@ export const codexInstaller: ChannelInstaller = {
       await patchBundledHooks(sourcePlugin);
 
       const run = ctx.run ?? createExec();
-      const commandOpts = { quiet: true, env };
+      const commandOpts = {
+        quiet: true,
+        env: { ...env, LORE_SKILLS_ENABLED: ctx.capabilities.skills ? '1' : '0' },
+      };
       const redact = [ctx.apiToken ?? ''];
       await run(
         ['codex', 'plugin', 'marketplace', 'remove', 'lore'],
@@ -213,13 +216,15 @@ export const codexInstaller: ChannelInstaller = {
 
       const mcpUrl = `${ctx.baseUrl.replace(/\/$/, '')}/api/mcp?client_type=codex`;
       const skillsServer = path.join(pluginRoot, 'local-skills-mcp', 'src', 'server.mjs');
-      try {
-        const stat = await fs.lstat(skillsServer);
-        if (!stat.isFile() || stat.isSymbolicLink()) {
-          throw new Error(`Codex artifact has invalid local Skills MCP entry: ${skillsServer}`);
+      if (ctx.capabilities.skills) {
+        try {
+          const stat = await fs.lstat(skillsServer);
+          if (!stat.isFile() || stat.isSymbolicLink()) {
+            throw new Error(`Codex artifact has invalid local Skills MCP entry: ${skillsServer}`);
+          }
+        } catch (err) {
+          throw new Error(`Codex artifact missing local Skills MCP entry: ${skillsServer}`, { cause: err });
         }
-      } catch (err) {
-        throw new Error(`Codex artifact missing local Skills MCP entry: ${skillsServer}`, { cause: err });
       }
       await run(['codex', 'mcp', 'remove', 'lore'], commandOpts).catch(() => undefined);
       await run(['codex', 'mcp', 'remove', 'lore-skills'], commandOpts).catch(() => undefined);
@@ -256,32 +261,35 @@ export const codexInstaller: ChannelInstaller = {
         'env',
       ]);
 
-      // Pass home/base via env table; token only in env (never in command/args).
-      // Codex TOML env maps are inline tables of string values.
-      const skillsEnvParts = [
-        `LORE_HOME = ${JSON.stringify(ctx.loreHome)}`,
-        `LORE_BASE_URL = ${JSON.stringify(ctx.baseUrl.replace(/\/$/, ''))}`,
-        'LORE_CLIENT_TYPE = "codex"',
-      ];
-      if (ctx.apiToken) {
-        // Prefer env var indirection: host inherits LORE_API_TOKEN from process env when set;
-        // also materialize from shared config into the MCP env table without putting it in command args.
-        skillsEnvParts.push(`LORE_API_TOKEN = ${JSON.stringify(ctx.apiToken)}`);
+      if (ctx.capabilities.skills) {
+        // Pass home/base via env table; token only in env (never in command/args).
+        // Codex TOML env maps are inline tables of string values.
+        const skillsEnvParts = [
+          `LORE_HOME = ${JSON.stringify(ctx.loreHome)}`,
+          `LORE_BASE_URL = ${JSON.stringify(ctx.baseUrl.replace(/\/$/, ''))}`,
+          'LORE_CLIENT_TYPE = "codex"',
+          'LORE_SKILLS_ENABLED = "1"',
+        ];
+        if (ctx.apiToken) {
+          skillsEnvParts.push(`LORE_API_TOKEN = ${JSON.stringify(ctx.apiToken)}`);
+        }
+        const skillsKeys: Record<string, string> = {
+          command: JSON.stringify('node'),
+          args: JSON.stringify([skillsServer, '--client-type', 'codex']),
+          env: `{ ${skillsEnvParts.join(', ')} }`,
+        };
+        cfg = setTomlSectionKeys(cfg, '[mcp_servers.lore-skills]', skillsKeys, [
+          'url',
+          'http_headers',
+          'env_http_headers',
+          'bearer_token_env_var',
+          'command',
+          'args',
+          'env',
+        ]);
+      } else {
+        cfg = removeTomlSection(cfg, '[mcp_servers.lore-skills]');
       }
-      const skillsKeys: Record<string, string> = {
-        command: JSON.stringify('node'),
-        args: JSON.stringify([skillsServer, '--client-type', 'codex']),
-        env: `{ ${skillsEnvParts.join(', ')} }`,
-      };
-      cfg = setTomlSectionKeys(cfg, '[mcp_servers.lore-skills]', skillsKeys, [
-        'url',
-        'http_headers',
-        'env_http_headers',
-        'bearer_token_env_var',
-        'command',
-        'args',
-        'env',
-      ]);
 
       cfg = setTomlSectionKeys(cfg, '[features]', { hooks: 'true' }, ['hooks', 'codex_hooks']);
       await fs.writeFile(cfgPath, cfg, { encoding: 'utf8', mode: 0o600 });

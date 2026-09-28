@@ -6,7 +6,7 @@ import { createSkillsSession } from './skills';
 
 export default function lorePiExtension(pi: ExtensionAPI) {
   const pluginCfg = pickPluginConfig(pi);
-  const skillsSession = createSkillsSession(pluginCfg);
+  const skillsSession = pluginCfg.skillsEnabled ? createSkillsSession(pluginCfg) : undefined;
   registerTools(pi, pluginCfg, skillsSession);
   registerHooks(pi, pluginCfg, skillsSession);
 }

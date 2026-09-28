@@ -1,5 +1,8 @@
 import type { Hooks } from '@opencode-ai/plugin';
 import type { Event, Part, Session, UserMessage } from '@opencode-ai/sdk';
+import { chmodSync, existsSync, lstatSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   classifyDirectUserPrompt,
@@ -57,6 +60,7 @@ const lifecycleConfig = {
   startupTimeoutMs: 8_000,
   requestTimeoutMs: 30_000,
   defaultDomain: 'core',
+  skillsEnabled: true,
   loreHome: '/tmp/lore-home',
 };
 
@@ -98,6 +102,22 @@ function deferred<T>() {
     reject = rejectPromise;
   });
   return { promise, resolve, reject };
+}
+
+function rmWritable(dir: string) {
+  const walk = (current: string) => {
+    try {
+      const st = lstatSync(current);
+      if (st.isDirectory() && !st.isSymbolicLink()) {
+        try { chmodSync(current, 0o755); } catch { /* ignore */ }
+        for (const entry of readdirSync(current)) walk(join(current, entry));
+      } else if (st.isFile()) {
+        try { chmodSync(current, 0o644); } catch { /* ignore */ }
+      }
+    } catch { /* ignore */ }
+  };
+  walk(dir);
+  rmSync(dir, { force: true, recursive: true });
 }
 
 function adapter(logger = { warn: vi.fn(), debug: vi.fn() }) {
@@ -212,6 +232,7 @@ describe('OpenCode lifecycle adapter', () => {
       protocol_version: 'lore.lifecycle.v1',
       runtime: { runtime_id: 'opencode', runtime_family: 'opencode' },
       event: { name: 'session.start', native_name: 'session.created' },
+      features: { skills: true },
       normalized: { session_id: 'ses-1' },
       project: { dir_name: 'project', repo_name: 'workspace' },
       native_input_snapshot: { directory: '/workspace/project', worktree: '/workspace' },
@@ -247,6 +268,53 @@ describe('OpenCode lifecycle adapter', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(later.system.join('\n').match(/lore:opencode-system-context:start/g)).toHaveLength(1);
     expect(later.system.join('\n')).not.toContain('stale');
+  });
+
+  it('declares Skills support at session start and never downloads or reconciles', async () => {
+    const loreHome = mkdtempSync(join(tmpdir(), 'lore-opencode-life-'));
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === '/api/lifecycle/event') {
+        return jsonResponse({
+          host_output: { mode: 'return_value', value: { systemContext: 'BOOT' } },
+        });
+      }
+      throw new Error(`unexpected request: ${url.pathname}`);
+    });
+
+    const lifecycle = createOpenCodeLifecycleAdapter({
+      config: { ...lifecycleConfig, loreHome },
+      directory: '/workspace/project',
+      worktree: '/workspace',
+      logger: { warn: vi.fn(), debug: vi.fn() },
+    });
+    const out = { system: ['Existing'] };
+    await lifecycle.hooks['experimental.chat.system.transform']?.(systemInput('ses-1'), out);
+
+    // Session start opts into the Skills catalog; it never calls /skills or downloads.
+    expect(out.system.join('\n')).toContain('BOOT');
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).features).toEqual({ skills: true });
+    const requestSummary = fetchMock.mock.calls.map(([input]) => new URL(String(input)).pathname);
+    expect(requestSummary).toEqual(['/api/lifecycle/event']);
+    expect(existsSync(join(loreHome, 'skill-artifacts', 'project-1', 'demo-skill'))).toBe(false);
+
+    // A failing Skills API never blocks startup: system context is still returned.
+    fetchMock.mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === '/api/lifecycle/event') {
+        return jsonResponse({
+          host_output: { mode: 'return_value', value: { systemContext: 'BOOT2' } },
+        });
+      }
+      throw new Error('skills API down');
+    });
+    const out2 = { system: ['Existing'] };
+    await lifecycle.hooks['experimental.chat.system.transform']?.(systemInput('ses-2'), out2);
+    expect(out2.system.join('\n')).toContain('BOOT2');
+    expect(fetchMock.mock.calls.map(([input]) => new URL(String(input)).pathname))
+      .toEqual(['/api/lifecycle/event', '/api/lifecycle/event']);
+
+    rmWritable(loreHome);
   });
 
   it('mutates the host system array in place so OpenCode retains the injected Boot context', async () => {
@@ -337,6 +405,7 @@ describe('OpenCode lifecycle adapter', () => {
       protocol_version: 'lore.lifecycle.v1',
       runtime: { runtime_id: 'opencode', runtime_family: 'opencode' },
       event: { name: 'prompt.submit', native_name: 'chat.message' },
+      features: { skills: true },
       normalized: { session_id: 'ses-1', prompt: 'Remember the runtime contract' },
       project: { dir_name: 'project', repo_name: 'workspace' },
       native_input_snapshot: {
@@ -364,57 +433,28 @@ describe('OpenCode lifecycle adapter', () => {
     expect(output.parts).toHaveLength(2);
   });
 
-  it('appends discovery-only <lore-skills> to promptContext and works without memory promptContext', async () => {
+  it('writes server promptContext through and declares Skills support only when enabled', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
-      skill_catalog: { project_id: 'project-1', catalog_revision: 'rev-9' },
-      skill_candidates: [
-        {
-          skill_id: 'skill-1',
-          name: 'demo-skill',
-          version: 2,
-          description: 'A demo skill',
-        },
-      ],
-      host_output: {
-        mode: 'return_value',
-        value: {
-          promptContext: '<recall session_id="ses-1" query_id="q-1" phase="prompt">\n0.9 | core://agent\n</recall>',
-        },
-      },
+      host_output: { mode: 'return_value', value: { promptContext: '<skill_invocation>x</skill_invocation>' } },
     }));
-    const lifecycle = adapter();
-    const [input, output] = fixture([textPart('prt-1', 'Use the demo skill')]);
+    const [input, output] = fixture([textPart('prt-1', 'Run $deploy')]);
+    await adapter().hooks['chat.message']?.(input, output);
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).features).toEqual({ skills: true });
+    expect((output.parts[1] as { text: string }).text).toBe('<skill_invocation>x</skill_invocation>');
 
-    await lifecycle.hooks['chat.message']?.(input, output);
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(output.parts).toHaveLength(2);
-    const injected = output.parts[1] as { text: string };
-    expect(injected.text).toContain('<recall session_id="ses-1"');
-    expect(injected.text).toContain('<lore-skills>');
-    expect(injected.text).toContain('lore_skill_get');
-    expect(injected.text).toContain('skill_id: skill-1');
-    expect(injected.text).toContain('demo-skill');
-    expect(injected.text).not.toMatch(/skill_dir|\/skills\//);
-
-    // Skills-only path: no memory promptContext, still injects discovery block.
-    fetchMock.mockResolvedValueOnce(jsonResponse({
-      skill_catalog: { project_id: 'project-1', catalog_revision: 'rev-9' },
-      skill_candidates: [
-        { id: 'skill-2', name: 'other-skill', expected_version: 1 },
-      ],
-      host_output: { mode: 'return_value', value: {} },
-    }));
+    const disabled = createOpenCodeLifecycleAdapter({
+      config: { ...lifecycleConfig, skillsEnabled: false },
+      directory: '/workspace/project',
+      worktree: '/workspace',
+      logger: { warn: vi.fn(), debug: vi.fn() },
+    });
     const [input2, output2] = fixture(
-      [textPart('prt-2', 'Skills only', { messageID: 'msg-2' })],
+      [textPart('prt-2', 'Hello', { messageID: 'msg-2' })],
       { messageID: 'msg-2' },
       { id: 'msg-2' },
     );
-    await lifecycle.hooks['chat.message']?.(input2, output2);
-    expect(output2.parts).toHaveLength(2);
-    const skillsOnly = output2.parts[1] as { text: string };
-    expect(skillsOnly.text).toContain('<lore-skills>');
-    expect(skillsOnly.text).toContain('skill_id: skill-2');
-    expect(skillsOnly.text).not.toContain('<recall');
+    await disabled.hooks['chat.message']?.(input2, output2);
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body)).features).toBeUndefined();
   });
 
   it('fails open without mutating outputs and warns once for incompatible system-hook shapes', async () => {

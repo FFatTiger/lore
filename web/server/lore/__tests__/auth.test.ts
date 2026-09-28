@@ -26,6 +26,7 @@ describe('normalizeClientType', () => {
     expect(normalizeClientType('Codex')).toBe('codex');
     expect(normalizeClientType('Pi')).toBe('pi');
     expect(normalizeClientType(' OpenCode ')).toBe('opencode');
+    expect(normalizeClientType('ZCode')).toBe('zcode');
     expect(normalizeClientType('mcp')).toBe('mcp');
     expect(normalizeClientType('Admin')).toBe('admin');
   });

@@ -29,6 +29,21 @@ describe('inspectProtectedBootOperation', () => {
     });
   });
 
+  it('blocks delete on the ZCode boot URI', () => {
+    expect(inspectProtectedBootOperation('delete_node', {
+      uri: 'CORE://AGENT/ZCODE',
+    })).toEqual({
+      operation: 'delete_node',
+      match: 'uri',
+      blocked_uri: 'core://agent/zcode',
+      spec: expect.objectContaining({
+        id: 'agent-zcode',
+        client_type: 'zcode',
+        dream_protection: 'protected',
+      }),
+    });
+  });
+
   it('blocks delete on the OpenCode boot URI', () => {
     expect(inspectProtectedBootOperation('delete_node', {
       uri: 'CORE://AGENT/OPENCODE',

@@ -47,18 +47,33 @@ function buildNativeInputSnapshot(input) {
   return Object.keys(snapshot).length ? snapshot : undefined;
 }
 
+function resolveSkillsEnabled(config, baseUrl) {
+  if (process.env.LORE_SKILLS_ENABLED === '0') return false;
+  const profile = config?.server_profile;
+  if (profile && typeof profile === 'object' && !Array.isArray(profile)) {
+    const profileBase = pickString(profile.base_url).replace(/\/+$/, '').toLowerCase();
+    if (profileBase === baseUrl.toLowerCase()) {
+      return Boolean(profile.capabilities && typeof profile.capabilities === 'object'
+        && !Array.isArray(profile.capabilities)
+        && profile.capabilities.skills === true);
+    }
+  }
+  return process.env.LORE_SKILLS_ENABLED === '1';
+}
+
 function loadConfig() {
   const config = readLoreConfig();
-  const baseUrl = pickString(process.env.LORE_CODEX_HOOK_BASE_URL)
+  const baseUrl = (pickString(process.env.LORE_CODEX_HOOK_BASE_URL)
     || pickString(config.base_url)
     || pickString(process.env.LORE_BASE_URL)
-    || DEFAULT_BASE_URL;
+    || DEFAULT_BASE_URL).replace(/\/+$/, '');
   return {
-    baseUrl: baseUrl.replace(/\/+$/, ''),
+    baseUrl,
     apiToken: pickString(config.api_token)
       || pickString(process.env.LORE_API_TOKEN)
       || pickString(process.env.API_TOKEN),
     timeoutMs: 10000,
+    skillsEnabled: resolveSkillsEnabled(config, baseUrl),
   };
 }
 
@@ -80,71 +95,6 @@ async function postLifecycle(body, timeoutMs) {
   });
   if (!response.ok) return null;
   return response.json();
-}
-
-
-function formatSkillCandidateBlock(candidates) {
-  if (!Array.isArray(candidates) || candidates.length === 0) return "";
-  const lines = ["<lore-skills>"];
-  lines.push("Matched Lore skills. Call lore_skill_get with skill_id to materialize a local work copy.");
-  for (const c of candidates) {
-    const skillId = String(c?.skill_id || c?.id || "").trim();
-    const name = String(c?.name || "").trim();
-    if (!skillId || !name) continue;
-    const versionRaw = c?.version ?? c?.expected_version;
-    const version = versionRaw === undefined || versionRaw === null || versionRaw === "" ? "" : ` v${versionRaw}`;
-    const desc = typeof c?.description === "string" && c.description.trim()
-      ? ` — ${c.description.replace(/\s+/g, " ").trim()}`
-      : "";
-    lines.push(`- ${name}${version}${desc}`);
-    lines.push(`  skill_id: ${skillId}`);
-    if (versionRaw !== undefined && versionRaw !== null && versionRaw !== "") {
-      lines.push(`  version: ${versionRaw}`);
-    }
-  }
-  lines.push("</lore-skills>");
-  return lines.length > 3 ? lines.join("\n") : "";
-}
-
-function appendSkillCandidatesToHostOutput(response) {
-  try {
-    const block = formatSkillCandidateBlock(response?.skill_candidates);
-    if (!block) return response;
-    const output = response?.host_output;
-    if (!output || output.mode === "none" || output.value == null) {
-      // Prefer Codex/Claude structured JSON when no memory context was produced.
-      return {
-        ...response,
-        host_output: {
-          mode: "stdout_json",
-          value: {
-            hookSpecificOutput: {
-              hookEventName: "UserPromptSubmit",
-              additionalContext: block,
-            },
-          },
-        },
-      };
-    }
-    if (output.mode === "stdout_text") {
-      const existing = String(output.value || "");
-      const value = existing.trim() ? `${existing.trim()}\n\n${block}` : block;
-      return { ...response, host_output: { ...output, value } };
-    }
-    if (output.mode === "stdout_json" && output.value && typeof output.value === "object") {
-      const value = { ...output.value };
-      const hook = value.hookSpecificOutput && typeof value.hookSpecificOutput === "object"
-        ? { ...value.hookSpecificOutput }
-        : { hookEventName: "UserPromptSubmit" };
-      const existing = typeof hook.additionalContext === "string" ? hook.additionalContext : "";
-      hook.additionalContext = existing.trim() ? `${existing.trim()}\n\n${block}` : block;
-      value.hookSpecificOutput = hook;
-      return { ...response, host_output: { ...output, value } };
-    }
-    return response;
-  } catch {
-    return response;
-  }
 }
 
 function writeHostOutput(response) {
@@ -178,9 +128,11 @@ async function main() {
       runtime: { runtime_id: RUNTIME_FAMILY, runtime_family: RUNTIME_FAMILY },
       event: { name: 'prompt.submit', native_name: 'UserPromptSubmit' },
       normalized,
+      // Lore renders `$skill-name` invocations only for clients that expose Skills tools.
+      ...(cfg.skillsEnabled ? { features: { skills: true } } : {}),
       ...(nativeInputSnapshot ? { native_input_snapshot: nativeInputSnapshot } : {}),
     }, cfg.timeoutMs);
-    writeHostOutput(appendSkillCandidatesToHostOutput(lifecycle));
+    writeHostOutput(lifecycle);
   } catch {
     // Lore lifecycle is best-effort; fail silently.
   }

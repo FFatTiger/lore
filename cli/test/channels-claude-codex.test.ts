@@ -21,6 +21,7 @@ function ctx(p: Partial<ChannelContext> & { loreHome: string; homeDir: string })
     apiToken: 'lm_x',
     tokenAction: 'set',
     needInstall: 2,
+    capabilities: { skills: true },
     force: false,
     lang: 'en',
     releaseVersion: 'v1.3.15',
@@ -84,12 +85,29 @@ test('claude install writes settings and relies on the plugin MCP server', async
     assert.equal(result.status, 'ok');
     assert.ok(calls.some((c) => c.includes('claude plugin marketplace add')));
     assert.ok(calls.includes('claude mcp remove --scope user lore'));
+    assert.ok(calls.includes('claude mcp remove --scope user lore-skills'));
     assert.equal(calls.some((c) => c.startsWith('claude mcp add')), false);
     const settings = JSON.parse(
       await fs.readFile(path.join(home, '.claude', 'settings.json'), 'utf8'),
-    ) as { env: { LORE_BASE_URL: string; LORE_API_TOKEN: string } };
+    ) as { env: Record<string, string> };
     assert.equal(settings.env.LORE_BASE_URL, 'https://core.example');
     assert.equal(settings.env.LORE_API_TOKEN, 'lm_x');
+    assert.equal(settings.env.LORE_SKILLS_ENABLED, '1');
+  });
+});
+
+test('claude install keeps Skills disabled when the server does not advertise them', async () => {
+  const { home, loreHome } = await tempHome();
+  await fs.mkdir(path.join(loreHome, 'claudecode'), { recursive: true });
+  const run: ExecFn = async () => ({ code: 0, stdout: 'lore@lore', stderr: '' });
+
+  await withBin(home, 'claude', async () => {
+    const result = await claudecodeInstaller.install(ctx({ loreHome, homeDir: home, run, capabilities: {} }));
+    assert.equal(result.status, 'ok');
+    const settings = JSON.parse(
+      await fs.readFile(path.join(home, '.claude', 'settings.json'), 'utf8'),
+    ) as { env: Record<string, string> };
+    assert.equal(settings.env.LORE_SKILLS_ENABLED, '0');
   });
 });
 
@@ -204,7 +222,7 @@ test('Claude plugin MCP server authenticates with LORE_API_TOKEN', async () => {
   ) as {
     mcpServers: {
       lore: { url: string; headers?: Record<string, string> };
-      'lore-skills': { command: string; args: string[] };
+      'lore-skills': { command: string; args: string[]; env?: Record<string, string> };
     };
   };
   assert.match(pluginMcp.mcpServers.lore.url, /\$\{LORE_BASE_URL/);
@@ -213,6 +231,8 @@ test('Claude plugin MCP server authenticates with LORE_API_TOKEN', async () => {
   // register a duplicate user-scope MCP entry for it.
   assert.ok(pluginMcp.mcpServers['lore-skills'].args.some((a) => a.includes('local-skills-mcp')));
   assert.ok(pluginMcp.mcpServers['lore-skills'].args.includes('claudecode'));
+  // Fail-closed: the Skills server exposes no tools unless the installer enabled them.
+  assert.equal(pluginMcp.mcpServers['lore-skills'].env?.LORE_SKILLS_ENABLED, '${LORE_SKILLS_ENABLED:-0}');
 });
 
 test('Claude clear token removes settings token', async () => {

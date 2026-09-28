@@ -10,6 +10,7 @@ const REQUEST_TIMEOUT_MS = 30_000;
 interface SharedLoreConfig {
   base_url?: unknown;
   api_token?: unknown;
+  server_profile?: unknown;
 }
 
 export interface LorePluginConfig {
@@ -18,6 +19,8 @@ export interface LorePluginConfig {
   startupTimeoutMs: number;
   requestTimeoutMs: number;
   defaultDomain: string;
+  /** Whether the connected server explicitly advertises Skills support. */
+  skillsEnabled: boolean;
   /** Writable skill work-copy root: LORE_HOME, else <home>/.lore. */
   loreHome: string;
 }
@@ -46,6 +49,31 @@ function resolveLoreHome(env: NodeJS.ProcessEnv, homeDir: string): string {
   return resolve(join(homeDir, '.lore'));
 }
 
+function resolveSkillsEnabled(
+  env: NodeJS.ProcessEnv,
+  shared: SharedLoreConfig,
+  baseUrl: string,
+  loreHome: string,
+): boolean {
+  if (env.LORE_SKILLS_ENABLED === '0') return false;
+  const profile = shared.server_profile;
+  if (profile && typeof profile === 'object' && !Array.isArray(profile)) {
+    const record = profile as Record<string, unknown>;
+    const profileBase = firstNonBlank(record.base_url).replace(/\/+$/, '').toLowerCase();
+    const capabilities = record.capabilities;
+    if (profileBase === baseUrl.toLowerCase()) {
+      return Boolean(capabilities && typeof capabilities === 'object' && !Array.isArray(capabilities)
+        && (capabilities as Record<string, unknown>).skills === true);
+    }
+  }
+  if (env.LORE_SKILLS_ENABLED === '1') return true;
+  try {
+    return readFileSync(join(loreHome, 'opencode', '.lore-skills-enabled'), 'utf8').trim() === '1';
+  } catch {
+    return false;
+  }
+}
+
 export function loadLorePluginConfig(
   env: NodeJS.ProcessEnv = process.env,
   homeDir: string = homedir(),
@@ -53,6 +81,7 @@ export function loadLorePluginConfig(
   const shared = readSharedLoreConfig(homeDir);
   const baseUrl = firstNonBlank(shared.base_url, env.LORE_BASE_URL, DEFAULT_BASE_URL)
     .replace(/\/+$/, '');
+  const loreHome = resolveLoreHome(env, homeDir);
 
   return {
     baseUrl,
@@ -60,6 +89,7 @@ export function loadLorePluginConfig(
     startupTimeoutMs: STARTUP_TIMEOUT_MS,
     requestTimeoutMs: REQUEST_TIMEOUT_MS,
     defaultDomain: firstNonBlank(env.LORE_DEFAULT_DOMAIN, DEFAULT_DOMAIN),
-    loreHome: resolveLoreHome(env, homeDir),
+    skillsEnabled: resolveSkillsEnabled(env, shared, baseUrl, loreHome),
+    loreHome,
   };
 }

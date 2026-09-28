@@ -4,11 +4,6 @@ import type { Hooks } from '@opencode-ai/plugin';
 import type { Part } from '@opencode-ai/sdk';
 import { LoreApiError, loreFetchJson } from './api.js';
 import type { LorePluginConfig } from './config.js';
-import {
-  readSkillCatalog,
-  skillDiscoveryBlockFromResponse,
-  type SkillCatalog,
-} from './skills.js';
 
 export const LORE_RECALL_MARKER = 'lore:prompt-context';
 
@@ -95,9 +90,6 @@ interface HostOutputResponse {
       promptContext?: unknown;
     };
   };
-  /** Skill lane is independent of memory host_output. */
-  skill_catalog?: unknown;
-  skill_candidates?: unknown;
 }
 
 interface SessionState {
@@ -106,7 +98,6 @@ interface SessionState {
   systemContext?: string;
   retryAt: number;
   promptMessageIDs: Set<string>;
-  skillCatalog?: SkillCatalog;
 }
 
 export interface OpenCodeLifecycleAdapter {
@@ -181,6 +172,8 @@ export function createOpenCodeLifecycleAdapter(args: {
       protocol_version: 'lore.lifecycle.v1',
       runtime: { runtime_id: 'opencode', runtime_family: 'opencode' },
       event: { name: 'session.start', native_name: 'session.created' },
+      // Lore appends the Skills catalog only for clients that expose Skills tools.
+      ...(config.skillsEnabled ? { features: { skills: true } } : {}),
       normalized: { session_id: sessionID },
       project: project.project,
       native_input_snapshot: project.native,
@@ -192,6 +185,8 @@ export function createOpenCodeLifecycleAdapter(args: {
       protocol_version: 'lore.lifecycle.v1',
       runtime: { runtime_id: 'opencode', runtime_family: 'opencode' },
       event: { name: 'prompt.submit', native_name: 'chat.message' },
+      // Lore renders `$skill-name` invocations only for clients that expose Skills tools.
+      ...(config.skillsEnabled ? { features: { skills: true } } : {}),
       normalized: { session_id: prompt.sessionID, prompt: prompt.prompt },
       project: project.project,
       native_input_snapshot: {
@@ -217,8 +212,6 @@ export function createOpenCodeLifecycleAdapter(args: {
       timeoutMs: config.startupTimeoutMs,
     })
       .then((response) => {
-        const catalog = readSkillCatalog(response);
-        if (catalog) state.skillCatalog = catalog;
         const systemContext = hostValue(response, 'systemContext');
         if (systemContext) state.systemContext = systemContext;
         return systemContext;
@@ -280,24 +273,15 @@ export function createOpenCodeLifecycleAdapter(args: {
         timeoutMs: config.requestTimeoutMs,
       });
 
-      // Skill lane is independent of memory host_output; record catalog identity only.
-      const catalog = readSkillCatalog(response);
-      if (catalog) state.skillCatalog = catalog;
-
-      // Discovery-only: never download or inject local paths.
-      const skillBlock = skillDiscoveryBlockFromResponse(response);
       const promptContext = hostValue(response, 'promptContext');
-
-      // Append discovery block to promptContext even when memory recall is absent.
-      const combined = [promptContext, skillBlock].filter(nonEmpty).join('\n\n');
-      if (!combined) return;
+      if (!promptContext) return;
 
       output.parts.push({
         id: `prt_lore_${randomUUID().replaceAll('-', '')}`,
         sessionID: prompt.sessionID,
         messageID: prompt.messageID,
         type: 'text',
-        text: combined,
+        text: promptContext,
         synthetic: true,
         metadata: { lore_injected: true, marker: LORE_RECALL_MARKER },
       });

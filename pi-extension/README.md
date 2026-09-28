@@ -10,11 +10,11 @@ This extension connects Pi agent to Lore long-term memory.
 - Injects per-prompt recall context as a hidden custom message.
 - Tracks session reads for `lore_get_node`.
 - Registers server-side Skill CRUD/search/status tools without prescribing when the agent should use them.
-- Lifecycle Skill recall discovers matching Skill candidates only (skill_id, name, description, version). It does not auto-download, reconcile, or inject local paths.
-- `lore_skill_get(skill_id)` materializes a complete writable local work copy at `~/.lore/skill-artifacts/<project-id>/<skill-name>/` (or `LORE_HOME`) when missing or when the server version differs.
-- Same-version work copies preserve all local Agent edits and outputs; server version upgrades replace only server-managed paths and prune obsolete managed files.
+- Session start lists the skills the agent may use (name, description, `skill_id`); the agent decides when to call `lore_skill_get`. Users can invoke a skill explicitly by typing `$skill-name` in a prompt; skills whose `SKILL.md` sets `disable-model-invocation: true` are hidden from the agent and only run this way. Lore never injects local paths; all download/update is on-demand via `lore_skill_get` (no session-start sync).
+- `lore_skill_get(skill_id)` downloads the complete server package into a local work copy at `~/.lore/skill-artifacts/<project-id>/<skill-name>/` (or `LORE_HOME`) when missing, updates the server-managed package files when the server version differs, and reuses the local copy when the version matches.
+- Managed package files are read-only (0444 POSIX) while the skill directory itself stays writable (0755), so agents create local outputs/cache directly inside the same copy. Extra local files never trigger tamper and survive fetches and version upgrades.
+- Same-version local outputs are preserved across fetches and upgrades; a version mismatch updates only the server-managed package files.
 - Transport validation covers safe paths, required `SKILL.md`, per-file hashes/sizes, and optional manifest hashes. Unmanaged local directories are never overwritten.
-- Skill outputs live inside the writable work copy directory (no separate artifact tree).
 
 ## Local Install
 
@@ -26,4 +26,4 @@ Then run `/reload` inside Pi or restart Pi.
 
 Pi discovers extensions from `~/.pi/agent/extensions/*/index.ts`.
 
-Writable Skill work copies are editable in place. Console or agent tools update the canonical server Skill; a later `lore_skill_get` refreshes the local work copy only when the server version differs. Pi's native `/skill` inventory may require `/reload` or restart after a newly materialized Skill appears; Lore returns the absolute `skill_dir` and `SKILL.md` content immediately from `lore_skill_get`.
+Skill work copies keep the server-managed package files read-only while the directory stays writable for local outputs; the next `lore_skill_get` refreshes managed package files on a version change (no session-start sync). Pi's native `/skill` inventory may require `/reload` or restart after a newly materialized Skill appears; Lore returns the absolute `skill_dir` and `SKILL.md` content immediately from `lore_skill_get`.

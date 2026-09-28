@@ -107,6 +107,30 @@ describe('Pi extension API helpers', () => {
     expect(cfg.apiToken).toBe('shared-token');
   });
 
+  it('treats a matching server profile as authoritative over stale local enables', () => {
+    writeSharedConfig({
+      base_url: 'http://shared-lore:18901',
+      server_profile: {
+        base_url: 'http://shared-lore:18901',
+        capabilities: { skills: false },
+      },
+    });
+    const markerDir = path.join(tempHome, '.lore', 'pi');
+    fs.mkdirSync(markerDir, { recursive: true });
+    fs.writeFileSync(path.join(markerDir, '.lore-skills-enabled'), '1\n');
+
+    expect(pickPluginConfig({ pluginConfig: { skillsEnabled: true } }).skillsEnabled).toBe(false);
+  });
+
+  it('requires the legacy marker content to be exactly enabled', () => {
+    const markerDir = path.join(tempHome, '.lore', 'pi');
+    fs.mkdirSync(markerDir, { recursive: true });
+    fs.writeFileSync(path.join(markerDir, '.lore-skills-enabled'), '0\n');
+    expect(pickPluginConfig({}).skillsEnabled).toBe(false);
+    fs.writeFileSync(path.join(markerDir, '.lore-skills-enabled'), '1\n');
+    expect(pickPluginConfig({}).skillsEnabled).toBe(true);
+  });
+
   it('builds Lore API URLs with client_type=pi', () => {
     expect(buildApiUrl({ baseUrl: 'http://host' }, '/browse/boot')).toBe('http://host/api/browse/boot?client_type=pi');
     expect(buildApiUrl({ baseUrl: 'http://host' }, '/browse/search?query=x')).toBe('http://host/api/browse/search?query=x&client_type=pi');

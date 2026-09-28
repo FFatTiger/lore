@@ -3,12 +3,9 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  appendSkillBlockToRecallMessage,
   computeManifestHash,
   createSkillsSession,
-  discoveryCandidateEntries,
   ensureSkillWorkCopy,
-  formatSkillCandidateBlock,
   inspectLocalWorkCopy,
   LEGACY_MIRROR_SCHEMA,
   LORE_SKILL_MARKER,
@@ -156,7 +153,7 @@ describe('skills adapter ensure DI + work-copy smoke', () => {
     vi.unstubAllGlobals();
   });
 
-  it('materialize via re-export writes writable work copy under loreHome', () => {
+  it('materialize via re-export writes a writable work copy with read-only managed files under loreHome', () => {
     const helperContent = '# helper\n';
     const detail = skillDetail({
       files: [
@@ -179,21 +176,34 @@ describe('skills adapter ensure DI + work-copy smoke', () => {
     expect(fs.existsSync(path.join(installPath, 'refs', 'helper.md'))).toBe(true);
     expect(marker.schema).toBe(LORE_SKILL_SCHEMA);
     expect(marker.managed_files).toEqual(['SKILL.md', 'refs/helper.md']);
+    expect(marker.manifest_hash).toBe(detail.manifest_hash);
+    expect(marker.readonly).toBe(true);
     expect(inspectLocalWorkCopy(loreHome, projectId, 'demo-skill', {
       skill_id: 'skill-1',
       version: 1,
     }).state).toBe('ready');
-    fs.writeFileSync(path.join(installPath, 'SKILL.md'), '# edited\n', 'utf-8');
-    expect(fs.readFileSync(path.join(installPath, 'SKILL.md'), 'utf-8')).toBe('# edited\n');
+    if (process.platform !== 'win32') {
+      expect(fs.statSync(path.join(installPath, 'SKILL.md')).mode & 0o777).toBe(0o444);
+      // Skill directory stays writable (0755) for local outputs.
+      expect(fs.statSync(installPath).mode & 0o777).toBe(0o755);
+      expect(() => fs.writeFileSync(path.join(installPath, 'SKILL.md'), '# edited\n', 'utf-8')).toThrow(/EACCES|EPERM/);
+    }
+    // Extra local files are writable directly inside the same copy.
+    fs.mkdirSync(path.join(installPath, 'outputs'), { recursive: true });
+    fs.writeFileSync(path.join(installPath, 'outputs', 'result.json'), '{"ok":true}\n', 'utf-8');
+    expect(fs.readFileSync(path.join(installPath, 'outputs', 'result.json'), 'utf-8')).toBe('{"ok":true}\n');
+    expect(inspectLocalWorkCopy(loreHome, projectId, 'demo-skill', { version: 1 }).state).toBe('ready');
   });
 
-  it('ensureSkillWorkCopy uses pluginCfg loadSkill path and preserves same-version edits', async () => {
+  it('ensureSkillWorkCopy reuses a same-version copy; extra local files never trigger tamper', async () => {
     const detail = skillDetail({ version: 1 });
     materializeSkillWorkCopy({ loreHome, projectId, detail });
     const installPath = path.join(loreHome, 'skill-artifacts', projectId, 'demo-skill');
-    fs.writeFileSync(path.join(installPath, 'SKILL.md'), '# local edit\n', 'utf-8');
+
+    // Extra local output inside the writable dir must not count as tamper.
     fs.mkdirSync(path.join(installPath, 'outputs'), { recursive: true });
     fs.writeFileSync(path.join(installPath, 'outputs', 'result.json'), '{"ok":true}\n', 'utf-8');
+    expect(inspectLocalWorkCopy(loreHome, projectId, 'demo-skill', { version: 1 }).state).toBe('ready');
 
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       if (String(url).includes('/api/skills/skill-1')) {
@@ -214,9 +224,55 @@ describe('skills adapter ensure DI + work-copy smoke', () => {
       projectId,
     });
     expect(result.downloaded).toBe(false);
-    expect(result.skill_md).toBe('# local edit\n');
+    expect(result.skill_md).toBe('# Demo Skill\n\nDo the thing.\n');
     expect(result.skill_dir).toBe(path.resolve(installPath));
+    // Extra local file survives the reused copy.
     expect(fs.readFileSync(path.join(installPath, 'outputs', 'result.json'), 'utf-8')).toBe('{"ok":true}\n');
+    expect(inspectLocalWorkCopy(loreHome, projectId, 'demo-skill', { version: 1 }).state).toBe('ready');
+  });
+
+  it('ensureSkillWorkCopy restores a managed-file edit (downloaded) while preserving extra local files', async () => {
+    const detail = skillDetail({ version: 1 });
+    materializeSkillWorkCopy({ loreHome, projectId, detail });
+    const installPath = path.join(loreHome, 'skill-artifacts', projectId, 'demo-skill');
+
+    // Extra local output that must survive the managed-file restore.
+    fs.mkdirSync(path.join(installPath, 'outputs'), { recursive: true });
+    fs.writeFileSync(path.join(installPath, 'outputs', 'result.json'), '{"ok":true}\n', 'utf-8');
+
+    // Managed-file modification: SKILL.md is read-only, so chmod it first.
+    fs.chmodSync(path.join(installPath, 'SKILL.md'), 0o644);
+    fs.writeFileSync(path.join(installPath, 'SKILL.md'), '# local edit\n', 'utf-8');
+    expect(inspectLocalWorkCopy(loreHome, projectId, 'demo-skill', { version: 1 }).state).toBe('tampered');
+
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (String(url).includes('/api/skills/skill-1')) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          text: async () => JSON.stringify(detail),
+        };
+      }
+      return { ok: false, status: 404, statusText: 'NO', text: async () => 'missing' };
+    }));
+
+    const result = await ensureSkillWorkCopy({
+      pluginCfg: { baseUrl: 'http://host', apiToken: '', timeoutMs: 1000, loreHome },
+      loreHome,
+      skillId: 'skill-1',
+      projectId,
+    });
+    expect(result.downloaded).toBe(true);
+    expect(result.skill_md).toBe('# Demo Skill\n\nDo the thing.\n');
+    expect(result.skill_dir).toBe(path.resolve(installPath));
+    expect(fs.readFileSync(path.join(installPath, 'SKILL.md'), 'utf-8')).toBe('# Demo Skill\n\nDo the thing.\n');
+    // Extra local file survives the restore.
+    expect(fs.readFileSync(path.join(installPath, 'outputs', 'result.json'), 'utf-8')).toBe('{"ok":true}\n');
+    expect(inspectLocalWorkCopy(loreHome, projectId, 'demo-skill', { version: 1 }).state).toBe('ready');
+    if (process.platform !== 'win32') {
+      expect(fs.statSync(path.join(installPath, 'SKILL.md')).mode & 0o777).toBe(0o444);
+    }
   });
 
   it('ensureSkillWorkCopy first get downloads files and returns skill_md + absolute skill_dir', async () => {
@@ -315,8 +371,11 @@ describe('skills adapter ensure DI + work-copy smoke', () => {
     const marker = readWorkCopyMarker(result.skill_dir);
     expect(marker?.schema).toBe(LORE_SKILL_SCHEMA);
     expect(marker?.managed_files).toEqual(['SKILL.md']);
-    fs.writeFileSync(path.join(result.skill_dir, 'SKILL.md'), '# edited after migrate\n', 'utf-8');
-    expect(fs.readFileSync(path.join(result.skill_dir, 'SKILL.md'), 'utf-8')).toBe('# edited after migrate\n');
+    expect(marker?.manifest_hash).toBe(detail.manifest_hash);
+    expect(marker?.readonly).toBe(true);
+    if (process.platform !== 'win32') {
+      expect(() => fs.writeFileSync(path.join(result.skill_dir, 'SKILL.md'), '# edited after migrate\n', 'utf-8')).toThrow(/EACCES|EPERM/);
+    }
   });
 
   it('ensureSkillWorkCopy errors on wrong skill_id identity', async () => {
@@ -326,6 +385,15 @@ describe('skills adapter ensure DI + work-copy smoke', () => {
       detail: skillDetail({ id: 'skill-1', version: 1 }),
     });
     const installPath = path.join(loreHome, 'skill-artifacts', projectId, 'demo-skill');
+    fs.chmodSync(path.join(loreHome, 'skill-artifacts', projectId), 0o755);
+    const walk = (current: string) => {
+      const st = fs.lstatSync(current);
+      if (st.isDirectory()) {
+        fs.chmodSync(current, 0o755);
+        for (const entry of fs.readdirSync(current)) walk(path.join(current, entry));
+      } else if (st.isFile()) fs.chmodSync(current, 0o644);
+    };
+    walk(installPath);
     const marker = JSON.parse(fs.readFileSync(path.join(installPath, LORE_SKILL_MARKER), 'utf-8'));
     marker.skill_id = 'other-skill';
     fs.writeFileSync(path.join(installPath, LORE_SKILL_MARKER), JSON.stringify(marker));
@@ -347,9 +415,18 @@ describe('skills adapter ensure DI + work-copy smoke', () => {
   });
 });
 
-describe('skills lifecycle candidate discovery', () => {
+describe('skills lifecycle discovery', () => {
   let loreHome: string;
   const projectId = 'proj-life';
+  const pluginCfg = () => ({
+    baseUrl: 'http://host',
+    apiToken: '',
+    timeoutMs: 1000,
+    loreHome,
+    injectPromptGuidance: true,
+    recallEnabled: true,
+    startupHealthcheck: false,
+  });
 
   beforeEach(() => {
     loreHome = makeTempHome();
@@ -362,199 +439,70 @@ describe('skills lifecycle candidate discovery', () => {
     vi.unstubAllGlobals();
   });
 
-  it('recall candidate block has IDs/version and no local path/download', () => {
-    const discovered = discoveryCandidateEntries([
-      {
-        skill_id: 's-ready',
-        name: 'ready-skill',
-        version: 2,
-        description: 'ok',
-      },
-      {
-        id: 's-two',
-        name: 'second',
-        expected_version: 1,
-        description: 'also',
-      },
-      {
-        name: 'no-id',
-      },
-    ]);
-    expect(discovered).toHaveLength(2);
-    expect(discovered[0]).toMatchObject({ skill_id: 's-ready', name: 'ready-skill', version: 2 });
-
-    const block = formatSkillCandidateBlock(discovered);
-    expect(block).toContain('<lore-skills>');
-    expect(block).toContain('skill_id: s-ready');
-    expect(block).toContain('version: 2');
-    expect(block).toContain('ready-skill');
-    expect(block).toContain('lore_skill_get');
-    expect(block).not.toContain('SKILL.md:');
-    expect(block).not.toContain(path.join(loreHome, 'skill-artifacts'));
-    expect(block).not.toContain('/installed/');
-  });
-
-  it('appends skill block to existing hidden recall message or creates one', () => {
-    const block = formatSkillCandidateBlock([{
-      skill_id: 's-ready',
-      name: 'ready-skill',
-      version: 1,
-      description: 'ok',
-    }]);
-    const withRecall = appendSkillBlockToRecallMessage({
-      customType: 'lore-recall',
-      content: '<recall session_id="s">\n0.9 | core://x\n</recall>',
-      display: false,
-    }, block);
-    expect(withRecall.content).toContain('<recall');
-    expect(withRecall.content).toContain('<lore-skills>');
-    expect(withRecall.content).toContain('skill_id: s-ready');
-    expect(withRecall.display).toBe(false);
-
-    const created = appendSkillBlockToRecallMessage(undefined, block);
-    expect(created.customType).toBe('lore-recall');
-    expect(created.content).toContain('<lore-skills>');
-    expect(created.display).toBe(false);
-  });
-
-  it('session_start records catalog identity without downloading; prompt only discovers candidates', async () => {
-    const pluginCfg = {
-      baseUrl: 'http://host',
-      apiToken: '',
-      timeoutMs: 1000,
-      loreHome,
-      injectPromptGuidance: true,
-      recallEnabled: true,
-      startupHealthcheck: false,
-    };
-
-    const fetchMock = vi.fn(async (url: string, init: any) => {
+  function stubLifecycle(bodies: any[], apiCalls: string[]) {
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: any) => {
       const u = String(url);
-      if (u.includes('/lifecycle/event')) {
-        const body = JSON.parse(String(init?.body || '{}'));
-        if (body?.event?.name === 'session.start') {
-          return {
-            ok: true,
-            status: 200,
-            statusText: 'OK',
-            text: async () => JSON.stringify({
-              host_output: { mode: 'return_value', value: { systemPromptAppend: 'SYS' } },
-              skill_catalog: { project_id: projectId, catalog_revision: 'cat-1' },
-            }),
-          };
-        }
-        return {
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-          text: async () => JSON.stringify({
-            host_output: {
-              mode: 'return_value',
-              value: {
-                message: {
-                  customType: 'lore-recall',
-                  content: '<recall session_id="sess-s">\n0.8 | core://a\n</recall>',
-                  display: false,
-                },
-              },
-            },
-            skill_catalog: { project_id: projectId, catalog_revision: 'cat-1' },
-            skill_candidates: [{
-              skill_id: 's-prompt',
-              name: 'prompt-skill',
-              description: 'for prompts',
-              expected_version: 1,
-            }],
-          }),
-        };
-      }
       if (u.includes('/api/skills')) {
+        apiCalls.push(u);
         return { ok: false, status: 500, statusText: 'ERR', text: async () => 'should not sync' };
       }
-      return { ok: false, status: 404, statusText: 'NO', text: async () => 'missing' };
-    });
-    vi.stubGlobal('fetch', fetchMock);
+      const body = JSON.parse(String(init?.body || '{}'));
+      bodies.push(body);
+      const payload = body?.event?.name === 'session.start'
+        ? {
+          host_output: { mode: 'return_value', value: { systemPromptAppend: 'SYS\n<available_skills>catalog</available_skills>' } },
+          skill_catalog: { project_id: projectId, catalog_revision: 'cat-1' },
+        }
+        : {
+          host_output: {
+            mode: 'return_value',
+            value: { message: { customType: 'lore-recall', content: '<recall>\n0.8 | core://a\n</recall>\n\n<skill_invocation>x</skill_invocation>', display: false } },
+          },
+        };
+      return { ok: true, status: 200, statusText: 'OK', text: async () => JSON.stringify(payload) };
+    }));
+  }
 
-    const pi = {
+  function makePi() {
+    return {
       events: {} as Record<string, any>,
       on(event: string, handler: any) { this.events[event] = handler; },
       logger: { warn: vi.fn(), debug: vi.fn(), info: vi.fn() },
     };
-    const skills = createSkillsSession(pluginCfg);
-    registerHooks(pi as any, pluginCfg, skills);
+  }
+
+  it('opts into Skills context, applies host output unchanged, and never downloads at session start', async () => {
+    const bodies: any[] = [];
+    const apiCalls: string[] = [];
+    stubLifecycle(bodies, apiCalls);
+    const pi = makePi();
+    const skills = createSkillsSession(pluginCfg());
+    registerHooks(pi as any, pluginCfg(), skills);
 
     const ctx = { sessionManager: { getSessionId: () => 'sess-s' } };
     await pi.events.session_start({ reason: 'startup' }, ctx);
-    expect(fs.existsSync(path.join(loreHome, 'skill-artifacts', projectId, 'prompt-skill'))).toBe(false);
+    const turn = await pi.events.before_agent_start({ prompt: 'run $deploy', systemPrompt: 'base' }, ctx);
+
+    expect(bodies.map((body) => body.features)).toEqual([{ skills: true }, { memory_recall: true, skills: true }]);
     expect(skills.state.projectId).toBe(projectId);
     expect(skills.state.catalogRevision).toBe('cat-1');
-
-    const turn = await pi.events.before_agent_start({ prompt: 'use skill', systemPrompt: 'base' }, ctx);
-    expect(turn.systemPrompt).toContain('SYS');
-    expect(turn.message.content).toContain('<recall');
-    expect(turn.message.content).toContain('<lore-skills>');
-    expect(turn.message.content).toContain('prompt-skill');
-    expect(turn.message.content).toContain('skill_id: s-prompt');
-    expect(turn.message.content).not.toContain(path.join(loreHome, 'skill-artifacts'));
-    expect(fs.existsSync(path.join(loreHome, 'skill-artifacts', projectId, 'prompt-skill'))).toBe(false);
-    expect(fetchMock.mock.calls.every((c) => !String(c[0]).includes('/api/skills'))).toBe(true);
+    expect(turn.systemPrompt).toBe('base\n\nSYS\n<available_skills>catalog</available_skills>');
+    expect(turn.message.content).toBe('<recall>\n0.8 | core://a\n</recall>\n\n<skill_invocation>x</skill_invocation>');
+    expect(apiCalls).toEqual([]);
+    expect(fs.existsSync(path.join(loreHome, 'skill-artifacts'))).toBe(false);
   });
 
-  it('failed skill discovery fails open and still returns memory recall', async () => {
-    const pluginCfg = {
-      baseUrl: 'http://host',
-      apiToken: '',
-      timeoutMs: 1000,
-      loreHome,
-      injectPromptGuidance: true,
-      recallEnabled: true,
-      startupHealthcheck: false,
-    };
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      const u = String(url);
-      if (u.includes('/lifecycle/event')) {
-        return {
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-          text: async () => JSON.stringify({
-            host_output: {
-              mode: 'return_value',
-              value: {
-                message: {
-                  customType: 'lore-recall',
-                  content: '<recall>\n0.5 | core://x\n</recall>',
-                  display: false,
-                },
-              },
-            },
-            skill_catalog: { project_id: projectId, catalog_revision: 'cat-x' },
-            skill_candidates: [{ skill_id: 's-x', name: 'broken', expected_version: 1 }],
-          }),
-        };
-      }
-      return { ok: false, status: 404, statusText: 'NO', text: async () => 'missing' };
-    }));
+  it('does not opt into Skills context without a Skills session', async () => {
+    const bodies: any[] = [];
+    stubLifecycle(bodies, []);
+    const pi = makePi();
+    registerHooks(pi as any, pluginCfg());
 
-    const pi = {
-      events: {} as Record<string, any>,
-      on(event: string, handler: any) { this.events[event] = handler; },
-      logger: { warn: vi.fn(), debug: vi.fn(), info: vi.fn() },
-    };
-    const skills = createSkillsSession(pluginCfg);
-    const original = skills.onPromptLifecycle.bind(skills);
-    skills.onPromptLifecycle = async (resp: any) => {
-      try {
-        return await original(resp);
-      } catch {
-        throw new Error('discovery boom');
-      }
-    };
-    registerHooks(pi as any, pluginCfg, skills);
-    const ctx = { sessionManager: { getSessionId: () => 'sess-fail' } };
-    const turn = await pi.events.before_agent_start({ prompt: 'hello', systemPrompt: 'base' }, ctx);
-    expect(turn.message.content).toContain('<recall>');
-    expect(turn.message.content).toContain('<lore-skills>');
+    const ctx = { sessionManager: { getSessionId: () => 'sess-off' } };
+    await pi.events.session_start({ reason: 'startup' }, ctx);
+    await pi.events.before_agent_start({ prompt: 'hello', systemPrompt: 'base' }, ctx);
+
+    expect(bodies.map((body) => body.features)).toEqual([undefined, { memory_recall: true }]);
   });
 });
 
@@ -581,6 +529,7 @@ describe('skills CRUD tools', () => {
       timeoutMs: 1000,
       defaultDomain: 'core',
       recallEnabled: true,
+      skillsEnabled: true,
     });
     const skillTools = [
       'lore_skill_list',
@@ -597,6 +546,30 @@ describe('skills CRUD tools', () => {
       expect(pi.tools[name].promptGuidelines).toBeUndefined();
     }
     expect(pi.tools.lore_skill_artifact_create).toBeUndefined();
+    expect(Object.keys(pi.tools)).toHaveLength(16);
+  });
+
+  it('uses the exact work-copy descriptions', () => {
+    const pi = makeMockPi();
+    registerTools(pi as any, {
+      baseUrl: 'http://host',
+      apiToken: '',
+      timeoutMs: 1000,
+      defaultDomain: 'core',
+      recallEnabled: true,
+      skillsEnabled: true,
+    });
+    expect(pi.tools.lore_skill_get.description).toBe(
+      'Fetch a Lore skill into a local work copy. Downloads the complete server package when missing, '
+      + 'updates managed package files when the server version differs, and reuses the local copy when the version matches. '
+      + 'Managed package files are read-only; the skill directory stays writable for local outputs. '
+      + 'Same-version local outputs are preserved across fetches and upgrades. '
+      + 'Returns SKILL.md content and the absolute skill_dir.',
+    );
+    expect(pi.tools.lore_skill_status.description).toBe(
+      'Report local skill work-copy states (ready/missing/outdated/tampered/unmanaged/invalid). '
+      + 'Read-only: never mutates or reconciles copies.',
+    );
   });
 
   it('create/update/delete send expected request bodies and do not auto-reconcile', async () => {
@@ -796,14 +769,151 @@ describe('skills CRUD tools', () => {
       path.resolve(path.join(loreHome, 'skill-artifacts', projectId, 'get-skill')),
     );
     expect(result.details.downloaded).toBe(true);
+    expect(result.content[0].text).toContain('Skill work copy ready:');
     expect(result.content[0].text).toContain('skill_dir:');
     expect(result.content[0].text).toContain('# Get Me');
     expect(fs.existsSync(path.join(result.details.skill_dir, LORE_SKILL_MARKER))).toBe(true);
+    if (process.platform !== 'win32') {
+      expect(fs.statSync(path.join(result.details.skill_dir, 'SKILL.md')).mode & 0o777).toBe(0o444);
+    }
 
+    // Extra local output inside the writable dir does not trigger tamper and survives a same-version get.
+    const extraPath = path.join(result.details.skill_dir, 'outputs', 'extra.md');
+    fs.mkdirSync(path.dirname(extraPath), { recursive: true });
+    fs.writeFileSync(extraPath, 'local extra\n', 'utf-8');
+    const reused = await pi.tools.lore_skill_get.execute('t2', { skill_id: 'skill-get' });
+    expect(reused.details.downloaded).toBe(false);
+    expect(reused.details.skill_md).toBe('# Get Me\n');
+    expect(fs.readFileSync(extraPath, 'utf-8')).toBe('local extra\n');
+
+    // Managed-file modification is restored (downloaded=true) while the extra survives.
+    fs.chmodSync(path.join(result.details.skill_dir, 'SKILL.md'), 0o644);
     fs.writeFileSync(path.join(result.details.skill_dir, 'SKILL.md'), '# edited locally\n', 'utf-8');
-    const again = await pi.tools.lore_skill_get.execute('t2', { skill_id: 'skill-get' });
-    expect(again.details.downloaded).toBe(false);
-    expect(again.details.skill_md).toBe('# edited locally\n');
+    const restored = await pi.tools.lore_skill_get.execute('t3', { skill_id: 'skill-get' });
+    expect(restored.details.downloaded).toBe(true);
+    expect(restored.details.skill_md).toBe('# Get Me\n');
+    expect(fs.readFileSync(extraPath, 'utf-8')).toBe('local extra\n');
+
+    rmTempHome(loreHome);
+    vi.unstubAllGlobals();
+  });
+
+  it('lore_skill_get upgrades managed files and preserves local outputs', async () => {
+    const loreHome = makeTempHome();
+    const projectId = 'proj-upgrade';
+    const pi = makeMockPi();
+    const pluginCfg = {
+      baseUrl: 'http://host',
+      apiToken: '',
+      timeoutMs: 1000,
+      loreHome,
+    };
+    const session = createSkillsSession(pluginCfg);
+    registerSkillTools(pi as any, pluginCfg, session);
+
+    let version = 1;
+    const detailForVersion = () => {
+      const skillMd = version === 1 ? '# Upgrade v1\n' : '# Upgrade v2\n';
+      const helper = version === 1 ? 'old helper\n' : 'new helper\n';
+      const files = [
+        {
+          path: 'SKILL.md',
+          content: skillMd,
+          sha256: sha256Text(skillMd),
+          size: Buffer.byteLength(skillMd, 'utf-8'),
+        },
+        {
+          path: version === 1 ? 'refs/old.md' : 'refs/new.md',
+          content: helper,
+          sha256: sha256Text(helper),
+          size: Buffer.byteLength(helper, 'utf-8'),
+        },
+      ];
+      return skillDetail({
+        id: 'skill-upgrade',
+        project_id: projectId,
+        name: 'upgrade-skill',
+        version,
+        files,
+        manifest_hash: computeManifestHash(files.map((file) => ({
+          path: file.path,
+          sha256: file.sha256,
+          size: file.size,
+        }))),
+      });
+    };
+
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (String(url).includes('/api/skills/skill-upgrade')) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          text: async () => JSON.stringify(detailForVersion()),
+        };
+      }
+      return { ok: false, status: 404, statusText: 'NO', text: async () => 'missing' };
+    }));
+
+    const first = await pi.tools.lore_skill_get.execute('t1', { skill_id: 'skill-upgrade' });
+    expect(first.details.downloaded).toBe(true);
+    const skillDir = first.details.skill_dir;
+    const outputPath = path.join(skillDir, 'outputs', 'note.txt');
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    fs.writeFileSync(outputPath, 'keep me\n', 'utf-8');
+
+    version = 2;
+    const upgraded = await pi.tools.lore_skill_get.execute('t2', { skill_id: 'skill-upgrade' });
+    expect(upgraded.details.ok).toBe(true);
+    expect(upgraded.details.downloaded).toBe(true);
+    expect(upgraded.details.local_version).toBe(2);
+    expect(fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf-8')).toBe('# Upgrade v2\n');
+    expect(fs.existsSync(path.join(skillDir, 'refs', 'old.md'))).toBe(false);
+    expect(fs.readFileSync(path.join(skillDir, 'refs', 'new.md'), 'utf-8')).toBe('new helper\n');
+    expect(fs.readFileSync(outputPath, 'utf-8')).toBe('keep me\n');
+    if (process.platform !== 'win32') {
+      expect(fs.statSync(path.join(skillDir, 'SKILL.md')).mode & 0o777).toBe(0o444);
+      expect(fs.statSync(path.join(skillDir, 'refs', 'new.md')).mode & 0o777).toBe(0o444);
+    }
+
+    rmTempHome(loreHome);
+    vi.unstubAllGlobals();
+  });
+
+  it('lore_skill_get visibility failure leaves local work copies untouched', async () => {
+    const loreHome = makeTempHome();
+    const projectId = 'proj-denied';
+    const root = path.join(loreHome, 'skill-artifacts', projectId);
+    const existingPath = path.join(root, 'existing-skill', 'outputs', 'note.txt');
+    fs.mkdirSync(path.dirname(existingPath), { recursive: true });
+    fs.writeFileSync(existingPath, 'existing output\n', 'utf-8');
+
+    const pi = makeMockPi();
+    const pluginCfg = {
+      baseUrl: 'http://host',
+      apiToken: '',
+      timeoutMs: 1000,
+      loreHome,
+    };
+    const session = createSkillsSession(pluginCfg);
+    session.state.projectId = projectId;
+    registerSkillTools(pi as any, pluginCfg, session);
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      text: async () => JSON.stringify({ detail: 'skill not found' }),
+    })));
+
+    const before = fs.readdirSync(root, { recursive: true }).map(String).sort();
+    const result = await pi.tools.lore_skill_get.execute('t', { skill_id: 'other-agent-skill' });
+    const after = fs.readdirSync(root, { recursive: true }).map(String).sort();
+
+    expect(result.details.ok).toBe(false);
+    expect(result.content[0].text).toContain('skill not found');
+    expect(after).toEqual(before);
+    expect(fs.readFileSync(existingPath, 'utf-8')).toBe('existing output\n');
+    expect(fs.existsSync(path.join(root, 'other-agent-skill'))).toBe(false);
 
     rmTempHome(loreHome);
     vi.unstubAllGlobals();

@@ -4,7 +4,8 @@ export type ChannelId =
   | 'pi'
   | 'openclaw'
   | 'hermes'
-  | 'opencode';
+  | 'opencode'
+  | 'zcode';
 
 export const ALL_CHANNELS: ChannelId[] = [
   'claudecode',
@@ -13,6 +14,7 @@ export const ALL_CHANNELS: ChannelId[] = [
   'openclaw',
   'hermes',
   'opencode',
+  'zcode',
 ];
 
 export type NeedInstall = 0 | 1 | 2;
@@ -26,6 +28,11 @@ export type LoreConfig = {
   api_token?: string;
   installed_version?: string;
   docker_managed?: boolean;
+  server_profile?: {
+    base_url: string;
+    edition?: string;
+    capabilities: Record<string, boolean>;
+  };
 };
 
 export type ChannelResult = {

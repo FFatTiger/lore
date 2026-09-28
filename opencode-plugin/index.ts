@@ -12,7 +12,7 @@ const loreOpenCodePlugin: Plugin = async ({ directory, worktree }) => {
     config: async (mergedConfig) => {
       suppressDuplicateLoreMcp(mergedConfig, config);
     },
-    tool: createLoreTools(config),
+    tool: createLoreTools(config, { skillsEnabled: config.skillsEnabled }),
   };
 };
 

@@ -44,6 +44,12 @@ const CLIENT_TYPE_META: Record<string, ClientTypeMeta> = {
     assetPath: '/channel-icons/opencode.svg',
     initials: 'OC',
   },
+  zcode: {
+    label: 'ZCode',
+    tone: 'soft',
+    assetPath: '/channel-icons/zcode.svg',
+    initials: 'ZC',
+  },
   mcp: {
     label: 'MCP',
     tone: 'orange',

@@ -8,7 +8,7 @@ export type BootNodeRole = 'agent' | 'soul' | 'user';
 export type BootNodeState = 'missing' | 'empty' | 'initialized';
 export type BootOverallState = 'uninitialized' | 'partial' | 'complete';
 export type BootNodeScope = 'global' | 'client';
-export type BootClientType = Extract<ClientType, 'claudecode' | 'openclaw' | 'hermes' | 'codex' | 'pi' | 'opencode'>;
+export type BootClientType = Extract<ClientType, 'claudecode' | 'openclaw' | 'hermes' | 'codex' | 'pi' | 'opencode' | 'zcode'>;
 
 export interface BootNodeSpec {
   id: string;
@@ -213,6 +213,19 @@ const CLIENT_BOOT_NODES: readonly BootNodeSpec[] = [
     setup_title: 'OpenCode boot memory',
     setup_description: 'Write the OpenCode-specific native tool, context injection, attribution, and fail-open rules that load together with core://agent.',
   },
+  {
+    id: 'agent-zcode',
+    uri: 'core://agent/zcode',
+    role: 'agent',
+    role_label: 'zcode runtime constraints',
+    purpose: 'ZCode-specific native plugin hooks, SessionStart boot, UserPromptSubmit recall, and fail-open runtime behavior.',
+    dream_protection: 'protected',
+    scope: 'client',
+    client_type: 'zcode',
+    setup_slug: 'agent-zcode',
+    setup_title: 'ZCode boot memory',
+    setup_description: 'Write the ZCode-specific native hook, boot, recall, attribution, and fail-open rules that load together with core://agent.',
+  },
 ] as const;
 
 const FIXED_BOOT_NODES: readonly BootNodeSpec[] = [
@@ -251,7 +264,8 @@ function isRuntimeBootClientType(value: ClientType | null | undefined): value is
     || value === 'hermes'
     || value === 'codex'
     || value === 'pi'
-    || value === 'opencode';
+    || value === 'opencode'
+    || value === 'zcode';
 }
 
 function shouldIncludeAllClientBootNodes(options: BootViewOptions): boolean {

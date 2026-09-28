@@ -1,5 +1,5 @@
 /**
- * Lore Skill writable work-copy core type declarations.
+ * Lore Skill work-copy core type declarations.
  * Schema: lore.skill.workcopy.v1
  */
 
@@ -13,6 +13,7 @@ export type WorkCopyState =
   | 'ready'
   | 'missing'
   | 'outdated'
+  | 'tampered'
   | 'unmanaged'
   | 'invalid'
   | 'sync_error';
@@ -69,10 +70,13 @@ export interface WorkCopyMarker {
   skill_id: string;
   name: string;
   version: string | number;
+  /** Relative paths of the server-managed files owned by Core (ownership boundary). */
   managed_files: string[];
   synced_at: string;
   revision_hash?: string;
   manifest_hash?: string;
+  /** Server-managed package files are read-only; the directory itself is writable for local outputs. */
+  readonly?: boolean;
 }
 
 /** @deprecated Prefer WorkCopyMarker. */
@@ -84,11 +88,17 @@ export interface WorkCopyStatus {
   state: WorkCopyState;
   path?: string;
   version?: string | number;
+  revision_hash?: string;
   message?: string;
 }
 
 /** @deprecated Prefer WorkCopyStatus. */
 export type MirrorStatus = WorkCopyStatus;
+
+export interface SkillCatalog {
+  project_id: string;
+  catalog_revision: string;
+}
 
 export function resolveLoreHome(env?: NodeJS.ProcessEnv): string;
 export function workCopiesRoot(loreHome: string): string;
@@ -128,15 +138,35 @@ export function computeManifestHash(
   files: Array<{ path: string; sha256: string; size?: number }>,
 ): string;
 
+/**
+ * Hash ONLY the server-managed files listed in the work-copy marker.
+ * Extra local files are never hashed, so they cannot trigger tamper.
+ * Throws when a managed file is missing or is not a regular file.
+ */
+export function hashLocalSkillFiles(dir: string): {
+  files: Array<{ path: string; sha256: string; size: number }>;
+  manifest_hash: string;
+};
+
 export function readWorkCopyMarker(dir: string): WorkCopyMarker | null;
 /** @deprecated Prefer readWorkCopyMarker. */
 export const readMirrorMarker: typeof readWorkCopyMarker;
 
+/**
+ * Inspect a local work copy. Returns 'tampered' only when a server-managed file
+ * (from marker.managed_files) is missing, is not a regular file, or its hash does not
+ * match the marker manifest_hash. Extra local files never trigger tamper.
+ */
 export function inspectLocalWorkCopy(
   loreHome: string,
   projectId: string,
   skillName: string,
-  expected?: { skill_id?: string; version?: string | number },
+  expected?: {
+    skill_id?: string;
+    version?: string | number;
+    revision_hash?: string;
+    manifest_hash?: string;
+  },
 ): WorkCopyStatus;
 /** @deprecated Prefer inspectLocalWorkCopy. */
 export const inspectLocalMirror: typeof inspectLocalWorkCopy;
@@ -146,6 +176,14 @@ export function validateSkillPayload(detail: SkillDetail): {
   manifest_hash: string;
 };
 
+/**
+ * Materialize (or upgrade/migrate) a local work copy from server detail.
+ * Existing managed work copies are seeded so extra local files are preserved;
+ * obsolete managed files are removed and incoming managed files written. A new
+ * managed path that conflicts with a preserved local artifact fails safely.
+ * Installed directories are writable (0755 POSIX); server-managed files and the
+ * marker are 0444.
+ */
 export function materializeSkillWorkCopy(opts: {
   loreHome: string;
   projectId: string;
@@ -161,12 +199,18 @@ export function writeSkillMirrorAtomic(opts: {
   dirMode?: number;
 }): { installPath: string; marker: WorkCopyMarker };
 
+/**
+ * Ensure a local work copy for the skill and return local SKILL.md + absolute skill_dir.
+ * Missing/outdated/tampered/legacy copies are rematerialized from server detail
+ * (preserving extra local files). Same version with intact managed files reuses the
+ * local copy. Installed directories are writable; server-managed files are read-only.
+ */
 export function ensureSkillWorkCopy(opts: {
   loreHome?: string;
   skillId: string;
   projectId?: string;
   loadSkill: (skillId: string) => Promise<SkillDetail>;
-  loadCatalog?: () => Promise<{ project_id: string; catalog_revision?: string }>;
+  loadCatalog?: () => Promise<SkillCatalog>;
 }): Promise<{
   skill_dir: string;
   skill_md: string;

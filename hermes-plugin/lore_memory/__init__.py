@@ -95,6 +95,7 @@ class LoreMemoryProvider(MemoryProvider):
         self._skill_project_id: str = ""
         self._skill_catalog_revision: str = ""
         self._skill_last_error: str = ""
+        self._skills_enabled: bool = False
 
     @property
     def name(self) -> str:
@@ -114,6 +115,7 @@ class LoreMemoryProvider(MemoryProvider):
 
     def initialize(self, session_id: str, **kwargs) -> None:
         self._client = LoreClient()
+        self._skills_enabled = bool(getattr(self._client, "skills_enabled", False))
         self._session_id = session_id
         resolved_base_url = getattr(self._client, "base_url", "http://127.0.0.1:18901")
 
@@ -129,11 +131,13 @@ class LoreMemoryProvider(MemoryProvider):
             system_context = str((value or {}).get("system_context") or "").strip()
             if system_context:
                 self._boot_block = system_context
-            # Record project/catalog identity only — never auto-download skills.
-            catalog = skill_workcopy.read_skill_catalog(lifecycle)
-            if catalog and catalog.get("project_id"):
-                self._skill_project_id = catalog["project_id"]
-                self._skill_catalog_revision = catalog.get("catalog_revision") or ""
+            # Record project/catalog identity only — never auto-download or reconcile
+            # skills at session start. All download/update is on-demand via lore_skill_get.
+            if self._skills_enabled:
+                catalog = skill_workcopy.read_skill_catalog(lifecycle)
+                if catalog and catalog.get("project_id"):
+                    self._skill_project_id = catalog["project_id"]
+                    self._skill_catalog_revision = catalog.get("catalog_revision") or ""
         except Exception as e:
             logger.debug("Lore lifecycle startup failed: %s", e)
 
@@ -334,11 +338,10 @@ class LoreMemoryProvider(MemoryProvider):
         self._claim_or_join(sid, query, for_queue=True)
 
     def _do_recall(self, query: str, session_id: str) -> str:
-        """Execute recall API and return formatted block. Thread-safe.
+        """Execute recall API and return the host context. Thread-safe.
 
-        Appends discovery-only <lore-skills> candidates from the lifecycle
-        response (no auto-download / no local path). Skill discovery is returned
-        even when memory host context is empty.
+        With Skills enabled the context also carries any `$skill-name`
+        invocation rendered by Lore.
         """
         payload = self._payload_prompt(query)
         if not payload:
@@ -351,23 +354,7 @@ class LoreMemoryProvider(MemoryProvider):
             )
             output = lifecycle.get("host_output", {}) or {}
             value = output.get("value", {}) if output.get("mode") == "return_value" else {}
-            context = str((value or {}).get("context") or "").strip()
-
-            # Catalog identity may update on prompt lifecycle without download.
-            catalog = skill_workcopy.read_skill_catalog(lifecycle)
-            if catalog and catalog.get("project_id"):
-                self._skill_project_id = catalog["project_id"]
-                self._skill_catalog_revision = catalog.get("catalog_revision") or ""
-
-            candidates = skill_workcopy.read_skill_candidates(lifecycle)
-            discovered = skill_workcopy.discovery_candidate_entries(candidates)
-            skill_block = skill_workcopy.format_skill_candidate_block(discovered).strip()
-
-            if context and skill_block:
-                return f"{context}\n\n{skill_block}"
-            if skill_block:
-                return skill_block
-            return context
+            return str((value or {}).get("context") or "").strip()
         except Exception as e:
             logger.debug("Lore lifecycle recall failed: %s", e)
             return ""
@@ -409,7 +396,7 @@ class LoreMemoryProvider(MemoryProvider):
     # -- Tool schemas ------------------------------------------------------
 
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
-        return [
+        schemas = [
             {
                 "name": "lore_status",
                 "description": "Check memory backend availability and connection health",
@@ -550,9 +537,12 @@ class LoreMemoryProvider(MemoryProvider):
             {
                 "name": "lore_skill_get",
                 "description": (
-                    "Fetch a Lore skill and materialize a writable local work copy when missing "
-                    "or when the server version differs. Returns local SKILL.md content and absolute "
-                    "skill_dir. Same-version local edits are preserved."
+                    "Fetch a Lore skill into a local work copy. Downloads the complete server package "
+                    "when missing, updates managed package files when the server version differs, and "
+                    "reuses the local copy when the version matches. Managed package files are read-only; "
+                    "the skill directory stays writable for local outputs. Same-version local outputs are "
+                    "preserved across fetches and upgrades. Returns SKILL.md content and the absolute "
+                    "skill_dir."
                 ),
                 "parameters": {
                     "type": "object",
@@ -565,7 +555,7 @@ class LoreMemoryProvider(MemoryProvider):
             {
                 "name": "lore_skill_create",
                 "description": (
-                    "Create a Lore skill on the server. Does not auto-materialize a local work copy; "
+                    "Create a Lore skill on the server. Does not auto-materialize a local mirror; "
                     "call lore_skill_get later if needed."
                 ),
                 "parameters": {
@@ -610,7 +600,7 @@ class LoreMemoryProvider(MemoryProvider):
                 "name": "lore_skill_update",
                 "description": (
                     "Update a Lore skill on the server with optimistic concurrency via expected_version. "
-                    "Does not auto-reconcile the local work copy; call lore_skill_get later if the version differs."
+                    "Does not auto-reconcile the local mirror; call lore_skill_get later if the version differs."
                 ),
                 "parameters": {
                     "type": "object",
@@ -664,7 +654,7 @@ class LoreMemoryProvider(MemoryProvider):
             },
             {
                 "name": "lore_skill_delete",
-                "description": "Archive/delete a Lore skill on the server. Does not auto-remove the local work copy.",
+                "description": "Archive/delete a Lore skill on the server. Does not auto-remove the local mirror.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -676,8 +666,8 @@ class LoreMemoryProvider(MemoryProvider):
             {
                 "name": "lore_skill_status",
                 "description": (
-                    "Report local writable skill work-copy states (ready/missing/outdated/unmanaged/invalid). "
-                    "Read-only: never mutates or reconciles work copies."
+                    "Report local skill work-copy states (ready/missing/outdated/tampered/unmanaged/invalid). "
+                    "Read-only: never mutates or reconciles copies."
                 ),
                 "parameters": {
                     "type": "object",
@@ -687,12 +677,17 @@ class LoreMemoryProvider(MemoryProvider):
                 },
             },
         ]
+        if not self._skills_enabled:
+            schemas = [schema for schema in schemas if not schema["name"].startswith("lore_skill_")]
+        return schemas
 
     # -- Tool dispatch -----------------------------------------------------
 
     def handle_tool_call(self, tool_name: str, args: Dict[str, Any], **kwargs) -> str:
         if not self._client:
             return '{"error": "Lore not initialized"}'
+        if tool_name.startswith("lore_skill_") and not self._skills_enabled:
+            return '"Error: Connected Lore server does not advertise Skills support"'
 
         try:
             handler = getattr(self, f"_tool_{tool_name}", None)
@@ -883,7 +878,7 @@ class LoreMemoryProvider(MemoryProvider):
             self._skill_project_id = str(result["project_id"])
         skill = result.get("skill") or {}
         lines = [
-            f"Skill work copy ready: {skill.get('name') or skill_id}",
+            f"Skill read-only mirror ready: {skill.get('name') or skill_id}",
             f"skill_dir: {result['skill_dir']}",
             f"server_version: {result.get('server_version') if result.get('server_version') is not None else '?'}",
             f"local_version: {result.get('local_version')}",

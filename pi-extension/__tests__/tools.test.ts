@@ -19,6 +19,7 @@ function makePluginCfg(overrides: Record<string, unknown> = {}) {
     timeoutMs: 1000,
     defaultDomain: 'core',
     recallEnabled: true,
+    skillsEnabled: true,
     ...overrides,
   };
 }
@@ -55,6 +56,13 @@ describe('Pi extension tools', () => {
     ]);
     expect(pi.tools.lore_search.promptSnippet).toContain('Search Lore');
     expect(pi.tools.lore_get_node.promptGuidelines.join('\n')).toContain('lore_get_node');
+  });
+
+  it('omits skill tools when the server capability is disabled', () => {
+    const pi = makeMockPi();
+    registerTools(pi as any, makePluginCfg({ skillsEnabled: false }));
+    expect(Object.keys(pi.tools).some((name) => name.startsWith('lore_skill_'))).toBe(false);
+    expect(pi.tools.lore_search).toBeDefined();
   });
 
   it('create description explains semantic tree identity and date meaning', () => {

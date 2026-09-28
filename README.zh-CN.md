@@ -83,7 +83,7 @@ npx @loremem/cli
 | --- | --- |
 | `--pre` | 尝鲜版（`pre-latest` 镜像） |
 | `--dev` | 开发版（`dev-latest` 镜像） |
-| `--channels CH,...` | 只装部分运行时：`claudecode`、`codex`、`pi`、`openclaw`、`hermes`、`opencode` |
+| `--channels CH,...` | 只装部分运行时：`claudecode`、`codex`、`pi`、`openclaw`、`hermes`、`opencode`、`zcode` |
 | `--base-url URL` | 使用已有 Lore 服务，跳过本地 Docker |
 | `--docker` | 在本机用 Docker 部署 Lore 服务端 |
 | `--api-token TOKEN` | 服务端 API token |
@@ -151,6 +151,7 @@ http://127.0.0.1:18901/setup
 | **OpenClaw** | `openclaw-plugin/` | runtime plugin，提供 boot、recall 和 Lore tools |
 | **Hermes** | `hermes-plugin/` | MemoryProvider plugin，提供 Lore tools 和 recall |
 | **OpenCode** | `opencode-plugin/` | 原生插件，装到 `~/.config/opencode/plugins/lore-memory.js`，提供原生 `lore_*` 工具 |
+| **ZCode** | `zcode-plugin/` | 原生 marketplace 插件，SessionStart boot 和 UserPromptSubmit recall hooks（不含 MCP） |
 | **通用 MCP** | `/api/mcp` | Streamable HTTP endpoint，适合能挂远程 tools 的客户端 |
 
 安装后重启对应运行时。几个实用提醒：
@@ -158,6 +159,7 @@ http://127.0.0.1:18901/setup
 - **Claude Code** 仍有内置 auto-memory。若只想用 Lore，设置 `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`，或在 `~/.claude/settings.json` 写 `"autoMemoryEnabled": false`。
 - **Codex** 可能要求你在 `/hooks` 里信任 Lore hooks。如果 `/plugins` 仍显示可安装，去那里装一次即可；脚本已经配好 MCP 和用户级 hooks。
 - **OpenCode** 读取 `~/.lore/config.json`。本机没有 `opencode` CLI 时安装脚本会干净跳过。兼容细节见 [OpenCode 说明](#opencode-说明)。
+- **ZCode** 只用原生 process hooks。源码目录安装：`zcode plugins marketplace add /path/to/lore/zcode-plugin && zcode plugins install lore@lore && zcode plugins enable lore@lore`。若 `core://agent/zcode` 仍为空，在 Lore setup 中创建该节点。
 
 通用 MCP URL：
 

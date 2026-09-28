@@ -17,7 +17,7 @@ import {
   type SkillSummary,
 } from './vendor/skill-workcopy/index.mjs';
 
-export const OPEN_CODE_TOOL_NAMES = [
+const MEMORY_TOOL_NAMES = [
   'lore_guidance',
   'lore_status',
   'lore_boot',
@@ -28,6 +28,9 @@ export const OPEN_CODE_TOOL_NAMES = [
   'lore_update_node',
   'lore_delete_node',
   'lore_move_node',
+] as const;
+
+const SKILL_TOOL_NAMES = [
   'lore_skill_list',
   'lore_skill_search',
   'lore_skill_get',
@@ -35,6 +38,11 @@ export const OPEN_CODE_TOOL_NAMES = [
   'lore_skill_update',
   'lore_skill_delete',
   'lore_skill_status',
+] as const;
+
+export const OPEN_CODE_TOOL_NAMES = [
+  ...MEMORY_TOOL_NAMES,
+  ...SKILL_TOOL_NAMES,
 ] as const;
 
 type ToolName = typeof OPEN_CODE_TOOL_NAMES[number];
@@ -115,10 +123,13 @@ async function listSkillsApi(
   };
 }
 
-export function createLoreTools(config: LorePluginConfig): NonNullable<Hooks['tool']> {
+export function createLoreTools(
+  config: LorePluginConfig,
+  opts: { skillsEnabled?: boolean } = {},
+): NonNullable<Hooks['tool']> {
   const skillState: SkillToolState = {};
 
-  return {
+  const tools: NonNullable<Hooks['tool']> = {
     lore_guidance: tool({
       description: contract('lore_guidance').description,
       args: {},
@@ -560,5 +571,11 @@ export function createLoreTools(config: LorePluginConfig): NonNullable<Hooks['to
         });
       },
     }),
+
   };
+
+  if (opts.skillsEnabled === false) {
+    for (const name of SKILL_TOOL_NAMES) delete tools[name];
+  }
+  return tools;
 }

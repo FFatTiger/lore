@@ -21,7 +21,7 @@ Common flags:
   --api-token TOKEN    API token written to ~/.lore/config.json
   --allow-insecure-http
                          Allow token over non-loopback HTTP for this run only
-  --channels LIST      claudecode,codex,pi,openclaw,hermes,opencode
+  --channels LIST      claudecode,codex,pi,openclaw,hermes,opencode,zcode
                          (default: runtimes detected on this machine)
   --skip-docker        Keep the saved server; do not manage Docker
   --force              Reinstall even if version unchanged

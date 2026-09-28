@@ -20,6 +20,7 @@ function ctx(partial: Partial<ChannelContext> & { loreHome: string; homeDir: str
     baseUrl: 'http://127.0.0.1:18901',
     tokenAction: partial.apiToken ? 'set' : 'clear',
     needInstall: 2,
+    capabilities: { skills: true },
     force: false,
     lang: 'en',
     releaseVersion: 'v1.3.15',

@@ -49,17 +49,32 @@ function buildNativeInputSnapshot(input) {
   return Object.keys(snapshot).length ? snapshot : undefined;
 }
 
+function resolveSkillsEnabled(config, baseUrl) {
+  if (process.env.LORE_SKILLS_ENABLED === '0') return false;
+  const profile = config?.server_profile;
+  if (profile && typeof profile === 'object' && !Array.isArray(profile)) {
+    const profileBase = pickString(profile.base_url).replace(/\/+$/, '').toLowerCase();
+    if (profileBase === baseUrl.toLowerCase()) {
+      return Boolean(profile.capabilities && typeof profile.capabilities === 'object'
+        && !Array.isArray(profile.capabilities)
+        && profile.capabilities.skills === true);
+    }
+  }
+  return process.env.LORE_SKILLS_ENABLED === '1';
+}
+
 function loadConfig() {
   const config = readLoreConfig();
-  const baseUrl = pickString(process.env.LORE_CODEX_HOOK_BASE_URL)
+  const baseUrl = (pickString(process.env.LORE_CODEX_HOOK_BASE_URL)
     || pickString(config.base_url)
     || pickString(process.env.LORE_BASE_URL)
-    || DEFAULT_BASE_URL;
+    || DEFAULT_BASE_URL).replace(/\/+$/, '');
   return {
-    baseUrl: baseUrl.replace(/\/+$/, ''),
+    baseUrl,
     apiToken: pickString(config.api_token)
       || pickString(process.env.LORE_API_TOKEN)
       || pickString(process.env.API_TOKEN),
+    skillsEnabled: resolveSkillsEnabled(config, baseUrl),
   };
 }
 
@@ -116,12 +131,15 @@ async function main() {
 
   const sessionId = resolveSessionId(input);
   const nativeInputSnapshot = buildNativeInputSnapshot(input);
+  const { skillsEnabled } = loadConfig();
   const lifecycle = await postLifecycle({
     protocol_version: 'lore.lifecycle.v1',
     runtime: { runtime_id: RUNTIME_FAMILY, runtime_family: RUNTIME_FAMILY },
     event: { name: 'session.start', native_name: 'SessionStart' },
     normalized: sessionId ? { session_id: sessionId } : {},
     project: detectProjectInfo(),
+    // Lore appends the Skills catalog only for clients that expose Skills tools.
+    ...(skillsEnabled ? { features: { skills: true } } : {}),
     ...(nativeInputSnapshot ? { native_input_snapshot: nativeInputSnapshot } : {}),
   }, BOOT_TIMEOUT_MS).catch(() => null);
 

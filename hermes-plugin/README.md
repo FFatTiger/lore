@@ -10,7 +10,7 @@ Long-term memory and Skill work-copy integration for [Hermes Agent](https://gith
 - **Full CRUD Operations** - Create, read, update, delete memory nodes
 - **Search & Discovery** - Keyword and semantic search
 - **Lore Skills** - List/search/get/create/update/delete skills; materialize writable local work copies on get
-- **Skill Discovery** - Lifecycle recall appends discovery-only `<lore-skills>` candidates (no auto-download)
+- **Skill Discovery** - Session start lists available skills; `$skill-name` in a prompt invokes one explicitly (no auto-download)
 
 ## Installation
 
@@ -25,7 +25,7 @@ ln -s /path/to/lore/hermes-plugin lore
 Hermes loads Lore as a `MemoryProvider`. Once configured, it automatically:
 
 - Injects **boot memories** into the system prompt at session start
-- Runs **recall prefetch** before each user message (memory context + optional skill candidates)
+- Runs **recall prefetch** before each user message (memory context + any explicit `$skill-name` invocation)
 - Registers **memory + skill tools** for the agent to use
 
 ```python
@@ -50,7 +50,7 @@ detail = client.get_skill("skill-id")
 
 ## Skills workflow
 
-- Lifecycle `prompt.submit` may include top-level `skill_candidates`. Hermes appends a discovery-only `<lore-skills>` block to the recall context. It does **not** auto-download skills or inject local paths. Skill discovery is returned even when memory host context is empty.
+- Session start lists the skills the agent may use (name, description, `skill_id`); the agent decides when to call `lore_skill_get`. Users can invoke a skill explicitly by typing `$skill-name` in a prompt; skills whose `SKILL.md` sets `disable-model-invocation: true` are hidden from the agent and only run this way. Hermes writes the server context through unchanged; it does **not** auto-download skills or inject local paths.
 - Session start may record project catalog identity (`skill_catalog.project_id`) without downloading.
 - `lore_skill_get(skill_id)` materializes a complete writable work copy under `${LORE_HOME:-~/.lore}/skill-artifacts/<project-id>/<skill-name>/` and returns `SKILL.md` plus absolute `skill_dir`.
 - Same server version preserves local edits and extra agent outputs.

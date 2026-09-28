@@ -102,7 +102,10 @@ export const claudecodeInstaller: ChannelInstaller = {
     try {
       const existingSettings = await readJsonFileStrict<unknown>(sf);
       if (existingSettings !== undefined) asSettings(existingSettings, sf);
-      const commandOpts = { quiet: true, env };
+      const commandOpts = {
+        quiet: true,
+        env: { ...env, LORE_SKILLS_ENABLED: ctx.capabilities.skills ? '1' : '0' },
+      };
       const redact = [ctx.apiToken ?? ''];
 
       await fs.rm(path.join(homeDir, '.claude', 'plugins', 'cache', 'lore'), {
@@ -135,11 +138,13 @@ export const claudecodeInstaller: ChannelInstaller = {
         );
       }
 
-      // The plugin ships its own MCP server (auth via LORE_API_TOKEN); drop the
-      // legacy user-scope duplicate registered by older installers.
-      await run(['claude', 'mcp', 'remove', '--scope', 'user', 'lore'], commandOpts).catch(
-        () => undefined,
-      );
+      // The plugin ships its own MCP servers (auth via LORE_API_TOKEN; Skills tools stay
+      // hidden unless LORE_SKILLS_ENABLED=1); drop user-scope duplicates from older installers.
+      for (const name of ['lore', 'lore-skills']) {
+        await run(['claude', 'mcp', 'remove', '--scope', 'user', name], commandOpts).catch(
+          () => undefined,
+        );
+      }
 
       await ensureDir(path.dirname(sf));
       const latestSettings = await readJsonFileStrict<unknown>(sf);
@@ -147,6 +152,9 @@ export const claudecodeInstaller: ChannelInstaller = {
       portableMarketplacePath(settings, dest, homeDir);
       const settingsEnv = (settings.env ??= {});
       settingsEnv.LORE_BASE_URL = ctx.baseUrl.replace(/\/$/, '');
+      settingsEnv.LORE_HOME = ctx.loreHome;
+      settingsEnv.LORE_CLIENT_TYPE = 'claudecode';
+      settingsEnv.LORE_SKILLS_ENABLED = ctx.capabilities.skills ? '1' : '0';
       if (ctx.apiToken) settingsEnv.LORE_API_TOKEN = ctx.apiToken;
       else if (ctx.tokenAction === 'clear') delete settingsEnv.LORE_API_TOKEN;
       await writeJsonAtomic(sf, settings);
@@ -174,6 +182,9 @@ export const claudecodeInstaller: ChannelInstaller = {
       if (settings.env) {
         delete settings.env.LORE_BASE_URL;
         delete settings.env.LORE_API_TOKEN;
+        delete settings.env.LORE_HOME;
+        delete settings.env.LORE_CLIENT_TYPE;
+        delete settings.env.LORE_SKILLS_ENABLED;
         if (Object.keys(settings.env).length === 0) delete settings.env;
         await writeJsonAtomic(sf, settings);
       }

@@ -69,6 +69,20 @@ describe('bootSetup routing helpers', () => {
     expect(content).toContain('fail open');
   });
 
+  it('provides ZCode-specific default boot content without pretending to be Pi or Codex', () => {
+    const content = getDefaultBootContent('core://agent/zcode');
+
+    expect(content).toContain('core://agent');
+    expect(content).toContain('SessionStart');
+    expect(content).toContain('UserPromptSubmit');
+    expect(content).toContain('client_type=zcode');
+    expect(content).toContain('runtime_family=zcode');
+    expect(content).toContain('fail open');
+    expect(content).toContain('不要把 ZCode 当成 Pi 或 Codex');
+    expect(content).not.toContain('Pi extensions');
+    expect(content).not.toContain('AGENTS.md');
+  });
+
   it('detects setup paths', () => {
     expect(isSetupPath('/setup')).toBe(true);
     expect(isSetupPath('/setup/extra')).toBe(true);

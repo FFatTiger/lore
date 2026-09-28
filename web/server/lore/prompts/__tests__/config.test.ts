@@ -5,7 +5,7 @@ vi.mock('../../config/settings', () => ({
 }));
 
 import { getSettings } from '../../config/settings';
-import { DEFAULT_BOOT_DRAFT_CLIENT_OPENCODE_INSTRUCTIONS, SCHEMA_BY_KEY } from '../../config/settingsSchema';
+import { DEFAULT_BOOT_DRAFT_CLIENT_OPENCODE_INSTRUCTIONS, DEFAULT_BOOT_DRAFT_CLIENT_ZCODE_INSTRUCTIONS, SCHEMA_BY_KEY } from '../../config/settingsSchema';
 import { loadServerPromptConfig } from '../config';
 
 const mockGetSettings = vi.mocked(getSettings);
@@ -45,5 +45,15 @@ describe('loadServerPromptConfig', () => {
     expect(config.bootDraftClientOpencodeInstructions).toContain('OpenCode-specific runtime defaults');
     expect(config.bootDraftClientOpencodeInstructions).toContain('experimental.chat.system.transform');
     expect(config.bootDraftClientOpencodeInstructions).toContain('chat.message');
+  });
+
+  it('registers the ZCode Boot draft instructions in the Settings schema', () => {
+    expect(SCHEMA_BY_KEY.get('prompts.boot_draft.instructions.client_zcode')).toMatchObject({
+      section: 'prompts',
+      label: 'Boot 草稿 ZCode 说明',
+      type: 'text',
+      default: DEFAULT_BOOT_DRAFT_CLIENT_ZCODE_INSTRUCTIONS,
+      description: '生成 core://agent/zcode 初稿时追加的约束。',
+    });
   });
 });

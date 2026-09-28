@@ -73,6 +73,8 @@ export function loadConfig(opts = {}) {
     apiToken,
     clientType,
     timeoutMs,
+    env,
+    skillsEnabled: env.LORE_SKILLS_ENABLED === '1',
   };
 }
 

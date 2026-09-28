@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../../../server/auth', () => {
-  const clientTypes = new Set(['claudecode', 'openclaw', 'hermes', 'codex', 'pi', 'opencode', 'mcp', 'admin']);
+  const clientTypes = new Set(['claudecode', 'openclaw', 'hermes', 'codex', 'pi', 'opencode', 'zcode', 'mcp', 'admin']);
   return {
     requireBearerAuth: vi.fn(),
     normalizeClientType: vi.fn((value: string | null) => {
@@ -86,6 +86,60 @@ describe('lifecycle event route', () => {
     expect(body.host_output.value.hookSpecificOutput.additionalContext).toContain('<recall session_id="boot" query_id="q-start">');
     expect(body.meta.queries).toEqual(['codex', 'lore']);
     expect(mockBootView).toHaveBeenCalledWith({ client_type: 'codex' });
+  });
+
+  it('returns host-ready ZCode startup and prompt output', async () => {
+    mockBootView.mockResolvedValueOnce({
+      loaded: 4,
+      total: 4,
+      failed: [],
+      core_memories: [
+        { uri: 'core://agent', content: 'Agent rules', priority: 1, boot_role_label: 'workflow constraints' },
+        { uri: 'core://agent/zcode', content: 'ZCode rules', priority: 0, boot_role_label: 'zcode runtime constraints', scope: 'client', client_type: 'zcode' },
+      ],
+      recent_memories: [],
+    } as any);
+
+    const startupResponse = await lifecycleRoute.POST(new Request('http://localhost/api/lifecycle/event', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        protocol_version: 'lore.lifecycle.v1',
+        runtime: { runtime_id: 'zcode', runtime_family: 'zcode' },
+        event: { name: 'session.start', native_name: 'SessionStart' },
+        normalized: { session_id: 'z-sess' },
+        project: { dir_name: 'lore', repo_name: 'lore' },
+      }),
+    }) as any);
+    const startup = await startupResponse.json();
+
+    expect(startup.host_output.mode).toBe('stdout_json');
+    expect(startup.host_output.value.hookSpecificOutput.hookEventName).toBe('SessionStart');
+    expect(startup.host_output.value.hookSpecificOutput.additionalContext).toContain('core://agent/zcode');
+    expect(startup.host_output.value.hookSpecificOutput.additionalContext).not.toContain('core://agent/codex');
+    expect(startup.host_output.value.hookSpecificOutput.additionalContext).not.toContain('core://agent/pi');
+    expect(mockBootView).toHaveBeenCalledWith({ client_type: 'zcode' });
+
+    mockRecallMemories.mockResolvedValueOnce({
+      items: [{ uri: 'core://agent/zcode', score_display: 0.77, cues: ['hooks'] }],
+      event_log: { query_id: 'q-zcode' },
+    } as any);
+    const promptResponse = await lifecycleRoute.POST(new Request('http://localhost/api/lifecycle/event', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        runtime: { runtime_id: 'zcode', runtime_family: 'zcode' },
+        event: { name: 'prompt.submit', native_name: 'UserPromptSubmit' },
+        normalized: { session_id: 'z-sess', prompt: 'ZCode hooks' },
+      }),
+    }) as any);
+    const prompt = await promptResponse.json();
+
+    expect(prompt.host_output.mode).toBe('stdout_json');
+    expect(prompt.host_output.value.hookSpecificOutput.hookEventName).toBe('UserPromptSubmit');
+    expect(prompt.host_output.value.hookSpecificOutput.additionalContext).toContain('PROMPT RECALL PREAMBLE');
+    expect(prompt.host_output.value.hookSpecificOutput.additionalContext).toContain('core://agent/zcode');
+    expect(prompt.query_id).toBe('q-zcode');
   });
 
   it('returns host-ready Claude prompt output', async () => {

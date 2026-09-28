@@ -32,6 +32,7 @@ const CLIENT_LABELS: Partial<Record<ClientType, string>> = {
   hermes: 'Hermes',
   pi: 'Pi',
   opencode: 'OpenCode',
+  zcode: 'ZCode',
   mcp: 'MCP',
   admin: 'Admin',
 };
@@ -43,6 +44,7 @@ const CLIENT_BOOT_LABELS: Partial<Record<ClientType, string>> = {
   hermes: 'hermes runtime constraints',
   pi: 'pi runtime constraints',
   opencode: 'opencode runtime constraints',
+  zcode: 'zcode runtime constraints',
   mcp: 'mcp runtime constraints',
   admin: 'admin runtime constraints',
 };

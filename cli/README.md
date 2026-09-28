@@ -27,7 +27,13 @@ npx @loremem/cli install \
 
 # Install a subset of integrations from the prerelease channel
 npx @loremem/cli install --channels pi,opencode --pre
+
+# Non-interactive (CI/scripts): run straight from flags
+npx @loremem/cli install -y --base-url https://core.example --api-token lm_...
+npx @loremem/cli install -y --docker
 ```
+
+On a TTY every `install` opens the wizard, with command-line flags preselected and still editable. `-y` (or a non-TTY stdin with flags) runs straight from flags: unset options fall back to defaults — channels default to runtimes detected on this machine — while the server is required from `--base-url`, `--docker`, or a saved config.
 
 A token-bearing remote connection must use HTTPS by default. Plain HTTP is automatically allowed only for loopback development servers such as `localhost`, `127.0.0.1`, or `::1`. For a non-loopback HTTP server, parameter mode requires the explicit, runtime-only `--allow-insecure-http` flag; `--yes` does not grant this permission. The interactive wizard instead shows a separate default-No risk confirmation. This approval is never saved to config.
 

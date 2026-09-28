@@ -48,6 +48,10 @@ vi.mock('@/lib/bootSetup', () => ({
 }));
 
 vi.mock('../../lib/i18n', () => ({
+  LANGUAGES: [
+    { code: 'zh', label: '简体中文' },
+    { code: 'en', label: 'English' },
+  ],
   LanguageProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useT: () => ({ lang: 'zh', setLang: vi.fn(), t: (key: string) => key }),
 }));
@@ -65,6 +69,12 @@ vi.mock('../ui', () => ({
   AuroraBackdrop: () => <div data-aurora-background="true" />,
   AppUIProvider: ({ children }: { children: React.ReactNode }) => <div data-app-ui-provider="true">{children}</div>,
   Button: ({ children }: { children: React.ReactNode }) => <button>{children}</button>,
+  DropdownMenu: ({ items, children }: { items: Array<{ key: string; label: React.ReactNode }>; children: React.ReactNode }) => (
+    <div data-dropdown="true">
+      {children}
+      <ul>{items.map((item) => <li key={item.key} data-menu-key={item.key}>{item.label}</li>)}</ul>
+    </div>
+  ),
 }));
 
 import { AppShellFrame, NavDock, navIndicatorClassName } from '../AppShell';
@@ -111,6 +121,22 @@ describe('AppShell theme contrast', () => {
     expect(html).toContain('md:shrink-0 md:px-3.5 md:py-2 md:text-[13.5px]');
     expect(html).toContain('h-9 w-9 md:h-8 md:w-8');
     expect(html).toContain('hidden md:flex items-center gap-2');
+  });
+
+  it('renders the language switch as an icon that opens a menu of every language', () => {
+    const html = renderToStaticMarkup(<NavDock />);
+
+    expect(html).toContain('aria-label="Language"');
+    expect(html).toContain('aria-haspopup="menu"');
+    expect(html).toContain('lucide-languages');
+    expect(html).toContain('data-menu-key="zh"');
+    expect(html).toContain('data-menu-key="en"');
+    expect(html).toContain('简体中文');
+    expect(html).toContain('English');
+    // Only the current language (zh) is checked.
+    expect(html.match(/lucide-check/g)).toHaveLength(1);
+    expect(html).toMatch(/lang="zh"[^>]*>简体中文<svg[^>]*lucide-check/);
+    expect(html).not.toMatch(/>ZH</);
   });
 
   it('renders the aurora nav toggle as active when enabled', () => {

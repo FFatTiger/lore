@@ -8,12 +8,12 @@
     {
       "name": "lore",
       "description": "Long-term Lore memory for ZCode — MCP memory tools plus SessionStart boot and UserPromptSubmit recall hooks",
-      "version": "1.3.23",
+      "version": "1.5.0",
       "source": "./",
       "author": {
         "name": "FFatTiger"
       }
     }
   ],
-  "version": "1.3.23"
+  "version": "1.5.0"
 }

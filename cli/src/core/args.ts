@@ -6,6 +6,8 @@ export type GlobalArgs = {
   apiToken?: string;
   channels?: ChannelId[];
   skipDocker: boolean;
+  /** Explicitly self-host the Lore server with local Docker. */
+  docker: boolean;
   force: boolean;
   pre: boolean;
   dev: boolean;
@@ -16,8 +18,12 @@ export type GlobalArgs = {
   help: boolean;
   explicitBaseUrl: boolean;
   explicitApiToken: boolean;
+  /** Install should open the wizard on a TTY; flags only seed its defaults. */
   interactiveDefault: boolean;
+  /** Run straight from flags without prompting (--yes or a non-install command). */
   parameterMode: boolean;
+  /** No command and no flags were given. */
+  bare: boolean;
 };
 
 const COMMANDS = new Set(['install', 'update', 'uninstall', 'status', 'help', 'connect']);
@@ -51,6 +57,7 @@ export function parseArgv(argv: string[]): GlobalArgs {
   const result: GlobalArgs = {
     command: 'install',
     skipDocker: false,
+    docker: false,
     force: false,
     pre: false,
     dev: false,
@@ -62,11 +69,10 @@ export function parseArgv(argv: string[]): GlobalArgs {
     explicitApiToken: false,
     interactiveDefault: false,
     parameterMode: false,
+    bare: argv.length === 0,
   };
 
   let i = 0;
-  let sawCommand = false;
-  let sawAnyFlag = false;
 
   if (argv.length > 0 && !argv[0].startsWith('-')) {
     const cmd = argv[0];
@@ -74,7 +80,6 @@ export function parseArgv(argv: string[]): GlobalArgs {
       throw new Error(`Unknown command: ${cmd}`);
     }
     result.command = cmd === 'connect' ? 'install' : (cmd as GlobalArgs['command']);
-    sawCommand = true;
     i = 1;
   }
 
@@ -83,7 +88,6 @@ export function parseArgv(argv: string[]): GlobalArgs {
     if (!token.startsWith('-')) {
       throw new Error(`Unknown argument: ${token}`);
     }
-    sawAnyFlag = true;
 
     switch (token) {
       case '--base-url': {
@@ -110,6 +114,9 @@ export function parseArgv(argv: string[]): GlobalArgs {
       }
       case '--skip-docker':
         result.skipDocker = true;
+        break;
+      case '--docker':
+        result.docker = true;
         break;
       case '--force':
         result.force = true;
@@ -140,15 +147,16 @@ export function parseArgv(argv: string[]): GlobalArgs {
     i += 1;
   }
 
-  result.parameterMode = sawCommand || sawAnyFlag;
-
-  // No command + no flags → interactive default install
-  if (!sawCommand && !sawAnyFlag) {
-    result.interactiveDefault = true;
-  }
+  // Install always opens the wizard on a TTY; flags only preselect its answers.
+  // --yes runs straight from flags (defaults for the rest, errors for required).
+  result.interactiveDefault = result.command === 'install' && !result.yes && !result.help;
+  result.parameterMode = !result.interactiveDefault;
 
   if (result.pre && result.dev) {
     throw new Error('--pre and --dev cannot be used together');
+  }
+  if (result.docker && (result.explicitBaseUrl || result.skipDocker)) {
+    throw new Error('--docker cannot be combined with --base-url or --skip-docker');
   }
 
   return result;

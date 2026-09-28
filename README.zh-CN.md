@@ -71,11 +71,11 @@ npx @loremem/cli
 
 一条命令会：
 
-- 需要时用 Docker Compose 启动 Lore（`postgres` + `redis` + `web`）
-- 接入支持的 agent 运行时
+- 连接已有 Lore 服务；或在你选择时用 Docker Compose 在本机部署（`postgres` + `redis` + `web`）
+- 接入本机检测到的 agent 运行时
 - 写入 `~/.lore/config.json`
 
-在 TTY 下直接跑 `npx @loremem/cli` 会进入交互安装；非交互场景请带上参数。随时重跑即可更新。本机没有对应 agent CLI 时会跳过，不影响其余渠道。
+在 TTY 下运行 `npx @loremem/cli` 总会进入交互安装，命令行传入的参数会被预先选中，仍可修改。加 `-y` 则直接按参数执行：未指定的项用默认值（渠道默认为本机检测到的运行时），服务端必须通过 `--base-url`、`--docker` 或已保存的配置给出，否则报错。随时重跑即可更新。
 
 常用参数：
 
@@ -85,7 +85,9 @@ npx @loremem/cli
 | `--dev` | 开发版（`dev-latest` 镜像） |
 | `--channels CH,...` | 只装部分运行时：`claudecode`、`codex`、`pi`、`openclaw`、`hermes`、`opencode`、`zcode` |
 | `--base-url URL` | 使用已有 Lore 服务，跳过本地 Docker |
+| `--docker` | 在本机用 Docker 部署 Lore 服务端 |
 | `--api-token TOKEN` | 服务端 API token |
+| `-y`, `--yes` | 非交互：直接按参数执行 |
 | `--allow-insecure-http` | 仅为本次执行显式放行“非回环 HTTP + token” |
 | `--skip-docker` | 只配置 agent |
 | `--force` | 即使版本未变也强制重装 |

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
+import { ArrowUp } from 'lucide-react';
 import { AxiosError } from 'axios';
 import { api } from '@/lib/api';
 import { PageCanvas, PageTitle, Section, Badge, Button, LoadingBlock, Notice } from '@/components/ui';
@@ -14,6 +15,16 @@ import {
   type SectionGroup,
 } from '@/components/settings/SettingsSectionEditor';
 import { SettingsConnectionTestButton } from '@/components/settings/SettingsConnectionTestButton';
+import { SettingsAboutPanel } from '@/components/settings/SettingsAboutPanel';
+import {
+  ABOUT_SECTION_ID,
+  BACKUP_ACTIONS_SECTION_ID,
+  buildSettingsOutline,
+  settingsSectionAnchor,
+  SettingsOutlineChips,
+  SettingsOutlineSidebar,
+  useSettingsScrollSpy,
+} from '@/components/settings/SettingsOutline';
 import { useSettingsFlow } from '@/components/settings/useSettingsFlow';
 
 interface ToastState {
@@ -21,12 +32,8 @@ interface ToastState {
   text: string;
 }
 
-function settingsSectionAnchor(sectionId: string): string {
-  return `settings-section-${sectionId}`;
-}
-
 export default function SettingsPage(): React.JSX.Element {
-  const { t } = useT();
+  const { t, lang } = useT();
   const [toast, setToast] = useState<ToastState | null>(null);
   const { confirm: confirmDialog } = useConfirm();
   const notify = useCallback((text: string, type: 'success' | 'error') => {
@@ -58,6 +65,26 @@ export default function SettingsPage(): React.JSX.Element {
   }, [toast]);
 
   const grouped = useMemo(() => groupSettingsSections(data), [data]);
+  const outline = useMemo(
+    () => buildSettingsOutline(
+      grouped,
+      draft,
+      [
+        { id: BACKUP_ACTIONS_SECTION_ID, label: t('Backup Actions') },
+        { id: ABOUT_SECTION_ID, label: t('About') },
+      ],
+      lang,
+    ),
+    [grouped, draft, t, lang],
+  );
+  // DOM order: schema sections, then the page-only panels.
+  const outlineIds = useMemo(
+    () => (data && !loading
+      ? [...grouped.map((section) => section.id), BACKUP_ACTIONS_SECTION_ID, ABOUT_SECTION_ID]
+      : []),
+    [data, grouped, loading],
+  );
+  const { activeId, scrollTo, scrolledDown, scrollToTop } = useSettingsScrollSpy(outlineIds);
 
   const weightSum = useMemo((): number | null => {
     if (!data) return null;
@@ -108,7 +135,22 @@ export default function SettingsPage(): React.JSX.Element {
   }, [data, draft, handleRebuild, rebuilding, saving, t, weightSum]);
 
   return (
-    <PageCanvas maxWidth="5xl">
+    <PageCanvas maxWidth="7xl">
+      {scrolledDown && (
+        <button
+          type="button"
+          onClick={scrollToTop}
+          aria-label={t('Back to top')}
+          title={t('Back to top')}
+          className={clsx(
+            'press fixed right-6 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-separator-thin bg-surface-primary/95 text-txt-secondary shadow backdrop-blur-sm transition-[bottom,color] hover:text-txt-primary animate-in',
+            // Clear the mobile nav dock, and sit above the unsaved-changes bar when it shows.
+            dirtyKeys.length > 0 ? 'bottom-36 md:bottom-20' : 'bottom-24 md:bottom-6',
+          )}
+        >
+          <ArrowUp size={16} strokeWidth={2.2} />
+        </button>
+      )}
       {dirtyKeys.length > 0 && (
         <div className="fixed bottom-6 right-6 z-30">
           <div className="flex items-center gap-2 rounded-full bg-surface-primary/95 px-3 py-1.5 shadow backdrop-blur-sm">
@@ -146,28 +188,45 @@ export default function SettingsPage(): React.JSX.Element {
       {loading && <LoadingBlock />}
 
       {data && !loading && (
-        <div className="space-y-5">
-          {grouped.map((section, index) => (
-            <div
-              key={section.id}
-              id={settingsSectionAnchor(section.id)}
-              className={clsx('scroll-mt-6 animate-in', `stagger-${Math.min(index + 1, 6)}`)}
-            >
-              <Section>
-                <SettingsSectionEditor
-                  section={section}
-                  data={data}
-                  draft={draft}
-                  saving={saving}
-                  onChange={handleChange}
-                  onReset={(key) => void handleReset(key)}
-                  right={sectionRight(section)}
-                />
-              </Section>
+        <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-10">
+          <aside className="hidden lg:block">
+            {/* Sticks with the page; no inner scroll area of its own. */}
+            <div className="sticky top-6">
+              <SettingsOutlineSidebar groups={outline} activeId={activeId} onSelect={scrollTo} />
             </div>
-          ))}
-          <div id={settingsSectionAnchor('backup-actions')} className="scroll-mt-6">
-            <BackupActionPanel />
+          </aside>
+
+          <div className="min-w-0">
+            <div className="sticky top-0 z-20 -mx-4 mb-3 bg-bg-system/90 px-4 backdrop-blur-md lg:hidden">
+              <SettingsOutlineChips groups={outline} activeId={activeId} onSelect={scrollTo} />
+            </div>
+            <div className="space-y-5">
+              {grouped.map((section, index) => (
+                <div
+                  key={section.id}
+                  id={settingsSectionAnchor(section.id)}
+                  className={clsx('scroll-mt-16 lg:scroll-mt-6 animate-in', `stagger-${Math.min(index + 1, 6)}`)}
+                >
+                  <Section>
+                    <SettingsSectionEditor
+                      section={section}
+                      data={data}
+                      draft={draft}
+                      saving={saving}
+                      onChange={handleChange}
+                      onReset={(key) => void handleReset(key)}
+                      right={sectionRight(section)}
+                    />
+                  </Section>
+                </div>
+              ))}
+              <div id={settingsSectionAnchor(BACKUP_ACTIONS_SECTION_ID)} className="scroll-mt-16 lg:scroll-mt-6">
+                <BackupActionPanel />
+              </div>
+              <div id={settingsSectionAnchor(ABOUT_SECTION_ID)} className="scroll-mt-16 lg:scroll-mt-6">
+                <SettingsAboutPanel />
+              </div>
+            </div>
           </div>
         </div>
       )}

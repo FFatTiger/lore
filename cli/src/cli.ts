@@ -3,26 +3,33 @@ import { runInstall, runUpdate } from './commands/install.js';
 import { runUninstall } from './commands/uninstall.js';
 import { runStatus } from './commands/status.js';
 
-const USAGE = `Usage: npx @loremem/cli <install|update|uninstall|status> [options]
+const USAGE = `Usage: npx @loremem/cli [install|update|uninstall|status] [options]
 
 Commands:
-  install (connect)  Install or connect Lore to agent runtimes
+  install (connect)  Install or connect Lore to agent runtimes (default)
   update             Update Lore server artifacts and channel integrations
   uninstall          Remove Lore integrations
   status             Show local Lore install status
 
+Install runs an interactive wizard on a TTY; flags preselect its answers.
+Add -y to run straight from flags: unset options use defaults, and the
+server must come from --base-url, --docker, or a saved config.
+
 Common flags:
-  --base-url URL       External/SaaS Lore server (skips Docker)
+  --base-url URL       Connect to an existing/SaaS Lore server (client only)
+  --docker             Deploy the Lore server on this machine with Docker
   --api-token TOKEN    API token written to ~/.lore/config.json
   --allow-insecure-http
                          Allow token over non-loopback HTTP for this run only
   --channels LIST      claudecode,codex,pi,openclaw,hermes,opencode,zcode
-  --skip-docker        Do not manage Docker
+                         (default: runtimes detected on this machine)
+  --skip-docker        Keep the saved server; do not manage Docker
   --force              Reinstall even if version unchanged
   --pre | --dev        Release channel
   --lang en|zh
   --purge              Uninstall only: remove config + docker data
-  -y, --yes            Skip ordinary confirmations (not insecure HTTP approval)
+  -y, --yes            Non-interactive; skip ordinary confirmations
+                         (not insecure HTTP approval)
   -h, --help
 
 Primary invocation: npx @loremem/cli`;

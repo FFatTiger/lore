@@ -5,6 +5,8 @@
  * metadata (e.g. UI rendering) don't pull in DB or cache dependencies.
  */
 
+import { SECTIONS_EN, SETTINGS_EN } from './settingsSchemaEn';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -27,12 +29,18 @@ export interface SettingDef {
   option_labels?: Record<string, string>;
   /** Hide value in snapshots/UI and only reveal whether it is configured */
   secret?: boolean;
+  /** English UI copy, attached from settingsSchemaEn.ts */
+  label_en?: string;
+  description_en?: string;
 }
 
 export interface SettingSection {
   id: string;
   label: string;
   description: string;
+  /** English UI copy, attached from settingsSchemaEn.ts */
+  label_en?: string;
+  description_en?: string;
 }
 
 export const DEFAULT_LIFECYCLE_GUIDANCE = `# Lore 使用规则
@@ -899,3 +907,20 @@ export const SECTIONS: SettingSection[] = [
   { id: 'backup', label: '数据备份', description: '自动备份与恢复数据库' },
   { id: 'review', label: 'Review', description: 'review changeset 本地存储位置' },
 ];
+
+// ---------------------------------------------------------------------------
+// English copy (UI picks label_en / description_en when the language is English)
+// ---------------------------------------------------------------------------
+
+for (const def of SETTINGS_SCHEMA) {
+  const en = SETTINGS_EN[def.key];
+  if (!en) continue;
+  def.label_en = en.label;
+  if (en.description) def.description_en = en.description;
+}
+for (const section of SECTIONS) {
+  const en = SECTIONS_EN[section.id];
+  if (!en) continue;
+  section.label_en = en.label;
+  if (en.description) section.description_en = en.description;
+}

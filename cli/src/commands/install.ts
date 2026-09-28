@@ -1,5 +1,4 @@
 import {
-  ALL_CHANNELS,
   type ChannelId,
   type ChannelResult,
   type ConnectionMode,
@@ -23,7 +22,7 @@ import { createLogger } from '../ui/log.js';
 import { banner } from '../ui/banner.js';
 import { t } from '../ui/i18n.js';
 import { createTTYPrompt, type PromptService } from '../ui/prompt.js';
-import { runInteractiveWizard, type InstallPlan } from '../ui/wizard.js';
+import { runInteractiveWizard, type InstallPlan, type WizardPresets } from '../ui/wizard.js';
 import { runUninstall } from './uninstall.js';
 import { runStatus } from './status.js';
 
@@ -59,18 +58,31 @@ function resolveLang(args: GlobalArgs, env: NodeJS.ProcessEnv): Lang {
 }
 
 function shouldPrompt(args: GlobalArgs, isTTY: boolean): boolean {
-  if (!isTTY || args.parameterMode) return false;
-  if (args.interactiveDefault) return true;
-  return (
-    args.command === 'install' &&
-    !args.explicitBaseUrl &&
-    !args.channels &&
-    !args.pre &&
-    !args.dev &&
-    !args.skipDocker &&
-    !args.force &&
-    !args.explicitApiToken
-  );
+  return isTTY && args.interactiveDefault;
+}
+
+function wizardPresets(args: GlobalArgs): WizardPresets {
+  return {
+    baseUrl: args.baseUrl,
+    apiToken: args.apiToken,
+    channels: args.channels,
+    docker: args.docker,
+    release: args.dev ? 'dev' : args.pre ? 'pre' : undefined,
+    force: args.force || undefined,
+    allowInsecureHttp: args.allowInsecureHttp || undefined,
+  };
+}
+
+function missingConnectionMessage(lang: Lang): string {
+  return lang === 'zh'
+    ? '未配置 Lore 服务。请用 --base-url URL 连接已有服务，或用 --docker 在本机部署。'
+    : 'No Lore server configured. Pass --base-url URL to connect to an existing server, or --docker to self-host locally.';
+}
+
+function noDetectedChannelsMessage(lang: Lang): string {
+  return lang === 'zh'
+    ? '未检测到任何受支持的 Agent 运行时。请用 --channels 指定要安装的渠道。'
+    : 'No supported agent runtimes detected. Pass --channels to choose integrations explicitly.';
 }
 
 function usageError(log: ReturnType<typeof createLogger>, error: unknown): number {
@@ -333,8 +345,8 @@ async function runInstallOperation(
   const configPath = getConfigPath(loreHome);
   const homeDir = env.HOME || undefined;
 
-  if (!isTTY && args.interactiveDefault) {
-    console.error('Interactive install requires a TTY. Pass flags (e.g. --base-url, --channels).');
+  if (!isTTY && args.bare) {
+    console.error('Interactive install requires a TTY. Pass flags (e.g. --base-url or --docker, --channels, -y).');
     return 2;
   }
 
@@ -363,10 +375,11 @@ async function runInstallOperation(
         initialLang: lang,
         langLocked: Boolean(args.lang || env.LORE_INSTALL_LANG),
         env,
+        presets: wizardPresets(args),
       });
 
       if (wizard.kind === 'exit') {
-        log.err(wizard.lang === 'zh' ? '已取消。' : 'Aborted.');
+        log.err(wizard.reason ?? (wizard.lang === 'zh' ? '已取消。' : 'Aborted.'));
         return 1;
       }
       if (wizard.kind === 'status') {
@@ -407,10 +420,23 @@ async function runInstallOperation(
     }
   }
 
+  // Parameter mode: required connection must come from flags or saved config;
+  // everything else falls back to defaults.
+  let connectionMode: ConnectionMode;
+  if (args.explicitBaseUrl) {
+    connectionMode = 'external';
+  } else if (args.docker) {
+    connectionMode = 'docker';
+  } else if (args.skipDocker || operation === 'update' || saved.base_url) {
+    connectionMode = 'preserve';
+  } else {
+    return usageError(log, missingConnectionMessage(lang));
+  }
+
   let channels: ChannelId[];
   if (args.channels?.length) {
     channels = args.channels;
-  } else if (operation === 'update') {
+  } else {
     const snapshot = await collectInstallSnapshot({
       loreHome,
       configPath,
@@ -418,22 +444,19 @@ async function runInstallOperation(
       homeDir,
       env,
     });
-    channels = snapshot.channels
-      .filter((channel) => channel.state === 'installed' || channel.state === 'partial')
-      .map((channel) => channel.id);
-    if (!channels.length) {
-      log.err('Update failed — no installed or partial channels found');
-      return 1;
+    if (operation === 'update') {
+      channels = snapshot.channels
+        .filter((channel) => channel.state === 'installed' || channel.state === 'partial')
+        .map((channel) => channel.id);
+      if (!channels.length) {
+        log.err('Update failed — no installed or partial channels found');
+        return 1;
+      }
+    } else {
+      channels = snapshot.detectedChannels;
+      if (!channels.length) return usageError(log, noDetectedChannelsMessage(lang));
     }
-  } else {
-    channels = [...ALL_CHANNELS];
   }
-
-  const connectionMode: ConnectionMode = args.explicitBaseUrl
-    ? 'external'
-    : args.skipDocker || operation === 'update'
-      ? 'preserve'
-      : 'docker';
 
   return executeInstallPlan(
     {

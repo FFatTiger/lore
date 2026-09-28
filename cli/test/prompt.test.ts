@@ -48,26 +48,67 @@ test('TTY prompt pickLanguage uses selectOne', async () => {
   assert.equal(lang, 'zh');
 });
 
-test('TTY prompt first-run uses first option SaaS', async () => {
+test('TTY prompt first-run offers client-only connection first and Docker last', async () => {
+  let seen: { values: unknown[]; initial: unknown; dockerHint?: string } | undefined;
   const prompt = createTTYPrompt({
     lang: 'en',
-    selectOne: async (opts) => opts.options[0]!.value,
+    selectOne: async (opts) => {
+      seen = {
+        values: opts.options.map((o) => o.value),
+        initial: opts.initialValue,
+        dockerHint: opts.options.at(-1)?.hint,
+      };
+      return opts.initialValue as never;
+    },
   });
-  const action = await prompt.pickFirstRunAction();
-  assert.equal(action, 'saas');
+  const action = await prompt.pickFirstRunAction({ dockerAvailable: false });
+  assert.equal(action, 'external');
+  assert.deepEqual(seen?.values, ['external', 'saas', 'docker']);
+  assert.match(seen?.dockerHint ?? '', /not detected/i);
 });
 
-test('TTY prompt pickChannels uses multiSelect', async () => {
+test('TTY prompt first-run preselects the command-line connection', async () => {
   const prompt = createTTYPrompt({
     lang: 'en',
-    multiSelect: async () => ['pi', 'opencode'] as never,
+    selectOne: async (opts) => opts.initialValue as never,
+  });
+  assert.equal(await prompt.pickFirstRunAction({ initial: 'docker' }), 'docker');
+});
+
+test('TTY prompt pickChannels lists only the given choices with defaults preselected', async () => {
+  let offered: unknown[] = [];
+  let initial: unknown[] | undefined;
+  const prompt = createTTYPrompt({
+    lang: 'en',
+    multiSelect: async (opts) => {
+      offered = opts.options.map((o) => o.value);
+      initial = opts.initialValues;
+      return ['pi'] as never;
+    },
   });
   const channels = await prompt.pickChannels({
-    defaults: ['pi'],
+    choices: ['claudecode', 'pi'],
+    defaults: ['claudecode', 'pi', 'opencode'],
     snapshot: emptySnapshot,
     purpose: 'install',
   });
-  assert.deepEqual(channels, ['pi', 'opencode']);
+  assert.deepEqual(offered, ['claudecode', 'pi']);
+  assert.deepEqual(initial, ['claudecode', 'pi']);
+  assert.deepEqual(channels, ['pi']);
+});
+
+test('TTY prompt token falls back to the command-line value on empty input', async () => {
+  let message = '';
+  const prompt = createTTYPrompt({
+    lang: 'en',
+    text: async (opts) => {
+      message = opts.message;
+      return '';
+    },
+  });
+  const token = await prompt.askToken({ required: true, hasPreset: true });
+  assert.equal(token, '');
+  assert.match(message, /--api-token/);
 });
 
 test('TTY prompt confirm false via confirmFn', async () => {

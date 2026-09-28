@@ -19,12 +19,27 @@ export interface FieldSchema {
   option_labels?: Record<string, string>;
   section: string;
   secret?: boolean;
+  label_en?: string;
+  description_en?: string;
 }
 
 export interface SectionSchema {
   id: string;
   label: string;
   description?: string;
+  label_en?: string;
+  description_en?: string;
+}
+
+type LocalizedCopy = Pick<SectionSchema, 'label' | 'description' | 'label_en' | 'description_en'>;
+
+/** Schema copy is authored in Chinese; English comes from label_en / description_en. */
+export function localizedLabel(item: LocalizedCopy, lang: 'zh' | 'en'): string {
+  return lang === 'en' && item.label_en ? item.label_en : item.label;
+}
+
+export function localizedDescription(item: LocalizedCopy, lang: 'zh' | 'en'): string | undefined {
+  return lang === 'en' && item.description_en ? item.description_en : item.description;
 }
 
 export interface SettingsData {
@@ -210,7 +225,8 @@ export function FieldRow({
   controlClassName,
   controlStyle,
 }: FieldRowProps): React.JSX.Element {
-  const { t } = useT();
+  const { t, lang } = useT();
+  const description = localizedDescription(schema, lang);
   const isWide = schema.type === 'string' || schema.type === 'text';
   const renderInput = () => {
     if (schema.type === 'number' || schema.type === 'integer') return <NumberInput value={value} onChange={onChange as (v: number | '') => void} schema={schema} disabled={saving} controlClassName={controlClassName} controlStyle={controlStyle} />;
@@ -230,7 +246,7 @@ export function FieldRow({
     >
       <div className="min-w-0">
         <div className="flex items-center gap-3 flex-wrap">
-          <span className="text-[14px] font-medium text-txt-primary">{schema.label}</span>
+          <span className="text-[14px] font-medium text-txt-primary">{localizedLabel(schema, lang)}</span>
           <SourceDot source={source} />
           {schema.secret && secretConfigured && !dirty && <Badge tone="green">{t('Stored')}</Badge>}
           {dirty && <Badge tone="blue">{t('Unsaved')}</Badge>}
@@ -240,8 +256,8 @@ export function FieldRow({
             </TextButton>
           )}
         </div>
-        {schema.description && (
-          <p className="mt-0.5 text-[12.5px] text-txt-secondary leading-relaxed">{schema.description}</p>
+        {description && (
+          <p className="mt-0.5 text-[12.5px] text-txt-secondary leading-relaxed">{description}</p>
         )}
         <p className="mt-1 text-[11px] text-txt-quaternary font-mono">
           {schema.key}
@@ -280,13 +296,15 @@ export function SettingsSectionEditor({
   controlStyle,
   hideHeader = false,
 }: SettingsSectionEditorProps): React.JSX.Element {
+  const { lang } = useT();
+  const sectionDescription = localizedDescription(section, lang);
   return (
     <>
       {!hideHeader && (
         <div className="flex items-center justify-between gap-3 px-4 md:px-6 pt-4 md:pt-5 pb-3 md:pb-4 border-b border-separator-thin">
           <div className="min-w-0">
-            <h2 className="text-[17px] md:text-[19px] font-semibold tracking-tight text-txt-primary">{section.label}</h2>
-            {section.description && <p className="mt-0.5 text-[12px] md:text-[13px] text-txt-secondary">{section.description}</p>}
+            <h2 className="text-[17px] md:text-[19px] font-semibold tracking-tight text-txt-primary">{localizedLabel(section, lang)}</h2>
+            {sectionDescription && <p className="mt-0.5 text-[12px] md:text-[13px] text-txt-secondary">{sectionDescription}</p>}
           </div>
           {right && <div className="flex items-center gap-2 shrink-0">{right}</div>}
         </div>

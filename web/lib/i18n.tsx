@@ -2,7 +2,20 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
 
-type Lang = 'zh' | 'en';
+/**
+ * Languages offered in the UI language menu. To add one: append it here, give
+ * it a table in DICT, and handle it in translate().
+ */
+export const LANGUAGES = [
+  { code: 'zh', label: '简体中文' },
+  { code: 'en', label: 'English' },
+] as const;
+
+export type Lang = (typeof LANGUAGES)[number]['code'];
+
+function isLang(value: unknown): value is Lang {
+  return LANGUAGES.some((language) => language.code === value);
+}
 
 type TranslationKey = string;
 
@@ -137,6 +150,8 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
     'Configure the model Lore uses for view refinement and dream workflows.': '配置 Lore 用于视图精炼和 dream 流程的模型。',
     'Configure the model Lore uses for view refinement and dream workflows. Example: http://127.0.0.1:8090/v1':
       '配置 Lore 用于视图精炼和 dream 流程的模型。示例：http://127.0.0.1:8090/v1',
+    'Boot memory': '启动记忆',
+    'Write the fixed boot node for this setup step.': '为这一步写入固定的启动节点。',
     'Agent boot memory': 'Agent 启动记忆',
     'Write the fixed workflow-constraints node that Lore always loads at startup.': '填写 Lore 每次启动都会固定加载的工作规则节点。',
     'Use this as the shared AGENTS.md / CLAUDE.md-style working rules: repository instructions, collaboration boundaries, safety checks, coding workflow, and verification expectations that every Lore agent loads at startup.':
@@ -378,6 +393,7 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
     'Add': '添加',
     'Switch to light': '切换到亮色',
     'Switch to dark': '切换到暗色',
+    'Language': '语言',
     'Enable Aurora Background': '打开流光背景',
     'Disable Aurora Background': '关闭流光背景',
     'Tree': '目录',
@@ -470,6 +486,11 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
     'completed': '完成',
     'error': '错误',
     'running': '运行中',
+    'failed': '失败',
+    'skipped': '已跳过',
+    'pending': '待审核',
+    'approved': '已通过',
+    'dismissed': '已忽略',
     'Narrative': '日记',
     'Diary': '日记',
     'Original Diary': '原始日记',
@@ -550,6 +571,47 @@ const DICT: Record<'zh' | 'en', Record<string, string>> = {
     'another node': '其他节点',
     'blocked the action': '已拦截',
 
+    // ── settings outline
+    'Settings sections': '设置分组',
+    'Back to top': '返回顶部',
+    'General': '通用',
+    'Model services': '模型服务',
+    'Maintenance': '维护',
+    'Other': '其他',
+    'Runtime parameters for lifecycle injection, recall, model services, and maintenance. Changes take effect immediately.':
+      '生命周期注入、召回、模型服务与维护相关的运行时参数，修改后立即生效。',
+
+    // ── settings about
+    'About': '关于',
+    'Version, service status, and project links': '版本、服务状态与项目链接',
+    'Version': '版本',
+    'Checking for updates…': '正在检查更新…',
+    'Up to date': '已是最新',
+    'Update available': '有新版本',
+    'View release': '查看发布说明',
+    'Update check unavailable': '无法检查更新',
+    'Service status': '服务状态',
+    'Database': '数据库',
+    'Cache': '缓存',
+    'Connected': '已连接',
+    'Disconnected': '未连接',
+    'Website': '官网',
+    'Source code': '源代码',
+    'Release notes': '发布说明',
+    'Report an issue': '问题反馈',
+    'License': '许可证',
+
+    // ── memory node
+    'root': '根节点',
+    'More': '更多',
+    'Show': '展开',
+    'Hide': '收起',
+    'Relevance': '相关度',
+    'Details': '详情',
+
+    // ── auth
+    'Connection failed': '连接失败',
+
     // ── backup
     'Backup Actions': '备份操作',
     'Manual backup and restore operations': '手动备份与恢复操作',
@@ -588,6 +650,11 @@ interface LanguageContextValue {
   t: (key: TranslationKey) => string;
 }
 
+/** Whether the Chinese table has an entry for this key (entries may equal the key, e.g. "FTS"). */
+export function hasTranslation(key: TranslationKey): boolean {
+  return Object.prototype.hasOwnProperty.call(DICT.zh, key);
+}
+
 export function translate(key: TranslationKey, lang: Lang): string {
   if (lang === 'en') return key;
   return DICT.zh[key] ?? key;
@@ -609,7 +676,7 @@ export function LanguageProvider({ children }: LanguageProviderProps): React.JSX
   useEffect(() => {
     try {
       const saved = typeof window !== 'undefined' && window.localStorage.getItem('lore-lang');
-      if (saved === 'zh' || saved === 'en') setLangState(saved);
+      if (isLang(saved)) setLangState(saved);
     } catch { /* ignore */ }
   }, []);
 

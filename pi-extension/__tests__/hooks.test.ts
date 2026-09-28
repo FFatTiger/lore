@@ -79,8 +79,6 @@ describe('Pi extension hooks', () => {
       statusText: 'OK',
       text: async () => JSON.stringify({
         host_output: { mode: 'none', value: null },
-        skill_catalog: { project_id: 'project-1', catalog_revision: 0 },
-        skill_candidates: [],
       }),
     })));
 

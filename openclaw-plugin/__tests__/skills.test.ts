@@ -4,11 +4,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  appendSkillBlockToPrependContext,
   createSkillsSession,
-  discoveryCandidateEntries,
   ensureSkillWorkCopy,
-  formatSkillCandidateBlock,
   registerSkillTools,
   resolveLoreHome,
 } from "../skills";
@@ -91,36 +88,6 @@ function makeMockApi() {
 }
 
 describe("skills discovery helpers", () => {
-  it("formats <lore-skills> with skill_id/version and no local path", () => {
-    const discovered = discoveryCandidateEntries([
-      { skill_id: "s-ready", name: "ready-skill", version: 2, description: "ok" },
-      { id: "s-two", name: "second", expected_version: 1 },
-      { name: "no-id" },
-    ]);
-    expect(discovered).toHaveLength(2);
-    const block = formatSkillCandidateBlock(discovered);
-    expect(block).toContain("<lore-skills>");
-    expect(block).toContain("skill_id: s-ready");
-    expect(block).toContain("version: 2");
-    expect(block).toContain("lore_skill_get");
-    expect(block).not.toContain("/installed/");
-  });
-
-  it("appends skill block to existing prependContext", () => {
-    const block = formatSkillCandidateBlock([{
-      skill_id: "s-ready",
-      name: "ready-skill",
-      version: 1,
-    }]);
-    const merged = appendSkillBlockToPrependContext(
-      '<recall session_id="s">\n0.9 | core://x\n</recall>',
-      block,
-    );
-    expect(merged).toContain("<recall");
-    expect(merged).toContain("<lore-skills>");
-    expect(appendSkillBlockToPrependContext("", block)).toBe(block);
-  });
-
   it("resolves LORE_HOME", () => {
     const dir = makeTempHome();
     expect(resolveLoreHome({ LORE_HOME: dir } as any)).toBe(path.resolve(dir));
@@ -519,7 +486,7 @@ describe("skills lifecycle discovery hooks", () => {
     };
   }
 
-  it("prompt.submit runs with recall disabled and appends only skill discovery", async () => {
+  it("opts into Skills context and writes host output through unchanged", async () => {
     const pluginCfg = {
       baseUrl: "http://host",
       apiToken: "",
@@ -529,105 +496,37 @@ describe("skills lifecycle discovery hooks", () => {
       recallEnabled: false,
       startupHealthcheck: false,
     };
-
+    const bodies: any[] = [];
     const fetchMock = vi.fn(async (url: string, init: any) => {
-      const u = String(url);
-      if (u.includes("/lifecycle/event")) {
-        const body = JSON.parse(String(init?.body || "{}"));
-        expect(body.features?.memory_recall).toBe(false);
-        expect(body.event?.name).toBe("prompt.submit");
-        return {
-          ok: true,
-          status: 200,
-          statusText: "OK",
-          text: async () => JSON.stringify({
-            host_output: { mode: "return_value", value: {} },
-            skill_catalog: { project_id: projectId, catalog_revision: "cat-1" },
-            skill_candidates: [{
-              skill_id: "s-prompt",
-              name: "prompt-skill",
-              description: "for prompts",
-              version: 1,
-            }],
-          }),
-        };
-      }
-      if (u.includes("/api/skills")) {
+      if (String(url).includes("/api/skills")) {
         return { ok: false, status: 500, statusText: "ERR", text: async () => "should not sync" };
       }
-      return { ok: false, status: 404, statusText: "NO", text: async () => "missing" };
+      const body = JSON.parse(String(init?.body || "{}"));
+      bodies.push(body);
+      const value = body.event.name === "session.start"
+        ? { appendSystemContext: "SYS\n<available_skills>catalog</available_skills>" }
+        : { prependContext: "<skill_invocation>x</skill_invocation>" };
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        text: async () => JSON.stringify({ host_output: { mode: "return_value", value } }),
+      };
     });
     vi.stubGlobal("fetch", fetchMock);
 
     const api = makeMockApi();
-    const skills = createSkillsSession(pluginCfg);
-    registerHooks(api as any, pluginCfg, skills);
-
-    const turn = await api.events.before_prompt_build.handler(
-      { prompt: "use skill", messages: [] },
-      { sessionId: "sess-s" },
-    );
-    expect(turn.prependContext).toContain("<lore-skills>");
-    expect(turn.prependContext).toContain("skill_id: s-prompt");
-    expect(turn.prependContext).toContain("prompt-skill");
-    expect(turn.prependContext).not.toContain(path.join(loreHome, "skill-artifacts"));
-    expect(fs.existsSync(path.join(loreHome, "skill-artifacts", projectId, "prompt-skill"))).toBe(false);
-    expect(fetchMock.mock.calls.every((c) => !String(c[0]).includes("/api/skills"))).toBe(true);
-  });
-
-  it("appends skill block after memory prependContext", async () => {
-    const pluginCfg = {
-      baseUrl: "http://host",
-      apiToken: "",
-      timeoutMs: 1000,
-      loreHome,
-      injectPromptGuidance: true,
-      recallEnabled: true,
-      startupHealthcheck: false,
-    };
-
-    vi.stubGlobal("fetch", vi.fn(async (url: string, init: any) => {
-      if (String(url).includes("/lifecycle/event")) {
-        const body = JSON.parse(String(init?.body || "{}"));
-        expect(body.features?.memory_recall).toBe(true);
-        return {
-          ok: true,
-          status: 200,
-          statusText: "OK",
-          text: async () => JSON.stringify({
-            host_output: {
-              mode: "return_value",
-              value: {
-                prependContext: '<recall session_id="sess-s" query_id="q1">\n0.8 | core://a\n</recall>',
-              },
-            },
-            skill_catalog: { project_id: projectId, catalog_revision: "cat-1" },
-            skill_candidates: [{
-              skill_id: "s-prompt",
-              name: "prompt-skill",
-              description: "for prompts",
-              expected_version: 1,
-            }],
-          }),
-        };
-      }
-      return { ok: false, status: 404, statusText: "NO", text: async () => "missing" };
-    }));
-
-    const api = makeMockApi();
-    const skills = createSkillsSession(pluginCfg);
-    registerHooks(api as any, pluginCfg, skills);
-
+    registerHooks(api as any, pluginCfg, createSkillsSession(pluginCfg));
     await api.events.session_start.handler({ sessionId: "sess-s" }, { sessionId: "sess-s" });
-    // session_start with no catalog in this mock — force catalog via prompt only
     const turn = await api.events.before_prompt_build.handler(
-      { prompt: "use skill", messages: [] },
+      { prompt: "run $deploy", messages: [] },
       { sessionId: "sess-s" },
     );
-    expect(turn.prependContext).toContain("<recall");
-    expect(turn.prependContext).toContain("<lore-skills>");
-    expect(turn.prependContext).toContain("skill_id: s-prompt");
-    expect(skills.state.projectId).toBe(projectId);
+    expect(bodies.map((body) => body.features)).toEqual([{ skills: true }, { memory_recall: false, skills: true }]);
+    expect(turn.appendSystemContext).toBe("SYS\n<available_skills>catalog</available_skills>");
+    expect(turn.prependContext).toBe("<skill_invocation>x</skill_invocation>");
+    expect(fetchMock.mock.calls.every((c) => !String(c[0]).includes("/api/skills"))).toBe(true);
+    expect(fs.existsSync(path.join(loreHome, "skill-artifacts"))).toBe(false);
   });
 
   it("session_start records project/catalog identity only and never downloads or reconciles", async () => {

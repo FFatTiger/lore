@@ -172,7 +172,8 @@ jobs:
         run: |
           mkdir -p dist
           cd zcode-plugin
-          zip -r ../dist/lore-zcode.zip .zcode-plugin marketplace.json hooks README.md
+          node --test hooks/__tests__/*.test.mjs mcp/__tests__/*.test.mjs
+          zip -r ../dist/lore-zcode.zip .zcode-plugin .mcp.json marketplace.json hooks mcp shared README.md -x '*/__tests__/*'
 
       - name: Upload artifacts to release
         env:

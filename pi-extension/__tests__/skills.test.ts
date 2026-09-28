@@ -3,12 +3,9 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  appendSkillBlockToRecallMessage,
   computeManifestHash,
   createSkillsSession,
-  discoveryCandidateEntries,
   ensureSkillWorkCopy,
-  formatSkillCandidateBlock,
   inspectLocalWorkCopy,
   LEGACY_MIRROR_SCHEMA,
   LORE_SKILL_MARKER,
@@ -418,9 +415,18 @@ describe('skills adapter ensure DI + work-copy smoke', () => {
   });
 });
 
-describe('skills lifecycle candidate discovery', () => {
+describe('skills lifecycle discovery', () => {
   let loreHome: string;
   const projectId = 'proj-life';
+  const pluginCfg = () => ({
+    baseUrl: 'http://host',
+    apiToken: '',
+    timeoutMs: 1000,
+    loreHome,
+    injectPromptGuidance: true,
+    recallEnabled: true,
+    startupHealthcheck: false,
+  });
 
   beforeEach(() => {
     loreHome = makeTempHome();
@@ -433,232 +439,70 @@ describe('skills lifecycle candidate discovery', () => {
     vi.unstubAllGlobals();
   });
 
-  it('recall candidate block has IDs/version and no local path/download', () => {
-    const discovered = discoveryCandidateEntries([
-      {
-        skill_id: 's-ready',
-        name: 'ready-skill',
-        version: 2,
-        description: 'ok',
-      },
-      {
-        id: 's-two',
-        name: 'second',
-        expected_version: 1,
-        description: 'also',
-      },
-      {
-        name: 'no-id',
-      },
-    ]);
-    expect(discovered).toHaveLength(2);
-    expect(discovered[0]).toMatchObject({ skill_id: 's-ready', name: 'ready-skill', version: 2 });
-
-    const block = formatSkillCandidateBlock(discovered);
-    expect(block).toContain('<lore-skills>');
-    expect(block).toContain('skill_id: s-ready');
-    expect(block).toContain('version: 2');
-    expect(block).toContain('ready-skill');
-    expect(block).toContain('lore_skill_get');
-    expect(block).not.toContain('SKILL.md:');
-    expect(block).not.toContain(path.join(loreHome, 'skill-artifacts'));
-    expect(block).not.toContain('/installed/');
-  });
-
-  it('bounds and sanitizes candidate metadata before prompt injection', () => {
-    const discovered = discoveryCandidateEntries([
-      {
-        skill_id: 's-safe',
-        name: 'safe-skill',
-        version: 2,
-        description: 'trusted-looking <instruction>\u0000 text',
-      },
-      ...Array.from({ length: 8 }, (_, index) => ({
-        skill_id: `s-${index}`,
-        name: `skill-${index}`,
-        version: index + 1,
-        description: 'x'.repeat(800),
-      })),
-    ]);
-
-    expect(discovered).toHaveLength(5);
-    const block = formatSkillCandidateBlock(discovered);
-    expect(block).toContain('trusted-looking &lt;instruction&gt; text');
-    expect(block).not.toContain('<instruction>');
-    expect(block).not.toContain('\u0000');
-    expect(block).toContain('skill_id: s-safe');
-    expect(block).toContain('skill-3');
-    expect(block).not.toContain('skill-4');
-    expect(block.length).toBeLessThan(4_000);
-  });
-
-  it('appends skill block to existing hidden recall message or creates one', () => {
-    const block = formatSkillCandidateBlock([{
-      skill_id: 's-ready',
-      name: 'ready-skill',
-      version: 1,
-      description: 'ok',
-    }]);
-    const withRecall = appendSkillBlockToRecallMessage({
-      customType: 'lore-recall',
-      content: '<recall session_id="s">\n0.9 | core://x\n</recall>',
-      display: false,
-    }, block);
-    expect(withRecall.content).toContain('<recall');
-    expect(withRecall.content).toContain('<lore-skills>');
-    expect(withRecall.content).toContain('skill_id: s-ready');
-    expect(withRecall.display).toBe(false);
-
-    const created = appendSkillBlockToRecallMessage(undefined, block);
-    expect(created.customType).toBe('lore-recall');
-    expect(created.content).toContain('<lore-skills>');
-    expect(created.display).toBe(false);
-  });
-
-  it('session_start records catalog identity only; never downloads or reconciles; prompt only discovers candidates', async () => {
-    const pluginCfg = {
-      baseUrl: 'http://host',
-      apiToken: '',
-      timeoutMs: 1000,
-      loreHome,
-      injectPromptGuidance: true,
-      recallEnabled: true,
-      startupHealthcheck: false,
-    };
-
-    const apiCalls: string[] = [];
-    const fetchMock = vi.fn(async (url: string, init: any) => {
+  function stubLifecycle(bodies: any[], apiCalls: string[]) {
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: any) => {
       const u = String(url);
-      if (u.includes('/api/skills')) apiCalls.push(u);
-      if (u.includes('/lifecycle/event')) {
-        const body = JSON.parse(String(init?.body || '{}'));
-        if (body?.event?.name === 'session.start') {
-          return {
-            ok: true,
-            status: 200,
-            statusText: 'OK',
-            text: async () => JSON.stringify({
-              host_output: { mode: 'return_value', value: { systemPromptAppend: 'SYS' } },
-              skill_catalog: { project_id: projectId, catalog_revision: 'cat-1' },
-            }),
-          };
-        }
-        return {
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-          text: async () => JSON.stringify({
-            host_output: {
-              mode: 'return_value',
-              value: {
-                message: {
-                  customType: 'lore-recall',
-                  content: '<recall session_id="sess-s">\n0.8 | core://a\n</recall>',
-                  display: false,
-                },
-              },
-            },
-            skill_catalog: { project_id: projectId, catalog_revision: 'cat-1' },
-            skill_candidates: [{
-              skill_id: 's-prompt',
-              name: 'prompt-skill',
-              description: 'for prompts',
-              expected_version: 1,
-            }],
-          }),
-        };
-      }
       if (u.includes('/api/skills')) {
-        // Any skills API call would indicate an unwanted download/sync at session start.
+        apiCalls.push(u);
         return { ok: false, status: 500, statusText: 'ERR', text: async () => 'should not sync' };
       }
-      return { ok: false, status: 404, statusText: 'NO', text: async () => 'missing' };
-    });
-    vi.stubGlobal('fetch', fetchMock);
+      const body = JSON.parse(String(init?.body || '{}'));
+      bodies.push(body);
+      const payload = body?.event?.name === 'session.start'
+        ? {
+          host_output: { mode: 'return_value', value: { systemPromptAppend: 'SYS\n<available_skills>catalog</available_skills>' } },
+          skill_catalog: { project_id: projectId, catalog_revision: 'cat-1' },
+        }
+        : {
+          host_output: {
+            mode: 'return_value',
+            value: { message: { customType: 'lore-recall', content: '<recall>\n0.8 | core://a\n</recall>\n\n<skill_invocation>x</skill_invocation>', display: false } },
+          },
+        };
+      return { ok: true, status: 200, statusText: 'OK', text: async () => JSON.stringify(payload) };
+    }));
+  }
 
-    const pi = {
+  function makePi() {
+    return {
       events: {} as Record<string, any>,
       on(event: string, handler: any) { this.events[event] = handler; },
       logger: { warn: vi.fn(), debug: vi.fn(), info: vi.fn() },
     };
-    const skills = createSkillsSession(pluginCfg);
-    registerHooks(pi as any, pluginCfg, skills);
+  }
+
+  it('opts into Skills context, applies host output unchanged, and never downloads at session start', async () => {
+    const bodies: any[] = [];
+    const apiCalls: string[] = [];
+    stubLifecycle(bodies, apiCalls);
+    const pi = makePi();
+    const skills = createSkillsSession(pluginCfg());
+    registerHooks(pi as any, pluginCfg(), skills);
 
     const ctx = { sessionManager: { getSessionId: () => 'sess-s' } };
     await pi.events.session_start({ reason: 'startup' }, ctx);
+    const turn = await pi.events.before_agent_start({ prompt: 'run $deploy', systemPrompt: 'base' }, ctx);
+
+    expect(bodies.map((body) => body.features)).toEqual([{ skills: true }, { memory_recall: true, skills: true }]);
     expect(skills.state.projectId).toBe(projectId);
     expect(skills.state.catalogRevision).toBe('cat-1');
-    // Session start records identity only — no catalog download or reconciliation.
-    expect(apiCalls.length).toBe(0);
-    expect(fs.existsSync(path.join(loreHome, 'skill-artifacts', projectId, 'prompt-skill'))).toBe(false);
-
-    const turn = await pi.events.before_agent_start({ prompt: 'use skill', systemPrompt: 'base' }, ctx);
-    expect(turn.systemPrompt).toContain('SYS');
-    expect(turn.message.content).toContain('<recall');
-    expect(turn.message.content).toContain('<lore-skills>');
-    expect(turn.message.content).toContain('prompt-skill');
-    expect(turn.message.content).toContain('skill_id: s-prompt');
-    expect(turn.message.content).not.toContain(path.join(loreHome, 'skill-artifacts'));
-    expect(fs.existsSync(path.join(loreHome, 'skill-artifacts', projectId, 'prompt-skill'))).toBe(false);
-    // Prompt-time discovery performs no downloads or catalog syncs.
-    expect(apiCalls.length).toBe(0);
+    expect(turn.systemPrompt).toBe('base\n\nSYS\n<available_skills>catalog</available_skills>');
+    expect(turn.message.content).toBe('<recall>\n0.8 | core://a\n</recall>\n\n<skill_invocation>x</skill_invocation>');
+    expect(apiCalls).toEqual([]);
+    expect(fs.existsSync(path.join(loreHome, 'skill-artifacts'))).toBe(false);
   });
 
-  it('failed skill discovery fails open and still returns memory recall', async () => {
-    const pluginCfg = {
-      baseUrl: 'http://host',
-      apiToken: '',
-      timeoutMs: 1000,
-      loreHome,
-      injectPromptGuidance: true,
-      recallEnabled: true,
-      startupHealthcheck: false,
-    };
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      const u = String(url);
-      if (u.includes('/lifecycle/event')) {
-        return {
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-          text: async () => JSON.stringify({
-            host_output: {
-              mode: 'return_value',
-              value: {
-                message: {
-                  customType: 'lore-recall',
-                  content: '<recall>\n0.5 | core://x\n</recall>',
-                  display: false,
-                },
-              },
-            },
-            skill_catalog: { project_id: projectId, catalog_revision: 'cat-x' },
-            skill_candidates: [{ skill_id: 's-x', name: 'broken', expected_version: 1 }],
-          }),
-        };
-      }
-      return { ok: false, status: 404, statusText: 'NO', text: async () => 'missing' };
-    }));
+  it('does not opt into Skills context without a Skills session', async () => {
+    const bodies: any[] = [];
+    stubLifecycle(bodies, []);
+    const pi = makePi();
+    registerHooks(pi as any, pluginCfg());
 
-    const pi = {
-      events: {} as Record<string, any>,
-      on(event: string, handler: any) { this.events[event] = handler; },
-      logger: { warn: vi.fn(), debug: vi.fn(), info: vi.fn() },
-    };
-    const skills = createSkillsSession(pluginCfg);
-    const original = skills.onPromptLifecycle.bind(skills);
-    skills.onPromptLifecycle = async (resp: any) => {
-      try {
-        return await original(resp);
-      } catch {
-        throw new Error('discovery boom');
-      }
-    };
-    registerHooks(pi as any, pluginCfg, skills);
-    const ctx = { sessionManager: { getSessionId: () => 'sess-fail' } };
-    const turn = await pi.events.before_agent_start({ prompt: 'hello', systemPrompt: 'base' }, ctx);
-    expect(turn.message.content).toContain('<recall>');
-    expect(turn.message.content).toContain('<lore-skills>');
+    const ctx = { sessionManager: { getSessionId: () => 'sess-off' } };
+    await pi.events.session_start({ reason: 'startup' }, ctx);
+    await pi.events.before_agent_start({ prompt: 'hello', systemPrompt: 'base' }, ctx);
+
+    expect(bodies.map((body) => body.features)).toEqual([undefined, { memory_recall: true }]);
   });
 });
 
@@ -705,7 +549,7 @@ describe('skills CRUD tools', () => {
     expect(Object.keys(pi.tools)).toHaveLength(16);
   });
 
-  it('uses the exact work-copy descriptions and discovery instruction line', () => {
+  it('uses the exact work-copy descriptions', () => {
     const pi = makeMockPi();
     registerTools(pi as any, {
       baseUrl: 'http://host',
@@ -725,11 +569,6 @@ describe('skills CRUD tools', () => {
     expect(pi.tools.lore_skill_status.description).toBe(
       'Report local skill work-copy states (ready/missing/outdated/tampered/unmanaged/invalid). '
       + 'Read-only: never mutates or reconciles copies.',
-    );
-    const block = formatSkillCandidateBlock([{ skill_id: 's', name: 'n', version: 1 }]);
-    expect(block.split('\n')[1]).toBe(
-      'Matched Lore skills. Call lore_skill_get with skill_id to fetch a local copy; '
-      + 'managed package files are read-only, and the skill directory stays writable for local outputs.',
     );
   });
 

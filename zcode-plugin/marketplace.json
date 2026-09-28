@@ -1,13 +1,13 @@
 {
   "name": "lore",
-  "description": "Lore plugin marketplace for ZCode lifecycle memory",
+  "description": "Lore plugin marketplace for ZCode memory tools and lifecycle hooks",
   "owner": {
     "name": "FFatTiger"
   },
   "plugins": [
     {
       "name": "lore",
-      "description": "Long-term Lore memory for ZCode — SessionStart boot and UserPromptSubmit recall hooks",
+      "description": "Long-term Lore memory for ZCode — MCP memory tools plus SessionStart boot and UserPromptSubmit recall hooks",
       "version": "1.3.23",
       "source": "./",
       "author": {

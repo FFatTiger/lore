@@ -161,114 +161,6 @@ export async function ensureSkillWorkCopy(opts: {
   });
 }
 
-// ---- candidate discovery (recall only; no download / no local path) ----
-
-const MAX_SKILL_CANDIDATES = 5;
-const MAX_SKILL_ID_LENGTH = 256;
-const MAX_SKILL_NAME_LENGTH = 160;
-const MAX_SKILL_DESCRIPTION_LENGTH = 500;
-const MAX_SKILL_VERSION_LENGTH = 64;
-
-function sanitizeCandidateText(value: unknown, maxLength: number): string {
-  return String(value ?? '')
-    .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, maxLength);
-}
-
-export function formatSkillCandidateBlock(candidates: Array<{
-  skill_id: string;
-  name: string;
-  version?: string | number;
-  description?: string;
-}>): string {
-  const safeCandidates = candidates
-    .slice(0, MAX_SKILL_CANDIDATES)
-    .map((candidate) => ({
-      skill_id: sanitizeCandidateText(candidate.skill_id, MAX_SKILL_ID_LENGTH),
-      name: sanitizeCandidateText(candidate.name, MAX_SKILL_NAME_LENGTH),
-      version: candidate.version === undefined || candidate.version === ''
-        ? undefined
-        : typeof candidate.version === 'number' && Number.isFinite(candidate.version)
-          ? candidate.version
-          : sanitizeCandidateText(candidate.version, MAX_SKILL_VERSION_LENGTH),
-      description: sanitizeCandidateText(candidate.description, MAX_SKILL_DESCRIPTION_LENGTH),
-    }))
-    .filter((candidate) => candidate.skill_id && candidate.name);
-  if (!safeCandidates.length) return '';
-  const lines = ['<lore-skills>'];
-  lines.push('Matched Lore skills. Call lore_skill_get with skill_id to fetch a local copy; managed package files are read-only, and the skill directory stays writable for local outputs.');
-  for (const candidate of safeCandidates) {
-    const version = candidate.version ? ` v${candidate.version}` : '';
-    const desc = candidate.description ? ` — ${candidate.description}` : '';
-    lines.push(`- ${candidate.name}${version}${desc}`);
-    lines.push(`  skill_id: ${candidate.skill_id}`);
-    if (candidate.version) {
-      lines.push(`  version: ${candidate.version}`);
-    }
-  }
-  lines.push('</lore-skills>');
-  return lines.join('\n');
-}
-
-export function appendSkillBlockToRecallMessage(message: any, skillBlock: string): any {
-  const block = String(skillBlock || '').trim();
-  if (!block) return message;
-
-  if (!message || typeof message !== 'object') {
-    return {
-      customType: 'lore-recall',
-      content: block,
-      display: false,
-      details: { source: 'lore-skills' },
-    };
-  }
-
-  const existing = typeof message.content === 'string' ? message.content : '';
-  const content = existing.trim() ? `${existing.trim()}\n\n${block}` : block;
-  return {
-    ...message,
-    content,
-    display: false,
-    customType: message.customType || 'lore-recall',
-  };
-}
-
-/**
- * Discovery-only candidates from lifecycle response. No download, no local path, no integrity check.
- */
-export function discoveryCandidateEntries(candidates: SkillCandidate[]): Array<{
-  skill_id: string;
-  name: string;
-  version?: string | number;
-  description?: string;
-}> {
-  const out: Array<{ skill_id: string; name: string; version?: string | number; description?: string }> = [];
-  for (const candidate of candidates || []) {
-    if (out.length >= MAX_SKILL_CANDIDATES) break;
-    const name = sanitizeCandidateText(candidate.name, MAX_SKILL_NAME_LENGTH);
-    const skillId = sanitizeCandidateText(skillIdOf(candidate), MAX_SKILL_ID_LENGTH);
-    if (!name || !skillId) continue;
-    const rawVersion = skillVersionOf(candidate);
-    const version = rawVersion === undefined || rawVersion === null || rawVersion === ''
-      ? undefined
-      : typeof rawVersion === 'number' && Number.isFinite(rawVersion)
-        ? rawVersion
-        : sanitizeCandidateText(rawVersion, MAX_SKILL_VERSION_LENGTH);
-    const description = sanitizeCandidateText(candidate.description, MAX_SKILL_DESCRIPTION_LENGTH);
-    out.push({
-      skill_id: skillId,
-      name,
-      version,
-      description: description || undefined,
-    });
-  }
-  return out;
-}
-
 // ---- session-scoped skills client used by hooks ----
 
 export function createSkillsSession(pluginCfg: any) {
@@ -286,33 +178,6 @@ export function createSkillsSession(pluginCfg: any) {
     if (!catalog?.project_id) return;
     state.projectId = catalog.project_id;
     state.catalogRevision = catalog.catalog_revision;
-  }
-
-  /**
-   * Prompt lifecycle: discovery candidates only. Append candidate block to recall message.
-   * Does not download, reconcile, or inject local paths.
-   */
-  async function onPromptLifecycle(lifecycleResponse: any): Promise<{ messagePatch?: any; skillBlock?: string }> {
-    const catalog = readSkillCatalog(lifecycleResponse);
-    if (catalog?.project_id) {
-      state.projectId = catalog.project_id;
-      state.catalogRevision = catalog.catalog_revision;
-    }
-
-    const candidates = readSkillCandidates(lifecycleResponse);
-    if (candidates.length === 0) return {};
-
-    const discovered = discoveryCandidateEntries(candidates);
-    const skillBlock = formatSkillCandidateBlock(discovered);
-    if (!skillBlock) return {};
-
-    const hostMessage = lifecycleResponse?.host_output?.mode === 'return_value'
-      ? lifecycleResponse.host_output?.value?.message
-      : undefined;
-    return {
-      skillBlock,
-      messagePatch: appendSkillBlockToRecallMessage(hostMessage, skillBlock),
-    };
   }
 
   function getStatus(): {
@@ -340,7 +205,6 @@ export function createSkillsSession(pluginCfg: any) {
     state,
     loreHome,
     onSessionStart,
-    onPromptLifecycle,
     getStatus,
     ensureSkillWorkCopy: (skillId: string) => ensureSkillWorkCopy({
       pluginCfg,
@@ -362,14 +226,6 @@ export function readSkillCatalog(lifecycleResponse: any): SkillCatalog | null {
     project_id,
     catalog_revision: String(catalog.catalog_revision || ''),
   };
-}
-
-export function readSkillCandidates(lifecycleResponse: any): SkillCandidate[] {
-  const raw = lifecycleResponse?.skill_candidates;
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .filter((item) => item && typeof item === 'object')
-    .map(normalizeSkillCandidate);
 }
 
 // ---- tool registration ----

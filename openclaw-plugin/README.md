@@ -14,7 +14,7 @@ lore_skill_delete
 lore_skill_status
 ```
 
-Skill recall is discovery-only (identity only, never local paths). When a candidate is relevant, the agent calls `lore_skill_get(skill_id)`. Downloads are on-demand: there is no session-start sync or reconcile. `lore_skill_get` downloads the complete server package when missing, updates the server-managed package files when the server version differs, and reuses the local copy when the version matches and managed files are intact.
+Session start lists the skills the agent may use (name, description, `skill_id`); the agent decides when to call `lore_skill_get`. Users can invoke a skill explicitly by typing `$skill-name` in a prompt; skills whose `SKILL.md` sets `disable-model-invocation: true` are hidden from the agent and only run this way. Lore never injects local paths. Downloads are on-demand: there is no session-start sync or reconcile. `lore_skill_get` downloads the complete server package when missing, updates the server-managed package files when the server version differs, and reuses the local copy when the version matches and managed files are intact.
 
 Local work copies live directly under:
 

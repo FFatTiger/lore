@@ -3,13 +3,10 @@
  * Fail open: Lore/network/parse errors exit 0 with empty stdout.
  */
 
-import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
+import { loadLoreConfig, pickString } from '../shared/lore-config.mjs';
 
-const LORE_CONFIG_FILE = path.join(os.homedir(), '.lore', 'config.json');
-const DEFAULT_BASE_URL = 'http://127.0.0.1:18901';
 const RUNTIME_FAMILY = 'zcode';
 const SESSION_START_TIMEOUT_MS = 8000;
 const PROMPT_SUBMIT_TIMEOUT_MS = 10000;
@@ -30,18 +27,6 @@ const SNAPSHOT_ALLOWLIST = [
   'hookEventName',
 ];
 
-function readLoreConfig() {
-  try {
-    return JSON.parse(fs.readFileSync(LORE_CONFIG_FILE, 'utf-8'));
-  } catch {
-    return {};
-  }
-}
-
-function pickString(value) {
-  return typeof value === 'string' && value.trim() ? value.trim() : '';
-}
-
 function resolveSessionId(input) {
   return pickString(input.session_id)
     || pickString(input.conversation_id)
@@ -61,38 +46,27 @@ function buildNativeInputSnapshot(input) {
   return Object.keys(snapshot).length ? snapshot : undefined;
 }
 
-function loadConfig() {
-  const config = readLoreConfig();
-  const baseUrl = pickString(config.base_url)
-    || pickString(process.env.LORE_BASE_URL)
-    || DEFAULT_BASE_URL;
-  return {
-    baseUrl: baseUrl.replace(/\/+$/, ''),
-    apiToken: pickString(config.api_token)
-      || pickString(process.env.LORE_API_TOKEN)
-      || pickString(process.env.API_TOKEN),
-  };
-}
-
 function detectProjectInfo(cwd) {
   const root = pickString(cwd) || process.cwd();
   const dir_name = path.basename(root);
   let repo_name = null;
   try {
-    const remote = execSync('git remote', {
+    const remote = execFileSync('git', ['remote'], {
       cwd: root,
       encoding: 'utf-8',
       timeout: 2000,
       stdio: ['pipe', 'pipe', 'pipe'],
     }).trim().split('\n')[0];
-    const remoteUrl = execSync(`git remote get-url ${remote}`, {
-      cwd: root,
-      encoding: 'utf-8',
-      timeout: 2000,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
-    const match = remoteUrl.match(/\/([^/.]+?)(?:\.git)?$/);
-    if (match?.[1]) repo_name = match[1];
+    if (remote) {
+      const remoteUrl = execFileSync('git', ['remote', 'get-url', remote], {
+        cwd: root,
+        encoding: 'utf-8',
+        timeout: 2000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+      const match = remoteUrl.match(/\/([^/.]+?)(?:\.git)?$/);
+      if (match?.[1]) repo_name = match[1];
+    }
   } catch {}
   return { dir_name, repo_name };
 }
@@ -105,7 +79,7 @@ async function readStdin() {
 }
 
 async function postLifecycle(body, timeoutMs) {
-  const cfg = loadConfig();
+  const cfg = loadLoreConfig();
   const headers = { 'content-type': 'application/json' };
   if (cfg.apiToken) headers.authorization = `Bearer ${cfg.apiToken}`;
   const response = await fetch(`${cfg.baseUrl}/api/lifecycle/event`, {
@@ -123,6 +97,12 @@ function writeHostOutput(response) {
   if (!output || output.mode === 'none' || output.value == null) return;
   if (output.mode === 'stdout_json') process.stdout.write(JSON.stringify(output.value));
   if (output.mode === 'stdout_text') process.stdout.write(String(output.value));
+}
+
+// Lore renders the Skills catalog and `$skill-name` invocations only for clients
+// that expose Skills tools.
+function skillsFeature() {
+  return loadLoreConfig().skillsEnabled ? { features: { skills: true } } : {};
 }
 
 async function main() {
@@ -147,6 +127,7 @@ async function main() {
       protocol_version: 'lore.lifecycle.v1',
       runtime: { runtime_id: RUNTIME_FAMILY, runtime_family: RUNTIME_FAMILY },
       event: { name: 'prompt.submit', native_name: 'UserPromptSubmit' },
+      ...skillsFeature(),
       normalized,
       ...(nativeInputSnapshot ? { native_input_snapshot: nativeInputSnapshot } : {}),
     }, PROMPT_SUBMIT_TIMEOUT_MS);
@@ -160,6 +141,7 @@ async function main() {
     protocol_version: 'lore.lifecycle.v1',
     runtime: { runtime_id: RUNTIME_FAMILY, runtime_family: RUNTIME_FAMILY },
     event: { name: 'session.start', native_name: 'SessionStart' },
+    ...skillsFeature(),
     normalized: sessionId ? { session_id: sessionId } : {},
     project: detectProjectInfo(input.cwd),
     ...(nativeInputSnapshot ? { native_input_snapshot: nativeInputSnapshot } : {}),

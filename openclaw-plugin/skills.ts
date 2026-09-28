@@ -1,6 +1,6 @@
 /**
  * OpenClaw skills adapter — thin wrapper over vendor/skill-workcopy.
- * Owns lore_skill_* tools and discovery helpers for lifecycle hooks.
+ * Owns lore_skill_* tools and the session-start project identity used for work copies.
  */
 
 import { Type } from "@sinclair/typebox";
@@ -113,51 +113,6 @@ export async function ensureSkillWorkCopy(opts: {
   });
 }
 
-// ---- discovery (no download / no local path) ----
-
-export function formatSkillCandidateBlock(candidates: Array<{
-  skill_id: string;
-  name: string;
-  version?: string | number;
-  description?: string;
-}>): string {
-  if (!candidates.length) return "";
-  const lines = ["<lore-skills>"];
-  lines.push("Matched Lore skills. Call lore_skill_get with skill_id to fetch a local copy; managed package files are read-only, and the skill directory stays writable for local outputs.");
-  for (const c of candidates) {
-    const version = c.version === undefined || c.version === "" ? "" : ` v${c.version}`;
-    const desc = c.description ? ` — ${String(c.description).replace(/\s+/g, " ").trim()}` : "";
-    lines.push(`- ${c.name}${version}${desc}`);
-    lines.push(`  skill_id: ${c.skill_id}`);
-    if (c.version !== undefined && c.version !== "") {
-      lines.push(`  version: ${c.version}`);
-    }
-  }
-  lines.push("</lore-skills>");
-  return lines.join("\n");
-}
-
-export function discoveryCandidateEntries(candidates: SkillCandidate[]): Array<{
-  skill_id: string;
-  name: string;
-  version?: string | number;
-  description?: string;
-}> {
-  const out: Array<{ skill_id: string; name: string; version?: string | number; description?: string }> = [];
-  for (const candidate of candidates || []) {
-    const name = String(candidate.name || "").trim();
-    const skillId = skillIdOf(candidate);
-    if (!name || !skillId) continue;
-    out.push({
-      skill_id: skillId,
-      name,
-      version: skillVersionOf(candidate),
-      description: typeof candidate.description === "string" ? candidate.description : undefined,
-    });
-  }
-  return out;
-}
-
 export function readSkillCatalog(lifecycleResponse: any): SkillCatalog | null {
   const catalog = lifecycleResponse?.skill_catalog;
   if (!catalog || typeof catalog !== "object") return null;
@@ -167,21 +122,6 @@ export function readSkillCatalog(lifecycleResponse: any): SkillCatalog | null {
     project_id,
     catalog_revision: String(catalog.catalog_revision || ""),
   };
-}
-
-export function readSkillCandidates(lifecycleResponse: any): SkillCandidate[] {
-  const raw = lifecycleResponse?.skill_candidates;
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .filter((item) => item && typeof item === "object")
-    .map(normalizeSkillCandidate);
-}
-
-export function appendSkillBlockToPrependContext(existing: string | undefined, skillBlock: string): string {
-  const block = String(skillBlock || "").trim();
-  if (!block) return typeof existing === "string" ? existing.trim() : "";
-  const base = typeof existing === "string" ? existing.trim() : "";
-  return base ? `${base}\n\n${block}` : block;
 }
 
 // ---- session ----
@@ -198,26 +138,6 @@ export function createSkillsSession(pluginCfg: any) {
     if (!catalog?.project_id) return;
     state.projectId = catalog.project_id;
     state.catalogRevision = catalog.catalog_revision;
-  }
-
-  /**
-   * Prompt lifecycle: discovery candidates only. Returns skillBlock for prependContext merge.
-   * Does not download, reconcile, or inject local paths.
-   */
-  async function onPromptLifecycle(lifecycleResponse: any): Promise<{ skillBlock?: string }> {
-    const catalog = readSkillCatalog(lifecycleResponse);
-    if (catalog?.project_id) {
-      state.projectId = catalog.project_id;
-      state.catalogRevision = catalog.catalog_revision;
-    }
-
-    const candidates = readSkillCandidates(lifecycleResponse);
-    if (candidates.length === 0) return {};
-
-    const discovered = discoveryCandidateEntries(candidates);
-    const skillBlock = formatSkillCandidateBlock(discovered);
-    if (!skillBlock) return {};
-    return { skillBlock };
   }
 
   function getStatus(): {
@@ -242,7 +162,6 @@ export function createSkillsSession(pluginCfg: any) {
     state,
     loreHome,
     onSessionStart,
-    onPromptLifecycle,
     getStatus,
     ensureSkillWorkCopy: (skillId: string) => ensureSkillWorkCopy({
       pluginCfg,

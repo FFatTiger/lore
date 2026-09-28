@@ -204,6 +204,19 @@ class LoreClientThinAdapterTests(unittest.TestCase):
         self.assertEqual(requests[1][1]["data"]["event"]["name"], "prompt.submit")
         self.assertEqual(requests[1][1]["data"]["normalized"], {"session_id": "sess-1", "prompt": "hello"})
         self.assertEqual(len(requests), 2)
+        self.assertNotIn("features", requests[0][1]["data"])
+        self.assertNotIn("features", requests[1][1]["data"])
+
+    def test_lifecycle_event_declares_skills_only_when_enabled(self):
+        client = LoreClient(base_url="http://example.com")
+        client.skills_enabled = True
+        requests = []
+        client._request = lambda *args, **kwargs: requests.append(kwargs["data"]) or {}
+
+        client.lifecycle_event("session.start", session_id="sess-1")
+        client.lifecycle_event("prompt.submit", session_id="sess-1", prompt="run $deploy")
+
+        self.assertEqual([data["features"] for data in requests], [{"skills": True}, {"skills": True}])
 
 
 class FakeClient:
@@ -796,7 +809,7 @@ class LoreProviderThinAdapterTests(unittest.TestCase):
                 self.assertNotIn("you should", desc.lower())
                 self.assertNotIn("always use", desc.lower())
 
-    def test_skill_candidate_discovery_appended_even_when_memory_context_empty(self):
+    def test_prompt_context_is_written_through_with_skill_invocation(self):
         self.provider._skills_enabled = True
         class SkillAwareClient(FakeClient):
             def lifecycle_event(self, event_name, **kwargs):
@@ -805,58 +818,14 @@ class LoreProviderThinAdapterTests(unittest.TestCase):
                     return {
                         "host_output": {
                             "mode": "return_value",
-                            "value": {"context": ""},
+                            "value": {"context": "<skill_invocation>x</skill_invocation>"},
                         },
-                        "skill_catalog": {"project_id": "proj-1", "catalog_revision": "cat-9"},
-                        "skill_candidates": [
-                            {
-                                "skill_id": "skill-1",
-                                "name": "demo-skill",
-                                "description": "A demo skill",
-                                "version": 2,
-                            }
-                        ],
                     }
                 return super().lifecycle_event(event_name, **kwargs)
 
         self.provider._client = SkillAwareClient()
-        result = self.provider.prefetch("need skills", session_id="sess-1")
-        self.assertIn("<lore-skills>", result)
-        self.assertIn("skill_id: skill-1", result)
-        self.assertIn("demo-skill", result)
-        self.assertIn("lore_skill_get", result)
-        self.assertEqual(self.provider._skill_project_id, "proj-1")
-        self.assertEqual(self.provider._skill_catalog_revision, "cat-9")
-
-    def test_skill_candidate_discovery_appended_to_memory_context(self):
-        self.provider._skills_enabled = True
-        class SkillAwareClient(FakeClient):
-            def lifecycle_event(self, event_name, **kwargs):
-                self.lifecycle_calls.append((event_name, dict(kwargs)))
-                if event_name == "prompt.submit":
-                    return {
-                        "host_output": {
-                            "mode": "return_value",
-                            "value": {
-                                "context": (
-                                    "<recall session_id=\"sess-1\" query_id=\"q1\">\n"
-                                    "0.70 | core://project\n"
-                                    "</recall>"
-                                )
-                            },
-                        },
-                        "skill_candidates": [
-                            {"id": "skill-9", "name": "other", "expected_version": 1}
-                        ],
-                    }
-                return super().lifecycle_event(event_name, **kwargs)
-
-        self.provider._client = SkillAwareClient()
-        result = self.provider.prefetch("hello", session_id="sess-1")
-        self.assertIn("core://project", result)
-        self.assertIn("<lore-skills>", result)
-        self.assertIn("skill_id: skill-9", result)
-        self.assertIn("version: 1", result)
+        result = self.provider.prefetch("run $deploy", session_id="sess-1")
+        self.assertEqual(result, "<skill_invocation>x</skill_invocation>")
 
 
 class SkillClientApiTests(unittest.TestCase):
@@ -1657,22 +1626,6 @@ class SkillWorkCopyTests(unittest.TestCase):
                 os.environ.pop("LORE_HOME", None)
             else:
                 os.environ["LORE_HOME"] = old_home
-
-    def test_discovery_helpers(self):
-        block = self.sw.format_skill_candidate_block([
-            {"skill_id": "s1", "name": "alpha", "version": 3, "description": "does  things"},
-        ])
-        self.assertIn("<lore-skills>", block)
-        self.assertIn("skill_id: s1", block)
-        self.assertIn("version: 3", block)
-        self.assertIn("lore_skill_get", block)
-        entries = self.sw.discovery_candidate_entries([
-            {"id": "x", "name": "X", "expected_version": 1},
-            {"name": "missing-id"},
-        ])
-        self.assertEqual(len(entries), 1)
-        self.assertEqual(entries[0]["skill_id"], "x")
-        self.assertEqual(entries[0]["version"], 1)
 
 
 if __name__ == "__main__":

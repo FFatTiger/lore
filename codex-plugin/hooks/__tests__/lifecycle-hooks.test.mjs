@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -217,74 +217,40 @@ test('bundled hooks.json keeps portable commands and SessionStart matcher', () =
 });
 
 
-test('UserPromptSubmit appends <lore-skills> to host_output and preserves Memory context', async () => {
-  const server = await withServer(() => ({
-    skill_candidates: [
-      { skill_id: 's-1', name: 'alpha', version: 2, description: 'Alpha skill' },
-    ],
+test('Skills-enabled hooks declare features.skills and write Lore host output through', async () => {
+  const server = await withServer((body) => ({
     host_output: {
       mode: 'stdout_json',
-      value: {
-        hookSpecificOutput: {
-          hookEventName: 'UserPromptSubmit',
-          additionalContext: 'MEMORY_RECALL',
-        },
-      },
+      value: { hookSpecificOutput: { hookEventName: body.event.native_name, additionalContext: `${body.event.name}:skills` } },
     },
   }));
-
   try {
-    const result = await runHook(recallHook, {
-      prompt: 'use a skill',
-      session_id: 'sess-1',
-    }, {
-      LORE_CODEX_HOOK_BASE_URL: server.baseUrl,
-      LORE_SKILLS_ENABLED: '1',
-    });
-    assert.equal(result.code, 0, result.stderr);
-    assert.match(result.stdout, /MEMORY_RECALL/);
-    assert.match(result.stdout, /<lore-skills>/);
-    assert.match(result.stdout, /skill_id: s-1/);
-    assert.match(result.stdout, /lore_skill_get/);
-    assert.match(result.stdout, /alpha/);
+    const env = { LORE_BASE_URL: server.baseUrl, LORE_SKILLS_ENABLED: '1' };
+    const start = await runHook(rulesHook, { session_id: 's1', source: 'startup' }, env);
+    const prompt = await runHook(recallHook, { prompt: 'run $deploy', session_id: 's1' }, env);
+    assert.equal(JSON.parse(start.stdout).hookSpecificOutput.additionalContext, 'session.start:skills');
+    assert.equal(JSON.parse(prompt.stdout).hookSpecificOutput.additionalContext, 'prompt.submit:skills');
+    assert.deepEqual(server.requests.map((body) => body.features), [{ skills: true }, { skills: true }]);
   } finally {
     await server.close();
   }
 });
 
-test('UserPromptSubmit adds missing additionalContext in structured host_output', async () => {
-  const server = await withServer(() => ({
-    skill_candidates: [{ skill_id: 's-2', name: 'beta', version: 3 }],
-    host_output: {
-      mode: 'stdout_json',
-      value: { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', decision: 'allow' } },
-    },
-  }));
+test('Skills stay off unless the configured server advertises them', async () => {
+  const server = await withServer();
+  const home = mkdtempSync(path.join(tmpdir(), 'lore-codex-hook-profile-'));
   try {
-    const result = await runHook(recallHook, { prompt: 'structured skill' }, {
-      LORE_CODEX_HOOK_BASE_URL: server.baseUrl,
-      LORE_SKILLS_ENABLED: '1',
-    });
-    const output = JSON.parse(result.stdout);
-    assert.equal(output.hookSpecificOutput.decision, 'allow');
-    assert.match(output.hookSpecificOutput.additionalContext, /skill_id: s-2/);
+    mkdirSync(path.join(home, '.lore'));
+    writeFileSync(path.join(home, '.lore', 'config.json'), JSON.stringify({
+      base_url: server.baseUrl,
+      server_profile: { base_url: `${server.baseUrl}/`, capabilities: { skills: true } },
+    }));
+    await runHook(rulesHook, { session_id: 's1' }, { HOME: home });
+    await runHook(recallHook, { prompt: 'hello', session_id: 's1' }, { HOME: home, LORE_SKILLS_ENABLED: '0' });
+    await runHook(recallHook, { prompt: 'hello', session_id: 's1' }, { LORE_BASE_URL: server.baseUrl });
+    assert.deepEqual(server.requests.map((body) => body.features), [{ skills: true }, undefined, undefined]);
   } finally {
-    await server.close();
-  }
-});
-
-test('UserPromptSubmit skill discovery fails open when candidates malformed', async () => {
-  const server = await withServer(() => ({
-    skill_candidates: 'not-an-array',
-    host_output: { mode: 'stdout_text', value: 'ONLY_MEMORY' },
-  }));
-  try {
-    const result = await runHook(recallHook, { prompt: 'x' }, {
-      LORE_CODEX_HOOK_BASE_URL: server.baseUrl,
-    });
-    assert.equal(result.code, 0, result.stderr);
-    assert.equal(result.stdout, 'ONLY_MEMORY');
-  } finally {
+    rmSync(home, { recursive: true, force: true });
     await server.close();
   }
 });

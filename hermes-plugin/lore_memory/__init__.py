@@ -338,11 +338,10 @@ class LoreMemoryProvider(MemoryProvider):
         self._claim_or_join(sid, query, for_queue=True)
 
     def _do_recall(self, query: str, session_id: str) -> str:
-        """Execute recall API and return formatted block. Thread-safe.
+        """Execute recall API and return the host context. Thread-safe.
 
-        Appends discovery-only <lore-skills> candidates from the lifecycle
-        response (no auto-download / no local path). Skill discovery is returned
-        even when memory host context is empty.
+        With Skills enabled the context also carries any `$skill-name`
+        invocation rendered by Lore.
         """
         payload = self._payload_prompt(query)
         if not payload:
@@ -355,26 +354,7 @@ class LoreMemoryProvider(MemoryProvider):
             )
             output = lifecycle.get("host_output", {}) or {}
             value = output.get("value", {}) if output.get("mode") == "return_value" else {}
-            context = str((value or {}).get("context") or "").strip()
-
-            if not self._skills_enabled:
-                return context
-
-            # Catalog identity may update on prompt lifecycle without download.
-            catalog = skill_workcopy.read_skill_catalog(lifecycle)
-            if catalog and catalog.get("project_id"):
-                self._skill_project_id = catalog["project_id"]
-                self._skill_catalog_revision = catalog.get("catalog_revision") or ""
-
-            candidates = skill_workcopy.read_skill_candidates(lifecycle)
-            discovered = skill_workcopy.discovery_candidate_entries(candidates)
-            skill_block = skill_workcopy.format_skill_candidate_block(discovered).strip()
-
-            if context and skill_block:
-                return f"{context}\n\n{skill_block}"
-            if skill_block:
-                return skill_block
-            return context
+            return str((value or {}).get("context") or "").strip()
         except Exception as e:
             logger.debug("Lore lifecycle recall failed: %s", e)
             return ""

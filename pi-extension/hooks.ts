@@ -53,24 +53,26 @@ async function fetchLifecycleEvent(pluginCfg: any, body: Record<string, unknown>
   });
 }
 
-async function fetchStartupLifecycle(pluginCfg: any, sessionId: string | undefined, cwd?: string) {
+async function fetchStartupLifecycle(pluginCfg: any, sessionId: string | undefined, cwd: string | undefined, skills: boolean) {
   return fetchLifecycleEvent(pluginCfg, {
     protocol_version: 'lore.lifecycle.v1',
     runtime: { runtime_id: 'pi', runtime_family: 'pi' },
     event: { name: 'session.start', native_name: 'session_start' },
+    // Lore appends the Skills catalog only for clients that expose Skills tools.
+    ...(skills ? { features: { skills: true } } : {}),
     normalized: { session_id: sessionId },
     project: detectProjectInfo(cwd),
   });
 }
 
-async function fetchPromptLifecycle(pluginCfg: any, prompt: string, sessionId: string | undefined) {
-  // Prompt lifecycle also carries independent Skill candidates/catalog identity,
-  // so it must remain available when Memory recall injection is disabled.
+async function fetchPromptLifecycle(pluginCfg: any, prompt: string, sessionId: string | undefined, skills: boolean) {
+  // Prompt lifecycle also carries explicit `$skill-name` invocations, so it must
+  // remain available when Memory recall injection is disabled.
   return fetchLifecycleEvent(pluginCfg, {
     protocol_version: 'lore.lifecycle.v1',
     runtime: { runtime_id: 'pi', runtime_family: 'pi' },
     event: { name: 'prompt.submit', native_name: 'before_agent_start' },
-    features: { memory_recall: hasRecallConfig(pluginCfg) },
+    features: { memory_recall: hasRecallConfig(pluginCfg), ...(skills ? { skills: true } : {}) },
     normalized: { session_id: sessionId, prompt },
   });
 }
@@ -122,7 +124,7 @@ export function registerHooks(pi: any, pluginCfg: any, skillsSession?: SkillsSes
 
     const request = (async () => {
       try {
-        const lifecycleResponse = await fetchStartupLifecycle(pluginCfg, sessionId, ctx?.cwd);
+        const lifecycleResponse = await fetchStartupLifecycle(pluginCfg, sessionId, ctx?.cwd, Boolean(skills));
         // Record project/catalog identity only — never auto-download or reconcile skills.
         if (skills) {
           try {
@@ -176,30 +178,8 @@ export function registerHooks(pi: any, pluginCfg: any, skillsSession?: SkillsSes
 
     if (typeof event?.prompt === 'string' && event.prompt.trim()) {
       try {
-        const lifecycleResponse = await fetchPromptLifecycle(pluginCfg, event.prompt, sessionId);
-        const value = readReturnValue(lifecycleResponse);
-        let message = value?.message;
-
-        // Discovery only: append skill candidate identities to the existing hidden recall message.
-        // Never download, reconcile, or inject local paths here.
-        if (skills) {
-          try {
-            const skillPatch = await skills.onPromptLifecycle(lifecycleResponse);
-            if (skillPatch?.messagePatch) {
-              message = skillPatch.messagePatch;
-            } else if (skillPatch?.skillBlock) {
-              message = {
-                customType: 'lore-recall',
-                content: skillPatch.skillBlock,
-                display: false,
-                details: { source: 'lore-skills' },
-              };
-            }
-          } catch (error: any) {
-            pi.logger?.debug?.(`lore: skill prompt discovery failed: ${error.message}`);
-          }
-        }
-
+        const lifecycleResponse = await fetchPromptLifecycle(pluginCfg, event.prompt, sessionId, Boolean(skills));
+        const message = readReturnValue(lifecycleResponse)?.message;
         if (message) out.message = message;
       } catch (error: any) {
         pi.logger?.debug?.(`lore: lifecycle recall failed: ${error.message}`);

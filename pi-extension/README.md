@@ -10,7 +10,7 @@ This extension connects Pi agent to Lore long-term memory.
 - Injects per-prompt recall context as a hidden custom message.
 - Tracks session reads for `lore_get_node`.
 - Registers server-side Skill CRUD/search/status tools without prescribing when the agent should use them.
-- Lifecycle Skill recall discovers matching Skill candidates only (skill_id, name, description, version). It does not inject local paths. Session start records catalog project identity only; all download/update is on-demand via `lore_skill_get` (no session-start sync).
+- Session start lists the skills the agent may use (name, description, `skill_id`); the agent decides when to call `lore_skill_get`. Users can invoke a skill explicitly by typing `$skill-name` in a prompt; skills whose `SKILL.md` sets `disable-model-invocation: true` are hidden from the agent and only run this way. Lore never injects local paths; all download/update is on-demand via `lore_skill_get` (no session-start sync).
 - `lore_skill_get(skill_id)` downloads the complete server package into a local work copy at `~/.lore/skill-artifacts/<project-id>/<skill-name>/` (or `LORE_HOME`) when missing, updates the server-managed package files when the server version differs, and reuses the local copy when the version matches.
 - Managed package files are read-only (0444 POSIX) while the skill directory itself stays writable (0755), so agents create local outputs/cache directly inside the same copy. Extra local files never trigger tamper and survive fetches and version upgrades.
 - Same-version local outputs are preserved across fetches and upgrades; a version mismatch updates only the server-managed package files.

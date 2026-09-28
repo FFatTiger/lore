@@ -1113,56 +1113,7 @@ def list_all_local_work_copy_statuses(lore_home: str) -> List[Dict[str, Any]]:
     return out
 
 
-# ---- discovery helpers (no download / no local path) ----
-
-
-def discovery_candidate_entries(candidates: Sequence[Any]) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
-    for candidate in candidates or []:
-        if not isinstance(candidate, dict):
-            continue
-        name = str(candidate.get("name") or "").strip()
-        skill_id = skill_id_of(candidate)
-        if not name or not skill_id:
-            continue
-        entry: Dict[str, Any] = {
-            "skill_id": skill_id,
-            "name": name,
-            "version": skill_version_of(candidate),
-        }
-        if isinstance(candidate.get("description"), str):
-            entry["description"] = candidate["description"]
-        out.append(entry)
-    return out
-
-
-def format_skill_candidate_block(candidates: Sequence[Dict[str, Any]]) -> str:
-    if not candidates:
-        return ""
-    lines = ["<lore-skills>"]
-    lines.append(
-        "Matched Lore skills. Call lore_skill_get with skill_id to fetch a local copy; "
-        "managed package files are read-only, and the skill directory stays writable for local outputs."
-    )
-    for c in candidates:
-        skill_id = str(c.get("skill_id") or skill_id_of(c) or "").strip()
-        name = str(c.get("name") or "").strip()
-        if not skill_id or not name:
-            continue
-        version_raw = skill_version_of(c)
-        version = "" if version_raw is None or version_raw == "" else f" v{version_raw}"
-        desc = ""
-        if isinstance(c.get("description"), str) and c["description"].strip():
-            desc = " — " + " ".join(c["description"].split())
-        lines.append(f"- {name}{version}{desc}")
-        lines.append(f"  skill_id: {skill_id}")
-        if version_raw is not None and version_raw != "":
-            lines.append(f"  version: {version_raw}")
-    lines.append("</lore-skills>")
-    # Need header + instruction + at least one candidate pair + closer
-    if len(lines) <= 3:
-        return ""
-    return "\n".join(lines)
+# ---- lifecycle helpers (no download / no local path) ----
 
 
 def read_skill_catalog(lifecycle_response: Any) -> Optional[Dict[str, str]]:
@@ -1179,15 +1130,3 @@ def read_skill_catalog(lifecycle_response: Any) -> Optional[Dict[str, str]]:
         "catalog_revision": str(catalog.get("catalog_revision") or ""),
     }
 
-
-def read_skill_candidates(lifecycle_response: Any) -> List[Dict[str, Any]]:
-    if not isinstance(lifecycle_response, dict):
-        return []
-    raw = lifecycle_response.get("skill_candidates")
-    if not isinstance(raw, list):
-        return []
-    return [
-        normalize_skill_candidate(item)
-        for item in raw
-        if isinstance(item, dict)
-    ]

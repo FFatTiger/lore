@@ -39,9 +39,11 @@ HTTP calls go to `${LORE_BASE_URL}/api/skills*` with `Authorization: Bearer …`
 
 ## Packaging
 
-Release ZIPs for Codex / Claude Code include this directory (and `vendor/skill-workcopy.mjs`). Installers register:
+Release ZIPs for Codex / Claude Code include this directory (and `vendor/skill-workcopy.mjs`). Two MCP servers are configured:
 
 - remote HTTP MCP as `lore` (memory)
-- local stdio MCP as `lore-skills` (skills)
+- local stdio MCP as `lore-skills` (skills): the Claude Code plugin declares it in its `.mcp.json`; the Codex installer adds it to `config.toml` only when the server advertises Skills
+
+The server only exposes Skills to clients that expose these tools: the hooks send `features.skills` so Lore adds the session-start skill catalog and `$skill-name` invocations to the host output.
 
 Work-copy materialization uses vendored helpers under `vendor/` (or `shared/skill-workcopy` when present in the monorepo) and stores local work copies at `${LORE_HOME:-~/.lore}/skill-artifacts/<project-id>/<skill-name>/`. Server-managed package files are read-only (0444); the skill directory itself stays writable so agents create local outputs and caches directly inside the same copy. Extra local files never trigger tamper and survive same-version fetches and version upgrades. A version mismatch updates only the managed package files. Downloads and updates happen on demand via `lore_skill_get` — there is no session-start bulk reconcile. `tools/list` and `tools/call` stay fail-closed when Skills are disabled.

@@ -258,6 +258,10 @@ class LoreClient:
         }
         if project is not None:
             data["project"] = project
+        if self.skills_enabled:
+            # Lore renders the Skills catalog and `$skill-name` invocations only
+            # for clients that expose Skills tools.
+            data["features"] = {"skills": True}
         return self._request("POST", "/lifecycle/event", data=data) or {}
 
     # ---- Domains ----

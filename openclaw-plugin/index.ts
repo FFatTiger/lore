@@ -33,6 +33,4 @@ export {
   createSkillsSession,
   ensureSkillWorkCopy,
   registerSkillTools,
-  formatSkillCandidateBlock,
-  discoveryCandidateEntries,
 } from "./skills";

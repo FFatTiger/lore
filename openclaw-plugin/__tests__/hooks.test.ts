@@ -221,24 +221,17 @@ describe('registerHooks', () => {
     expect(bodies.map((body: any) => body.event.name)).toEqual(['prompt.submit']);
   });
 
-  it('still runs prompt.submit for skill discovery when recall is disabled', async () => {
+  it('still runs prompt.submit for Skills invocations when recall is disabled', async () => {
     const api = makeMockApi();
+    const bodies: any[] = [];
     vi.stubGlobal('fetch', vi.fn(async (url: string, init: any) => {
       if (String(url).includes('/lifecycle/event')) {
-        const body = JSON.parse(String(init?.body || '{}'));
-        expect(body.event.name).toBe('prompt.submit');
-        expect(body.features.memory_recall).toBe(false);
+        bodies.push(JSON.parse(String(init?.body || '{}')));
         return {
           ok: true,
           status: 200,
           text: async () => JSON.stringify({
-            host_output: { mode: 'return_value', value: {} },
-            skill_candidates: [{
-              skill_id: 's1',
-              name: 'skill-one',
-              version: 2,
-              description: 'desc',
-            }],
+            host_output: { mode: 'return_value', value: { prependContext: '<skill_invocation>x</skill_invocation>' } },
           }),
         };
       }
@@ -251,22 +244,12 @@ describe('registerHooks', () => {
       recallEnabled: false,
       skillsEnabled: true,
       baseUrl: 'http://localhost',
-    }, {
-      onPromptLifecycle: async (response: any) => {
-        const candidates = response?.skill_candidates || [];
-        if (!candidates.length) return {};
-        const candidate = candidates[0];
-        return {
-          skillBlock: `<lore-skills>\nskill_id: ${candidate.skill_id}\nUse lore_skill_get to open the skill.\n</lore-skills>`,
-        };
-      },
-    } as any);
+    }, {} as any);
     const result = await api.events.before_prompt_build.handler(
-      { prompt: 'find a skill', messages: [] },
+      { prompt: 'run $deploy', messages: [] },
       { sessionId: 'sess-skills' },
     );
-    expect(result.prependContext).toContain('<lore-skills>');
-    expect(result.prependContext).toContain('skill_id: s1');
-    expect(result.prependContext).toContain('lore_skill_get');
+    expect(bodies.map((body) => body.features)).toEqual([{ memory_recall: false, skills: true }]);
+    expect(result.prependContext).toBe('<skill_invocation>x</skill_invocation>');
   });
 });

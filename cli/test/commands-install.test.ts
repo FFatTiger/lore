@@ -40,6 +40,16 @@ function artifactRun(): ExecFn {
   };
 }
 
+/** Wizard tests must not depend on agent CLIs installed on the host: seed one. */
+async function seedRuntimeBin(loreHome: string, command: string): Promise<string> {
+  const bin = path.join(loreHome, 'bin');
+  await fs.mkdir(bin, { recursive: true });
+  const exe = path.join(bin, process.platform === 'win32' ? `${command}.cmd` : command);
+  await fs.writeFile(exe, process.platform === 'win32' ? '@exit /b 0\r\n' : '#!/bin/sh\nexit 0\n');
+  if (process.platform !== 'win32') await fs.chmod(exe, 0o755);
+  return bin;
+}
+
 test('non-TTY bare argv exits 2', async () => {
   const args = parseArgv([]);
   const exit = await runInstall(args, {
@@ -99,6 +109,7 @@ test('flag install with mocked deps writes config', async () => {
 
 test('interactive SaaS path never asks base URL and uses api.loremem.com', async () => {
   const loreHome = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-saas-'));
+  const bin = await seedRuntimeBin(loreHome, 'hermes');
   let askedBaseUrl = false;
   const prompt: PromptService = {
     async pickLanguage() {
@@ -150,7 +161,7 @@ test('interactive SaaS path never asks base URL and uses api.loremem.com', async
   const exit = await runInstall(parseArgv([]), {
     isTTY: true,
     prompt,
-    env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome },
+    env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome, PATH: bin, Path: bin },
     artifactRun: runExec,
     run: async () => ({ code: 0, stdout: '', stderr: '' }),
     fetchImpl: async (url) => {
@@ -317,6 +328,7 @@ test('non-loopback HTTP with a token succeeds only with the explicit per-run fla
 
 test('interactive insecure HTTP approval propagates through the execution safety gate', async () => {
   const loreHome = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-insecure-http-wizard-'));
+  const bin = await seedRuntimeBin(loreHome, 'hermes');
   let riskConfirmed = false;
   const prompt: PromptService = {
     async pickLanguage() { return 'en'; },
@@ -339,7 +351,7 @@ test('interactive insecure HTTP approval propagates through the execution safety
   const exit = await runInstall(parseArgv([]), {
     isTTY: true,
     prompt,
-    env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome },
+    env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome, PATH: bin, Path: bin },
     artifactRun: artifactRun(),
     fetchImpl: stableRelease(),
     log: { info() {}, ok() {}, warn() {}, err() {}, section() {} },
@@ -518,6 +530,7 @@ test('TTY install with --yes stays parameter mode and never opens the wizard', a
 
 test('interactive Docker reconfigure ignores saved SaaS connection and clears token', async () => {
   const loreHome = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-docker-reconfigure-'));
+  const bin = await seedRuntimeBin(loreHome, 'hermes');
   await writeConfig(
     getConfigPath(loreHome),
     { base_url: 'https://api.loremem.com', api_token: 'lm_old' },
@@ -553,7 +566,7 @@ test('interactive Docker reconfigure ignores saved SaaS connection and clears to
   const exit = await runInstall(parseArgv([]), {
     isTTY: true,
     prompt,
-    env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome },
+    env: { ...process.env, LORE_HOME: loreHome, HOME: loreHome, PATH: bin, Path: bin },
     run,
     artifactRun: artifactRun(),
     fetchImpl,

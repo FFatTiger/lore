@@ -52,7 +52,7 @@ make_fixture_repo() {
   local dest="$1"
   mkdir -p "$dest/scripts" "$dest/web/server" "$dest/cli" "$dest/claudecode-plugin/.claude-plugin" \
     "$dest/codex-plugin/.codex-plugin" "$dest/openclaw-plugin" "$dest/pi-extension" \
-    "$dest/hermes-plugin/lore_memory" "$dest/opencode-plugin"
+    "$dest/hermes-plugin/lore_memory" "$dest/opencode-plugin" "$dest/local-skills-mcp/src"
   cp "$ROOT/scripts/release.sh" "$dest/scripts/release.sh"
   cp "$ROOT/web/package.json" "$ROOT/web/package-lock.json" "$dest/web/"
   cp "$ROOT/cli/package.json" "$ROOT/cli/package-lock.json" "$dest/cli/"
@@ -65,6 +65,8 @@ make_fixture_repo() {
   cp "$ROOT/pi-extension/package.json" "$dest/pi-extension/package.json"
   cp "$ROOT/hermes-plugin/lore_memory/plugin.yaml" "$dest/hermes-plugin/lore_memory/plugin.yaml"
   cp "$ROOT/opencode-plugin/package.json" "$ROOT/opencode-plugin/package-lock.json" "$dest/opencode-plugin/"
+  cp "$ROOT/local-skills-mcp/package.json" "$dest/local-skills-mcp/package.json"
+  cp "$ROOT/local-skills-mcp/src/server.mjs" "$dest/local-skills-mcp/src/server.mjs"
 }
 
 make_fake_git() {
@@ -96,6 +98,7 @@ make_fake_git "$PREP_BIN" "$PREP_LOG"
 assert_file_version "$PREP_REPO/cli/package.json" '9.8.7-pre.1'
 assert_lock_root_version "$PREP_REPO/cli/package-lock.json" '9.8.7-pre.1'
 assert_file_version "$PREP_REPO/opencode-plugin/package.json" '9.8.7-pre.1'
+assert_file_version "$PREP_REPO/local-skills-mcp/package.json" '9.8.7-pre.1'
 assert_opencode_lock_version "$PREP_REPO/opencode-plugin/package-lock.json" '9.8.7-pre.1'
 if grep -Eq '^(commit|tag|push)( |$)' "$PREP_LOG"; then
   fail "prepare-only invoked commit/tag/push"
@@ -115,6 +118,7 @@ make_fake_git "$NORMAL_BIN" "$NORMAL_LOG"
 assert_file_version "$NORMAL_REPO/cli/package.json" '9.8.7-pre.1'
 assert_lock_root_version "$NORMAL_REPO/cli/package-lock.json" '9.8.7-pre.1'
 assert_file_version "$NORMAL_REPO/opencode-plugin/package.json" '9.8.7-pre.1'
+assert_file_version "$NORMAL_REPO/local-skills-mcp/package.json" '9.8.7-pre.1'
 assert_opencode_lock_version "$NORMAL_REPO/opencode-plugin/package-lock.json" '9.8.7-pre.1'
 grep -Fq 'commit -m release: v9.8.7-pre.1' "$NORMAL_LOG" || fail "normal release did not commit"
 grep -Fq 'tag v9.8.7-pre.1' "$NORMAL_LOG" || fail "normal release did not tag"

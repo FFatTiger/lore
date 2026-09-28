@@ -11,6 +11,10 @@ interface SharedLoreConfig {
   base_url?: string;
   api_token?: string;
   lore_home?: string;
+  server_profile?: {
+    base_url?: string;
+    capabilities?: Record<string, boolean>;
+  };
 }
 
 export function resolveLoreHome(env: NodeJS.ProcessEnv = process.env): string {
@@ -46,14 +50,28 @@ function pickBaseUrl(cfg: any) {
   return raw.trim().replace(/\/+$/, '');
 }
 
+function skillsEnabled(cfg: any, shared: SharedLoreConfig, loreHome: string, baseUrl: string): boolean {
+  if (cfg.skillsEnabled === false || process.env.LORE_SKILLS_ENABLED === '0') return false;
+  const profileBase = pickString(shared.server_profile?.base_url).replace(/\/+$/, '').toLowerCase();
+  const profileMatches = Boolean(profileBase) && profileBase === baseUrl.replace(/\/+$/, '').toLowerCase();
+  if (profileMatches) return shared.server_profile?.capabilities?.skills === true;
+  if (cfg.skillsEnabled === true || process.env.LORE_SKILLS_ENABLED === '1') return true;
+  try {
+    return fs.readFileSync(path.join(loreHome, 'pi', '.lore-skills-enabled'), 'utf8').trim() === '1';
+  } catch {
+    return false;
+  }
+}
+
 export function pickPluginConfig(pi: any) {
   const cfg = pi?.pluginConfig ?? {};
   const shared = readSharedLoreConfig();
   const loreHome = pickString(cfg.loreHome)
     || pickString(shared.lore_home)
     || resolveLoreHome();
+  const baseUrl = pickBaseUrl(cfg);
   return {
-    baseUrl: pickBaseUrl(cfg),
+    baseUrl,
     apiToken: pickString(cfg.apiToken)
       || pickString(shared.api_token)
       || pickString(process.env.LORE_API_TOKEN)
@@ -63,6 +81,7 @@ export function pickPluginConfig(pi: any) {
     injectPromptGuidance: cfg.injectPromptGuidance !== false,
     startupHealthcheck: cfg.startupHealthcheck !== false,
     recallEnabled: cfg.recallEnabled !== false,
+    skillsEnabled: skillsEnabled(cfg, shared, path.resolve(loreHome), baseUrl),
     loreHome: path.resolve(loreHome),
   };
 }

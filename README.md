@@ -40,7 +40,7 @@
 
 ## What Lore is
 
-Lore is a self-hosted memory and Skill service for coding agents and other LLM runtimes. It gives agents a durable graph of memories, a fixed startup baseline, per-prompt recall, guarded write tools, and versioned Skills that materialize as writable local work copies only when an agent opens them.
+Lore is a self-hosted memory and Skill service for coding agents and other LLM runtimes. It gives agents a durable graph of memories, a fixed startup baseline, per-prompt recall, guarded write tools, and versioned Skills that become local work copies only when an agent opens them; server-managed package files are read-only while the skill directory itself stays writable, so local outputs, caches, and artifacts live directly inside the copy.
 
 Most memory layers stop at retrieval. Lore covers the full lifecycle:
 
@@ -50,7 +50,7 @@ Most memory layers stop at retrieval. Lore covers the full lifecycle:
 - **URI-first graph** — durable addresses such as `core://agent`, `preferences://user`, `project://my_project`
 - **Disclosure** — each memory states when it should surface
 - **Dream** — scheduled maintenance with quality checks and rollback history
-- **Skills** — Console and agents edit the same versioned server package; recall discovers candidates, and `lore_skill_get` downloads or refreshes a writable local copy on demand
+- **Skills** — the server package is the source of truth; recall discovers candidates, and `lore_skill_get` downloads or refreshes the server-managed package files of a local work copy on demand (managed files are read-only; the skill directory stays writable for local outputs)
 
 ## Quick Start
 
@@ -84,7 +84,7 @@ Common flags:
 | --- | --- |
 | `--pre` | Pre-release channel (`pre-latest` image) |
 | `--dev` | Dev channel (`dev-latest` image) |
-| `--channels CH,...` | Install only some runtimes: `claudecode`, `codex`, `pi`, `openclaw`, `hermes`, `opencode` |
+| `--channels CH,...` | Install only some runtimes: `claudecode`, `codex`, `pi`, `openclaw`, `hermes`, `opencode`, `zcode` |
 | `--base-url URL` | Use an existing Lore server and skip local Docker |
 | `--api-token TOKEN` | API token for the server |
 | `--allow-insecure-http` | Explicitly allow a token over non-loopback HTTP for this run only |
@@ -144,12 +144,13 @@ Then open `/settings` only if you want to tune recall weights, Dream schedule, b
 
 | Runtime | Integration | What you get |
 | --- | --- | --- |
-| **Pi** | `pi-extension/` | Extension tools, startup boot, per-prompt recall, and writable Skill work copies. |
+| **Pi** | `pi-extension/` | Extension tools, startup boot, per-prompt recall, and local Skill work copies (managed files read-only, dir writable). |
 | **Claude Code** | `claudecode-plugin/` | Marketplace plugin, remote Memory MCP, local Skills MCP, SessionStart boot, and recall hooks |
 | **Codex** | `codex-plugin/` | Local marketplace plugin, remote Memory MCP, local Skills MCP, and boot/recall hooks |
-| **OpenClaw** | `openclaw-plugin/` | Runtime plugin with boot, recall, Lore tools, and native Skill work copies |
-| **Hermes** | `hermes-plugin/` | MemoryProvider plugin with Lore tools, recall, and Python-native Skill work copies |
-| **OpenCode** | `opencode-plugin/` | Native plugin with exact `lore_*` tools, recall, and bundled Skill work copies |
+| **OpenClaw** | `openclaw-plugin/` | Runtime plugin with boot, recall, Lore tools, and native local Skill work copies |
+| **Hermes** | `hermes-plugin/` | MemoryProvider plugin with Lore tools, recall, and Python-native local Skill work copies |
+| **OpenCode** | `opencode-plugin/` | Native plugin with exact `lore_*` tools, recall, and bundled local Skill work copies |
+| **ZCode** | `zcode-plugin/` | Native marketplace plugin with SessionStart boot and UserPromptSubmit recall hooks (no MCP) |
 | **Generic MCP** | `/api/mcp` | Streamable HTTP endpoint for clients that can attach remote tools |
 
 After install, restart each runtime. Useful notes:
@@ -157,6 +158,7 @@ After install, restart each runtime. Useful notes:
 - **Claude Code** keeps its own auto-memory. To make Lore the only memory system, set `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` or `"autoMemoryEnabled": false` in `~/.claude/settings.json`.
 - **Codex** may ask you to trust Lore hooks under `/hooks`. If `/plugins` still shows Lore as installable, install it there; the script has already configured MCP and user-level hooks.
 - **OpenCode** reads `~/.lore/config.json`. The installer skips OpenCode cleanly when the `opencode` CLI is absent. See [OpenCode notes](#opencode-notes) for compatibility details.
+- **ZCode** uses native process hooks only. From a source checkout: `zcode plugins marketplace add /path/to/lore/zcode-plugin && zcode plugins install lore@lore && zcode plugins enable lore@lore`. Create `core://agent/zcode` in Lore setup if that node is still empty.
 
 Generic MCP URL shape:
 
@@ -178,10 +180,9 @@ The Skill flow is separate:
 
 1. Skill recall emits a discovery-only `<lore-skills>` candidate with `skill_id` and `version`
 2. the agent calls `lore_skill_get(skill_id)`
-3. the runtime downloads the complete package into `${LORE_HOME:-~/.lore}/skill-artifacts/<project-id>/<skill-name>/` when missing, or refreshes server-managed files when the server version changed
-4. the tool returns the full `SKILL.md` content and absolute `skill_dir`
-5. the agent uses that writable directory like a normal local Skill; reports, caches, and other outputs remain inside it
-6. same-version local edits are preserved; an upgrade replaces only server-managed paths and preserves extra local outputs
+3. the runtime downloads the complete package into a local work copy at `${LORE_HOME:-~/.lore}/skill-artifacts/<project-id>/<skill-name>/` when missing, or updates the server-managed package files when the server version differs
+4. the tool returns the full `SKILL.md` content and absolute `skill_dir`; server-managed package files are read-only (0444 on POSIX) and the skill directory stays writable (0755) so agents can create local outputs, caches, and artifacts directly inside the same copy
+5. extra local files never trigger tamper and survive getSkill calls and version upgrades; a version mismatch updates only the server-managed package files
 
 Useful pages:
 

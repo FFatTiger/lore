@@ -14,6 +14,10 @@ interface SharedLoreConfig {
   base_url?: string;
   api_token?: string;
   lore_home?: string;
+  server_profile?: {
+    base_url?: string;
+    capabilities?: Record<string, boolean>;
+  };
 }
 
 export function resolveLoreHome(env: NodeJS.ProcessEnv = process.env): string {
@@ -58,6 +62,18 @@ export function pickPluginConfig(api: any) {
   const loreHome = pickString(cfg.loreHome)
     || pickString(shared.lore_home)
     || resolveLoreHome();
+  const explicitSkills = typeof cfg.skillsEnabled === "boolean" ? cfg.skillsEnabled : undefined;
+  const envSkills = process.env.LORE_SKILLS_ENABLED === "1"
+    ? true
+    : process.env.LORE_SKILLS_ENABLED === "0" ? false : undefined;
+  const profileBase = pickString(shared.server_profile?.base_url).replace(/\/+$/, "").toLowerCase();
+  const profileMatches = Boolean(profileBase) && profileBase === normalizeBaseUrl(baseUrl).toLowerCase();
+  const profileSkills = profileMatches ? shared.server_profile?.capabilities?.skills === true : undefined;
+  // Explicit false remains a local kill switch. Otherwise a current matching
+  // server profile is authoritative so stale plugin config cannot re-enable Skills.
+  const skillsEnabled = explicitSkills === false || envSkills === false
+    ? false
+    : profileSkills ?? explicitSkills ?? envSkills ?? false;
 
   return {
     baseUrl: normalizeBaseUrl(baseUrl),
@@ -67,6 +83,7 @@ export function pickPluginConfig(api: any) {
     injectPromptGuidance: cfg.injectPromptGuidance !== false,
     startupHealthcheck: cfg.startupHealthcheck !== false,
     recallEnabled: cfg.recallEnabled !== false,
+    skillsEnabled,
     recallMinDisplayScore: Number.isFinite(cfg.minDisplayScore) ? Number(cfg.minDisplayScore) : DEFAULT_RECALL_MIN_DISPLAY_SCORE,
     recallMaxDisplayItems: Number.isFinite(cfg.maxDisplayItems) ? Number(cfg.maxDisplayItems) : DEFAULT_RECALL_MAX_DISPLAY_ITEMS,
     recallScorePrecision: Number.isFinite(cfg.scorePrecision) ? Number(cfg.scorePrecision) : DEFAULT_RECALL_SCORE_PRECISION,

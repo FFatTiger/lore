@@ -17,7 +17,7 @@ export const LIFECYCLE_PROTOCOL_VERSION = 'lore.lifecycle.v1';
 
 export type LifecycleEventName = 'session.start' | 'prompt.submit';
 export type HostOutputMode = 'none' | 'stdout_json' | 'stdout_text' | 'return_value';
-const LIFECYCLE_RUNTIME_FAMILIES: ReadonlySet<ClientType> = new Set(['claudecode', 'codex', 'openclaw', 'hermes', 'pi', 'opencode']);
+const LIFECYCLE_RUNTIME_FAMILIES: ReadonlySet<ClientType> = new Set(['claudecode', 'codex', 'openclaw', 'hermes', 'pi', 'opencode', 'zcode']);
 
 export interface LifecycleEventInput {
   protocol_version?: string;
@@ -120,7 +120,7 @@ function renderHostOutput(args: {
   const context = args.context.trim();
   if (!context) return { mode: 'none', value: null };
 
-  if (args.family === 'codex') {
+  if (args.family === 'codex' || args.family === 'zcode') {
     const fallback = args.eventName === 'session.start' ? 'SessionStart' : 'UserPromptSubmit';
     return codexJson(nativeEventName(args.nativeName, fallback), context);
   }

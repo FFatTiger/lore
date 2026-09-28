@@ -4,7 +4,7 @@ Client-local MCP adapter that owns **all** `lore_skill_*` tools for Codex and Cl
 
 - `lore_skill_list`
 - `lore_skill_search`
-- `lore_skill_get` (materializes a writable local work copy; returns `SKILL.md` + absolute `skill_dir`)
+- `lore_skill_get` (fetches a skill into a local work copy on demand; returns `SKILL.md` + absolute `skill_dir`)
 - `lore_skill_create`
 - `lore_skill_update` (requires positive integer `expected_version`)
 - `lore_skill_delete`
@@ -44,4 +44,4 @@ Release ZIPs for Codex / Claude Code include this directory (and `vendor/skill-w
 - remote HTTP MCP as `lore` (memory)
 - local stdio MCP as `lore-skills` (skills)
 
-Work-copy materialization uses vendored helpers under `vendor/` (or `shared/skill-workcopy` when present in the monorepo) and stores copies at `${LORE_HOME:-~/.lore}/skill-artifacts/<project-id>/<skill-name>/`.
+Work-copy materialization uses vendored helpers under `vendor/` (or `shared/skill-workcopy` when present in the monorepo) and stores local work copies at `${LORE_HOME:-~/.lore}/skill-artifacts/<project-id>/<skill-name>/`. Server-managed package files are read-only (0444); the skill directory itself stays writable so agents create local outputs and caches directly inside the same copy. Extra local files never trigger tamper and survive same-version fetches and version upgrades. A version mismatch updates only the managed package files. Downloads and updates happen on demand via `lore_skill_get` — there is no session-start bulk reconcile. `tools/list` and `tools/call` stay fail-closed when Skills are disabled.

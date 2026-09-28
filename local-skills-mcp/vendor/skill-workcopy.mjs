@@ -1,6 +1,29 @@
 /**
- * Lore Skill writable work-copy core.
+ * Lore Skill work-copy core.
  * dependency-free Node ESM (Node 20+). Schema: lore.skill.workcopy.v1
+ *
+ * Contract:
+ * - The Core/server skill package is the source of truth.
+ * - getSkill ensures a local work copy: it downloads the complete server package
+ *   when missing, updates the server-managed package files when the server version
+ *   differs, and reuses the local copy when the version matches and the managed
+ *   files are intact.
+ * - Server-managed package files (those listed in marker.managed_files) are
+ *   read-only (0444 on POSIX). The installed skill directory itself stays writable
+ *   (0755) so agents can create local outputs, artifacts, and cache files directly
+ *   inside the same copy. Those extra local files are valid, local-only, never
+ *   uploaded, and survive getSkill calls and version upgrades.
+ * - Integrity/tamper checks cover ONLY the server-managed paths from the marker;
+ *   extra local files never make a copy tampered.
+ * - On upgrade, only obsolete server-managed paths are removed and incoming
+ *   server-managed files are written; extra local files are preserved. If an
+ *   obsolete managed path or a new managed path conflicts with a local artifact
+ *   (file/dir shape or same path), the upgrade fails safely with no damage.
+ * - No separate artifact directory and no artifact-create tool.
+ * - No session-start bulk reconcile/download; all download/update is on-demand
+ *   via getSkill. Recall is identity-only and never injects local paths.
+ * - Server-managed files are chmod 0444 on POSIX (the package model has no
+ *   executable bit, so managed scripts are invoked through their interpreter).
  *
  * Canonical source of truth lives in shared/skill-workcopy/.
  * Plugin adapters import generated copies under <plugin>/vendor/skill-workcopy/.
@@ -17,8 +40,9 @@ export const LORE_SKILL_SCHEMA = 'lore.skill.workcopy.v1';
 export const LEGACY_MIRROR_SCHEMA = 'lore.skill.mirror.v1';
 export const SKILL_MD = 'SKILL.md';
 
-const WORK_FILE_MODE = 0o644;
-const WORK_DIR_MODE = 0o755;
+const WORK_FILE_MODE = 0o644; // staging / backup trees (writable)
+const WORK_DIR_MODE = 0o755; // installed directories (writable for local outputs)
+const READONLY_FILE_MODE = 0o444; // installed server-managed files + marker
 
 // ---- path / home helpers ----
 
@@ -110,7 +134,7 @@ export function skillRevisionOf(value) {
 }
 
 /**
- * Validate a list of managed relative paths for a work-copy marker/payload.
+ * Validate a list of managed relative paths for a mirror marker/payload.
  * Rejects unsafe paths, duplicates, marker self-reference, and parent/child tree collisions.
  */
 export function validateManagedFileList(rawPaths, opts) {
@@ -215,10 +239,10 @@ export function computeManifestHash(files) {
   return sha256Text(payload);
 }
 
-// ---- marker / local work copy inspection ----
+// ---- marker / local work-copy inspection ----
 
 /**
- * Read and validate a work-copy marker. Invalid / unsafe markers return null so callers never
+ * Read and validate a mirror marker. Invalid / unsafe markers return null so callers never
  * act on traversal paths or corrupt managed_files lists.
  */
 export function readWorkCopyMarker(dir) {
@@ -271,6 +295,7 @@ export function readWorkCopyMarker(dir) {
       synced_at: typeof data.synced_at === 'string' ? data.synced_at : '',
       revision_hash: typeof data.revision_hash === 'string' ? data.revision_hash : undefined,
       manifest_hash: typeof data.manifest_hash === 'string' ? data.manifest_hash : undefined,
+      readonly: data.readonly === true,
     };
   } catch {
     return null;
@@ -309,26 +334,25 @@ function lstatOrNull(target) {
 }
 
 /**
- * Collect relative regular-file paths under root (no symlink follow).
- * Rejects symlinks and special entries. Skips the marker file.
+ * Hash ONLY the server-managed files listed in the work-copy marker.
+ * Extra local files are never hashed, so they cannot trigger tamper.
+ * Throws when a managed file is missing or is not a regular file.
  */
-function collectRegularRelativeFiles(root, current = root, out = []) {
-  const entries = fs.readdirSync(current, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.name === LORE_SKILL_MARKER && current === root) continue;
-    const full = path.join(current, entry.name);
-    if (entry.isSymbolicLink()) {
-      throw new Error(`symbolic links are not allowed in skill work copies: ${path.relative(root, full)}`);
+export function hashLocalSkillFiles(dir) {
+  const marker = readWorkCopyMarker(dir);
+  if (!marker) throw new Error(`missing or invalid work-copy marker: ${dir}`);
+  const files = [];
+  for (const rel of marker.managed_files) {
+    const full = path.join(dir, ...rel.split('/'));
+    const st = lstatOrNull(full);
+    if (!st) throw new Error(`missing managed file: ${rel}`);
+    if (st.isSymbolicLink() || !st.isFile()) {
+      throw new Error(`managed path is not a regular file: ${rel}`);
     }
-    if (entry.isDirectory()) {
-      collectRegularRelativeFiles(root, full, out);
-    } else if (entry.isFile()) {
-      out.push(path.relative(root, full).split(path.sep).join('/'));
-    } else {
-      throw new Error(`unsupported filesystem entry in skill work copy: ${path.relative(root, full)}`);
-    }
+    const buf = fs.readFileSync(full);
+    files.push({ path: rel, sha256: sha256Buffer(buf), size: buf.length });
   }
-  return out;
+  return { files, manifest_hash: computeManifestHash(files) };
 }
 
 function ensureDir(dir, mode = WORK_DIR_MODE) {
@@ -363,82 +387,355 @@ function rmrf(target) {
 }
 
 /**
- * Copy a directory tree without following symlinks. Rejects symlinks and special entries.
+ * Apply installed permissions (POSIX only):
+ * - Installed skill directory and managed-file ancestors stay writable (0755) so
+ *   agents can create local outputs directly inside the same copy.
+ * - Server-managed files and the marker are chmod 0444 (read-only).
+ * - Extra local files/directories keep whatever mode they were created with.
  */
-function copyTreeNoFollow(src, dest) {
-  const st = fs.lstatSync(src);
-  if (st.isSymbolicLink()) {
-    throw new Error(`symbolic links are not allowed in skill work copies: ${src}`);
-  }
-  if (st.isDirectory()) {
-    ensureDir(dest, WORK_DIR_MODE);
-    for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-      if (entry.isSymbolicLink()) {
-        throw new Error(`symbolic links are not allowed in skill work copies: ${path.join(src, entry.name)}`);
-      }
-      if (entry.isDirectory()) {
-        copyTreeNoFollow(path.join(src, entry.name), path.join(dest, entry.name));
-      } else if (entry.isFile()) {
-        const from = path.join(src, entry.name);
-        const to = path.join(dest, entry.name);
-        fs.copyFileSync(from, to);
-        if (process.platform !== 'win32') {
-          try { fs.chmodSync(to, WORK_FILE_MODE); } catch { /* ignore */ }
-        }
-      } else {
-        throw new Error(`unsupported filesystem entry in skill work copy: ${path.join(src, entry.name)}`);
-      }
-    }
-  } else if (st.isFile()) {
-    ensureDir(path.dirname(dest), WORK_DIR_MODE);
-    fs.copyFileSync(src, dest);
-    if (process.platform !== 'win32') {
-      try { fs.chmodSync(dest, WORK_FILE_MODE); } catch { /* ignore */ }
-    }
-  } else {
-    throw new Error(`unsupported filesystem entry in skill work copy: ${src}`);
-  }
-}
-
-function chmodTreeWritable(root) {
+function applyInstalledModes(dir, managedFiles) {
   if (process.platform === 'win32') return;
-  const walk = (current) => {
-    const st = fs.lstatSync(current);
-    if (st.isSymbolicLink()) return;
-    if (st.isDirectory()) {
-      fs.chmodSync(current, WORK_DIR_MODE);
-      for (const entry of fs.readdirSync(current)) {
-        walk(path.join(current, entry));
-      }
-    } else if (st.isFile()) {
-      fs.chmodSync(current, WORK_FILE_MODE);
+  try { fs.chmodSync(dir, WORK_DIR_MODE); } catch { /* ignore */ }
+  try { fs.chmodSync(path.join(dir, LORE_SKILL_MARKER), READONLY_FILE_MODE); } catch { /* ignore */ }
+  const ancestorDirs = new Set();
+  for (const rel of managedFiles) {
+    try { fs.chmodSync(path.join(dir, ...rel.split('/')), READONLY_FILE_MODE); } catch { /* ignore */ }
+    const segments = rel.split('/');
+    for (let i = 1; i < segments.length; i += 1) {
+      ancestorDirs.add(segments.slice(0, i).join('/'));
     }
-  };
-  walk(root);
+  }
+  for (const rel of ancestorDirs) {
+    try { fs.chmodSync(path.join(dir, ...rel.split('/')), WORK_DIR_MODE); } catch { /* ignore */ }
+  }
 }
 
-/** Remove empty parent directories under root after deleting a managed file. Never recurse into non-empty dirs. */
-function pruneEmptyParents(root, relativeFile) {
-  const segments = relativeFile.split('/');
-  for (let i = segments.length - 1; i >= 1; i -= 1) {
-    const dir = path.join(root, ...segments.slice(0, i));
-    try {
-      const entries = fs.readdirSync(dir);
-      if (entries.length > 0) return;
-      fs.rmdirSync(dir);
-    } catch {
-      return;
+/**
+ * Copy a directory tree (used to seed a fresh stage from an existing valid work copy).
+ * Symlinks inside extra local files are copied verbatim; managed files are overwritten
+ * or removed during materialization regardless.
+ */
+function copyTree(src, dest) {
+  fs.cpSync(src, dest, {
+    recursive: true,
+    force: true,
+    errorOnExist: false,
+    verbatimSymlinks: true,
+  });
+}
+
+/** Set of directory paths that are strict ancestors of managed files. */
+function managedDirPrefixes(managedSet) {
+  const prefixes = new Set();
+  for (const rel of managedSet) {
+    const segments = rel.split('/');
+    for (let i = 1; i < segments.length; i += 1) {
+      prefixes.add(segments.slice(0, i).join('/'));
+    }
+  }
+  return prefixes;
+}
+
+function conflictError(message, code = 'LOCAL_ARTIFACT_CONFLICT') {
+  const err = new Error(message);
+  err.code = code;
+  return err;
+}
+
+/**
+ * Validate ancestors of marker-owned paths before copying, chmodding, or deleting.
+ * An intermediate symlink would make ordinary path operations escape the work-copy
+ * root; a non-directory ancestor is structural tamper. Exact managed paths are not
+ * checked here because materialization restores those safely from server state.
+ */
+function assertManagedPathAncestorsSafe(root, managedFiles) {
+  for (const rel of managedFiles) {
+    const segments = rel.split('/');
+    for (let i = 1; i < segments.length; i += 1) {
+      const ancestor = segments.slice(0, i).join('/');
+      const st = lstatOrNull(path.join(root, ...segments.slice(0, i)));
+      if (!st) continue;
+      if (st.isSymbolicLink()) {
+        throw conflictError(
+          `managed path ${rel} has symlink ancestor ${ancestor}; refusing out-of-copy access`,
+        );
+      }
+      if (!st.isDirectory()) {
+        throw conflictError(
+          `managed path ${rel} has non-directory ancestor ${ancestor}`,
+        );
+      }
     }
   }
 }
 
+/**
+ * Remove obsolete managed files from the staged tree (files that were managed in the
+ * old marker but are not part of the incoming package). The marker owns these exact
+ * paths, so regular files and symlinks at them are removed. An empty directory at a
+ * formerly-managed file path is structural tamper and is removed; a non-empty directory
+ * may contain local outputs, so it fails safely instead of deleting them.
+ */
+function removeObsoleteManaged(stageRoot, oldManaged, newManagedSet) {
+  const obsolete = oldManaged.filter((rel) => !newManagedSet.has(rel));
+  if (obsolete.length === 0) return;
+  // Remove deepest first so nested obsolete files disappear before their parents.
+  obsolete
+    .sort((a, b) => b.split('/').length - a.split('/').length)
+    .forEach((rel) => {
+      const full = path.join(stageRoot, ...rel.split('/'));
+      const st = lstatOrNull(full);
+      if (!st) return;
+      if (st.isDirectory()) {
+        if (fs.readdirSync(full).length > 0) {
+          throw conflictError(
+            `obsolete managed path ${rel} is now a non-empty local directory (local artifact)`,
+          );
+        }
+        fs.rmdirSync(full);
+        return;
+      }
+      // The old marker owns this exact path. A symlink here is tamper, not an extra.
+      fs.rmSync(full, { force: true });
+    });
+
+  // Prune empty directories that were managed ancestors (never extras).
+  const prefixes = managedDirPrefixes(new Set(oldManaged));
+  const sorted = [...prefixes].sort((a, b) => b.split('/').length - a.split('/').length);
+  for (const rel of sorted) {
+    const full = path.join(stageRoot, ...rel.split('/'));
+    const st = lstatOrNull(full);
+    if (!st || !st.isDirectory()) continue;
+    try {
+      if (fs.readdirSync(full).length === 0) fs.rmdirSync(full);
+    } catch { /* ignore */ }
+  }
+}
+
+/**
+ * Detect conflicts between incoming managed files and preserved local extras in the
+ * staged tree. Throws (leaving the stage untouched and the install intact) when:
+ * - a new managed path already exists as an extra file/dir/symlink, or
+ * - a new managed path must live under an ancestor that is a file/symlink.
+ * Managed paths already owned by the old marker are restored from server state: regular
+ * files are overwritten, symlinks are unlinked, and empty replacement directories are
+ * removed. A non-empty replacement directory fails safely because it may contain outputs.
+ */
+function assertNoManagedExtraConflicts(stageRoot, newManagedFiles, oldManagedSet) {
+  for (const rel of newManagedFiles) {
+    const full = path.join(stageRoot, ...rel.split('/'));
+    const st = lstatOrNull(full);
+    if (st) {
+      if (oldManagedSet.has(rel)) {
+        if (st.isSymbolicLink()) {
+          fs.unlinkSync(full);
+        } else if (st.isDirectory()) {
+          if (fs.readdirSync(full).length > 0) {
+            throw conflictError(
+              `managed path ${rel} is now a non-empty local directory (local artifact)`,
+            );
+          }
+          fs.rmdirSync(full);
+        } else if (!st.isFile()) {
+          throw conflictError(`managed path ${rel} is an unsupported local filesystem entry`);
+        }
+        // A regular file at an old managed path is overwritten below.
+      } else if (st.isDirectory()) {
+        throw conflictError(
+          `new managed path ${rel} conflicts with an existing local directory (local artifact)`,
+        );
+      } else {
+        throw conflictError(
+          `new managed path ${rel} conflicts with an existing local file (local artifact)`,
+        );
+      }
+    }
+    const segments = rel.split('/');
+    for (let i = 1; i < segments.length; i += 1) {
+      const ancestor = segments.slice(0, i).join('/');
+      const ancSt = lstatOrNull(path.join(stageRoot, ...ancestor.split('/')));
+      if (ancSt && !ancSt.isDirectory()) {
+        throw conflictError(
+          `new managed path ${rel} must live under ${ancestor}, which is a local file (local artifact)`,
+        );
+      }
+    }
+  }
+}
+
+/**
+ * Assert installPath is either absent, or a valid managed mirror directory.
+ * Refuses files, symlinks, special entries, and unmanaged directories.
+ */
+function assertInstallPathReplaceable(installPath) {
+  const st = lstatOrNull(installPath);
+  if (!st) return null;
+
+  if (st.isSymbolicLink()) {
+    const err = new Error(`unmanaged local symlink blocks install: ${installPath}`);
+    err.code = 'UNMANAGED_CONFLICT';
+    throw err;
+  }
+  if (!st.isDirectory()) {
+    const err = new Error(`unmanaged local file blocks install: ${installPath}`);
+    err.code = 'UNMANAGED_CONFLICT';
+    throw err;
+  }
+
+  const marker = readWorkCopyMarker(installPath);
+  if (!marker) {
+    const markerPath = path.join(installPath, LORE_SKILL_MARKER);
+    if (pathExists(markerPath)) {
+      const err = new Error(`invalid work-copy marker blocks install: ${installPath}`);
+      err.code = 'INVALID_MARKER';
+      throw err;
+    }
+    const err = new Error(`unmanaged local directory blocks install: ${installPath}`);
+    err.code = 'UNMANAGED_CONFLICT';
+    throw err;
+  }
+  return marker;
+}
+
+/**
+ * Materialize (or upgrade/migrate) a local work copy from server detail.
+ *
+ * - Missing install: full stage + atomic move.
+ * - Existing managed work copy (marker with managed_files): the stage is seeded from
+ *   the existing copy so extra local files are preserved. Obsolete managed files are
+ *   removed, incoming managed files are written, and the marker is refreshed.
+ * - Legacy markers (no managed_files boundary) have no preserved extras: they are
+ *   rematerialized fresh from server state.
+ * - A new managed path that conflicts with a preserved local artifact (file/dir shape
+ *   or same path) fails safely with no damage to the installed copy.
+ * - Unmanaged file/symlink/directory or invalid marker: refused.
+ * - Installed directories are writable (0755, POSIX); server-managed files and the
+ *   marker are 0444. Stage and backup stay writable internally.
+ */
+export function materializeSkillWorkCopy(opts) {
+  const { loreHome, projectId, detail } = opts;
+  const skillName = sanitizeSegment(String(detail.name || ''));
+  const { files, manifest_hash } = validateSkillPayload(detail);
+  const managedFiles = validateManagedFileList(files.map((f) => f.path), { requireSkillMd: true });
+  const serverVersion = skillVersionOf(detail) ?? '';
+  const serverRevision = skillRevisionOf(detail) || undefined;
+  const skillId = skillIdOf(detail);
+
+  const installPath = skillInstallPath(loreHome, projectId, skillName);
+  const existingMarker = assertInstallPathReplaceable(installPath);
+  const existingManaged = existingMarker && existingMarker.schema === LORE_SKILL_SCHEMA
+    ? existingMarker.managed_files
+    : [];
+
+  // This must happen before copyTree, chmod, or obsolete-path removal: path operations
+  // must never traverse a symlinked ancestor outside the installed work copy.
+  if (existingManaged.length > 0) {
+    assertManagedPathAncestorsSafe(installPath, existingManaged);
+  }
+
+  const stagingBase = stagingRoot(loreHome, projectId);
+  ensureDir(stagingBase, WORK_DIR_MODE);
+  const stageId = `${skillName}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+  const stagePath = path.join(stagingBase, stageId);
+  const finalStage = path.join(stagingBase, `${stageId}.final`);
+
+  try {
+    ensureDir(stagePath, WORK_DIR_MODE);
+
+    // Seed the stage from the existing valid managed copy (preserves local extras).
+    // Legacy markers have no managed_files boundary, so build fresh instead.
+    if (existingMarker && existingMarker.schema === LORE_SKILL_SCHEMA && pathExists(installPath)) {
+      copyTree(installPath, stagePath);
+      // Seeded server-managed files + marker are 0444; make them writable in the stage
+      // so they can be replaced/removed. Extra local files keep their original modes.
+      for (const rel of [...existingManaged, LORE_SKILL_MARKER]) {
+        const seeded = path.join(stagePath, ...rel.split('/'));
+        const seededStat = lstatOrNull(seeded);
+        if (seededStat && seededStat.isFile()) {
+          try { fs.chmodSync(seeded, WORK_FILE_MODE); } catch { /* ignore */ }
+        }
+      }
+    }
+
+    const newManagedSet = new Set(managedFiles);
+    removeObsoleteManaged(stagePath, existingManaged, newManagedSet);
+    assertNoManagedExtraConflicts(stagePath, managedFiles, new Set(existingManaged));
+
+    // Write incoming managed files.
+    for (const file of files) {
+      const dest = path.join(stagePath, ...file.path.split('/'));
+      ensureDir(path.dirname(dest), WORK_DIR_MODE);
+      fs.writeFileSync(dest, file.buffer, { mode: WORK_FILE_MODE });
+    }
+
+    const marker = {
+      schema: LORE_SKILL_SCHEMA,
+      project_id: projectId,
+      skill_id: skillId,
+      name: skillName,
+      version: serverVersion,
+      managed_files: managedFiles,
+      revision_hash: serverRevision,
+      manifest_hash,
+      readonly: true,
+      synced_at: new Date().toISOString(),
+    };
+    fs.writeFileSync(path.join(stagePath, LORE_SKILL_MARKER), `${JSON.stringify(marker, null, 2)}\n`, {
+      mode: WORK_FILE_MODE,
+      encoding: 'utf-8',
+    });
+
+    if (pathExists(finalStage)) rmrf(finalStage);
+    fs.renameSync(stagePath, finalStage);
+
+    const installedBase = projectWorkCopyRoot(loreHome, projectId);
+    ensureDir(installedBase, WORK_DIR_MODE);
+    const backupPath = path.join(stagingBase, `${skillName}.backup-${Date.now()}`);
+    if (pathExists(installPath)) {
+      // Only rename a previously validated managed directory. Make it writable first
+      // so legacy 0555 read-only installs can be renamed/rolled back on all POSIX.
+      makeTreeWritable(installPath);
+      fs.renameSync(installPath, backupPath);
+    }
+    try {
+      fs.renameSync(finalStage, installPath);
+    } catch (error) {
+      if (pathExists(backupPath) && !pathExists(installPath)) {
+        try {
+          fs.renameSync(backupPath, installPath);
+        } catch { /* ignore */ }
+      }
+      throw error;
+    }
+    if (pathExists(backupPath)) rmrf(backupPath);
+    applyInstalledModes(installPath, managedFiles);
+    return { installPath, marker };
+  } catch (error) {
+    // Failed staging never damages the existing copy (still at installPath or restored).
+    throw error;
+  } finally {
+    if (pathExists(stagePath)) rmrf(stagePath);
+    if (pathExists(finalStage)) rmrf(finalStage);
+  }
+}
+
+/** @deprecated Prefer materializeSkillWorkCopy. */
+export function writeSkillMirrorAtomic(opts) {
+  return materializeSkillWorkCopy(opts);
+}
+
+/**
+ * Inspect a local work copy. Returns 'tampered' only when a server-managed file
+ * (from marker.managed_files) is missing, is not a regular file, or its hash does not
+ * match the marker manifest_hash. Extra local files never trigger tamper.
+ */
 export function inspectLocalWorkCopy(loreHome, projectId, skillName, expected) {
   const dir = skillInstallPath(loreHome, projectId, skillName);
   const rootStat = lstatOrNull(dir);
   if (!rootStat) {
-    return { name: skillName, skill_id: expected?.skill_id, state: 'missing', message: 'work copy not installed' };
+    return { name: skillName, skill_id: expected?.skill_id, state: 'missing', message: 'mirror not installed' };
   }
-  // Symlinks at install root are never treated as work-copy directories.
+  // Symlinks at install root are never treated as mirror directories.
   if (rootStat.isSymbolicLink()) {
     return {
       name: skillName,
@@ -454,20 +751,19 @@ export function inspectLocalWorkCopy(loreHome, projectId, skillName, expected) {
       skill_id: expected?.skill_id,
       state: 'unmanaged',
       path: dir,
-      message: 'install path exists and is not a managed work-copy directory',
+      message: 'install path exists and is not a managed mirror directory',
     };
   }
 
   const marker = readWorkCopyMarker(dir);
   if (!marker) {
-    // Distinguishes missing/corrupt marker vs unsupported schema that failed validation.
     const markerPath = path.join(dir, LORE_SKILL_MARKER);
     if (pathExists(markerPath)) {
       return {
         name: skillName,
         state: 'invalid',
         path: dir,
-        message: 'work-copy marker is missing, corrupt, or contains unsafe managed_files',
+        message: 'mirror marker is missing, corrupt, or contains unsafe managed_files',
       };
     }
     return {
@@ -485,7 +781,7 @@ export function inspectLocalWorkCopy(loreHome, projectId, skillName, expected) {
       state: 'invalid',
       path: dir,
       version: marker.version,
-      message: `unsupported work-copy marker schema: ${marker.schema}`,
+      message: `unsupported mirror marker schema: ${marker.schema}`,
     };
   }
   if (marker.project_id !== projectId || marker.name !== skillName) {
@@ -495,7 +791,7 @@ export function inspectLocalWorkCopy(loreHome, projectId, skillName, expected) {
       state: 'invalid',
       path: dir,
       version: marker.version,
-      message: 'work-copy marker identity does not match its managed path',
+      message: 'mirror marker identity does not match its managed path',
     };
   }
 
@@ -505,10 +801,50 @@ export function inspectLocalWorkCopy(loreHome, projectId, skillName, expected) {
     return {
       name: skillName,
       skill_id: marker.skill_id,
-      state: 'invalid',
+      state: 'tampered',
       path: dir,
       version: marker.version,
+      revision_hash: marker.revision_hash,
       message: 'SKILL.md missing',
+    };
+  }
+
+  // Integrity: hash ONLY the managed files from the marker (extras are ignored).
+  if (marker.manifest_hash) {
+    let localHash;
+    try {
+      localHash = hashLocalSkillFiles(dir).manifest_hash;
+    } catch (error) {
+      return {
+        name: skillName,
+        skill_id: marker.skill_id,
+        state: 'tampered',
+        path: dir,
+        version: marker.version,
+        revision_hash: marker.revision_hash,
+        message: error?.message || 'failed to verify managed files',
+      };
+    }
+    if (localHash !== marker.manifest_hash) {
+      return {
+        name: skillName,
+        skill_id: marker.skill_id,
+        state: 'tampered',
+        path: dir,
+        version: marker.version,
+        revision_hash: marker.revision_hash,
+        message: 'managed file hashes do not match marker manifest_hash',
+      };
+    }
+  } else {
+    // Pre-manifest workcopy markers cannot be integrity-checked; rematerialize once.
+    return {
+      name: skillName,
+      skill_id: marker.skill_id,
+      state: 'tampered',
+      path: dir,
+      version: marker.version,
+      message: 'mirror marker missing manifest_hash; rematerialize required',
     };
   }
 
@@ -519,7 +855,20 @@ export function inspectLocalWorkCopy(loreHome, projectId, skillName, expected) {
       state: 'invalid',
       path: dir,
       version: marker.version,
+      revision_hash: marker.revision_hash,
       message: `skill_id mismatch: local ${marker.skill_id} vs expected ${expected.skill_id}`,
+    };
+  }
+
+  if (expected?.revision_hash && marker.revision_hash !== expected.revision_hash) {
+    return {
+      name: skillName,
+      skill_id: marker.skill_id,
+      state: 'outdated',
+      path: dir,
+      version: marker.version,
+      revision_hash: marker.revision_hash,
+      message: `revision outdated: local ${marker.revision_hash} vs expected ${expected.revision_hash}`,
     };
   }
 
@@ -530,25 +879,37 @@ export function inspectLocalWorkCopy(loreHome, projectId, skillName, expected) {
       state: 'outdated',
       path: dir,
       version: marker.version,
+      revision_hash: marker.revision_hash,
       message: `version outdated: local ${marker.version} vs expected ${expected.version}`,
     };
   }
 
-  // Same-version local edits are intentional work-copy state, never "tampered".
-  // Legacy mirrors still report ready when identity/version match; ensureSkillWorkCopy migrates them.
+  if (expected?.manifest_hash && marker.manifest_hash !== expected.manifest_hash) {
+    return {
+      name: skillName,
+      skill_id: marker.skill_id,
+      state: 'outdated',
+      path: dir,
+      version: marker.version,
+      revision_hash: marker.revision_hash,
+      message: 'manifest_hash outdated',
+    };
+  }
+
   return {
     name: skillName,
     skill_id: marker.skill_id,
     state: 'ready',
     path: dir,
     version: marker.version,
+    revision_hash: marker.revision_hash,
   };
 }
 
 /** @deprecated Prefer inspectLocalWorkCopy. */
 export const inspectLocalMirror = inspectLocalWorkCopy;
 
-// ---- transport validation + materialize ----
+// ---- transport validation ----
 
 export function validateSkillPayload(detail) {
   const name = String(detail.name || '').trim();
@@ -601,242 +962,14 @@ export function validateSkillPayload(detail) {
 }
 
 /**
- * Resolve previous managed file list for an existing install.
- * - Valid workcopy marker: use validated managed_files.
- * - Legacy mirror: treat every regular file except the marker as previously managed.
- * - Rejects trees containing symlinks/special entries (caller must not act on them).
- */
-function previousManagedFilesForInstall(installPath, marker, nextManagedFiles = []) {
-  if (marker.schema === LORE_SKILL_SCHEMA) {
-    return validateManagedFileList(marker.managed_files, { requireSkillMd: true });
-  }
-  if (marker.schema === LEGACY_MIRROR_SCHEMA) {
-    // Legacy read-only mirrors did not record managed_files. Preserve unknown
-    // paths rather than guessing that every regular file belongs to Core: a
-    // user may already have placed outputs in the directory. Only paths that
-    // are also present in the incoming server package are safe to classify as
-    // managed during migration.
-    const incoming = new Set(nextManagedFiles);
-    const files = collectRegularRelativeFiles(installPath).filter((rel) => incoming.has(rel));
-    return validateManagedFileList(files, { requireSkillMd: false });
-  }
-  throw new Error(`unsupported marker schema for upgrade: ${marker.schema}`);
-}
-
-/**
- * Assert installPath is either absent, or a valid managed work-copy directory.
- * Refuses files, symlinks, special entries, and unmanaged directories.
- */
-function assertInstallPathReplaceable(installPath) {
-  const st = lstatOrNull(installPath);
-  if (!st) return null;
-
-  if (st.isSymbolicLink()) {
-    const err = new Error(`unmanaged local symlink blocks install: ${installPath}`);
-    err.code = 'UNMANAGED_CONFLICT';
-    throw err;
-  }
-  if (!st.isDirectory()) {
-    const err = new Error(`unmanaged local file blocks install: ${installPath}`);
-    err.code = 'UNMANAGED_CONFLICT';
-    throw err;
-  }
-
-  const marker = readWorkCopyMarker(installPath);
-  if (!marker) {
-    const markerPath = path.join(installPath, LORE_SKILL_MARKER);
-    if (pathExists(markerPath)) {
-      const err = new Error(`invalid work-copy marker blocks install: ${installPath}`);
-      err.code = 'INVALID_MARKER';
-      throw err;
-    }
-    const err = new Error(`unmanaged local directory blocks install: ${installPath}`);
-    err.code = 'UNMANAGED_CONFLICT';
-    throw err;
-  }
-  return marker;
-}
-
-/**
- * Remove a managed path in staging before writing the new package.
- * Files are unlinked; empty directories are rmdir'd. Non-empty directories that still
- * contain local extras fail rather than recursively deleting agent outputs.
- */
-function removeObsoleteManagedPath(stagePath, oldPath) {
-  const full = path.join(stagePath, ...oldPath.split('/'));
-  const st = lstatOrNull(full);
-  if (!st) return;
-  if (st.isSymbolicLink()) {
-    throw new Error(`refusing to delete symlink managed path: ${oldPath}`);
-  }
-  if (st.isFile()) {
-    fs.unlinkSync(full);
-    pruneEmptyParents(stagePath, oldPath);
-    return;
-  }
-  if (st.isDirectory()) {
-    const entries = fs.readdirSync(full);
-    if (entries.length === 0) {
-      fs.rmdirSync(full);
-      pruneEmptyParents(stagePath, oldPath);
-      return;
-    }
-    throw new Error(
-      `cannot remove obsolete managed directory ${oldPath}: still contains local files`,
-    );
-  }
-  throw new Error(`unsupported filesystem entry at obsolete managed path: ${oldPath}`);
-}
-
-/**
- * Prepare destination for writing a managed file. If a directory occupies the path
- * (e.g. file→directory or directory→file transition after obsolete cleanup), remove it
- * only when empty; otherwise fail so local extras are preserved.
- */
-function prepareManagedFileDestination(stagePath, relPath) {
-  const dest = path.join(stagePath, ...relPath.split('/'));
-  const st = lstatOrNull(dest);
-  if (!st) {
-    ensureDir(path.dirname(dest), WORK_DIR_MODE);
-    return dest;
-  }
-  if (st.isSymbolicLink()) {
-    throw new Error(`refusing to overwrite symlink managed path: ${relPath}`);
-  }
-  if (st.isFile()) {
-    return dest;
-  }
-  if (st.isDirectory()) {
-    const entries = fs.readdirSync(dest);
-    if (entries.length === 0) {
-      fs.rmdirSync(dest);
-      ensureDir(path.dirname(dest), WORK_DIR_MODE);
-      return dest;
-    }
-    throw new Error(
-      `cannot replace managed directory ${relPath} with a file: still contains local files`,
-    );
-  }
-  throw new Error(`refusing to overwrite non-file managed path: ${relPath}`);
-}
-
-/**
- * Materialize (or upgrade/migrate) a writable local work copy from server detail.
- * - Missing install: full stage + atomic move.
- * - Existing managed install: copy tree (no symlink follow), delete obsolete managed paths first,
- *   write new managed files, preserve extra local outputs, atomic swap. Failed write rolls back.
- * - Unmanaged file/symlink/directory: refused.
- * - Invalid marker (including unsafe managed_files): refused.
- */
-export function materializeSkillWorkCopy(opts) {
-  const { loreHome, projectId, detail } = opts;
-  const skillName = sanitizeSegment(String(detail.name || ''));
-  const { files } = validateSkillPayload(detail);
-  const managedFiles = validateManagedFileList(files.map((f) => f.path), { requireSkillMd: true });
-  const serverVersion = skillVersionOf(detail) ?? '';
-  const skillId = skillIdOf(detail);
-
-  const installPath = skillInstallPath(loreHome, projectId, skillName);
-  const existingMarker = assertInstallPathReplaceable(installPath);
-
-  let previousManaged = [];
-  if (existingMarker) {
-    previousManaged = previousManagedFilesForInstall(installPath, existingMarker, managedFiles);
-  }
-
-  const stagingBase = stagingRoot(loreHome, projectId);
-  ensureDir(stagingBase, WORK_DIR_MODE);
-  const stageId = `${skillName}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
-  const stagePath = path.join(stagingBase, stageId);
-  const finalStage = path.join(stagingBase, `${stageId}.final`);
-
-  try {
-    ensureDir(stagePath, WORK_DIR_MODE);
-
-    // Seed stage from existing work copy (preserve Agent-produced outputs).
-    if (existingMarker && pathExists(installPath)) {
-      copyTreeNoFollow(installPath, stagePath);
-    }
-
-    const nextManaged = new Set(managedFiles);
-
-    // 1) Delete obsolete managed paths FIRST so file↔directory shape transitions work.
-    for (const oldPath of previousManaged) {
-      if (nextManaged.has(oldPath)) continue;
-      if (oldPath === LORE_SKILL_MARKER) continue;
-      // Validate each previous path again before touching the filesystem.
-      const safe = validateSafeRelativePath(oldPath);
-      removeObsoleteManagedPath(stagePath, safe);
-    }
-
-    // 2) Write/overwrite server-managed files.
-    for (const file of files) {
-      const dest = prepareManagedFileDestination(stagePath, file.path);
-      fs.writeFileSync(dest, file.buffer, { mode: WORK_FILE_MODE });
-      if (process.platform !== 'win32') {
-        try { fs.chmodSync(dest, WORK_FILE_MODE); } catch { /* ignore */ }
-      }
-    }
-
-    const marker = {
-      schema: LORE_SKILL_SCHEMA,
-      project_id: projectId,
-      skill_id: skillId,
-      name: skillName,
-      version: serverVersion,
-      managed_files: managedFiles,
-      synced_at: new Date().toISOString(),
-    };
-    fs.writeFileSync(path.join(stagePath, LORE_SKILL_MARKER), `${JSON.stringify(marker, null, 2)}\n`, {
-      mode: WORK_FILE_MODE,
-      encoding: 'utf-8',
-    });
-    if (process.platform !== 'win32') {
-      try { fs.chmodSync(path.join(stagePath, LORE_SKILL_MARKER), WORK_FILE_MODE); } catch { /* ignore */ }
-    }
-
-    chmodTreeWritable(stagePath);
-
-    if (pathExists(finalStage)) rmrf(finalStage);
-    fs.renameSync(stagePath, finalStage);
-
-    const installedBase = installedRoot(loreHome, projectId);
-    ensureDir(installedBase, WORK_DIR_MODE);
-    const backupPath = path.join(stagingBase, `${skillName}.backup-${Date.now()}`);
-    if (pathExists(installPath)) {
-      // Only rename a previously validated managed directory.
-      makeTreeWritable(installPath);
-      fs.renameSync(installPath, backupPath);
-    }
-    try {
-      fs.renameSync(finalStage, installPath);
-    } catch (error) {
-      if (pathExists(backupPath) && !pathExists(installPath)) {
-        try { fs.renameSync(backupPath, installPath); } catch { /* ignore */ }
-      }
-      throw error;
-    }
-    if (pathExists(backupPath)) rmrf(backupPath);
-    chmodTreeWritable(installPath);
-    return { installPath, marker };
-  } catch (error) {
-    // Failed staging never damages the existing copy (still at installPath or restored).
-    throw error;
-  } finally {
-    if (pathExists(stagePath)) rmrf(stagePath);
-    if (pathExists(finalStage)) rmrf(finalStage);
-  }
-}
-
-/** @deprecated Prefer materializeSkillWorkCopy. */
-export function writeSkillMirrorAtomic(opts) {
-  return materializeSkillWorkCopy(opts);
-}
-
-/**
- * Ensure a writable work copy for the skill and return local SKILL.md + absolute skill_dir.
- * Downloads when missing, outdated, legacy (needs migration), or identity mismatch that is
- * rematerializable. Unmanaged / invalid roots error. Same-version current work copies preserve edits.
+ * Ensure a local work copy for the skill and return local SKILL.md + absolute skill_dir.
+ *
+ * - Missing, outdated (version/revision/manifest differs), tampered (managed files
+ *   modified), or legacy copies are rematerialized from the fetched server detail.
+ *   Rematerialization preserves extra local files in the same copy.
+ * - Same version with intact managed files reuses the local copy (no overwrite);
+ *   extra local files survive.
+ * - Unmanaged / invalid roots error (fail-closed).
  *
  * Transport is injected:
  *   loadSkill(skillId) → Promise<SkillDetail>
@@ -855,31 +988,35 @@ export async function ensureSkillWorkCopy(opts) {
   ).trim();
   if (!projectId) {
     if (typeof opts.loadCatalog !== 'function') {
-      throw new Error('unable to determine project_id for skill work copy');
+      throw new Error('unable to determine project_id for skill mirror');
     }
     const catalog = await opts.loadCatalog();
     projectId = String(catalog?.project_id || '').trim();
-    if (!projectId) throw new Error('unable to determine project_id for skill work copy');
+    if (!projectId) throw new Error('unable to determine project_id for skill mirror');
     return ensureSkillWorkCopy({ ...opts, projectId, loreHome });
   }
 
   const skillName = sanitizeSegment(String(detail.name || ''));
   const serverVersion = skillVersionOf(detail);
+  const serverRevision = skillRevisionOf(detail) || undefined;
+  const serverManifest = typeof detail.manifest_hash === 'string' ? detail.manifest_hash : undefined;
   const skillId = skillIdOf(detail) || opts.skillId;
   const installPath = skillInstallPath(loreHome, projectId, skillName);
 
   const status = inspectLocalWorkCopy(loreHome, projectId, skillName, {
     skill_id: skillId,
     version: serverVersion,
+    revision_hash: serverRevision,
+    manifest_hash: serverManifest,
   });
 
   if (status.state === 'unmanaged') {
-    const err = new Error(status.message || `unmanaged path blocks skill work copy: ${installPath}`);
+    const err = new Error(status.message || `unmanaged path blocks skill mirror: ${installPath}`);
     err.code = 'UNMANAGED_CONFLICT';
     throw err;
   }
   if (status.state === 'invalid') {
-    const err = new Error(status.message || `invalid local work copy: ${installPath}`);
+    const err = new Error(status.message || `invalid local mirror: ${installPath}`);
     err.code = 'INVALID_WORK_COPY';
     throw err;
   }
@@ -889,15 +1026,15 @@ export async function ensureSkillWorkCopy(opts) {
   let activeMarker = null;
 
   if (status.state === 'ready' && status.path) {
-    // Inspect only checks identity/version. Also migrate legacy same-version mirrors.
+    // Inspect verified identity/version/integrity. Legacy same-version mirrors migrate.
     const marker = readWorkCopyMarker(status.path);
     if (!marker) {
-      const err = new Error(`invalid local work copy marker: ${status.path}`);
+      const err = new Error(`invalid local mirror marker: ${status.path}`);
       err.code = 'INVALID_WORK_COPY';
       throw err;
     }
     if (marker.schema === LEGACY_MIRROR_SCHEMA) {
-      // Same version legacy → rematerialize to writable workcopy + managed_files.
+      // Same version legacy → rematerialize to managed_files workcopy.
       const result = materializeSkillWorkCopy({ loreHome, projectId, detail });
       skillDir = result.installPath;
       activeMarker = result.marker;
@@ -907,12 +1044,12 @@ export async function ensureSkillWorkCopy(opts) {
       activeMarker = marker;
       downloaded = false;
     } else {
-      const err = new Error(`unsupported local work copy schema: ${marker.schema}`);
+      const err = new Error(`unsupported local mirror schema: ${marker.schema}`);
       err.code = 'INVALID_WORK_COPY';
       throw err;
     }
   } else {
-    // missing or outdated → materialize
+    // missing, outdated, or tampered → rematerialize from server state (extras preserved).
     const result = materializeSkillWorkCopy({ loreHome, projectId, detail });
     skillDir = result.installPath;
     activeMarker = result.marker;
@@ -920,20 +1057,20 @@ export async function ensureSkillWorkCopy(opts) {
   }
 
   if (!activeMarker) {
-    throw new Error('failed to materialize skill work copy');
+    throw new Error('failed to materialize skill mirror');
   }
 
   // Final identity check after materialize/return path.
   if (activeMarker.project_id !== projectId || activeMarker.skill_id !== skillId || activeMarker.name !== skillName) {
     throw new Error(
-      `work copy identity mismatch after ensure: project=${activeMarker.project_id} skill=${activeMarker.skill_id} name=${activeMarker.name}`,
+      `mirror identity mismatch after ensure: project=${activeMarker.project_id} skill=${activeMarker.skill_id} name=${activeMarker.name}`,
     );
   }
 
   const skillMdPath = path.join(skillDir, SKILL_MD);
   const skillMdStat = lstatOrNull(skillMdPath);
   if (!skillMdStat || skillMdStat.isSymbolicLink() || !skillMdStat.isFile()) {
-    throw new Error(`SKILL.md missing or not a regular file in work copy: ${skillDir}`);
+    throw new Error(`SKILL.md missing or not a regular file in mirror: ${skillDir}`);
   }
   const skill_md = fs.readFileSync(skillMdPath, 'utf-8');
   return {
@@ -951,7 +1088,7 @@ export async function ensureSkillWorkCopy(opts) {
 
 export function listLocalWorkCopyStatuses(loreHome, projectId) {
   if (!projectId) return [];
-  return listDirectoryNames(installedRoot(loreHome, projectId)).map((name) =>
+  return listDirectoryNames(projectWorkCopyRoot(loreHome, projectId)).map((name) =>
     inspectLocalWorkCopy(loreHome, projectId, name),
   );
 }

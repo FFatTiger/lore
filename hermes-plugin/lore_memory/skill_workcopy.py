@@ -1,8 +1,29 @@
 """
-Lore Skill writable work-copy core (Python).
+Lore Skill work-copy core (Python).
 Schema: lore.skill.workcopy.v1
 
 Python-native equivalent of shared/skill-workcopy for Hermes (cannot import JS).
+
+Contract:
+- The Core/server skill package is the source of truth.
+- getSkill ensures a local work copy: it downloads the complete server package
+  when missing, updates the server-managed package files when the server version
+  differs, and reuses the local copy when the version matches and the managed
+  files are intact.
+- Server-managed package files (those listed in marker.managed_files) are
+  read-only (0444 on POSIX). The installed skill directory itself stays writable
+  (0755) so agents can create local outputs, artifacts, and cache files directly
+  inside the same copy. Those extra local files are valid, local-only, never
+  uploaded, and survive getSkill calls and version upgrades.
+- Integrity/tamper checks cover ONLY the server-managed paths from the marker;
+  extra local files never make a copy tampered.
+- On upgrade, only obsolete server-managed paths are removed and incoming
+  server-managed files are written; extra local files are preserved. If an
+  obsolete managed path or a new managed path conflicts with a local artifact
+  (file/dir shape or same path), the upgrade fails safely with no damage.
+- No separate artifact directory and no artifact-create tool.
+- No session-start bulk reconcile/download; all download/update is on-demand
+  via getSkill. Recall is identity-only and never injects local paths.
 """
 
 from __future__ import annotations
@@ -16,8 +37,9 @@ import shutil
 import stat
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set
 
 LORE_SKILL_MARKER = ".lore-skill-marker.json"
 LEGACY_LORE_SKILL_MARKER = ".lore-skill.json"
@@ -25,8 +47,9 @@ LORE_SKILL_SCHEMA = "lore.skill.workcopy.v1"
 LEGACY_MIRROR_SCHEMA = "lore.skill.mirror.v1"
 SKILL_MD = "SKILL.md"
 
-WORK_FILE_MODE = 0o644
-WORK_DIR_MODE = 0o755
+WORK_FILE_MODE = 0o644  # staging / backup trees (writable)
+WORK_DIR_MODE = 0o755  # installed directories (writable for local outputs)
+READONLY_FILE_MODE = 0o444  # installed server-managed files + marker
 
 _SEGMENT_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -308,71 +331,6 @@ def _rmrf(target: str) -> None:
             pass
 
 
-def _copy_tree_no_follow(src: str, dest: str) -> None:
-    st = os.lstat(src)
-    if _is_symlink(st):
-        raise SkillWorkCopyError(f"symbolic links are not allowed in skill work copies: {src}")
-    if _is_dir(st):
-        _ensure_dir(dest, WORK_DIR_MODE)
-        for entry in os.listdir(src):
-            from_path = os.path.join(src, entry)
-            to_path = os.path.join(dest, entry)
-            entry_st = os.lstat(from_path)
-            if _is_symlink(entry_st):
-                raise SkillWorkCopyError(
-                    f"symbolic links are not allowed in skill work copies: {from_path}"
-                )
-            if _is_dir(entry_st):
-                _copy_tree_no_follow(from_path, to_path)
-            elif _is_file(entry_st):
-                shutil.copyfile(from_path, to_path, follow_symlinks=False)
-                try:
-                    os.chmod(to_path, WORK_FILE_MODE)
-                except OSError:
-                    pass
-            else:
-                raise SkillWorkCopyError(
-                    f"unsupported filesystem entry in skill work copy: {from_path}"
-                )
-    elif _is_file(st):
-        _ensure_dir(os.path.dirname(dest), WORK_DIR_MODE)
-        shutil.copyfile(src, dest, follow_symlinks=False)
-        try:
-            os.chmod(dest, WORK_FILE_MODE)
-        except OSError:
-            pass
-    else:
-        raise SkillWorkCopyError(f"unsupported filesystem entry in skill work copy: {src}")
-
-
-def _chmod_tree_writable(root: str) -> None:
-    def walk(current: str) -> None:
-        st = os.lstat(current)
-        if _is_symlink(st):
-            return
-        if _is_dir(st):
-            os.chmod(current, WORK_DIR_MODE)
-            for entry in os.listdir(current):
-                walk(os.path.join(current, entry))
-        elif _is_file(st):
-            os.chmod(current, WORK_FILE_MODE)
-
-    if _path_exists(root):
-        walk(root)
-
-
-def _prune_empty_parents(root: str, relative_file: str) -> None:
-    segments = relative_file.split("/")
-    for i in range(len(segments) - 1, 0, -1):
-        dir_path = os.path.join(root, *segments[:i])
-        try:
-            if os.listdir(dir_path):
-                return
-            os.rmdir(dir_path)
-        except OSError:
-            return
-
-
 def _list_directory_names(dir_path: str) -> List[str]:
     try:
         names = []
@@ -384,33 +342,158 @@ def _list_directory_names(dir_path: str) -> List[str]:
         return []
 
 
-def _collect_regular_relative_files(root: str, current: Optional[str] = None, out: Optional[List[str]] = None) -> List[str]:
-    if current is None:
-        current = root
-    if out is None:
-        out = []
+def _copy_tree(src: str, dest: str) -> None:
+    """Copy a directory tree (seed a fresh stage from an existing valid work copy)."""
+    shutil.copytree(src, dest, symlinks=True, dirs_exist_ok=True)
+
+
+def _chmod_single_writable(target: str) -> None:
     try:
-        entries = list(os.scandir(current))
-    except OSError as exc:
-        raise SkillWorkCopyError(str(exc)) from exc
-    for entry in entries:
-        if entry.name == LORE_SKILL_MARKER and current == root:
+        os.chmod(target, WORK_FILE_MODE)
+    except OSError:
+        pass
+
+
+def _apply_installed_modes(dir_path: str, managed_files: Sequence[str]) -> None:
+    """Installed dirs stay writable (0755); server-managed files + marker are 0444 (POSIX)."""
+    try:
+        os.chmod(dir_path, WORK_DIR_MODE)
+    except OSError:
+        pass
+    marker_path = os.path.join(dir_path, LORE_SKILL_MARKER)
+    try:
+        os.chmod(marker_path, READONLY_FILE_MODE)
+    except OSError:
+        pass
+    ancestor_dirs: Set[str] = set()
+    for rel in managed_files:
+        full = os.path.join(dir_path, *rel.split("/"))
+        try:
+            os.chmod(full, READONLY_FILE_MODE)
+        except OSError:
+            pass
+        segments = rel.split("/")
+        for i in range(1, len(segments)):
+            ancestor_dirs.add("/".join(segments[:i]))
+    for rel in ancestor_dirs:
+        try:
+            os.chmod(os.path.join(dir_path, *rel.split("/")), WORK_DIR_MODE)
+        except OSError:
+            pass
+
+
+def _managed_dir_prefixes(managed_set: Set[str]) -> Set[str]:
+    prefixes: Set[str] = set()
+    for rel in managed_set:
+        segments = rel.split("/")
+        for i in range(1, len(segments)):
+            prefixes.add("/".join(segments[:i]))
+    return prefixes
+
+
+def _conflict_error(message: str) -> SkillWorkCopyError:
+    return SkillWorkCopyError(message, code="LOCAL_ARTIFACT_CONFLICT")
+
+
+def _assert_managed_path_ancestors_safe(root: str, managed_files: Sequence[str]) -> None:
+    """Refuse intermediate symlinks/non-directories before copy/chmod/delete operations."""
+    for rel in managed_files:
+        segments = rel.split("/")
+        for i in range(1, len(segments)):
+            ancestor = "/".join(segments[:i])
+            st = _lstat_or_none(os.path.join(root, *segments[:i]))
+            if st is None:
+                continue
+            if _is_symlink(st):
+                raise _conflict_error(
+                    f"managed path {rel} has symlink ancestor {ancestor}; refusing out-of-copy access"
+                )
+            if not _is_dir(st):
+                raise _conflict_error(
+                    f"managed path {rel} has non-directory ancestor {ancestor}"
+                )
+
+
+def _remove_obsolete_managed(
+    stage_root: str,
+    old_managed: Sequence[str],
+    new_managed_set: Set[str],
+) -> None:
+    obsolete = [rel for rel in old_managed if rel not in new_managed_set]
+    if not obsolete:
+        return
+    # Remove deepest first so nested obsolete files disappear before their parents.
+    for rel in sorted(obsolete, key=lambda item: item.count("/"), reverse=True):
+        full = os.path.join(stage_root, *rel.split("/"))
+        st = _lstat_or_none(full)
+        if st is None:
             continue
-        full = os.path.join(current, entry.name)
-        if entry.is_symlink():
-            rel = os.path.relpath(full, root).replace(os.sep, "/")
-            raise SkillWorkCopyError(f"symbolic links are not allowed in skill work copies: {rel}")
-        if entry.is_dir(follow_symlinks=False):
-            _collect_regular_relative_files(root, full, out)
-        elif entry.is_file(follow_symlinks=False):
-            out.append(os.path.relpath(full, root).replace(os.sep, "/"))
-        else:
-            rel = os.path.relpath(full, root).replace(os.sep, "/")
-            raise SkillWorkCopyError(f"unsupported filesystem entry in skill work copy: {rel}")
-    return out
+        if _is_dir(st):
+            if os.listdir(full):
+                raise _conflict_error(
+                    f"obsolete managed path {rel} is now a non-empty local directory (local artifact)"
+                )
+            os.rmdir(full)
+            continue
+        # The old marker owns this exact path. A symlink here is tamper, not an extra.
+        os.remove(full)
+
+    # Prune empty directories that were managed ancestors (never extras).
+    prefixes = _managed_dir_prefixes(set(old_managed))
+    for rel in sorted(prefixes, key=lambda item: item.count("/"), reverse=True):
+        full = os.path.join(stage_root, *rel.split("/"))
+        st = _lstat_or_none(full)
+        if st is None or not _is_dir(st):
+            continue
+        try:
+            if not os.listdir(full):
+                os.rmdir(full)
+        except OSError:
+            pass
 
 
-# ---- marker / local work copy inspection ----
+def _assert_no_managed_extra_conflicts(
+    stage_root: str,
+    new_managed_files: Sequence[str],
+    old_managed_set: Set[str],
+) -> None:
+    for rel in new_managed_files:
+        full = os.path.join(stage_root, *rel.split("/"))
+        st = _lstat_or_none(full)
+        if st is not None:
+            if rel in old_managed_set:
+                if _is_symlink(st):
+                    os.unlink(full)
+                elif _is_dir(st):
+                    if os.listdir(full):
+                        raise _conflict_error(
+                            f"managed path {rel} is now a non-empty local directory (local artifact)"
+                        )
+                    os.rmdir(full)
+                elif not _is_file(st):
+                    raise _conflict_error(
+                        f"managed path {rel} is an unsupported local filesystem entry"
+                    )
+                # A regular file at an old managed path is overwritten below.
+            elif _is_dir(st):
+                raise _conflict_error(
+                    f"new managed path {rel} conflicts with an existing local directory (local artifact)"
+                )
+            else:
+                raise _conflict_error(
+                    f"new managed path {rel} conflicts with an existing local file (local artifact)"
+                )
+        segments = rel.split("/")
+        for i in range(1, len(segments)):
+            ancestor = "/".join(segments[:i])
+            anc_st = _lstat_or_none(os.path.join(stage_root, *ancestor.split("/")))
+            if anc_st is not None and not _is_dir(anc_st):
+                raise _conflict_error(
+                    f"new managed path {rel} must live under {ancestor}, which is a local file (local artifact)"
+                )
+
+
+# ---- marker / local work-copy inspection ----
 
 
 def read_work_copy_marker(dir_path: str) -> Optional[Dict[str, Any]]:
@@ -462,9 +545,29 @@ def read_work_copy_marker(dir_path: str) -> Optional[Dict[str, Any]]:
             "synced_at": data["synced_at"] if isinstance(data.get("synced_at"), str) else "",
             "revision_hash": data["revision_hash"] if isinstance(data.get("revision_hash"), str) else None,
             "manifest_hash": data["manifest_hash"] if isinstance(data.get("manifest_hash"), str) else None,
+            "readonly": data.get("readonly") is True,
         }
     except Exception:
         return None
+
+
+def hash_local_skill_files(dir_path: str) -> Dict[str, Any]:
+    """Hash ONLY the server-managed files listed in the marker (extras are ignored)."""
+    marker = read_work_copy_marker(dir_path)
+    if not marker:
+        raise SkillWorkCopyError(f"missing or invalid work-copy marker: {dir_path}")
+    files = []
+    for rel in marker["managed_files"]:
+        full = os.path.join(dir_path, *rel.split("/"))
+        st = _lstat_or_none(full)
+        if st is None:
+            raise SkillWorkCopyError(f"missing managed file: {rel}")
+        if _is_symlink(st) or not _is_file(st):
+            raise SkillWorkCopyError(f"managed path is not a regular file: {rel}")
+        with open(full, "rb") as handle:
+            buf = handle.read()
+        files.append({"path": rel, "sha256": sha256_bytes(buf), "size": len(buf)})
+    return {"files": files, "manifest_hash": compute_manifest_hash(files)}
 
 
 def inspect_local_work_copy(
@@ -481,7 +584,7 @@ def inspect_local_work_copy(
             "name": skill_name,
             "skill_id": expected.get("skill_id"),
             "state": "missing",
-            "message": "work copy not installed",
+            "message": "mirror not installed",
         }
     if _is_symlink(root_stat):
         return {
@@ -497,7 +600,7 @@ def inspect_local_work_copy(
             "skill_id": expected.get("skill_id"),
             "state": "unmanaged",
             "path": dir_path,
-            "message": "install path exists and is not a managed work-copy directory",
+            "message": "install path exists and is not a managed mirror directory",
         }
 
     marker = read_work_copy_marker(dir_path)
@@ -508,7 +611,7 @@ def inspect_local_work_copy(
                 "name": skill_name,
                 "state": "invalid",
                 "path": dir_path,
-                "message": "work-copy marker is missing, corrupt, or contains unsafe managed_files",
+                "message": "mirror marker is missing, corrupt, or contains unsafe managed_files",
             }
         return {
             "name": skill_name,
@@ -524,7 +627,7 @@ def inspect_local_work_copy(
             "state": "invalid",
             "path": dir_path,
             "version": marker["version"],
-            "message": f"unsupported work-copy marker schema: {marker['schema']}",
+            "message": f"unsupported mirror marker schema: {marker['schema']}",
         }
     if marker["project_id"] != project_id or marker["name"] != skill_name:
         return {
@@ -533,7 +636,7 @@ def inspect_local_work_copy(
             "state": "invalid",
             "path": dir_path,
             "version": marker["version"],
-            "message": "work-copy marker identity does not match its managed path",
+            "message": "mirror marker identity does not match its managed path",
         }
 
     skill_md = os.path.join(dir_path, SKILL_MD)
@@ -542,10 +645,46 @@ def inspect_local_work_copy(
         return {
             "name": skill_name,
             "skill_id": marker["skill_id"],
-            "state": "invalid",
+            "state": "tampered",
             "path": dir_path,
             "version": marker["version"],
+            "revision_hash": marker.get("revision_hash"),
             "message": "SKILL.md missing",
+        }
+
+    # Integrity: hash ONLY the managed files from the marker (extras are ignored).
+    if marker.get("manifest_hash"):
+        try:
+            local_hash = hash_local_skill_files(dir_path)["manifest_hash"]
+        except Exception as exc:
+            return {
+                "name": skill_name,
+                "skill_id": marker["skill_id"],
+                "state": "tampered",
+                "path": dir_path,
+                "version": marker["version"],
+                "revision_hash": marker.get("revision_hash"),
+                "message": str(exc) or "failed to verify managed files",
+            }
+        if local_hash != marker["manifest_hash"]:
+            return {
+                "name": skill_name,
+                "skill_id": marker["skill_id"],
+                "state": "tampered",
+                "path": dir_path,
+                "version": marker["version"],
+                "revision_hash": marker.get("revision_hash"),
+                "message": "managed file hashes do not match marker manifest_hash",
+            }
+    else:
+        # Pre-manifest workcopy markers cannot be integrity-checked; rematerialize once.
+        return {
+            "name": skill_name,
+            "skill_id": marker["skill_id"],
+            "state": "tampered",
+            "path": dir_path,
+            "version": marker["version"],
+            "message": "mirror marker missing manifest_hash; rematerialize required",
         }
 
     if expected.get("skill_id") and marker["skill_id"] != expected["skill_id"]:
@@ -555,7 +694,19 @@ def inspect_local_work_copy(
             "state": "invalid",
             "path": dir_path,
             "version": marker["version"],
+            "revision_hash": marker.get("revision_hash"),
             "message": f"skill_id mismatch: local {marker['skill_id']} vs expected {expected['skill_id']}",
+        }
+
+    if expected.get("revision_hash") and marker.get("revision_hash") != expected["revision_hash"]:
+        return {
+            "name": skill_name,
+            "skill_id": marker["skill_id"],
+            "state": "outdated",
+            "path": dir_path,
+            "version": marker["version"],
+            "revision_hash": marker.get("revision_hash"),
+            "message": f"revision outdated: local {marker.get('revision_hash')} vs expected {expected['revision_hash']}",
         }
 
     if expected.get("version") is not None and str(marker["version"]) != str(expected["version"]):
@@ -565,7 +716,19 @@ def inspect_local_work_copy(
             "state": "outdated",
             "path": dir_path,
             "version": marker["version"],
+            "revision_hash": marker.get("revision_hash"),
             "message": f"version outdated: local {marker['version']} vs expected {expected['version']}",
+        }
+
+    if expected.get("manifest_hash") and marker.get("manifest_hash") != expected["manifest_hash"]:
+        return {
+            "name": skill_name,
+            "skill_id": marker["skill_id"],
+            "state": "outdated",
+            "path": dir_path,
+            "version": marker["version"],
+            "revision_hash": marker.get("revision_hash"),
+            "message": "manifest_hash outdated",
         }
 
     return {
@@ -574,10 +737,11 @@ def inspect_local_work_copy(
         "state": "ready",
         "path": dir_path,
         "version": marker["version"],
+        "revision_hash": marker.get("revision_hash"),
     }
 
 
-# ---- transport validation + materialize ----
+# ---- transport validation ----
 
 
 def validate_skill_payload(detail: Dict[str, Any]) -> Dict[str, Any]:
@@ -640,23 +804,6 @@ def validate_skill_payload(detail: Dict[str, Any]) -> Dict[str, Any]:
     return {"files": files, "manifest_hash": manifest_hash}
 
 
-def _previous_managed_files_for_install(
-    install_path: str,
-    marker: Dict[str, Any],
-    next_managed_files: Optional[List[str]] = None,
-) -> List[str]:
-    if marker["schema"] == LORE_SKILL_SCHEMA:
-        return validate_managed_file_list(marker.get("managed_files"), require_skill_md=True)
-    if marker["schema"] == LEGACY_MIRROR_SCHEMA:
-        incoming = set(next_managed_files or [])
-        files = [
-            rel for rel in _collect_regular_relative_files(install_path)
-            if rel in incoming
-        ]
-        return validate_managed_file_list(files, require_skill_md=False)
-    raise SkillWorkCopyError(f"unsupported marker schema for upgrade: {marker['schema']}")
-
-
 def _assert_install_path_replaceable(install_path: str) -> Optional[Dict[str, Any]]:
     st = _lstat_or_none(install_path)
     if not st:
@@ -686,76 +833,49 @@ def _assert_install_path_replaceable(install_path: str) -> Optional[Dict[str, An
     return marker
 
 
-def _remove_obsolete_managed_path(stage_path: str, old_path: str) -> None:
-    full = os.path.join(stage_path, *old_path.split("/"))
-    st = _lstat_or_none(full)
-    if not st:
-        return
-    if _is_symlink(st):
-        raise SkillWorkCopyError(f"refusing to delete symlink managed path: {old_path}")
-    if _is_file(st):
-        os.unlink(full)
-        _prune_empty_parents(stage_path, old_path)
-        return
-    if _is_dir(st):
-        entries = os.listdir(full)
-        if not entries:
-            os.rmdir(full)
-            _prune_empty_parents(stage_path, old_path)
-            return
-        raise SkillWorkCopyError(
-            f"cannot remove obsolete managed directory {old_path}: still contains local files"
-        )
-    raise SkillWorkCopyError(f"unsupported filesystem entry at obsolete managed path: {old_path}")
-
-
-def _prepare_managed_file_destination(stage_path: str, rel_path: str) -> str:
-    dest = os.path.join(stage_path, *rel_path.split("/"))
-    st = _lstat_or_none(dest)
-    if not st:
-        _ensure_dir(os.path.dirname(dest), WORK_DIR_MODE)
-        return dest
-    if _is_symlink(st):
-        raise SkillWorkCopyError(f"refusing to overwrite symlink managed path: {rel_path}")
-    if _is_file(st):
-        return dest
-    if _is_dir(st):
-        entries = os.listdir(dest)
-        if not entries:
-            os.rmdir(dest)
-            _ensure_dir(os.path.dirname(dest), WORK_DIR_MODE)
-            return dest
-        raise SkillWorkCopyError(
-            f"cannot replace managed directory {rel_path} with a file: still contains local files"
-        )
-    raise SkillWorkCopyError(f"refusing to overwrite non-file managed path: {rel_path}")
-
-
 def materialize_skill_work_copy(
     *,
     lore_home: str,
     project_id: str,
     detail: Dict[str, Any],
 ) -> Dict[str, Any]:
+    """Materialize (or upgrade/migrate) a local work copy from server detail.
+
+    - Missing install: full stage + atomic move.
+    - Existing managed work copy (marker with managed_files): the stage is seeded from
+      the existing copy so extra local files are preserved. Obsolete managed files are
+      removed, incoming managed files are written, and the marker is refreshed.
+    - Legacy markers (no managed_files boundary) have no preserved extras: they are
+      rematerialized fresh from server state.
+    - A new managed path that conflicts with a preserved local artifact (file/dir shape
+      or same path) fails safely with no damage to the installed copy.
+    - Unmanaged file/symlink/directory or invalid marker: refused.
+    - Installed directories are writable (0755, POSIX); server-managed files and the
+      marker are 0444. Stage and backup stay writable internally.
+    """
     skill_name = sanitize_segment(str(detail.get("name") or ""))
     validated = validate_skill_payload(detail)
     files = validated["files"]
+    manifest_hash = validated["manifest_hash"]
     managed_files = validate_managed_file_list([f["path"] for f in files], require_skill_md=True)
     server_version = skill_version_of(detail)
     if server_version is None:
         server_version = ""
+    server_revision = skill_revision_of(detail) or None
     skill_id = skill_id_of(detail)
 
     install_path = skill_install_path(lore_home, project_id, skill_name)
     existing_marker = _assert_install_path_replaceable(install_path)
+    existing_managed = (
+        existing_marker["managed_files"]
+        if existing_marker and existing_marker["schema"] == LORE_SKILL_SCHEMA
+        else []
+    )
 
-    previous_managed: List[str] = []
-    if existing_marker:
-        previous_managed = _previous_managed_files_for_install(
-            install_path,
-            existing_marker,
-            managed_files,
-        )
+    # Validate before copy/chmod/delete so intermediate symlinks cannot redirect
+    # marker-owned operations outside the installed work copy.
+    if existing_managed:
+        _assert_managed_path_ancestors_safe(install_path, existing_managed)
 
     staging_base = staging_root(lore_home, project_id)
     _ensure_dir(staging_base, WORK_DIR_MODE)
@@ -766,33 +886,32 @@ def materialize_skill_work_copy(
     try:
         _ensure_dir(stage_path, WORK_DIR_MODE)
 
-        if existing_marker and _path_exists(install_path):
-            _copy_tree_no_follow(install_path, stage_path)
+        # Seed the stage from the existing valid managed copy (preserves local extras).
+        # Legacy markers have no managed_files boundary, so build fresh instead.
+        if existing_marker and existing_marker["schema"] == LORE_SKILL_SCHEMA and _path_exists(install_path):
+            _copy_tree(install_path, stage_path)
+            # Seeded server-managed files + marker are 0444; make them writable in the
+            # stage so they can be replaced/removed. Extras keep their original modes.
+            for rel in list(existing_managed) + [LORE_SKILL_MARKER]:
+                seeded = os.path.join(stage_path, *rel.split("/"))
+                seeded_stat = _lstat_or_none(seeded)
+                if seeded_stat is not None and _is_file(seeded_stat):
+                    _chmod_single_writable(seeded)
 
-        next_managed = set(managed_files)
+        new_managed_set = set(managed_files)
+        _remove_obsolete_managed(stage_path, existing_managed, new_managed_set)
+        _assert_no_managed_extra_conflicts(stage_path, managed_files, set(existing_managed))
 
-        for old_path in previous_managed:
-            if old_path in next_managed:
-                continue
-            if old_path == LORE_SKILL_MARKER:
-                continue
-            safe = validate_safe_relative_path(old_path)
-            _remove_obsolete_managed_path(stage_path, safe)
-
+        # Write incoming managed files.
         for file in files:
-            dest = _prepare_managed_file_destination(stage_path, file["path"])
+            dest = os.path.join(stage_path, *file["path"].split("/"))
+            _ensure_dir(os.path.dirname(dest), WORK_DIR_MODE)
             flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
             fd = os.open(dest, flags, WORK_FILE_MODE)
             try:
                 os.write(fd, file["buffer"])
             finally:
                 os.close(fd)
-            try:
-                os.chmod(dest, WORK_FILE_MODE)
-            except OSError:
-                pass
-
-        from datetime import datetime, timezone
 
         marker = {
             "schema": LORE_SKILL_SCHEMA,
@@ -801,18 +920,15 @@ def materialize_skill_work_copy(
             "name": skill_name,
             "version": server_version,
             "managed_files": managed_files,
+            "revision_hash": server_revision,
+            "manifest_hash": manifest_hash,
+            "readonly": True,
             "synced_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         }
         marker_path = os.path.join(stage_path, LORE_SKILL_MARKER)
         with open(marker_path, "w", encoding="utf-8") as handle:
             json.dump(marker, handle, indent=2)
             handle.write("\n")
-        try:
-            os.chmod(marker_path, WORK_FILE_MODE)
-        except OSError:
-            pass
-
-        _chmod_tree_writable(stage_path)
 
         if _path_exists(final_stage):
             _rmrf(final_stage)
@@ -822,6 +938,7 @@ def materialize_skill_work_copy(
         _ensure_dir(installed_base, WORK_DIR_MODE)
         backup_path = os.path.join(staging_base, f"{skill_name}.backup-{int(time.time() * 1000)}")
         if _path_exists(install_path):
+            # Make it writable first so legacy 0555 read-only installs can be renamed.
             _make_tree_writable(install_path)
             os.rename(install_path, backup_path)
         try:
@@ -835,7 +952,7 @@ def materialize_skill_work_copy(
             raise
         if _path_exists(backup_path):
             _rmrf(backup_path)
-        _chmod_tree_writable(install_path)
+        _apply_installed_modes(install_path, managed_files)
         return {"installPath": install_path, "marker": marker, "install_path": install_path}
     finally:
         if _path_exists(stage_path):
@@ -852,6 +969,9 @@ def ensure_skill_work_copy(
     project_id: Optional[str] = None,
     load_catalog: Optional[Callable[[], Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
+    """Ensure a local work copy. Rematerializes from server when missing, outdated,
+    tampered, or legacy (preserving extra local files). Same version with intact
+    managed files reuses the local copy. Unmanaged / invalid roots error."""
     lore_home = lore_home or resolve_lore_home()
     if not callable(load_skill):
         raise SkillWorkCopyError("ensure_skill_work_copy requires load_skill(skill_id)")
@@ -859,11 +979,11 @@ def ensure_skill_work_copy(
     resolved_project_id = str(project_id or detail.get("project_id") or "").strip()
     if not resolved_project_id:
         if not callable(load_catalog):
-            raise SkillWorkCopyError("unable to determine project_id for skill work copy")
+            raise SkillWorkCopyError("unable to determine project_id for skill mirror")
         catalog = load_catalog() or {}
         resolved_project_id = str(catalog.get("project_id") or "").strip()
         if not resolved_project_id:
-            raise SkillWorkCopyError("unable to determine project_id for skill work copy")
+            raise SkillWorkCopyError("unable to determine project_id for skill mirror")
         return ensure_skill_work_copy(
             skill_id=skill_id,
             load_skill=load_skill,
@@ -874,6 +994,8 @@ def ensure_skill_work_copy(
 
     skill_name = sanitize_segment(str(detail.get("name") or ""))
     server_version = skill_version_of(detail)
+    server_revision = skill_revision_of(detail) or None
+    server_manifest = detail.get("manifest_hash") if isinstance(detail.get("manifest_hash"), str) else None
     resolved_skill_id = skill_id_of(detail) or skill_id
     install_path = skill_install_path(lore_home, resolved_project_id, skill_name)
 
@@ -881,17 +1003,22 @@ def ensure_skill_work_copy(
         lore_home,
         resolved_project_id,
         skill_name,
-        {"skill_id": resolved_skill_id, "version": server_version},
+        {
+            "skill_id": resolved_skill_id,
+            "version": server_version,
+            "revision_hash": server_revision,
+            "manifest_hash": server_manifest,
+        },
     )
 
     if status["state"] == "unmanaged":
         raise SkillWorkCopyError(
-            status.get("message") or f"unmanaged path blocks skill work copy: {install_path}",
+            status.get("message") or f"unmanaged path blocks skill mirror: {install_path}",
             code="UNMANAGED_CONFLICT",
         )
     if status["state"] == "invalid":
         raise SkillWorkCopyError(
-            status.get("message") or f"invalid local work copy: {install_path}",
+            status.get("message") or f"invalid local mirror: {install_path}",
             code="INVALID_WORK_COPY",
         )
 
@@ -903,7 +1030,7 @@ def ensure_skill_work_copy(
         marker = read_work_copy_marker(status["path"])
         if not marker:
             raise SkillWorkCopyError(
-                f"invalid local work copy marker: {status['path']}",
+                f"invalid local mirror marker: {status['path']}",
                 code="INVALID_WORK_COPY",
             )
         if marker["schema"] == LEGACY_MIRROR_SCHEMA:
@@ -921,7 +1048,7 @@ def ensure_skill_work_copy(
             downloaded = False
         else:
             raise SkillWorkCopyError(
-                f"unsupported local work copy schema: {marker['schema']}",
+                f"unsupported local mirror schema: {marker['schema']}",
                 code="INVALID_WORK_COPY",
             )
     else:
@@ -935,7 +1062,7 @@ def ensure_skill_work_copy(
         downloaded = True
 
     if not active_marker:
-        raise SkillWorkCopyError("failed to materialize skill work copy")
+        raise SkillWorkCopyError("failed to materialize skill mirror")
 
     if (
         active_marker["project_id"] != resolved_project_id
@@ -943,14 +1070,14 @@ def ensure_skill_work_copy(
         or active_marker["name"] != skill_name
     ):
         raise SkillWorkCopyError(
-            "work copy identity mismatch after ensure: "
+            "mirror identity mismatch after ensure: "
             f"project={active_marker['project_id']} skill={active_marker['skill_id']} name={active_marker['name']}"
         )
 
     skill_md_path = os.path.join(skill_dir, SKILL_MD)
     skill_md_stat = _lstat_or_none(skill_md_path)
     if not skill_md_stat or _is_symlink(skill_md_stat) or not _is_file(skill_md_stat):
-        raise SkillWorkCopyError(f"SKILL.md missing or not a regular file in work copy: {skill_dir}")
+        raise SkillWorkCopyError(f"SKILL.md missing or not a regular file in mirror: {skill_dir}")
     with open(skill_md_path, "r", encoding="utf-8") as handle:
         skill_md = handle.read()
     return {
@@ -979,6 +1106,8 @@ def list_all_local_work_copy_statuses(lore_home: str) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     root = work_copies_root(lore_home)
     for project_id in _list_directory_names(root):
+        if project_id == ".staging":
+            continue
         for status in list_local_work_copy_statuses(lore_home, project_id):
             out.append({"project_id": project_id, **status})
     return out
@@ -1011,7 +1140,10 @@ def format_skill_candidate_block(candidates: Sequence[Dict[str, Any]]) -> str:
     if not candidates:
         return ""
     lines = ["<lore-skills>"]
-    lines.append("Matched Lore skills. Call lore_skill_get with skill_id to materialize a local work copy.")
+    lines.append(
+        "Matched Lore skills. Call lore_skill_get with skill_id to fetch a local copy; "
+        "managed package files are read-only, and the skill directory stays writable for local outputs."
+    )
     for c in candidates:
         skill_id = str(c.get("skill_id") or skill_id_of(c) or "").strip()
         name = str(c.get("name") or "").strip()

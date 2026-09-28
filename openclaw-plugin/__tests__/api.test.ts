@@ -108,6 +108,31 @@ describe('pickPluginConfig', () => {
     expect(cfg.apiToken).toBe('shared-token');
   });
 
+  it('treats a matching server profile as authoritative over stale plugin enables', () => {
+    writeSharedConfig({
+      base_url: 'http://shared-lore:18901',
+      server_profile: {
+        base_url: 'http://shared-lore:18901',
+        capabilities: { skills: false },
+      },
+    });
+    const cfg = pickPluginConfig({
+      pluginConfig: { baseUrl: 'http://shared-lore:18901', skillsEnabled: true },
+    });
+    expect(cfg.skillsEnabled).toBe(false);
+  });
+
+  it('keeps explicit false as a local Skills kill switch', () => {
+    writeSharedConfig({
+      base_url: 'http://shared-lore:18901',
+      server_profile: {
+        base_url: 'http://shared-lore:18901',
+        capabilities: { skills: true },
+      },
+    });
+    expect(pickPluginConfig({ pluginConfig: { skillsEnabled: false } }).skillsEnabled).toBe(false);
+  });
+
   it('strips trailing slash from baseUrl', () => {
     const cfg = pickPluginConfig({ pluginConfig: { baseUrl: 'http://host:1234/' } });
     expect(cfg.baseUrl).toBe('http://host:1234');

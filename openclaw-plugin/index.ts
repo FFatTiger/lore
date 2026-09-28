@@ -13,7 +13,7 @@ export default definePluginEntry({
       api.logger.info(`lore: register() start, cfg keys: ${Object.keys(api?.pluginConfig ?? {}).join(",") || "none"}`);
       const pluginCfg = pickPluginConfig(api);
       api.logger.info(`lore: baseUrl=${pluginCfg.baseUrl}, recall=${pluginCfg.recallEnabled}, loreHome=${pluginCfg.loreHome}`);
-      const skillsSession = createSkillsSession(pluginCfg);
+      const skillsSession = pluginCfg.skillsEnabled ? createSkillsSession(pluginCfg) : undefined;
       registerTools(api, pluginCfg, skillsSession);
       api.logger.info(`lore: tools registered ok`);
       registerHooks(api, pluginCfg, skillsSession);

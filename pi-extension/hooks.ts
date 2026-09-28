@@ -25,17 +25,18 @@ interface ProjectInfo {
   repo_name: string | null;
 }
 
-function detectProjectInfo(): ProjectInfo {
-  const dir_name = basename(process.cwd());
+export function detectProjectInfo(cwd?: string): ProjectInfo {
+  // Agent sessions can run inside a long-lived host process whose own cwd is
+  // unrelated to the session (for example a pi-web server). Prefer the session
+  // cwd so project identity, repo grouping, and recall follow the session.
+  const dir = typeof cwd === 'string' && cwd.trim() ? cwd : process.cwd();
+  const dir_name = basename(dir);
 
   let repo_name: string | null = null;
   try {
-    const remote = execSync('git remote', { encoding: 'utf-8', timeout: 2000, stdio: ['pipe', 'pipe', 'pipe'] }).trim().split('\n')[0];
-    const remoteUrl = execSync(`git remote get-url ${remote}`, {
-      encoding: 'utf-8',
-      timeout: 2000,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
+    const gitOptions = { encoding: 'utf-8', timeout: 2000, stdio: ['pipe', 'pipe', 'pipe'], cwd: dir } as const;
+    const remote = execSync('git remote', gitOptions).trim().split('\n')[0];
+    const remoteUrl = execSync(`git remote get-url ${remote}`, gitOptions).trim();
     const match = remoteUrl.match(/\/([^/.]+?)(?:\.git)?$/);
     if (match?.[1]) repo_name = match[1];
   } catch {}
@@ -52,13 +53,13 @@ async function fetchLifecycleEvent(pluginCfg: any, body: Record<string, unknown>
   });
 }
 
-async function fetchStartupLifecycle(pluginCfg: any, sessionId: string | undefined) {
+async function fetchStartupLifecycle(pluginCfg: any, sessionId: string | undefined, cwd?: string) {
   return fetchLifecycleEvent(pluginCfg, {
     protocol_version: 'lore.lifecycle.v1',
     runtime: { runtime_id: 'pi', runtime_family: 'pi' },
     event: { name: 'session.start', native_name: 'session_start' },
     normalized: { session_id: sessionId },
-    project: detectProjectInfo(),
+    project: detectProjectInfo(cwd),
   });
 }
 
@@ -93,10 +94,11 @@ function getSessionId(ctx: any): string | undefined {
 
 export function registerHooks(pi: any, pluginCfg: any, skillsSession?: SkillsSession) {
   const startupRequests = new Map<string, Promise<void>>();
-  let activeSessionId: string | undefined;
-  let activeStartup: { sessionId: string; systemPromptAppend: string; token: object } | undefined;
-  let activeToken: object | undefined;
-  const skills = skillsSession || createSkillsSession(pluginCfg);
+  // Boot baseline is per session, not per first turn: Pi rebuilds the system
+  // prompt from its base on every user prompt, so the fixed baseline has to be
+  // re-appended on each turn (and several sessions can run in one process).
+  const startupAppendBySession = new Map<string, string>();
+  const skills = skillsSession;
 
   pi.on('session_start', async (_event: any, ctx: any) => {
     if (pluginCfg.startupHealthcheck) {
@@ -118,24 +120,24 @@ export function registerHooks(pi: any, pluginCfg: any, skillsSession?: SkillsSes
     const existing = startupRequests.get(sessionId);
     if (existing) return existing;
 
-    const token = {};
-    activeSessionId = sessionId;
-    activeToken = token;
-    activeStartup = undefined;
     const request = (async () => {
       try {
-        const lifecycleResponse = await fetchStartupLifecycle(pluginCfg, sessionId);
+        const lifecycleResponse = await fetchStartupLifecycle(pluginCfg, sessionId, ctx?.cwd);
         // Record project/catalog identity only — never auto-download or reconcile skills.
-        try {
-          await skills.onSessionStart(lifecycleResponse);
-        } catch (error: any) {
-          pi.logger?.debug?.(`lore: skill catalog identity on session_start failed: ${error.message}`);
+        if (skills) {
+          try {
+            await skills.onSessionStart(lifecycleResponse);
+          } catch (error: any) {
+            pi.logger?.debug?.(`lore: skill catalog identity on session_start failed: ${error.message}`);
+          }
         }
         const value = readReturnValue(lifecycleResponse);
         const systemPromptAppend = typeof value?.systemPromptAppend === 'string'
           ? value.systemPromptAppend.trim()
           : '';
-        if (activeToken === token) activeStartup = { sessionId, systemPromptAppend, token };
+        if (systemPromptAppend && startupRequests.get(sessionId) === request) {
+          startupAppendBySession.set(sessionId, systemPromptAppend);
+        }
       } catch (error: any) {
         pi.logger?.debug?.(`lore: lifecycle startup failed: ${error.message}`);
       } finally {
@@ -146,13 +148,25 @@ export function registerHooks(pi: any, pluginCfg: any, skillsSession?: SkillsSes
     return request;
   });
 
+  pi.on('session_shutdown', async (_event: any, ctx: any) => {
+    const sessionId = getSessionId(ctx);
+    if (!sessionId) return;
+    startupAppendBySession.delete(sessionId);
+    startupRequests.delete(sessionId);
+  });
+
   pi.on('before_agent_start', async (event: any, ctx: any) => {
     const sessionId = getSessionId(ctx);
     const out: any = {};
 
-    if (sessionId && activeStartup?.sessionId === sessionId) {
-      const systemPromptAppend = activeStartup.systemPromptAppend;
-      activeStartup = undefined;
+    if (sessionId) {
+      // The first prompt can arrive before session_start finished fetching the
+      // baseline; await it so the fixed boot context is never skipped.
+      const pending = startupRequests.get(sessionId);
+      if (pending) {
+        try { await pending; } catch {}
+      }
+      const systemPromptAppend = startupAppendBySession.get(sessionId);
       if (systemPromptAppend) {
         out.systemPrompt = [event?.systemPrompt || '', systemPromptAppend]
           .filter(Boolean)
@@ -168,20 +182,22 @@ export function registerHooks(pi: any, pluginCfg: any, skillsSession?: SkillsSes
 
         // Discovery only: append skill candidate identities to the existing hidden recall message.
         // Never download, reconcile, or inject local paths here.
-        try {
-          const skillPatch = await skills.onPromptLifecycle(lifecycleResponse);
-          if (skillPatch?.messagePatch) {
-            message = skillPatch.messagePatch;
-          } else if (skillPatch?.skillBlock) {
-            message = {
-              customType: 'lore-recall',
-              content: skillPatch.skillBlock,
-              display: false,
-              details: { source: 'lore-skills' },
-            };
+        if (skills) {
+          try {
+            const skillPatch = await skills.onPromptLifecycle(lifecycleResponse);
+            if (skillPatch?.messagePatch) {
+              message = skillPatch.messagePatch;
+            } else if (skillPatch?.skillBlock) {
+              message = {
+                customType: 'lore-recall',
+                content: skillPatch.skillBlock,
+                display: false,
+                details: { source: 'lore-skills' },
+              };
+            }
+          } catch (error: any) {
+            pi.logger?.debug?.(`lore: skill prompt discovery failed: ${error.message}`);
           }
-        } catch (error: any) {
-          pi.logger?.debug?.(`lore: skill prompt discovery failed: ${error.message}`);
         }
 
         if (message) out.message = message;

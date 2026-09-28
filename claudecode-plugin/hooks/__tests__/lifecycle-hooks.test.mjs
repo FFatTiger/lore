@@ -270,6 +270,7 @@ test('UserPromptSubmit appends <lore-skills> for Claude text host_output', async
       session_id: 'c1',
     }, {
       LORE_BASE_URL: server.baseUrl,
+      LORE_SKILLS_ENABLED: '1',
     });
     assert.equal(result.code, 0, result.stderr);
     assert.match(result.stdout, /CLAUDE_MEMORY/);
@@ -292,6 +293,7 @@ test('UserPromptSubmit adds missing additionalContext in Claude structured host_
   try {
     const result = await runHook(recallHook, { prompt: 'structured skill' }, {
       LORE_BASE_URL: server.baseUrl,
+      LORE_SKILLS_ENABLED: '1',
     });
     const output = JSON.parse(result.stdout);
     assert.equal(output.hookSpecificOutput.decision, 'allow');

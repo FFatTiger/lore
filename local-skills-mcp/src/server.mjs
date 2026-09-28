@@ -13,7 +13,7 @@
  */
 
 import { loadConfig } from './config.mjs';
-import { TOOL_DEFINITIONS, callTool, createToolState } from './tools.mjs';
+import { TOOL_DEFINITIONS, callTool, createToolState, skillsEnabled } from './tools.mjs';
 import { StdioJsonRpcFramer, encodeMessage } from './stdio.mjs';
 
 const SERVER_INFO = {
@@ -41,6 +41,7 @@ function makeResult(id, result) {
 
 export function createLocalSkillsMcpServer(opts = {}) {
   const config = opts.config || loadConfig(opts);
+  const enabled = skillsEnabled(config);
   const state = createToolState();
   let responseMode = opts.responseMode || 'content-length';
   let initialized = false;
@@ -74,9 +75,9 @@ export function createLocalSkillsMcpServer(opts = {}) {
             tools: { listChanged: false },
           },
           serverInfo: SERVER_INFO,
-          instructions:
-            'Local Lore skills MCP. Use lore_skill_list/search/get/create/update/delete/status. '
-            + 'Call lore_skill_get with skill_id to materialize a writable local work copy.',
+          instructions: enabled
+            ? 'Local Lore skills MCP. Use lore_skill_list/search/get/create/update/delete/status. Call lore_skill_get with skill_id to fetch a local copy; managed package files are read-only, and the skill directory stays writable for local outputs.'
+            : 'Lore Skills are disabled because the connected server does not advertise Skills support.',
         }));
         return;
       }
@@ -92,7 +93,7 @@ export function createLocalSkillsMcpServer(opts = {}) {
       }
 
       if (method === 'tools/list') {
-        send(makeResult(id, { tools: TOOL_DEFINITIONS }));
+        send(makeResult(id, { tools: enabled ? TOOL_DEFINITIONS : [] }));
         return;
       }
 

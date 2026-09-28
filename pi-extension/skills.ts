@@ -51,6 +51,7 @@ export {
   sha256Text,
   decodeSkillFileContent,
   computeManifestHash,
+  hashLocalSkillFiles,
   readWorkCopyMarker,
   readMirrorMarker,
   inspectLocalWorkCopy,
@@ -138,7 +139,7 @@ export async function deleteSkillApi(pluginCfg: any, skillId: string): Promise<a
 }
 
 /**
- * Ensure a writable work copy via shared DI core.
+ * Ensure a local work copy via shared DI core.
  * loadSkill=getSkillApi, loadCatalog=listSkillsApi.
  */
 export async function ensureSkillWorkCopy(opts: {
@@ -162,22 +163,51 @@ export async function ensureSkillWorkCopy(opts: {
 
 // ---- candidate discovery (recall only; no download / no local path) ----
 
+const MAX_SKILL_CANDIDATES = 5;
+const MAX_SKILL_ID_LENGTH = 256;
+const MAX_SKILL_NAME_LENGTH = 160;
+const MAX_SKILL_DESCRIPTION_LENGTH = 500;
+const MAX_SKILL_VERSION_LENGTH = 64;
+
+function sanitizeCandidateText(value: unknown, maxLength: number): string {
+  return String(value ?? '')
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+}
+
 export function formatSkillCandidateBlock(candidates: Array<{
   skill_id: string;
   name: string;
   version?: string | number;
   description?: string;
 }>): string {
-  if (!candidates.length) return '';
+  const safeCandidates = candidates
+    .slice(0, MAX_SKILL_CANDIDATES)
+    .map((candidate) => ({
+      skill_id: sanitizeCandidateText(candidate.skill_id, MAX_SKILL_ID_LENGTH),
+      name: sanitizeCandidateText(candidate.name, MAX_SKILL_NAME_LENGTH),
+      version: candidate.version === undefined || candidate.version === ''
+        ? undefined
+        : typeof candidate.version === 'number' && Number.isFinite(candidate.version)
+          ? candidate.version
+          : sanitizeCandidateText(candidate.version, MAX_SKILL_VERSION_LENGTH),
+      description: sanitizeCandidateText(candidate.description, MAX_SKILL_DESCRIPTION_LENGTH),
+    }))
+    .filter((candidate) => candidate.skill_id && candidate.name);
+  if (!safeCandidates.length) return '';
   const lines = ['<lore-skills>'];
-  lines.push('Matched Lore skills. Call lore_skill_get with skill_id to materialize a local work copy.');
-  for (const c of candidates) {
-    const version = c.version === undefined || c.version === '' ? '' : ` v${c.version}`;
-    const desc = c.description ? ` — ${String(c.description).replace(/\s+/g, ' ').trim()}` : '';
-    lines.push(`- ${c.name}${version}${desc}`);
-    lines.push(`  skill_id: ${c.skill_id}`);
-    if (c.version !== undefined && c.version !== '') {
-      lines.push(`  version: ${c.version}`);
+  lines.push('Matched Lore skills. Call lore_skill_get with skill_id to fetch a local copy; managed package files are read-only, and the skill directory stays writable for local outputs.');
+  for (const candidate of safeCandidates) {
+    const version = candidate.version ? ` v${candidate.version}` : '';
+    const desc = candidate.description ? ` — ${candidate.description}` : '';
+    lines.push(`- ${candidate.name}${version}${desc}`);
+    lines.push(`  skill_id: ${candidate.skill_id}`);
+    if (candidate.version) {
+      lines.push(`  version: ${candidate.version}`);
     }
   }
   lines.push('</lore-skills>');
@@ -218,14 +248,22 @@ export function discoveryCandidateEntries(candidates: SkillCandidate[]): Array<{
 }> {
   const out: Array<{ skill_id: string; name: string; version?: string | number; description?: string }> = [];
   for (const candidate of candidates || []) {
-    const name = String(candidate.name || '').trim();
-    const skillId = skillIdOf(candidate);
+    if (out.length >= MAX_SKILL_CANDIDATES) break;
+    const name = sanitizeCandidateText(candidate.name, MAX_SKILL_NAME_LENGTH);
+    const skillId = sanitizeCandidateText(skillIdOf(candidate), MAX_SKILL_ID_LENGTH);
     if (!name || !skillId) continue;
+    const rawVersion = skillVersionOf(candidate);
+    const version = rawVersion === undefined || rawVersion === null || rawVersion === ''
+      ? undefined
+      : typeof rawVersion === 'number' && Number.isFinite(rawVersion)
+        ? rawVersion
+        : sanitizeCandidateText(rawVersion, MAX_SKILL_VERSION_LENGTH);
+    const description = sanitizeCandidateText(candidate.description, MAX_SKILL_DESCRIPTION_LENGTH);
     out.push({
       skill_id: skillId,
       name,
-      version: skillVersionOf(candidate),
-      description: typeof candidate.description === 'string' ? candidate.description : undefined,
+      version,
+      description: description || undefined,
     });
   }
   return out;
@@ -240,7 +278,8 @@ export function createSkillsSession(pluginCfg: any) {
     : resolveLoreHome());
 
   /**
-   * Session start: record project/catalog identity only. No auto-download / reconcile.
+   * Session start: record project/catalog identity only. Never auto-downloads or
+   * reconciles; all download/update is on-demand via lore_skill_get.
    */
   async function onSessionStart(lifecycleResponse: any): Promise<void> {
     const catalog = readSkillCatalog(lifecycleResponse);
@@ -411,8 +450,11 @@ export function registerSkillTools(pi: any, pluginCfg: any, skillsSession?: Skil
     name: 'lore_skill_get',
     label: 'Lore skill get',
     description:
-      'Fetch a Lore skill and materialize a writable local work copy when missing or when the server version differs. '
-      + 'Returns local SKILL.md content and absolute skill_dir. Same-version local edits are preserved.',
+      'Fetch a Lore skill into a local work copy. Downloads the complete server package when missing, '
+      + 'updates managed package files when the server version differs, and reuses the local copy when the version matches. '
+      + 'Managed package files are read-only; the skill directory stays writable for local outputs. '
+      + 'Same-version local outputs are preserved across fetches and upgrades. '
+      + 'Returns SKILL.md content and the absolute skill_dir.',
     parameters: Type.Object({
       skill_id: Type.String({ description: 'Skill id.' }),
     }),
@@ -554,8 +596,8 @@ export function registerSkillTools(pi: any, pluginCfg: any, skillsSession?: Skil
     name: 'lore_skill_status',
     label: 'Lore skill status',
     description:
-      'Report local writable skill work-copy states (ready/missing/outdated/unmanaged/invalid). '
-      + 'Read-only: never mutates or reconciles work copies.',
+      'Report local skill work-copy states (ready/missing/outdated/tampered/unmanaged/invalid). '
+      + 'Read-only: never mutates or reconciles copies.',
     parameters: Type.Object({}, { additionalProperties: false }),
     async execute(_toolCallId: string, _params: any = {}) {
       try {

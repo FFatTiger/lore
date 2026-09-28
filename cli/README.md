@@ -71,7 +71,7 @@ LORE_CODEX_INSTALL_USER_HOOKS=1 npx @loremem/cli install \
 
 ## Channel behavior
 
-- Claude Code, Codex, Pi, OpenClaw, and OpenCode require their corresponding host CLI for automatic setup.
+- Claude Code, Codex, Pi, OpenClaw, OpenCode, and ZCode require their corresponding host CLI for automatic setup.
 - Hermes downloads and prepares the `lore_memory` files, but linking them into the Hermes skills/plugin path is a manual step.
 - Missing host CLIs are reported as skipped rather than silently treated as configured.
 - Required marketplace, MCP, build, plugin, compatibility, and Docker commands report failures with bounded, token-redacted diagnostics.
@@ -83,7 +83,7 @@ The current installer supports macOS and Linux. Some integrations still invoke P
 - Node.js 20 or newer
 - Bash for Bash-dependent integration helpers
 - `curl` and `unzip` for GitHub release artifacts
-- Host CLIs for the selected integrations (`claude`, `codex`, `pi`, `openclaw`, `opencode`, and others as applicable)
+- Host CLIs for the selected integrations (`claude`, `codex`, `pi`, `openclaw`, `opencode`, `zcode`, and others as applicable)
 - Docker plus Docker Compose only for local self-host mode
 - Python 3 for optional OpenCode compatibility handling when that compatibility state is present
 

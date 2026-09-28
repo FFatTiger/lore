@@ -13,6 +13,7 @@ const ARTIFACT_MAP: Record<ChannelId, string> = {
   openclaw: 'lore-openclaw.zip',
   hermes: 'lore-hermes.zip',
   opencode: 'lore-opencode.zip',
+  zcode: 'lore-zcode.zip',
 };
 
 export function artifactName(id: ChannelId): string {

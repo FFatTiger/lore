@@ -51,6 +51,8 @@ prepare_version() {
   "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" pi-extension/package.json
   "${SED_INPLACE[@]}" "s/^version: .*/version: ${VERSION}/" hermes-plugin/lore_memory/plugin.yaml
   "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" opencode-plugin/package.json
+  "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" zcode-plugin/.zcode-plugin/plugin.json
+  "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" zcode-plugin/marketplace.json
   "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" local-skills-mcp/package.json
   "${SED_INPLACE[@]}" "s/version: '[^']*'/version: '${VERSION}'/" local-skills-mcp/src/server.mjs
 
@@ -92,6 +94,8 @@ verify_versions() {
     pi-extension/package.json \
     opencode-plugin/package.json \
     opencode-plugin/package-lock.json \
+    zcode-plugin/.zcode-plugin/plugin.json \
+    zcode-plugin/marketplace.json \
     local-skills-mcp/package.json
   grep -n "version:" web/server/mcpServer.ts local-skills-mcp/src/server.mjs | head -2
   grep -n "version:" hermes-plugin/lore_memory/plugin.yaml | head -1

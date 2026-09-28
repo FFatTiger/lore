@@ -37,6 +37,15 @@ SHARED_LORE_API_TOKEN="$(read_lore_config_value api_token)"
 LORE_BASE_URL="${SHARED_LORE_BASE_URL:-${LORE_BASE_URL:-}}"
 LORE_BASE_URL="${LORE_BASE_URL:-$DEFAULT_BASE_URL}"
 LORE_API_TOKEN="${SHARED_LORE_API_TOKEN:-${LORE_API_TOKEN:-${API_TOKEN:-}}}"
+LORE_SKILLS_EXPLICIT="${LORE_SKILLS_ENABLED+x}"
+LORE_SKILLS_ENABLED="${LORE_SKILLS_ENABLED:-0}"
+# Unset means auto-detect. Explicit 0 is a hard local kill switch.
+if [ -z "$LORE_SKILLS_EXPLICIT" ]; then
+  health_body=$(curl -fsSL --max-time 8 ${LORE_API_TOKEN:+-H "Authorization: Bearer ${LORE_API_TOKEN}"} "${LORE_BASE_URL%/}/api/health" 2>/dev/null || true)
+  if printf '%s' "$health_body" | python3 -c 'import json,sys; d=json.load(sys.stdin); raise SystemExit(0 if d.get("capabilities",{}).get("skills") is True else 1)' 2>/dev/null; then
+    LORE_SKILLS_ENABLED=1
+  fi
+fi
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -206,11 +215,11 @@ configure_mcp() {
   codex mcp remove lore-skills >/dev/null 2>&1 || true
   codex mcp add lore --url "$url"
 
-  python3 - "$CODEX_CONFIG" "$url" "$token" "$skills_server" "$lore_home" "${LORE_BASE_URL%/}" <<'PY'
+  python3 - "$CODEX_CONFIG" "$url" "$token" "$skills_server" "$lore_home" "${LORE_BASE_URL%/}" "$LORE_SKILLS_ENABLED" <<'PY'
 import json
 import sys
 
-path, url, token, skills_server, lore_home, base_url = sys.argv[1:7]
+path, url, token, skills_server, lore_home, base_url, skills_enabled = sys.argv[1:8]
 try:
     with open(path, encoding="utf-8") as handle:
         lines = handle.read().splitlines()
@@ -240,6 +249,19 @@ def upsert_section(lines, section, body_lines):
         out.extend(body_lines)
     return out
 
+def remove_section(lines, section):
+    out = []
+    idx = 0
+    while idx < len(lines):
+        if lines[idx].strip() == section:
+            idx += 1
+            while idx < len(lines) and not lines[idx].lstrip().startswith("["):
+                idx += 1
+            continue
+        out.append(lines[idx])
+        idx += 1
+    return out
+
 lore_body = [f"url = {json.dumps(url)}"]
 if token:
     lore_body.append(f"http_headers = {{ Authorization = {json.dumps('Bearer ' + token)} }}")
@@ -248,6 +270,7 @@ skills_env_parts = [
     f"LORE_HOME = {json.dumps(lore_home)}",
     f"LORE_BASE_URL = {json.dumps(base_url)}",
     'LORE_CLIENT_TYPE = "codex"',
+    'LORE_SKILLS_ENABLED = "1"',
 ]
 if token:
     skills_env_parts.append(f"LORE_API_TOKEN = {json.dumps(token)}")
@@ -258,7 +281,10 @@ skills_body = [
 ]
 
 lines = upsert_section(lines, "[mcp_servers.lore]", lore_body)
-lines = upsert_section(lines, "[mcp_servers.lore-skills]", skills_body)
+if skills_enabled == "1":
+    lines = upsert_section(lines, "[mcp_servers.lore-skills]", skills_body)
+else:
+    lines = remove_section(lines, "[mcp_servers.lore-skills]")
 
 with open(path, "w", encoding="utf-8") as handle:
     handle.write("\n".join(lines).rstrip() + "\n")
@@ -321,7 +347,7 @@ patch_hook_placeholders "$INSTALLED_PLUGIN_ROOT"
 patch_hook_placeholders "$TARGET_ROOT/plugins/$PLUGIN_NAME"
 jq -e '.plugins[0].source.path == "./plugins/lore"' "$TARGET_ROOT/.agents/plugins/marketplace.json" >/dev/null
 jq -e '.mcpServers.lore.url | contains("client_type=codex")' "$INSTALLED_PLUGIN_ROOT/.mcp.json" >/dev/null
-jq -e '.mcpServers["lore-skills"].args | join(" ") | contains("local-skills-mcp")' "$INSTALLED_PLUGIN_ROOT/.mcp.json" >/dev/null
+jq -e '(.mcpServers["lore-skills"] // null) == null' "$INSTALLED_PLUGIN_ROOT/.mcp.json" >/dev/null
 [ -f "$INSTALLED_PLUGIN_ROOT/local-skills-mcp/src/server.mjs" ]
 
 register_marketplace

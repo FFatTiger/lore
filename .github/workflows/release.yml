@@ -168,6 +168,12 @@ jobs:
           python3 -m py_compile scripts/opencode-compat.py
           bash scripts/build-opencode-artifact.sh
 
+      - name: Build ZCode artifact
+        run: |
+          mkdir -p dist
+          cd zcode-plugin
+          zip -r ../dist/lore-zcode.zip .zcode-plugin marketplace.json hooks README.md
+
       - name: Upload artifacts to release
         env:
           GH_REPO: ${{ github.repository }}

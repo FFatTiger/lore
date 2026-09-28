@@ -56,6 +56,16 @@ class LoreClient:
         self.api_token = self._clean(api_token) or shared_api_token or self._clean(os.getenv("LORE_API_TOKEN")) or self._clean(os.getenv("API_TOKEN"))
         self.timeout = timeout or int(os.getenv("LORE_TIMEOUT", self.DEFAULT_TIMEOUT))
         self.default_domain = default_domain or os.getenv("LORE_DEFAULT_DOMAIN") or self.DEFAULT_DOMAIN
+        env_skills = self._clean(os.getenv("LORE_SKILLS_ENABLED"))
+        profile = shared.get("server_profile") if isinstance(shared.get("server_profile"), dict) else {}
+        profile_base = self._clean(profile.get("base_url")).rstrip("/").lower()
+        capabilities = profile.get("capabilities") if isinstance(profile.get("capabilities"), dict) else {}
+        if env_skills == "0":
+            self.skills_enabled = False
+        elif profile_base == self.base_url.lower():
+            self.skills_enabled = capabilities.get("skills") is True
+        else:
+            self.skills_enabled = env_skills == "1"
     
     def _get_headers(self, include_json: bool = True) -> Dict[str, str]:
         """Build request headers"""

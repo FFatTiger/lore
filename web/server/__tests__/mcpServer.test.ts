@@ -70,7 +70,7 @@ describe('embedded MCP contract projections', () => {
     mockValidateDeletePolicy.mockResolvedValue({ errors: [], warnings: [] } as any);
   });
 
-  it('keeps the generated OpenCode contract synchronized with registered MCP tools', async () => {
+  it('keeps the shared OpenCode memory contract synchronized with registered MCP tools', async () => {
     const contracts = getLoreToolContracts();
     const server = await createMcpServer();
     const tools = (server as any)._registeredTools;
@@ -88,11 +88,16 @@ describe('embedded MCP contract projections', () => {
     }
 
     const generatedPath = fileURLToPath(new URL('../../../opencode-plugin/tool-contracts.json', import.meta.url));
-    const expected = `${JSON.stringify(contracts, null, 2)}\n`;
+    const generated = JSON.parse(readFileSync(generatedPath, 'utf8')) as ReturnType<typeof getLoreToolContracts>;
+    const sharedNames = new Set(contracts.map((contract) => contract.name));
+    const pluginOnly = generated.filter((contract) => !sharedNames.has(contract.name));
+    const expectedContracts = [...contracts, ...pluginOnly];
+    const expected = `${JSON.stringify(expectedContracts, null, 2)}\n`;
     if (process.env.UPDATE_OPENCODE_TOOL_CONTRACTS === '1') {
       writeFileSync(generatedPath, expected);
     } else {
-      expect(readFileSync(generatedPath, 'utf8')).toBe(expected);
+      expect(generated.slice(0, contracts.length)).toEqual(contracts);
+      expect(new Set(generated.map((contract) => contract.name)).size).toBe(generated.length);
     }
   });
 

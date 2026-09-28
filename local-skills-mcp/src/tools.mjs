@@ -73,8 +73,10 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'lore_skill_get',
     description:
-      'Fetch a Lore skill and materialize a writable local work copy when missing or when the server version differs. '
-      + 'Returns local SKILL.md content and absolute skill_dir. Same-version local edits are preserved.',
+      'Fetch a Lore skill into a local work copy. Downloads the complete server package when missing, updates managed package files when the server version differs, and reuses the local copy when the version matches. '
+      + 'Managed package files are read-only; the skill directory stays writable for local outputs. '
+      + 'Same-version local outputs are preserved across fetches and upgrades. '
+      + 'Returns SKILL.md content and the absolute skill_dir.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -85,7 +87,7 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'lore_skill_create',
-    description: 'Create a Lore skill on the server. Does not auto-materialize a local work copy; call lore_skill_get later if needed.',
+    description: 'Create a Lore skill on the server. Does not auto-materialize a local mirror; call lore_skill_get later if needed.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -104,7 +106,7 @@ export const TOOL_DEFINITIONS = [
     name: 'lore_skill_update',
     description:
       'Update a Lore skill on the server with optimistic concurrency via expected_version. '
-      + 'Does not auto-reconcile the local work copy; call lore_skill_get later if the version differs.',
+      + 'Does not auto-reconcile the local mirror; call lore_skill_get later if the version differs.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -131,7 +133,7 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'lore_skill_delete',
-    description: 'Archive/delete a Lore skill on the server. Does not auto-remove the local work copy.',
+    description: 'Archive/delete a Lore skill on the server. Does not auto-remove the local mirror.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -143,8 +145,8 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'lore_skill_status',
     description:
-      'Report local writable skill work-copy states (ready/missing/outdated/unmanaged/invalid). '
-      + 'Read-only: never mutates or reconciles work copies.',
+      'Report local skill work-copy states (ready/missing/outdated/tampered/unmanaged/invalid). '
+      + 'Read-only: never mutates or reconciles copies.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -180,7 +182,16 @@ export function createToolState() {
   return { projectId: undefined, catalogRevision: undefined, lastError: undefined };
 }
 
+export function skillsEnabled(config) {
+  if (config?.skillsEnabled === true) return true;
+  if (config?.skillsEnabled === false) return false;
+  return config?.env?.LORE_SKILLS_ENABLED === '1';
+}
+
 export async function callTool(config, name, args = {}, state = createToolState()) {
+  if (!skillsEnabled(config)) {
+    return textContent('Connected Lore server does not advertise Skills support.', true);
+  }
   try {
     switch (name) {
       case 'lore_skill_list': {
@@ -213,7 +224,7 @@ export async function callTool(config, name, args = {}, state = createToolState(
         const result = await ensureSkillWorkCopy(config, skillId, state);
         if (result.project_id) state.projectId = result.project_id;
         const text = [
-          `Skill work copy ready: ${result.skill.name || skillId}`,
+          `Skill read-only mirror ready: ${result.skill.name || skillId}`,
           `skill_dir: ${result.skill_dir}`,
           `server_version: ${result.server_version ?? '?'}`,
           `local_version: ${result.local_version}`,

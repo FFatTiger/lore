@@ -42,11 +42,11 @@
   },
   {
     "name": "lore_search",
-    "description": "Search memories by keyword, semantic similarity, or both. Returns full content for top results — use this when you need to read memory content directly without a separate get_node call.",
+    "description": "Search memories by keyword, semantic similarity, or both. Returns full content for top results \u2014 use this when you need to read memory content directly without a separate get_node call.",
     "parameters": [
       {
         "name": "query",
-        "description": "Search query text. Not a wildcard — use a meaningful keyword or phrase. Passing an empty string or * with a domain filter browses that domain root.",
+        "description": "Search query text. Not a wildcard \u2014 use a meaningful keyword or phrase. Passing an empty string or * with a domain filter browses that domain root.",
         "required": true
       },
       {
@@ -209,7 +209,7 @@
   },
   {
     "name": "lore_skill_get",
-    "description": "Fetch a Lore skill and materialize a writable local work copy when missing or when the server version differs. Returns local SKILL.md content and absolute skill_dir. Same-version local edits are preserved.",
+    "description": "Fetch a Lore skill into a local work copy. Downloads the complete server package when missing, updates managed package files when the server version differs, and reuses the local copy when the version matches. Managed package files are read-only; the skill directory stays writable for local outputs. Same-version local outputs are preserved across fetches and upgrades. Returns SKILL.md content and the absolute skill_dir.",
     "parameters": [
       {
         "name": "skill_id",
@@ -220,7 +220,7 @@
   },
   {
     "name": "lore_skill_create",
-    "description": "Create a Lore skill on the server. Does not auto-materialize a local work copy; call lore_skill_get later if needed.",
+    "description": "Create a Lore skill on the server. Does not auto-materialize a local mirror; call lore_skill_get later if needed.",
     "parameters": [
       {
         "name": "name",
@@ -241,7 +241,7 @@
   },
   {
     "name": "lore_skill_update",
-    "description": "Update a Lore skill on the server with optimistic concurrency via expected_version. Does not auto-reconcile the local work copy; call lore_skill_get later if the version differs.",
+    "description": "Update a Lore skill on the server with optimistic concurrency via expected_version. Does not auto-reconcile the local mirror; call lore_skill_get later if the version differs.",
     "parameters": [
       {
         "name": "skill_id",
@@ -272,7 +272,7 @@
   },
   {
     "name": "lore_skill_delete",
-    "description": "Archive/delete a Lore skill on the server. Does not auto-remove the local work copy.",
+    "description": "Archive/delete a Lore skill on the server. Does not auto-remove the local mirror.",
     "parameters": [
       {
         "name": "skill_id",
@@ -283,7 +283,7 @@
   },
   {
     "name": "lore_skill_status",
-    "description": "Report local writable skill work-copy states (ready/missing/outdated/unmanaged/invalid). Read-only: never mutates or reconciles work copies.",
+    "description": "Report local skill work-copy states (ready/missing/outdated/tampered/unmanaged/invalid). Read-only: never mutates or reconciles copies.",
     "parameters": []
   }
 ]

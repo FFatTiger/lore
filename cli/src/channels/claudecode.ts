@@ -87,7 +87,10 @@ export const claudecodeInstaller: ChannelInstaller = {
     try {
       const existingSettings = await readJsonFileStrict<unknown>(sf);
       if (existingSettings !== undefined) asSettings(existingSettings, sf);
-      const commandOpts = { quiet: true, env };
+      const commandOpts = {
+        quiet: true,
+        env: { ...env, LORE_SKILLS_ENABLED: ctx.capabilities.skills ? '1' : '0' },
+      };
       const redact = [ctx.apiToken ?? ''];
 
       await fs.rm(path.join(homeDir, '.claude', 'plugins', 'cache', 'lore'), {
@@ -139,33 +142,35 @@ export const claudecodeInstaller: ChannelInstaller = {
       }
       await runChecked(run, 'Claude MCP registration', mcpArgs, commandOpts, { redact });
 
-      // Local skills stdio MCP: command points into the installed channel artifact.
-      // Token/base URL come from Claude settings env / process env, not from command argv.
-      const skillsServer = path.join(dest, 'local-skills-mcp', 'src', 'server.mjs');
-      try {
-        const stat = await fs.lstat(skillsServer);
-        if (!stat.isFile() || stat.isSymbolicLink()) {
-          throw new Error(`Claude artifact has invalid local Skills MCP entry: ${skillsServer}`);
+      if (ctx.capabilities.skills) {
+        // Local skills stdio MCP: command points into the installed channel artifact.
+        // Token/base URL come from Claude settings env / process env, not from command argv.
+        const skillsServer = path.join(dest, 'local-skills-mcp', 'src', 'server.mjs');
+        try {
+          const stat = await fs.lstat(skillsServer);
+          if (!stat.isFile() || stat.isSymbolicLink()) {
+            throw new Error(`Claude artifact has invalid local Skills MCP entry: ${skillsServer}`);
+          }
+        } catch (err) {
+          throw new Error(`Claude artifact missing local Skills MCP entry: ${skillsServer}`, { cause: err });
         }
-      } catch (err) {
-        throw new Error(`Claude artifact missing local Skills MCP entry: ${skillsServer}`, { cause: err });
+        const skillsArgs = [
+          'claude',
+          'mcp',
+          'add',
+          '--transport',
+          'stdio',
+          '--scope',
+          'user',
+          'lore-skills',
+          '--',
+          'node',
+          skillsServer,
+          '--client-type',
+          'claudecode',
+        ];
+        await runChecked(run, 'Claude skills MCP registration', skillsArgs, commandOpts, { redact });
       }
-      const skillsArgs = [
-        'claude',
-        'mcp',
-        'add',
-        '--transport',
-        'stdio',
-        '--scope',
-        'user',
-        'lore-skills',
-        '--',
-        'node',
-        skillsServer,
-        '--client-type',
-        'claudecode',
-      ];
-      await runChecked(run, 'Claude skills MCP registration', skillsArgs, commandOpts, { redact });
 
       await ensureDir(path.dirname(sf));
       const latestSettings = await readJsonFileStrict<unknown>(sf);
@@ -174,6 +179,7 @@ export const claudecodeInstaller: ChannelInstaller = {
       settingsEnv.LORE_BASE_URL = ctx.baseUrl.replace(/\/$/, '');
       settingsEnv.LORE_HOME = ctx.loreHome;
       settingsEnv.LORE_CLIENT_TYPE = 'claudecode';
+      settingsEnv.LORE_SKILLS_ENABLED = ctx.capabilities.skills ? '1' : '0';
       if (ctx.apiToken) settingsEnv.LORE_API_TOKEN = ctx.apiToken;
       else if (ctx.tokenAction === 'clear') delete settingsEnv.LORE_API_TOKEN;
       await writeJsonAtomic(sf, settings);
@@ -204,6 +210,7 @@ export const claudecodeInstaller: ChannelInstaller = {
         delete settings.env.LORE_API_TOKEN;
         delete settings.env.LORE_HOME;
         delete settings.env.LORE_CLIENT_TYPE;
+        delete settings.env.LORE_SKILLS_ENABLED;
         if (Object.keys(settings.env).length === 0) delete settings.env;
         await writeJsonAtomic(sf, settings);
       }

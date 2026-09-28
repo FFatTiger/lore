@@ -123,7 +123,7 @@ export function formatSkillCandidateBlock(candidates: Array<{
 }>): string {
   if (!candidates.length) return "";
   const lines = ["<lore-skills>"];
-  lines.push("Matched Lore skills. Call lore_skill_get with skill_id to materialize a local work copy.");
+  lines.push("Matched Lore skills. Call lore_skill_get with skill_id to fetch a local copy; managed package files are read-only, and the skill directory stays writable for local outputs.");
   for (const c of candidates) {
     const version = c.version === undefined || c.version === "" ? "" : ` v${c.version}`;
     const desc = c.description ? ` — ${String(c.description).replace(/\s+/g, " ").trim()}` : "";
@@ -192,7 +192,7 @@ export function createSkillsSession(pluginCfg: any) {
     ? pluginCfg.loreHome.trim()
     : resolveLoreHome());
 
-  /** Session start: record project/catalog identity only. No auto-download / reconcile. */
+  /** Session start: record project/catalog identity only. Never auto-downloads or reconciles. */
   async function onSessionStart(lifecycleResponse: any): Promise<void> {
     const catalog = readSkillCatalog(lifecycleResponse);
     if (!catalog?.project_id) return;
@@ -320,8 +320,11 @@ export function registerSkillTools(api: any, pluginCfg: any, skillsSession?: Ski
     name: "lore_skill_get",
     label: "Lore skill get",
     description:
-      "Fetch a Lore skill and materialize a writable local work copy when missing or when the server version differs. "
-      + "Returns local SKILL.md content and absolute skill_dir. Same-version local edits are preserved.",
+      "Fetch a Lore skill into a local work copy. Downloads the complete server package when missing, "
+      + "updates managed package files when the server version differs, and reuses the local copy when "
+      + "the version matches. Managed package files are read-only; the skill directory stays writable for "
+      + "local outputs. Same-version local outputs are preserved across fetches and upgrades. Returns "
+      + "SKILL.md content and the absolute skill_dir.",
     parameters: Type.Object({
       skill_id: Type.String({ description: "Skill id." }),
     }),
@@ -371,7 +374,7 @@ export function registerSkillTools(api: any, pluginCfg: any, skillsSession?: Ski
   api.registerTool({
     name: "lore_skill_create",
     label: "Lore skill create",
-    description: "Create a Lore skill on the server. Does not auto-materialize a local work copy; call lore_skill_get later if needed.",
+    description: "Create a Lore skill on the server. Does not auto-materialize a local mirror; call lore_skill_get later if needed.",
     parameters: Type.Object({
       name: Type.String({ description: "Skill name." }),
       enabled: Type.Optional(Type.Boolean({ description: "Whether the skill is enabled (default true)." })),
@@ -404,7 +407,7 @@ export function registerSkillTools(api: any, pluginCfg: any, skillsSession?: Ski
     label: "Lore skill update",
     description:
       "Update a Lore skill on the server with optimistic concurrency via expected_version. "
-      + "Does not auto-reconcile the local work copy; call lore_skill_get later if the version differs.",
+      + "Does not auto-reconcile the local mirror; call lore_skill_get later if the version differs.",
     parameters: Type.Object({
       skill_id: Type.String({ description: "Skill id." }),
       expected_version: Type.Integer({ minimum: 1, description: "Expected current integer version (optimistic concurrency)." }),
@@ -446,7 +449,7 @@ export function registerSkillTools(api: any, pluginCfg: any, skillsSession?: Ski
   api.registerTool({
     name: "lore_skill_delete",
     label: "Lore skill delete",
-    description: "Archive/delete a Lore skill on the server. Does not auto-remove the local work copy.",
+    description: "Archive/delete a Lore skill on the server. Does not auto-remove the local mirror.",
     parameters: Type.Object({
       skill_id: Type.String({ description: "Skill id." }),
     }),
@@ -468,8 +471,8 @@ export function registerSkillTools(api: any, pluginCfg: any, skillsSession?: Ski
     name: "lore_skill_status",
     label: "Lore skill status",
     description:
-      "Report local writable skill work-copy states (ready/missing/outdated/unmanaged/invalid). "
-      + "Read-only: never mutates or reconciles work copies.",
+      "Report local skill work-copy states (ready/missing/outdated/tampered/unmanaged/invalid). "
+      + "Read-only: never mutates or reconciles copies.",
     parameters: Type.Object({}),
     async execute(_id: any, _params: any = {}) {
       try {

@@ -18,6 +18,7 @@ function makePluginCfg(overrides: any = {}) {
     timeoutMs: 5000,
     defaultDomain: 'core',
     recallEnabled: true,
+    skillsEnabled: true,
     injectPromptGuidance: true,
     startupHealthcheck: false,
     ...overrides,
@@ -29,7 +30,7 @@ const RECALL_SESSION_ID_DESCRIPTION = 'REQUIRED when the URI came from <recall>:
 const RECALL_QUERY_ID_DESCRIPTION = 'REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag.';
 
 describe('registerTools — tool registration', () => {
-  it('registers all 16 tools including skills', () => {
+  it('registers all 16 tools including skills and no artifact tool', () => {
     const api = makeMockApi();
     const cfg = makePluginCfg();
     registerTools(api as any, cfg);
@@ -54,6 +55,13 @@ describe('registerTools — tool registration', () => {
     expect(names).not.toContain('lore_skill_artifact_create');
     expect(names).not.toContain('lore_list_session_reads');
     expect(names).not.toContain('lore_clear_session_reads');
+  });
+
+  it('omits skill tools when the server capability is disabled', () => {
+    const api = makeMockApi();
+    registerTools(api as any, makePluginCfg({ skillsEnabled: false }));
+    expect(Object.keys(api.tools).some((name) => name.startsWith('lore_skill_'))).toBe(false);
+    expect(api.tools.lore_search).toBeDefined();
   });
 
   it('each tool has name, description, and execute', () => {

@@ -40,6 +40,7 @@ CHECK_PRE=0
 CHECK_DEV=0
 SHOW_HELP=0
 DOCKER_MANAGED=""
+SKILLS_ENABLED=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -214,13 +215,14 @@ write_config() {
     new_ver="${RELEASE_VERSION:-}"
   fi
 
-  python3 - "$LORE_CONFIG_FILE" "$BASE_URL" "$API_TOKEN" "$new_ver" "$DOCKER_MANAGED" <<'PY'
+  python3 - "$LORE_CONFIG_FILE" "$BASE_URL" "$API_TOKEN" "$new_ver" "$DOCKER_MANAGED" "$SKILLS_ENABLED" <<'PY'
 import sys, json, os
 path = sys.argv[1]
 base_url = sys.argv[2]
 api_token = sys.argv[3]
 version = sys.argv[4]
 docker_managed = sys.argv[5]
+skills_enabled = sys.argv[6] == "1"
 
 data = {}
 if os.path.exists(path):
@@ -238,6 +240,10 @@ elif docker_managed == "0":
     data['docker_managed'] = False
 elif 'docker_managed' not in data:
     data['docker_managed'] = False
+data['server_profile'] = {
+    'base_url': base_url.rstrip('/'),
+    'capabilities': {'skills': skills_enabled},
+}
 
 with open(path, 'w') as f:
     json.dump(data, f, indent=2, ensure_ascii=False)
@@ -246,6 +252,18 @@ PY
     ok "Config saved"
   else
     ok "Client config saved"
+  fi
+}
+
+probe_server_capabilities() {
+  SKILLS_ENABLED=0
+  local health_url="${BASE_URL%/}/api/health"
+  local auth_args=()
+  [[ -n "$API_TOKEN" ]] && auth_args=(-H "Authorization: Bearer ${API_TOKEN}")
+  local body
+  body=$(curl -fsSL --max-time 8 "${auth_args[@]}" "$health_url" 2>/dev/null) || return 0
+  if printf '%s' "$body" | python3 -c 'import json,sys; d=json.load(sys.stdin); raise SystemExit(0 if d.get("capabilities",{}).get("skills") is True else 1)' 2>/dev/null; then
+    SKILLS_ENABLED=1
   fi
 }
 
@@ -628,9 +646,9 @@ install_claudecode() {
   # settings.json env (for MCP URL and local Skills MCP)
   local sf="$HOME/.claude/settings.json"
   if have_command python3; then
-    python3 - "$sf" "$BASE_URL" "$API_TOKEN" "$LORE_HOME" <<'PY'
+    python3 - "$sf" "$BASE_URL" "$API_TOKEN" "$LORE_HOME" "$SKILLS_ENABLED" <<'PY'
 import sys, json, os
-path, base_url, api_token, lore_home = sys.argv[1:5]
+path, base_url, api_token, lore_home, skills_enabled = sys.argv[1:6]
 data = {}
 if os.path.exists(path):
     try:
@@ -641,6 +659,7 @@ data.setdefault("env", {})
 data["env"]["LORE_BASE_URL"] = base_url
 data["env"]["LORE_HOME"] = lore_home
 data["env"]["LORE_CLIENT_TYPE"] = "claudecode"
+data["env"]["LORE_SKILLS_ENABLED"] = skills_enabled
 if api_token: data["env"]["LORE_API_TOKEN"] = api_token
 with open(path, 'w') as f: json.dump(data, f, indent=2, ensure_ascii=False)
 PY
@@ -667,12 +686,12 @@ PY
     ok "Claude MCP configured"
   fi
 
+  run_quiet claude mcp remove lore-skills || true
   local claude_skills_server="$plugin_dir/local-skills-mcp/src/server.mjs"
-  if [[ ! -f "$claude_skills_server" || -L "$claude_skills_server" ]]; then
-    warn "Claude artifact missing local Skills MCP: $claude_skills_server"
-  else
-    run_quiet claude mcp remove lore-skills || true
-    if run_quiet claude mcp add --transport stdio --scope user lore-skills -- node "$claude_skills_server" --client-type claudecode; then
+  if [[ "$SKILLS_ENABLED" == "1" ]]; then
+    if [[ ! -f "$claude_skills_server" || -L "$claude_skills_server" ]]; then
+      warn "Claude artifact missing local Skills MCP: $claude_skills_server"
+    elif run_quiet claude mcp add --transport stdio --scope user lore-skills -- node "$claude_skills_server" --client-type claudecode; then
       ok "Claude local Skills MCP configured"
     else
       warn "Claude: configure local Lore Skills MCP manually"
@@ -762,16 +781,16 @@ PY
   run_quiet codex mcp remove lore || true
   run_quiet codex mcp remove lore-skills || true
   run_quiet codex mcp add lore --url "$mcp_url" || true
-  if [[ ! -f "$codex_skills_server" || -L "$codex_skills_server" ]]; then
+  if [[ "$SKILLS_ENABLED" == "1" && ( ! -f "$codex_skills_server" || -L "$codex_skills_server" ) ]]; then
     warn "Codex artifact missing local Skills MCP: $codex_skills_server"
   fi
   if have_command python3; then
-    python3 - "$cfg" "$mcp_url" "$API_TOKEN" "$codex_skills_server" "$LORE_HOME" "$BASE_URL" <<'PYCODEX'
+    python3 - "$cfg" "$mcp_url" "$API_TOKEN" "$codex_skills_server" "$LORE_HOME" "$BASE_URL" "$SKILLS_ENABLED" <<'PYCODEX'
 import json
 import os
 import sys
 
-path, mcp_url, api_token, skills_server, lore_home, base_url = sys.argv[1:7]
+path, mcp_url, api_token, skills_server, lore_home, base_url, skills_enabled = sys.argv[1:8]
 try:
     with open(path, encoding='utf-8') as handle:
         lines = handle.read().splitlines()
@@ -800,31 +819,47 @@ def upsert(lines, section, body):
         out.extend(body)
     return out
 
+def remove_section(lines, section):
+    out = []
+    idx = 0
+    while idx < len(lines):
+        if lines[idx].strip() == section:
+            idx += 1
+            while idx < len(lines) and not lines[idx].lstrip().startswith('['): idx += 1
+            continue
+        out.append(lines[idx]); idx += 1
+    return out
+
 remote = [f'url = {json.dumps(mcp_url)}']
 if api_token:
     remote.append(f'http_headers = {{ Authorization = {json.dumps("Bearer " + api_token)} }}')
 lines = upsert(lines, '[mcp_servers.lore]', remote)
 
-skills_env = [
-    f'LORE_HOME = {json.dumps(lore_home)}',
-    f'LORE_BASE_URL = {json.dumps(base_url.rstrip("/"))}',
-    'LORE_CLIENT_TYPE = "codex"',
-]
-if api_token:
-    skills_env.append(f'LORE_API_TOKEN = {json.dumps(api_token)}')
-skills = [
-    'command = "node"',
-    f'args = {json.dumps([skills_server, "--client-type", "codex"])}',
-    f'env = {{ {", ".join(skills_env)} }}',
-]
-lines = upsert(lines, '[mcp_servers.lore-skills]', skills)
+if skills_enabled == '1':
+    skills_env = [
+        f'LORE_HOME = {json.dumps(lore_home)}',
+        f'LORE_BASE_URL = {json.dumps(base_url.rstrip("/"))}',
+        'LORE_CLIENT_TYPE = "codex"',
+        'LORE_SKILLS_ENABLED = "1"',
+    ]
+    if api_token:
+        skills_env.append(f'LORE_API_TOKEN = {json.dumps(api_token)}')
+    skills = [
+        'command = "node"',
+        f'args = {json.dumps([skills_server, "--client-type", "codex"])}',
+        f'env = {{ {", ".join(skills_env)} }}',
+    ]
+    lines = upsert(lines, '[mcp_servers.lore-skills]', skills)
+else:
+    lines = remove_section(lines, '[mcp_servers.lore-skills]')
 
 os.makedirs(os.path.dirname(path), exist_ok=True)
 with open(path, 'w', encoding='utf-8') as handle:
     handle.write('\n'.join(lines).rstrip() + '\n')
 PYCODEX
   fi
-  ok "Memory and local Skills MCP configured"
+  ok "Memory MCP configured"
+  [[ "$SKILLS_ENABLED" == "1" ]] && ok "Local Skills MCP configured"
 
   # Enable official Codex lifecycle hooks support for plugin-bundled hooks.
   mkdir -p "$(dirname "$cfg")"
@@ -884,7 +919,8 @@ install_pi() {
   local pi_dir="$LORE_HOME/pi"
   download_or_skip "pi" "$pi_dir" || return
 
-  LORE_BASE_URL="${BASE_URL}" LORE_API_TOKEN="${API_TOKEN:-}" \
+  if [[ "$SKILLS_ENABLED" == "1" ]]; then printf '1\n' > "$pi_dir/.lore-skills-enabled"; else rm -f "$pi_dir/.lore-skills-enabled"; fi
+  LORE_BASE_URL="${BASE_URL}" LORE_API_TOKEN="${API_TOKEN:-}" LORE_SKILLS_ENABLED="$SKILLS_ENABLED" \
     bash "$pi_dir/scripts/install-local.sh" >/dev/null 2>&1
   ok "Pi configured"
 }
@@ -964,6 +1000,7 @@ install_opencode() {
   local plugin_dir="$LORE_HOME/opencode"
   download_or_skip "opencode" "$plugin_dir" || return
 
+  if [[ "$SKILLS_ENABLED" == "1" ]]; then printf '1\n' > "$plugin_dir/.lore-skills-enabled"; else rm -f "$plugin_dir/.lore-skills-enabled"; fi
   local source="$plugin_dir/lore-memory.js"
   local target="$HOME/.config/opencode/plugins/lore-memory.js"
   if [[ ! -f "$source" ]]; then
@@ -1010,9 +1047,9 @@ install_openclaw() {
 
   local occ="$HOME/.openclaw/openclaw.json"
   if [[ -f "$occ" ]] && have_command python3; then
-    python3 - "$occ" "$BASE_URL" "$API_TOKEN" <<'PY'
+    python3 - "$occ" "$BASE_URL" "$API_TOKEN" "$SKILLS_ENABLED" <<'PY'
 import sys, json
-path, base_url, api_token = sys.argv[1], sys.argv[2], sys.argv[3]
+path, base_url, api_token, skills_enabled = sys.argv[1:5]
 try:
     with open(path) as f: data = json.load(f)
 except: data = {}
@@ -1020,6 +1057,7 @@ data.setdefault("plugins",{}).setdefault("entries",{}).setdefault("lore",{})
 lore = data["plugins"]["entries"]["lore"]
 lore.setdefault("config",{})
 lore["config"]["baseUrl"] = base_url
+lore["config"]["skillsEnabled"] = skills_enabled == "1"
 if api_token: lore["config"]["apiToken"] = api_token
 lore.setdefault("enabled", True)
 with open(path, 'w') as f: json.dump(data, f, indent=2, ensure_ascii=False)
@@ -1037,6 +1075,7 @@ install_hermes() {
   local plugin_dir="$LORE_HOME/hermes"
   download_or_skip "hermes" "$plugin_dir" || return
 
+  if [[ "$SKILLS_ENABLED" == "1" ]]; then printf '1\n' > "$plugin_dir/.lore-skills-enabled"; else rm -f "$plugin_dir/.lore-skills-enabled"; fi
   ok "Hermes files ready"
   info "Hermes: symlink ${plugin_dir}/lore_memory into your Hermes plugin path"
 }
@@ -1066,6 +1105,13 @@ main() {
   [[ "$CHECK_PRE" == "1" ]] && channel_label="pre-release"
   info "Server: ${BASE_URL}"
   info "Channels: $(IFS=,; echo "${CHANNELS[*]}") (${channel_label})"
+
+  probe_server_capabilities
+  if [[ "$SKILLS_ENABLED" == "1" ]]; then
+    info "Capabilities: skills"
+  else
+    info "Capabilities: memory (Skills unsupported/disabled)"
+  fi
 
   check_release || true
   write_config 0

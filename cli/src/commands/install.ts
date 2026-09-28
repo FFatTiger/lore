@@ -18,6 +18,7 @@ import { getInstaller } from '../channels/registry.js';
 import { collectInstallSnapshot } from '../core/snapshot.js';
 import { summarizeChannelResults } from '../core/result.js';
 import { isSaasBaseUrl } from '../core/saas.js';
+import { fetchServerProfile } from '../core/capabilities.js';
 import { createLogger } from '../ui/log.js';
 import { banner } from '../ui/banner.js';
 import { t } from '../ui/i18n.js';
@@ -165,6 +166,13 @@ async function executeInstallPlan(
     return usageError(log, error);
   }
 
+  const serverProfile = await fetchServerProfile({
+    baseUrl: resolvedBase,
+    apiToken,
+    fetchImpl,
+  });
+  const capabilities = serverProfile.capabilities;
+
   const releaseInfo = await fetchReleaseTag({
     pre: plan.pre,
     dev: plan.dev,
@@ -198,6 +206,7 @@ async function executeInstallPlan(
         tokenAction: tokenDecision.action,
         writeVersion: false,
         dockerManaged: docker.dockerManaged,
+        serverProfile,
       },
     );
   } catch (error) {
@@ -206,6 +215,7 @@ async function executeInstallPlan(
   }
 
   log.info(`Server: ${resolvedBase}`);
+  if (capabilities.skills) log.info('Capabilities: skills');
   log.info(
     `Channels: ${plan.channels.join(',')} (${plan.dev ? 'dev' : plan.pre ? 'pre-release' : 'stable'})`,
   );
@@ -230,6 +240,7 @@ async function executeInstallPlan(
         tokenAction: tokenDecision.action,
         releaseVersion,
         needInstall,
+        capabilities,
         force: plan.force,
         lang: plan.lang,
         run,
@@ -267,6 +278,7 @@ async function executeInstallPlan(
         writeVersion: shouldBumpVersion,
         releaseVersion,
         dockerManaged: docker.dockerManaged,
+        serverProfile,
       },
     );
   } catch (error) {

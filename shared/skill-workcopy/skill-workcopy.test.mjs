@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import {
   computeManifestHash,
   ensureSkillWorkCopy,
+  hashLocalSkillFiles,
   inspectLocalWorkCopy,
   LEGACY_MIRROR_SCHEMA,
   listAllLocalWorkCopyStatuses,
@@ -55,6 +56,27 @@ function rmTempHome(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+/** Recursively restore writable modes so tests can simulate local edits to managed files. */
+function makeWritable(p) {
+  const st = fs.lstatSync(p);
+  if (st.isDirectory()) {
+    fs.chmodSync(p, 0o755);
+    for (const entry of fs.readdirSync(p)) makeWritable(path.join(p, entry));
+  } else if (st.isFile()) {
+    fs.chmodSync(p, 0o644);
+  }
+}
+
+/** Assert the installed layout: dirs writable (0755), managed files + marker 0444 (POSIX). */
+function assertInstalledModes(dir, managedFiles = ['SKILL.md']) {
+  if (process.platform === 'win32') return;
+  assert.equal(fs.statSync(dir).mode & 0o777, 0o755, `skill dir mode ${dir}`);
+  assert.equal(fs.statSync(path.join(dir, LORE_SKILL_MARKER)).mode & 0o777, 0o444, 'marker mode');
+  for (const rel of managedFiles) {
+    assert.equal(fs.statSync(path.join(dir, ...rel.split('/'))).mode & 0o777, 0o444, `managed file ${rel}`);
+  }
+}
+
 function skillDetail(overrides = {}) {
   const content = String(overrides.content ?? '# Demo Skill\n\nDo the thing.\n');
   const sha = sha256Text(content);
@@ -85,6 +107,7 @@ function skillDetail(overrides = {}) {
     description: 'A demo skill',
     enabled: true,
     version: 1,
+    revision_hash: 'rev-demo',
     ...rest,
     manifest_hash,
     files,
@@ -172,7 +195,7 @@ describe('path and hash validation', () => {
   });
 });
 
-describe('local work copy lifecycle', () => {
+describe('local work-copy lifecycle', () => {
   let loreHome;
   const projectId = 'proj-1';
 
@@ -184,7 +207,11 @@ describe('local work copy lifecycle', () => {
     rmTempHome(loreHome);
   });
 
-  it('first materialize writes marker, all files, and is writable', () => {
+  function installPath() {
+    return path.join(loreHome, 'skill-artifacts', projectId, 'demo-skill');
+  }
+
+  it('first materialize writes marker, all files, writable dirs, managed files 0444', () => {
     const helperContent = '# helper\n';
     const detail = skillDetail({
       files: [
@@ -210,6 +237,9 @@ describe('local work copy lifecycle', () => {
     assert.equal(marker.project_id, projectId);
     assert.equal(marker.skill_id, 'skill-1');
     assert.equal(marker.version, 1);
+    assert.equal(marker.manifest_hash, detail.manifest_hash);
+    assert.equal(marker.revision_hash, 'rev-demo');
+    assert.equal(marker.readonly, true);
     assert.deepEqual(marker.managed_files, ['SKILL.md', 'refs/helper.md']);
     assert.ok(marker.synced_at);
 
@@ -218,26 +248,48 @@ describe('local work copy lifecycle', () => {
       version: 1,
     });
     assert.equal(status.state, 'ready');
+    assert.equal(status.revision_hash, 'rev-demo');
+
+    assertInstalledModes(installPath, ['SKILL.md', 'refs/helper.md']);
 
     if (process.platform !== 'win32') {
-      const fileMode = fs.statSync(path.join(installPath, 'SKILL.md')).mode & 0o777;
-      const dirMode = fs.statSync(installPath).mode & 0o777;
-      assert.equal(fileMode, 0o644);
-      assert.equal(dirMode, 0o755);
+      // Managed files are read-only: a direct edit fails without an explicit chmod.
+      assert.throws(
+        () => fs.writeFileSync(path.join(installPath, 'SKILL.md'), '# edited\n', 'utf-8'),
+        /EACCES|EPERM/,
+      );
     }
-
-    fs.writeFileSync(path.join(installPath, 'SKILL.md'), '# edited\n', 'utf-8');
-    assert.equal(fs.readFileSync(path.join(installPath, 'SKILL.md'), 'utf-8'), '# edited\n');
   });
 
-  it('same-version ensure preserves local edits and extra outputs', async () => {
+  it('the installed skill directory is writable: local outputs can be created in-place', () => {
+    const detail = skillDetail();
+    materializeSkillWorkCopy({ loreHome, projectId, detail });
+
+    // No chmod needed: the skill directory itself is writable (0755 POSIX).
+    fs.mkdirSync(path.join(installPath(), 'outputs'), { recursive: true });
+    fs.writeFileSync(path.join(installPath(), 'outputs', 'result.json'), '{"ok":true}\n', 'utf-8');
+    fs.writeFileSync(path.join(installPath(), 'cache.tmp'), 'cache\n', 'utf-8');
+
+    assert.equal(fs.readFileSync(path.join(installPath(), 'outputs', 'result.json'), 'utf-8'), '{"ok":true}\n');
+    // Managed files remain read-only while outputs are writable.
+    assertInstalledModes(installPath(), ['SKILL.md']);
+  });
+
+  it('extra local files do not trigger tamper and survive same-version get', async () => {
     const detail = skillDetail({ version: 1 });
     materializeSkillWorkCopy({ loreHome, projectId, detail });
-    const installPath = path.join(loreHome, 'skill-artifacts', projectId, 'demo-skill');
-    fs.writeFileSync(path.join(installPath, 'SKILL.md'), '# local edit\n', 'utf-8');
-    fs.mkdirSync(path.join(installPath, 'outputs'), { recursive: true });
-    fs.writeFileSync(path.join(installPath, 'outputs', 'result.json'), '{"ok":true}\n', 'utf-8');
+    fs.mkdirSync(path.join(installPath(), 'outputs'), { recursive: true });
+    fs.writeFileSync(path.join(installPath(), 'outputs', 'result.json'), '{"ok":true}\n', 'utf-8');
+    fs.writeFileSync(path.join(installPath(), 'extra-root.md'), 'extra\n', 'utf-8');
 
+    // Extras never change integrity: still ready.
+    assert.equal(
+      inspectLocalWorkCopy(loreHome, projectId, 'demo-skill', { version: 1 }).state,
+      'ready',
+    );
+    assert.equal(hashLocalSkillFiles(installPath()).manifest_hash, detail.manifest_hash);
+
+    // Same-version get reuses the local copy; extras survive.
     const result = await ensureSkillWorkCopy({
       loreHome,
       skillId: 'skill-1',
@@ -245,13 +297,44 @@ describe('local work copy lifecycle', () => {
       loadSkill: async () => detail,
     });
     assert.equal(result.downloaded, false);
-    assert.equal(result.skill_md, '# local edit\n');
-    assert.equal(result.skill_dir, path.resolve(installPath));
-    assert.equal(fs.readFileSync(path.join(installPath, 'outputs', 'result.json'), 'utf-8'), '{"ok":true}\n');
-    assert.equal(inspectLocalWorkCopy(loreHome, projectId, 'demo-skill', { version: 1 }).state, 'ready');
+    assert.equal(fs.existsSync(path.join(installPath(), 'outputs', 'result.json')), true);
+    assert.equal(fs.existsSync(path.join(installPath(), 'extra-root.md')), true);
+    assert.equal(fs.readFileSync(path.join(installPath(), 'SKILL.md'), 'utf-8'), '# Demo Skill\n\nDo the thing.\n');
   });
 
-  it('version upgrade replaces managed files, removes obsolete managed, preserves extra output', () => {
+  it('modified managed file is tampered and restored from server, preserving extras', async () => {
+    const detail = skillDetail({ version: 1 });
+    materializeSkillWorkCopy({ loreHome, projectId, detail });
+    fs.writeFileSync(path.join(installPath(), 'local-output.txt'), 'agent\n', 'utf-8');
+
+    makeWritable(installPath());
+    fs.writeFileSync(path.join(installPath(), 'SKILL.md'), '# local edit\n', 'utf-8');
+
+    // Hash over managed files differs → tampered.
+    assert.notEqual(hashLocalSkillFiles(installPath()).manifest_hash, detail.manifest_hash);
+    const status = inspectLocalWorkCopy(loreHome, projectId, 'demo-skill', {
+      skill_id: 'skill-1',
+      version: 1,
+    });
+    assert.equal(status.state, 'tampered');
+
+    const result = await ensureSkillWorkCopy({
+      loreHome,
+      skillId: 'skill-1',
+      projectId,
+      loadSkill: async () => detail,
+    });
+    assert.equal(result.downloaded, true);
+    assert.equal(result.skill_md, '# Demo Skill\n\nDo the thing.\n');
+    assert.equal(result.skill_dir, path.resolve(installPath()));
+    assert.equal(fs.readFileSync(path.join(installPath(), 'SKILL.md'), 'utf-8'), '# Demo Skill\n\nDo the thing.\n');
+    // Extra local output preserved across the managed restore.
+    assert.equal(fs.readFileSync(path.join(installPath(), 'local-output.txt'), 'utf-8'), 'agent\n');
+    assert.equal(inspectLocalWorkCopy(loreHome, projectId, 'demo-skill', { version: 1 }).state, 'ready');
+    assertInstalledModes(installPath(), ['SKILL.md']);
+  });
+
+  it('version upgrade preserves extra local outputs, removes obsolete managed files', () => {
     const v1Files = [
       {
         path: 'SKILL.md',
@@ -306,19 +389,60 @@ describe('local work copy lifecycle', () => {
     assert.equal(fs.readFileSync(path.join(installPath, 'keep-managed.md'), 'utf-8'), 'keep-v2\n');
     assert.equal(fs.readFileSync(path.join(installPath, 'new.md'), 'utf-8'), 'new\n');
     assert.equal(fs.existsSync(path.join(installPath, 'old.md')), false);
+    // Extras are preserved across the upgrade.
     assert.equal(fs.readFileSync(path.join(installPath, 'agent-out', 'notes.txt'), 'utf-8'), 'local output\n');
     assert.equal(fs.readFileSync(path.join(installPath, 'extra-root.md'), 'utf-8'), 'extra\n');
+    assertInstalledModes(installPath, ['SKILL.md', 'keep-managed.md', 'new.md']);
   });
 
-  it('failed upgrade rolls back and leaves existing work copy intact', () => {
+  it('failed upgrade preserves a valid previous copy with outputs', () => {
     const detail = skillDetail({ version: 1, content: '# original\n' });
     const { installPath } = materializeSkillWorkCopy({ loreHome, projectId, detail });
-    fs.writeFileSync(path.join(installPath, 'local-note.txt'), 'keep me\n', 'utf-8');
+    fs.writeFileSync(path.join(installPath, 'local.txt'), 'agent\n', 'utf-8');
 
-    fs.mkdirSync(path.join(installPath, 'conflict-path'), { recursive: true });
-    fs.writeFileSync(path.join(installPath, 'conflict-path', 'nested.txt'), 'nested\n', 'utf-8');
+    if (process.platform !== 'win32') {
+      // Force the v2 materialize to fail at staging creation: remove the staging
+      // area and make the mirror root read-only so mkdir/rename cannot proceed.
+      fs.rmSync(path.join(loreHome, 'skill-artifacts', '.staging'), { recursive: true, force: true });
+      fs.chmodSync(path.join(loreHome, 'skill-artifacts'), 0o555);
+    }
 
-    const conflicting = skillDetail({
+    assert.throws(() => materializeSkillWorkCopy({
+      loreHome,
+      projectId,
+      detail: skillDetail({ version: 2, content: '# v2\n' }),
+    }), /EACCES|EPERM|ENOTEMPTY|mkdir|rename/);
+
+    if (process.platform !== 'win32') {
+      fs.chmodSync(path.join(loreHome, 'skill-artifacts'), 0o755);
+    }
+
+    // Previous copy intact, still valid, outputs preserved.
+    assert.equal(fs.readFileSync(path.join(installPath, 'SKILL.md'), 'utf-8'), '# original\n');
+    assert.equal(fs.readFileSync(path.join(installPath, 'local.txt'), 'utf-8'), 'agent\n');
+    const marker = readWorkCopyMarker(installPath);
+    assert.equal(marker?.version, 1);
+    assertInstalledModes(installPath, ['SKILL.md']);
+    assert.equal(inspectLocalWorkCopy(loreHome, projectId, 'demo-skill', { version: 1 }).state, 'ready');
+  });
+
+  it('new managed path conflicting with a local extra fails atomically (file at same path)', () => {
+    const v1 = skillDetail({
+      version: 1,
+      files: [
+        {
+          path: 'SKILL.md',
+          content: '# v1\n',
+          sha256: sha256Text('# v1\n'),
+          size: Buffer.byteLength('# v1\n', 'utf-8'),
+        },
+      ],
+    });
+    const { installPath } = materializeSkillWorkCopy({ loreHome, projectId, detail: v1 });
+    // Local artifact occupies a path the next server version claims as managed.
+    fs.writeFileSync(path.join(installPath, 'conflict.md'), 'my artifact\n', 'utf-8');
+
+    const v2 = skillDetail({
       version: 2,
       files: [
         {
@@ -328,29 +452,73 @@ describe('local work copy lifecycle', () => {
           size: Buffer.byteLength('# v2\n', 'utf-8'),
         },
         {
-          path: 'conflict-path',
-          content: 'file body\n',
-          sha256: sha256Text('file body\n'),
-          size: Buffer.byteLength('file body\n', 'utf-8'),
+          path: 'conflict.md',
+          content: 'server version\n',
+          sha256: sha256Text('server version\n'),
+          size: Buffer.byteLength('server version\n', 'utf-8'),
         },
       ],
     });
 
-    assert.throws(
-      () => materializeSkillWorkCopy({ loreHome, projectId, detail: conflicting }),
-      /still contains local files|non-file managed path/,
-    );
-    assert.equal(fs.readFileSync(path.join(installPath, 'SKILL.md'), 'utf-8'), '# original\n');
-    assert.equal(fs.readFileSync(path.join(installPath, 'local-note.txt'), 'utf-8'), 'keep me\n');
-    assert.equal(fs.readFileSync(path.join(installPath, 'conflict-path', 'nested.txt'), 'utf-8'), 'nested\n');
-    const marker = readWorkCopyMarker(installPath);
-    assert.equal(marker?.version, 1);
+    assert.throws(() => materializeSkillWorkCopy({ loreHome, projectId, detail: v2 }), /conflicts with an existing local file|LOCAL_ARTIFACT_CONFLICT/);
+
+    // Installed copy untouched: managed files still v1, artifact preserved.
+    assert.equal(fs.readFileSync(path.join(installPath, 'SKILL.md'), 'utf-8'), '# v1\n');
+    assert.equal(fs.readFileSync(path.join(installPath, 'conflict.md'), 'utf-8'), 'my artifact\n');
+    assert.equal(readWorkCopyMarker(installPath)?.version, 1);
+  });
+
+  it('new managed file under a managed directory that contains extras fails atomically', () => {
+    const v1 = skillDetail({
+      version: 1,
+      files: [
+        {
+          path: 'SKILL.md',
+          content: '# v1\n',
+          sha256: sha256Text('# v1\n'),
+          size: Buffer.byteLength('# v1\n', 'utf-8'),
+        },
+        {
+          path: 'data/note.md',
+          content: 'managed-note\n',
+          sha256: sha256Text('managed-note\n'),
+          size: Buffer.byteLength('managed-note\n', 'utf-8'),
+        },
+      ],
+    });
+    const { installPath } = materializeSkillWorkCopy({ loreHome, projectId, detail: v1 });
+    // Extra inside the managed directory.
+    fs.writeFileSync(path.join(installPath, 'data', 'agent.txt'), 'agent\n', 'utf-8');
+
+    // v2 turns `data` (managed dir with extras) into a managed file → shape conflict.
+    const v2 = skillDetail({
+      version: 2,
+      files: [
+        {
+          path: 'SKILL.md',
+          content: '# v2\n',
+          sha256: sha256Text('# v2\n'),
+          size: Buffer.byteLength('# v2\n', 'utf-8'),
+        },
+        {
+          path: 'data',
+          content: 'now-a-file\n',
+          sha256: sha256Text('now-a-file\n'),
+          size: Buffer.byteLength('now-a-file\n', 'utf-8'),
+        },
+      ],
+    });
+
+    assert.throws(() => materializeSkillWorkCopy({ loreHome, projectId, detail: v2 }), /conflicts with an existing local directory|LOCAL_ARTIFACT_CONFLICT/);
+    assert.equal(fs.readFileSync(path.join(installPath, 'data', 'note.md'), 'utf-8'), 'managed-note\n');
+    assert.equal(fs.readFileSync(path.join(installPath, 'data', 'agent.txt'), 'utf-8'), 'agent\n');
+    assert.equal(readWorkCopyMarker(installPath)?.version, 1);
   });
 
   it('unmanaged existing directory is not overwritten', () => {
-    const installDir = path.join(loreHome, 'skill-artifacts', projectId, 'demo-skill');
-    fs.mkdirSync(installDir, { recursive: true });
-    fs.writeFileSync(path.join(installDir, 'SKILL.md'), '# local unmanaged\n', 'utf-8');
+    const dir = installPath();
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'SKILL.md'), '# local unmanaged\n', 'utf-8');
 
     const status = inspectLocalWorkCopy(loreHome, projectId, 'demo-skill');
     assert.equal(status.state, 'unmanaged');
@@ -361,12 +529,13 @@ describe('local work copy lifecycle', () => {
       detail: skillDetail(),
     }), /unmanaged/);
 
-    assert.equal(fs.readFileSync(path.join(installDir, 'SKILL.md'), 'utf-8'), '# local unmanaged\n');
+    assert.equal(fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf-8'), '# local unmanaged\n');
   });
 
   it('rejects marker managed_files traversal and never uses unsafe marker', () => {
     const { installPath } = materializeSkillWorkCopy({ loreHome, projectId, detail: skillDetail() });
     const markerPath = path.join(installPath, LORE_SKILL_MARKER);
+    makeWritable(installPath);
     const marker = JSON.parse(fs.readFileSync(markerPath, 'utf-8'));
     marker.managed_files = ['SKILL.md', '../../etc/passwd'];
     fs.writeFileSync(markerPath, JSON.stringify(marker), 'utf-8');
@@ -386,9 +555,9 @@ describe('local work copy lifecycle', () => {
   });
 
   it('refuses unmanaged file or symlink at install path', () => {
-    const installPath = path.join(loreHome, 'skill-artifacts', projectId, 'demo-skill');
-    fs.mkdirSync(path.dirname(installPath), { recursive: true });
-    fs.writeFileSync(installPath, 'not a directory\n', 'utf-8');
+    const dir = installPath();
+    fs.mkdirSync(path.dirname(dir), { recursive: true });
+    fs.writeFileSync(dir, 'not a directory\n', 'utf-8');
 
     assert.equal(inspectLocalWorkCopy(loreHome, projectId, 'demo-skill').state, 'unmanaged');
     assert.throws(() => materializeSkillWorkCopy({
@@ -396,24 +565,95 @@ describe('local work copy lifecycle', () => {
       projectId,
       detail: skillDetail(),
     }), /unmanaged local file/);
-    assert.equal(fs.readFileSync(installPath, 'utf-8'), 'not a directory\n');
+    assert.equal(fs.readFileSync(dir, 'utf-8'), 'not a directory\n');
 
-    fs.unlinkSync(installPath);
+    fs.unlinkSync(dir);
     if (process.platform !== 'win32') {
       const target = path.join(loreHome, 'elsewhere');
       fs.mkdirSync(target, { recursive: true });
-      fs.symlinkSync(target, installPath);
+      fs.symlinkSync(target, dir);
       assert.equal(inspectLocalWorkCopy(loreHome, projectId, 'demo-skill').state, 'unmanaged');
       assert.throws(() => materializeSkillWorkCopy({
         loreHome,
         projectId,
         detail: skillDetail(),
       }), /unmanaged local symlink/);
-      assert.equal(fs.lstatSync(installPath).isSymbolicLink(), true);
+      assert.equal(fs.lstatSync(dir).isSymbolicLink(), true);
     }
   });
 
-  it('migrates legacy same-version mirror to writable workcopy', async () => {
+  it('symlinks in extra local files are safe; symlink at a managed path is tampered', async () => {
+    if (process.platform === 'win32') return;
+    const detail = skillDetail();
+    const { installPath } = materializeSkillWorkCopy({ loreHome, projectId, detail });
+    const target = path.join(loreHome, 'symlink-target');
+    fs.mkdirSync(target, { recursive: true });
+
+    // Extra symlink (agent-created local content) does not break the copy.
+    fs.symlinkSync(target, path.join(installPath, 'agent-link'));
+    assert.equal(inspectLocalWorkCopy(loreHome, projectId, 'demo-skill', { version: 1 }).state, 'ready');
+
+    // Same-version get still reuses the local copy with the extra symlink intact.
+    const result = await ensureSkillWorkCopy({
+      loreHome,
+      skillId: 'skill-1',
+      projectId,
+      loadSkill: async () => detail,
+    });
+    assert.equal(result.downloaded, false);
+    assert.equal(fs.lstatSync(path.join(installPath, 'agent-link')).isSymbolicLink(), true);
+
+    // A symlink replacing a managed file is tampered, then get restores the managed
+    // file from Core rather than misclassifying the symlink as a local artifact.
+    makeWritable(installPath);
+    fs.unlinkSync(path.join(installPath, 'agent-link'));
+    fs.unlinkSync(path.join(installPath, 'SKILL.md'));
+    fs.symlinkSync(target, path.join(installPath, 'SKILL.md'));
+    const status = inspectLocalWorkCopy(loreHome, projectId, 'demo-skill', { version: 1 });
+    assert.equal(status.state, 'tampered');
+
+    const restored = await ensureSkillWorkCopy({
+      loreHome,
+      skillId: 'skill-1',
+      projectId,
+      loadSkill: async () => detail,
+    });
+    assert.equal(restored.downloaded, true);
+    assert.equal(fs.lstatSync(path.join(installPath, 'SKILL.md')).isFile(), true);
+    assert.equal(fs.lstatSync(path.join(installPath, 'SKILL.md')).isSymbolicLink(), false);
+    assert.equal(fs.readFileSync(path.join(installPath, 'SKILL.md'), 'utf-8'), '# Demo Skill\n\nDo the thing.\n');
+  });
+
+  it('refuses symlinked managed-path ancestors before external chmod or deletion', () => {
+    if (process.platform === 'win32') return;
+    const v1 = skillDetail({
+      version: 1,
+      files: [
+        { path: 'SKILL.md', content: '# v1\n', sha256: sha256Text('# v1\n'), size: 5 },
+        { path: 'data/note.md', content: 'managed\n', sha256: sha256Text('managed\n'), size: 8 },
+      ],
+    });
+    const { installPath } = materializeSkillWorkCopy({ loreHome, projectId, detail: v1 });
+    const external = path.join(loreHome, 'external-target');
+    fs.mkdirSync(external, { recursive: true });
+    fs.writeFileSync(path.join(external, 'note.md'), 'external\n', { mode: 0o600 });
+
+    makeWritable(installPath);
+    fs.rmSync(path.join(installPath, 'data'), { recursive: true, force: true });
+    fs.symlinkSync(external, path.join(installPath, 'data'));
+
+    const v2 = skillDetail({ version: 2, content: '# v2\n' });
+    assert.throws(
+      () => materializeSkillWorkCopy({ loreHome, projectId, detail: v2 }),
+      /symlink ancestor|LOCAL_ARTIFACT_CONFLICT/,
+    );
+    assert.equal(fs.readFileSync(path.join(external, 'note.md'), 'utf-8'), 'external\n');
+    assert.equal(fs.statSync(path.join(external, 'note.md')).mode & 0o777, 0o600);
+    assert.equal(readWorkCopyMarker(installPath)?.version, 1);
+    assert.equal(fs.lstatSync(path.join(installPath, 'data')).isSymbolicLink(), true);
+  });
+
+  it('migrates legacy same-version mirror to a managed_files workcopy', async () => {
     const installPath = path.join(loreHome, 'skill-artifacts', projectId, 'demo-skill');
     fs.mkdirSync(installPath, { recursive: true });
     fs.writeFileSync(path.join(installPath, 'SKILL.md'), '# legacy\n', 'utf-8');
@@ -425,21 +665,12 @@ describe('local work copy lifecycle', () => {
       name: 'demo-skill',
       version: 1,
       revision_hash: 'rev-legacy',
-      manifest_hash: 'mh',
+      manifest_hash: sha256Text('legacy'),
       synced_at: new Date().toISOString(),
     }, null, 2), 'utf-8');
     if (process.platform !== 'win32') {
       fs.chmodSync(path.join(installPath, 'SKILL.md'), 0o444);
       fs.chmodSync(path.join(installPath, 'extra-managed.md'), 0o444);
-      fs.chmodSync(installPath, 0o555);
-    }
-
-    if (process.platform !== 'win32') {
-      fs.chmodSync(installPath, 0o755);
-    }
-    fs.mkdirSync(path.join(installPath, 'outputs'), { recursive: true });
-    fs.writeFileSync(path.join(installPath, 'outputs', 'note.txt'), 'agent\n', 'utf-8');
-    if (process.platform !== 'win32') {
       fs.chmodSync(installPath, 0o555);
     }
 
@@ -467,17 +698,56 @@ describe('local work copy lifecycle', () => {
     assert.equal(marker?.schema, LORE_SKILL_SCHEMA);
     assert.deepEqual(marker?.managed_files, ['SKILL.md']);
     assert.equal(marker?.version, 1);
-    assert.equal(fs.readFileSync(path.join(result.skill_dir, 'extra-managed.md'), 'utf-8'), 'extra\n');
-    assert.equal(fs.readFileSync(path.join(result.skill_dir, 'outputs', 'note.txt'), 'utf-8'), 'agent\n');
+    assert.equal(marker?.manifest_hash, detail.manifest_hash);
+    assert.equal(marker?.readonly, true);
+    // Legacy has no managed_files boundary, so it is rematerialized fresh from server.
+    assert.equal(fs.existsSync(path.join(result.skill_dir, 'extra-managed.md')), false);
+    assertInstalledModes(result.skill_dir, ['SKILL.md']);
+  });
 
+  it('workcopy marker without manifest_hash rematerializes once and preserves extras', async () => {
+    const installPath = path.join(loreHome, 'skill-artifacts', projectId, 'demo-skill');
+    fs.mkdirSync(installPath, { recursive: true });
+    fs.writeFileSync(path.join(installPath, 'SKILL.md'), '# pre-manifest\n', 'utf-8');
+    fs.writeFileSync(path.join(installPath, LORE_SKILL_MARKER), JSON.stringify({
+      schema: LORE_SKILL_SCHEMA,
+      project_id: projectId,
+      skill_id: 'skill-1',
+      name: 'demo-skill',
+      version: 1,
+      managed_files: ['SKILL.md'],
+      synced_at: new Date().toISOString(),
+    }, null, 2), 'utf-8');
     if (process.platform !== 'win32') {
-      const fileMode = fs.statSync(path.join(result.skill_dir, 'SKILL.md')).mode & 0o777;
-      const dirMode = fs.statSync(result.skill_dir).mode & 0o777;
-      assert.equal(fileMode, 0o644);
-      assert.equal(dirMode, 0o755);
+      fs.chmodSync(installPath, 0o555);
+      fs.chmodSync(path.join(installPath, 'SKILL.md'), 0o444);
     }
-    fs.writeFileSync(path.join(result.skill_dir, 'SKILL.md'), '# edited after migrate\n', 'utf-8');
-    assert.equal(fs.readFileSync(path.join(result.skill_dir, 'SKILL.md'), 'utf-8'), '# edited after migrate\n');
+
+    // Integrity cannot be verified → tampered → rematerialize.
+    assert.equal(
+      inspectLocalWorkCopy(loreHome, projectId, 'demo-skill', { version: 1 }).state,
+      'tampered',
+    );
+
+    const detail = skillDetail({ version: 1, content: '# Demo Skill\n\nDo the thing.\n' });
+    const result = await ensureSkillWorkCopy({
+      loreHome,
+      skillId: 'skill-1',
+      projectId,
+      loadSkill: async () => detail,
+    });
+    assert.equal(result.downloaded, true);
+    const marker = readWorkCopyMarker(result.skill_dir);
+    assert.equal(marker?.manifest_hash, detail.manifest_hash);
+    assert.equal(marker?.readonly, true);
+    // Subsequent ensure is ready without download.
+    const again = await ensureSkillWorkCopy({
+      loreHome,
+      skillId: 'skill-1',
+      projectId,
+      loadSkill: async () => detail,
+    });
+    assert.equal(again.downloaded, false);
   });
 
   it('supports managed path shape transitions file→directory and directory→file', () => {
@@ -499,7 +769,6 @@ describe('local work copy lifecycle', () => {
       ],
     });
     const { installPath } = materializeSkillWorkCopy({ loreHome, projectId, detail: v1 });
-    fs.writeFileSync(path.join(installPath, 'keep-extra.txt'), 'extra\n', 'utf-8');
 
     const v2 = skillDetail({
       version: 2,
@@ -521,7 +790,6 @@ describe('local work copy lifecycle', () => {
     materializeSkillWorkCopy({ loreHome, projectId, detail: v2 });
     assert.equal(fs.statSync(path.join(installPath, 'data')).isDirectory(), true);
     assert.equal(fs.readFileSync(path.join(installPath, 'data', 'nested.md'), 'utf-8'), 'nested\n');
-    assert.equal(fs.readFileSync(path.join(installPath, 'keep-extra.txt'), 'utf-8'), 'extra\n');
 
     const v3 = skillDetail({
       version: 3,
@@ -543,51 +811,6 @@ describe('local work copy lifecycle', () => {
     materializeSkillWorkCopy({ loreHome, projectId, detail: v3 });
     assert.equal(fs.statSync(path.join(installPath, 'data')).isFile(), true);
     assert.equal(fs.readFileSync(path.join(installPath, 'data'), 'utf-8'), 'flat-again\n');
-    assert.equal(fs.readFileSync(path.join(installPath, 'keep-extra.txt'), 'utf-8'), 'extra\n');
-  });
-
-  it('fails upgrade when obsolete managed dir still holds local extras', () => {
-    const v1 = skillDetail({
-      version: 1,
-      files: [
-        {
-          path: 'SKILL.md',
-          content: '# v1\n',
-          sha256: sha256Text('# v1\n'),
-          size: Buffer.byteLength('# v1\n', 'utf-8'),
-        },
-        {
-          path: 'bundle/item.md',
-          content: 'item\n',
-          sha256: sha256Text('item\n'),
-          size: Buffer.byteLength('item\n', 'utf-8'),
-        },
-      ],
-    });
-    const { installPath } = materializeSkillWorkCopy({ loreHome, projectId, detail: v1 });
-    fs.writeFileSync(path.join(installPath, 'bundle', 'local-out.txt'), 'mine\n', 'utf-8');
-
-    const v2 = skillDetail({
-      version: 2,
-      files: [
-        {
-          path: 'SKILL.md',
-          content: '# v2\n',
-          sha256: sha256Text('# v2\n'),
-          size: Buffer.byteLength('# v2\n', 'utf-8'),
-        },
-        {
-          path: 'bundle',
-          content: 'now-a-file\n',
-          sha256: sha256Text('now-a-file\n'),
-          size: Buffer.byteLength('now-a-file\n', 'utf-8'),
-        },
-      ],
-    });
-    assert.throws(() => materializeSkillWorkCopy({ loreHome, projectId, detail: v2 }), /local files/);
-    assert.equal(fs.readFileSync(path.join(installPath, 'SKILL.md'), 'utf-8'), '# v1\n');
-    assert.equal(fs.readFileSync(path.join(installPath, 'bundle', 'local-out.txt'), 'utf-8'), 'mine\n');
-    assert.equal(readWorkCopyMarker(installPath)?.version, 1);
   });
 
   it('ensureSkillWorkCopy errors on wrong skill_id identity', async () => {
@@ -597,6 +820,7 @@ describe('local work copy lifecycle', () => {
       detail: skillDetail({ id: 'skill-1', version: 1 }),
     });
     const installPath = path.join(loreHome, 'skill-artifacts', projectId, 'demo-skill');
+    makeWritable(installPath);
     const marker = JSON.parse(fs.readFileSync(path.join(installPath, LORE_SKILL_MARKER), 'utf-8'));
     marker.skill_id = 'other-skill';
     fs.writeFileSync(path.join(installPath, LORE_SKILL_MARKER), JSON.stringify(marker));
@@ -654,13 +878,14 @@ describe('local work copy lifecycle', () => {
     const detail = skillDetail();
     const { installPath } = materializeSkillWorkCopy({ loreHome, projectId, detail });
     const markerPath = path.join(installPath, LORE_SKILL_MARKER);
+    makeWritable(installPath);
     const marker = JSON.parse(fs.readFileSync(markerPath, 'utf-8'));
     marker.project_id = 'other-project';
     fs.writeFileSync(markerPath, JSON.stringify(marker));
     assert.equal(inspectLocalWorkCopy(loreHome, projectId, 'demo-skill').state, 'invalid');
   });
 
-  it('lists work copies across projects without server context', () => {
+  it('lists mirrors across projects without server context', () => {
     const otherProject = 'project-2';
     materializeSkillWorkCopy({ loreHome, projectId, detail: skillDetail() });
     materializeSkillWorkCopy({ loreHome, projectId: otherProject, detail: skillDetail({ name: 'other-skill', skill_id: 'skill-2' }) });

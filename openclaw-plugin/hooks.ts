@@ -100,7 +100,7 @@ export function registerHooks(api: any, pluginCfg: any, skillsSession?: SkillsSe
   const startupStates = new Map<string, { appendSystemContext: string; consumed: boolean }>();
   const startupRequests = new Map<string, { promise: Promise<void>; token: object }>();
   const endedTokens = new WeakSet<object>();
-  const skills = skillsSession || createSkillsSession(pluginCfg);
+  const skills = skillsSession;
 
   api.registerGatewayMethod("lore.status", async ({ respond }: any) => {
     try {
@@ -139,10 +139,12 @@ export function registerHooks(api: any, pluginCfg: any, skillsSession?: SkillsSe
       try {
         const lifecycleResponse = await fetchStartupLifecycle(pluginCfg, sessionId);
         // Record project/catalog identity only — never auto-download or reconcile skills.
-        try {
-          await skills.onSessionStart(lifecycleResponse);
-        } catch (error: any) {
-          api.logger.debug?.(`lore: skill catalog identity on session_start failed: ${error.message}`);
+        if (skills) {
+          try {
+            await skills.onSessionStart(lifecycleResponse);
+          } catch (error: any) {
+            api.logger.debug?.(`lore: skill catalog identity on session_start failed: ${error.message}`);
+          }
         }
         const value = readReturnValue(lifecycleResponse);
         const appendSystemContext = typeof value?.appendSystemContext === "string"
@@ -194,13 +196,15 @@ export function registerHooks(api: any, pluginCfg: any, skillsSession?: SkillsSe
 
         // Discovery only: append skill candidate identities to prependContext.
         // Never download, reconcile, or inject local paths here.
-        try {
-          const skillPatch = await skills.onPromptLifecycle(lifecycleResponse);
-          if (skillPatch?.skillBlock) {
-            prependContext = appendSkillBlockToPrependContext(prependContext, skillPatch.skillBlock);
+        if (skills) {
+          try {
+            const skillPatch = await skills.onPromptLifecycle(lifecycleResponse);
+            if (skillPatch?.skillBlock) {
+              prependContext = appendSkillBlockToPrependContext(prependContext, skillPatch.skillBlock);
+            }
+          } catch (error: any) {
+            api.logger.debug?.(`lore: skill prompt discovery failed: ${error.message}`);
           }
-        } catch (error: any) {
-          api.logger.debug?.(`lore: skill prompt discovery failed: ${error.message}`);
         }
 
         if (prependContext) out.prependContext = prependContext;

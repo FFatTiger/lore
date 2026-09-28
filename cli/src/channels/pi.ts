@@ -53,6 +53,11 @@ export const piInstaller: ChannelInstaller = {
 
     const homeDir = ctx.homeDir ?? os.homedir();
     try {
+      if (ctx.capabilities.skills) {
+        await fs.writeFile(path.join(dest, '.lore-skills-enabled'), '1\n', { mode: 0o600 });
+      } else {
+        await fs.rm(path.join(dest, '.lore-skills-enabled'), { force: true });
+      }
       await installPiExtension(dest, piExtensionPath(homeDir));
     } catch (err) {
       return {

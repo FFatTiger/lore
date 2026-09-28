@@ -35,6 +35,7 @@ describe('boot helpers', () => {
       'core://agent/codex',
       'core://agent/pi',
       'core://agent/opencode',
+      'core://agent/zcode',
     ]);
     expect(getRuntimeBootUris('codex')).toEqual([
       'core://agent',
@@ -47,6 +48,12 @@ describe('boot helpers', () => {
       'core://soul',
       'preferences://user',
       'core://agent/opencode',
+    ]);
+    expect(getRuntimeBootUris('zcode')).toEqual([
+      'core://agent',
+      'core://soul',
+      'preferences://user',
+      'core://agent/zcode',
     ]);
   });
 
@@ -384,6 +391,37 @@ describe('bootView', () => {
     });
   });
 
+  it('loads the ZCode-specific agent boot node when client_type is zcode', async () => {
+    mockSql
+      .mockResolvedValueOnce({ rows: [{ node_uuid: 'agent-uuid', priority: 0, disclosure: null, content: 'Agent rules' }], rowCount: 1 } as any)
+      .mockResolvedValueOnce({ rows: [{ node_uuid: 'soul-uuid', priority: 1, disclosure: null, content: 'Soul baseline' }], rowCount: 1 } as any)
+      .mockResolvedValueOnce({ rows: [{ node_uuid: 'user-uuid', priority: 2, disclosure: null, content: 'User profile' }], rowCount: 1 } as any)
+      .mockResolvedValueOnce({ rows: [{ node_uuid: 'zcode-uuid', priority: 1, disclosure: null, content: 'ZCode rules' }], rowCount: 1 } as any)
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
+
+    const result = await bootView({ client_type: 'zcode' });
+
+    expect(result.total).toBe(4);
+    expect(result.loaded).toBe(4);
+    expect(result.selected_client_type).toBe('zcode');
+    expect(result.includes_all_clients).toBe(false);
+    expect(result.core_memories.map((memory) => memory.uri)).toEqual([
+      'core://agent',
+      'core://soul',
+      'preferences://user',
+      'core://agent/zcode',
+    ]);
+    expect(result.core_memories.map((memory) => memory.uri)).not.toContain('core://agent/codex');
+    expect(result.nodes[3]).toMatchObject({
+      id: 'agent-zcode',
+      uri: 'core://agent/zcode',
+      scope: 'client',
+      client_type: 'zcode',
+      dream_protection: 'protected',
+      state: 'initialized',
+    });
+  });
+
   it('returns the full protected boot manifest for admin/setup views', async () => {
     mockSql
       .mockResolvedValueOnce({ rows: [{ node_uuid: 'agent-uuid', priority: 0, disclosure: null, content: 'Agent rules' }], rowCount: 1 } as any)
@@ -395,12 +433,13 @@ describe('bootView', () => {
       .mockResolvedValueOnce({ rows: [{ node_uuid: 'codex-uuid', priority: 1, disclosure: null, content: 'Codex rules' }], rowCount: 1 } as any)
       .mockResolvedValueOnce({ rows: [{ node_uuid: 'pi-uuid', priority: 1, disclosure: null, content: 'Pi rules' }], rowCount: 1 } as any)
       .mockResolvedValueOnce({ rows: [{ node_uuid: 'opencode-uuid', priority: 1, disclosure: null, content: 'OpenCode rules' }], rowCount: 1 } as any)
+      .mockResolvedValueOnce({ rows: [{ node_uuid: 'zcode-uuid', priority: 1, disclosure: null, content: 'ZCode rules' }], rowCount: 1 } as any)
       .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
 
     const result = await bootView({ client_type: 'admin' });
 
-    expect(result.total).toBe(9);
-    expect(result.loaded).toBe(9);
+    expect(result.total).toBe(10);
+    expect(result.loaded).toBe(10);
     expect(result.selected_client_type).toBe('admin');
     expect(result.includes_all_clients).toBe(true);
     expect(result.core_memories.map((memory) => memory.uri)).toEqual(getBootUris());

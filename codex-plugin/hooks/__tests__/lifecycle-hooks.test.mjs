@@ -239,6 +239,7 @@ test('UserPromptSubmit appends <lore-skills> to host_output and preserves Memory
       session_id: 'sess-1',
     }, {
       LORE_CODEX_HOOK_BASE_URL: server.baseUrl,
+      LORE_SKILLS_ENABLED: '1',
     });
     assert.equal(result.code, 0, result.stderr);
     assert.match(result.stdout, /MEMORY_RECALL/);
@@ -262,6 +263,7 @@ test('UserPromptSubmit adds missing additionalContext in structured host_output'
   try {
     const result = await runHook(recallHook, { prompt: 'structured skill' }, {
       LORE_CODEX_HOOK_BASE_URL: server.baseUrl,
+      LORE_SKILLS_ENABLED: '1',
     });
     const output = JSON.parse(result.stdout);
     assert.equal(output.hookSpecificOutput.decision, 'allow');

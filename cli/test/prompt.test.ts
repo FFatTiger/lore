@@ -16,6 +16,7 @@ const emptySnapshot: InstallSnapshot = {
     openclaw: false,
     opencode: false,
     hermes: false,
+    zcode: false,
     docker: true,
   },
   channels: [
@@ -25,6 +26,7 @@ const emptySnapshot: InstallSnapshot = {
     { id: 'openclaw', state: 'missing', details: [] },
     { id: 'hermes', state: 'missing', details: [] },
     { id: 'opencode', state: 'missing', details: [] },
+    { id: 'zcode', state: 'missing', details: [] },
   ],
   detectedChannels: ['claudecode', 'pi'],
 };
@@ -33,7 +35,7 @@ test('status snapshot is a compact decision summary', () => {
   const snapshot = formatSnapshot(emptySnapshot, 'en');
   assert.match(snapshot, /^Connection/m);
   assert.match(snapshot, /Runtimes/);
-  assert.match(snapshot, /2 detected · 1\/6 integrations installed/);
+  assert.match(snapshot, /2 detected · 1\/7 integrations installed/);
   assert.match(snapshot, /Full details: loremem status/);
   assert.doesNotMatch(snapshot, /\t/);
 });

@@ -39,9 +39,9 @@ export const DEFAULT_LIFECYCLE_GUIDANCE = `# Lore 使用规则
 
 ## 身份
 
-Lore 是你唯一的长期记忆。调用它不是"查资料"，是"想起来"。读到的内容不是参考文献，是你说过的话、经历过的事。
+Lore 是你唯一的长期记忆。调用它是"想起来"，读到的内容是你说过的话、经历过的事，用作历史背景。
 
-上下文里的信息会随会话结束消失，Lore 里的不会。两条记忆冲突时以 priority 高者为准。
+上下文里的信息会随会话结束消失，Lore 里的不会。记忆冲突时以 priority 数字更小者为准，同时考虑适用范围、时间与当前用户指令。涉及当前代码、部署状态和外部事实时，用现有证据核实。
 
 ## 什么时候想起来
 
@@ -174,6 +174,13 @@ export const DEFAULT_BOOT_DRAFT_CLIENT_OPENCODE_INSTRUCTIONS = [
   'Focus on OpenCode-specific runtime defaults for the native Lore plugin, exact lore_* tools, hooks, lifecycle attribution, and coding workflow expectations.',
   'State that Boot belongs in system context through experimental.chat.system.transform, while Recall belongs in the current user turn as a separate TextPart through chat.message.',
   'Mention client_type=opencode with runtime_id=opencode and runtime_family=opencode lifecycle attribution, and require fail open behavior when Lore or the experimental system hook is unavailable.',
+  'Assume shared working rules remain in core://agent rather than repeating them here.',
+].join('\n');
+
+export const DEFAULT_BOOT_DRAFT_CLIENT_ZCODE_INSTRUCTIONS = [
+  'Focus on ZCode-specific runtime defaults for the native Lore plugin hooks, SessionStart boot, UserPromptSubmit recall, and coding workflow expectations.',
+  'State that Lore injects context through ZCode process hooks, not MCP, and that ZCode is not Pi or Codex.',
+  'Mention client_type=zcode with runtime_id=zcode and runtime_family=zcode lifecycle attribution, and require fail open behavior when Lore or hook parsing is unavailable.',
   'Assume shared working rules remain in core://agent rather than repeating them here.',
 ].join('\n');
 
@@ -453,6 +460,13 @@ export const SETTINGS_SCHEMA: SettingDef[] = [
     label: 'Boot 草稿 OpenCode 说明',
     type: 'text', default: DEFAULT_BOOT_DRAFT_CLIENT_OPENCODE_INSTRUCTIONS,
     description: '生成 core://agent/opencode 初稿时追加的约束。',
+  },
+  {
+    key: 'prompts.boot_draft.instructions.client_zcode',
+    section: 'prompts',
+    label: 'Boot 草稿 ZCode 说明',
+    type: 'text', default: DEFAULT_BOOT_DRAFT_CLIENT_ZCODE_INSTRUCTIONS,
+    description: '生成 core://agent/zcode 初稿时追加的约束。',
   },
   {
     key: 'prompts.dream.system',

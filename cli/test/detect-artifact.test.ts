@@ -15,6 +15,7 @@ test('artifactName map', () => {
   assert.equal(artifactName('pi'), 'lore-pi.zip');
   assert.equal(artifactName('openclaw'), 'lore-openclaw.zip');
   assert.equal(artifactName('hermes'), 'lore-hermes.zip');
+  assert.equal(artifactName('zcode'), 'lore-zcode.zip');
 });
 
 test('detectAgents returns boolean map for all agents', async () => {
@@ -27,6 +28,7 @@ test('detectAgents returns boolean map for all agents', async () => {
   assert.equal(typeof res.openclaw, 'boolean');
   assert.equal(typeof res.opencode, 'boolean');
   assert.equal(typeof res.hermes, 'boolean');
+  assert.equal(typeof res.zcode, 'boolean');
 });
 
 test('haveCommand finds binary via PATH fs.access', async () => {

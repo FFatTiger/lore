@@ -47,18 +47,33 @@ function buildNativeInputSnapshot(input) {
   return Object.keys(snapshot).length ? snapshot : undefined;
 }
 
+function resolveSkillsEnabled(config, baseUrl) {
+  if (process.env.LORE_SKILLS_ENABLED === '0') return false;
+  const profile = config?.server_profile;
+  if (profile && typeof profile === 'object' && !Array.isArray(profile)) {
+    const profileBase = pickString(profile.base_url).replace(/\/+$/, '').toLowerCase();
+    if (profileBase === baseUrl.toLowerCase()) {
+      return Boolean(profile.capabilities && typeof profile.capabilities === 'object'
+        && !Array.isArray(profile.capabilities)
+        && profile.capabilities.skills === true);
+    }
+  }
+  return process.env.LORE_SKILLS_ENABLED === '1';
+}
+
 function loadConfig() {
   const config = readLoreConfig();
-  const baseUrl = pickString(process.env.LORE_CODEX_HOOK_BASE_URL)
+  const baseUrl = (pickString(process.env.LORE_CODEX_HOOK_BASE_URL)
     || pickString(config.base_url)
     || pickString(process.env.LORE_BASE_URL)
-    || DEFAULT_BASE_URL;
+    || DEFAULT_BASE_URL).replace(/\/+$/, '');
   return {
-    baseUrl: baseUrl.replace(/\/+$/, ''),
+    baseUrl,
     apiToken: pickString(config.api_token)
       || pickString(process.env.LORE_API_TOKEN)
       || pickString(process.env.API_TOKEN),
     timeoutMs: 10000,
+    skillsEnabled: resolveSkillsEnabled(config, baseUrl),
   };
 }
 
@@ -86,7 +101,7 @@ async function postLifecycle(body, timeoutMs) {
 function formatSkillCandidateBlock(candidates) {
   if (!Array.isArray(candidates) || candidates.length === 0) return "";
   const lines = ["<lore-skills>"];
-  lines.push("Matched Lore skills. Call lore_skill_get with skill_id to materialize a local work copy.");
+  lines.push("Matched Lore skills. Call lore_skill_get with skill_id to fetch a local copy; managed package files are read-only, and the skill directory stays writable for local outputs.");
   for (const c of candidates) {
     const skillId = String(c?.skill_id || c?.id || "").trim();
     const name = String(c?.name || "").trim();
@@ -106,8 +121,9 @@ function formatSkillCandidateBlock(candidates) {
   return lines.length > 3 ? lines.join("\n") : "";
 }
 
-function appendSkillCandidatesToHostOutput(response) {
+function appendSkillCandidatesToHostOutput(response, enabled = false) {
   try {
+    if (!enabled) return response;
     const block = formatSkillCandidateBlock(response?.skill_candidates);
     if (!block) return response;
     const output = response?.host_output;
@@ -180,7 +196,7 @@ async function main() {
       normalized,
       ...(nativeInputSnapshot ? { native_input_snapshot: nativeInputSnapshot } : {}),
     }, cfg.timeoutMs);
-    writeHostOutput(appendSkillCandidatesToHostOutput(lifecycle));
+    writeHostOutput(appendSkillCandidatesToHostOutput(lifecycle, cfg.skillsEnabled));
   } catch {
     // Lore lifecycle is best-effort; fail silently.
   }

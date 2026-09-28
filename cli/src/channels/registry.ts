@@ -6,6 +6,7 @@ import { hermesInstaller } from './hermes.js';
 import { openclawInstaller } from './openclaw.js';
 import { opencodeInstaller } from './opencode.js';
 import { piInstaller } from './pi.js';
+import { zcodeInstaller } from './zcode.js';
 
 const installers: Partial<Record<ChannelId, ChannelInstaller>> = {
   claudecode: claudecodeInstaller,
@@ -14,6 +15,7 @@ const installers: Partial<Record<ChannelId, ChannelInstaller>> = {
   openclaw: openclawInstaller,
   hermes: hermesInstaller,
   opencode: opencodeInstaller,
+  zcode: zcodeInstaller,
 };
 
 export function getInstaller(id: ChannelId): ChannelInstaller {

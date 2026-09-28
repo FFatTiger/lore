@@ -27,6 +27,11 @@ export const hermesInstaller: ChannelInstaller = {
       return { id: 'hermes', status: 'failed', message: download.reason ?? 'hermes artifact download failed' };
     }
     const memoryPath = path.join(dest, 'lore_memory');
+    if (ctx.capabilities.skills) {
+      await fs.writeFile(path.join(dest, '.lore-skills-enabled'), '1\n', { mode: 0o600 });
+    } else {
+      await fs.rm(path.join(dest, '.lore-skills-enabled'), { force: true });
+    }
     return {
       id: 'hermes',
       status: 'ok',

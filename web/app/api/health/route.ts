@@ -11,7 +11,14 @@ export async function GET(): Promise<NextResponse> {
   try {
     await sql('SELECT 1');
     const cache = await getCacheHealth();
-    return NextResponse.json({ status: 'ok', database: 'connected', cache: { provider: cache.provider, ok: cache.ok }, version: VERSION });
+    return NextResponse.json({
+      status: 'ok',
+      database: 'connected',
+      cache: { provider: cache.provider, ok: cache.ok },
+      version: VERSION,
+      edition: 'oss',
+      capabilities: { skills: false },
+    });
   } catch {
     const cache = await getCacheHealth().catch(() => null);
     return NextResponse.json({
@@ -19,6 +26,8 @@ export async function GET(): Promise<NextResponse> {
       database: 'disconnected',
       ...(cache ? { cache: { provider: cache.provider, ok: cache.ok } } : {}),
       version: VERSION,
+      edition: 'oss',
+      capabilities: { skills: false },
     }, { status: 503 });
   }
 }

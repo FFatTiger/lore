@@ -64,6 +64,6 @@ Set `LORE_CODEX_INSTALL_USER_HOOKS=1` only for legacy Codex builds that require 
 The hooks add:
 
 - `SessionStart`: server-returned Lore boot lifecycle context from `client_type=codex`
-- `UserPromptSubmit`: `<recall>` / Memory host output, plus any lifecycle `skill_candidates` appended in a `<lore-skills>` block (discovery only; call `lore_skill_get` to materialize)
+- `UserPromptSubmit`: `<recall>` / Memory host output, plus any lifecycle `skill_candidates` appended in a `<lore-skills>` block (discovery only; call `lore_skill_get` to fetch a local copy)
 
 Hook commands run plain `node` `.mjs` files instead of `npx tsx`, avoiding per-prompt package runner startup cost.

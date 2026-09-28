@@ -26,6 +26,8 @@ grep -Fq 'bash scripts/__tests__/opencode-install.test.sh' "$WORKFLOW" || fail '
 grep -Fq 'bash scripts/__tests__/opencode-uninstall.test.sh' "$WORKFLOW" || fail 'OpenCode uninstaller compatibility tests missing'
 grep -Fq 'python3 -m py_compile scripts/opencode-compat.py' "$WORKFLOW" || fail 'OpenCode compatibility helper syntax check missing'
 grep -Fq 'bash scripts/build-opencode-artifact.sh' "$WORKFLOW" || fail 'OpenCode artifact builder missing'
+grep -Fq 'name: Build ZCode artifact' "$WORKFLOW" || fail 'ZCode artifact step missing'
+grep -Fq 'lore-zcode.zip' "$WORKFLOW" || fail 'ZCode zip missing'
 grep -Fq 'for f in dist/lore-*.zip' "$WORKFLOW" || fail 'release upload loop missing'
 if grep -Fq -- '--clobber' "$WORKFLOW"; then
   fail 'release workflow must not overwrite immutable assets'

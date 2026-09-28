@@ -318,5 +318,5 @@ export function registerTools(api: any, pluginCfg: any, skillsSession?: SkillsSe
     },
   });
 
-  registerSkillTools(api, pluginCfg, skillsSession);
+  if (pluginCfg.skillsEnabled) registerSkillTools(api, pluginCfg, skillsSession);
 }

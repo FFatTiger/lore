@@ -3,19 +3,6 @@
     "lore": {
       "type": "http",
       "url": "${LORE_BASE_URL:-http://127.0.0.1:18901}/api/mcp?client_type=codex"
-    },
-    "lore-skills": {
-      "command": "node",
-      "args": [
-        "${LORE_CODEX_PLUGIN_ROOT}/local-skills-mcp/src/server.mjs",
-        "--client-type",
-        "codex"
-      ],
-      "env": {
-        "LORE_HOME": "${LORE_HOME:-}",
-        "LORE_BASE_URL": "${LORE_BASE_URL:-http://127.0.0.1:18901}",
-        "LORE_CLIENT_TYPE": "codex"
-      }
     }
   }
 }

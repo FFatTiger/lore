@@ -200,6 +200,11 @@ export const opencodeInstaller: ChannelInstaller = {
     await fs.copyFile(source, tmp);
     await fs.chmod(tmp, 0o644);
     await fs.rename(tmp, target);
+    if (ctx.capabilities.skills) {
+      await fs.writeFile(path.join(dest, '.lore-skills-enabled'), '1\n', { mode: 0o600 });
+    } else {
+      await fs.rm(path.join(dest, '.lore-skills-enabled'), { force: true });
+    }
 
     const run = ctx.run ?? createExec();
     const compatibility = await configureCompatibility(

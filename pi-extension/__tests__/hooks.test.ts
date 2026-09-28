@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 import {
+  detectProjectInfo,
   extractMessageText,
   registerHooks,
 } from '../hooks';
@@ -29,8 +33,42 @@ describe('Pi extension hooks', () => {
     registerHooks(pi as any, { injectPromptGuidance: false, recallEnabled: false, startupHealthcheck: false });
     expect(pi.events.session_start).toBeTypeOf('function');
     expect(pi.events.before_agent_start).toBeTypeOf('function');
+    expect(pi.events.session_shutdown).toBeTypeOf('function');
     expect(pi.events.tool_call).toBeUndefined();
-    expect(pi.events.session_shutdown).toBeUndefined();
+  });
+
+  it('detects project identity from the session cwd instead of the host process cwd', () => {
+    const sessionCwd = mkdtempSync(join(tmpdir(), 'lore-session-cwd-'));
+    expect(detectProjectInfo(sessionCwd).dir_name).toBe(basename(sessionCwd));
+    expect(detectProjectInfo().dir_name).toBe(basename(process.cwd()));
+  });
+
+  it('sends the session cwd as project identity in the startup lifecycle', async () => {
+    const pi = makeMockPi();
+    const sessionCwd = mkdtempSync(join(tmpdir(), 'lore-project-'));
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => JSON.stringify({ host_output: { mode: 'none', value: null } }),
+    })));
+
+    registerHooks(pi as any, {
+      baseUrl: 'http://host',
+      timeoutMs: 1000,
+      injectPromptGuidance: true,
+      recallEnabled: false,
+      startupHealthcheck: false,
+    });
+    await pi.events.session_start({ reason: 'startup' }, {
+      cwd: sessionCwd,
+      sessionManager: { getSessionId: () => 'sess-cwd' },
+    });
+
+    const startup = (fetch as any).mock.calls
+      .map((call: any[]) => JSON.parse(String(call[1]?.body || '{}')))
+      .find((body: any) => body?.event?.name === 'session.start');
+    expect(startup.project.dir_name).toBe(basename(sessionCwd));
   });
 
   it('keeps prompt lifecycle available for skills when memory recall is disabled', async () => {
@@ -91,7 +129,7 @@ describe('Pi extension hooks', () => {
 
     const turn = await pi.events.before_agent_start({ prompt: '', systemPrompt: 'base' }, ctx);
     expect(turn?.systemPrompt).toBe('base\n\nONCE');
-    expect((await pi.events.before_agent_start({ prompt: '', systemPrompt: 'base' }, ctx))?.systemPrompt).toBeUndefined();
+    expect((await pi.events.before_agent_start({ prompt: '', systemPrompt: 'base' }, ctx))?.systemPrompt).toBe('base\n\nONCE');
   });
 
   it('ignores an old session start that resolves after a newer binding', async () => {
@@ -128,10 +166,35 @@ describe('Pi extension hooks', () => {
     await startA;
 
     expect((await pi.events.before_agent_start({ prompt: '', systemPrompt: 'base' }, ctxB))?.systemPrompt).toBe('base\n\nB');
-    expect((await pi.events.before_agent_start({ prompt: '', systemPrompt: 'base' }, ctxA))?.systemPrompt).toBeUndefined();
+    // Both sessions keep their own boot baseline: the newer binding must not
+    // evict the older session's startup context.
+    expect((await pi.events.before_agent_start({ prompt: '', systemPrompt: 'base' }, ctxA))?.systemPrompt).toBe('base\n\nA');
   });
 
-  it('caches session startup context and consumes it on the first agent turn', async () => {
+  it('drops the cached boot baseline on session shutdown', async () => {
+    const pi = makeMockPi();
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, statusText: 'OK',
+      text: async () => JSON.stringify({ host_output: { mode: 'return_value', value: { systemPromptAppend: 'BASELINE' } } }),
+    })));
+
+    registerHooks(pi as any, {
+      baseUrl: 'http://host',
+      timeoutMs: 1000,
+      injectPromptGuidance: true,
+      recallEnabled: false,
+      startupHealthcheck: false,
+    });
+
+    const ctx = { sessionManager: { getSessionId: () => 'sess-shutdown' } };
+    await pi.events.session_start({ reason: 'startup' }, ctx);
+    expect((await pi.events.before_agent_start({ prompt: '', systemPrompt: 'base' }, ctx))?.systemPrompt).toBe('base\n\nBASELINE');
+
+    await pi.events.session_shutdown({ reason: 'new' }, ctx);
+    expect((await pi.events.before_agent_start({ prompt: '', systemPrompt: 'base' }, ctx))?.systemPrompt).toBeUndefined();
+  });
+
+  it('re-appends the session startup context on every agent turn', async () => {
     const pi = makeMockPi();
     vi.stubGlobal('fetch', vi.fn(async (url: string, init: any) => {
       if (String(url).includes('/lifecycle/event')) {
@@ -192,9 +255,44 @@ describe('Pi extension hooks', () => {
 
     (fetch as any).mockClear();
     const second = await pi.events.before_agent_start({ prompt: 'again', systemPrompt: 'base system' }, ctx);
-    expect(second.systemPrompt).toBeUndefined();
+    // Pi rebuilds the base prompt each turn, so the fixed boot baseline must
+    // persist instead of disappearing after the first user prompt.
+    expect(second.systemPrompt).toBe('base system\n\nLIFECYCLE SYSTEM');
     expect(second.message.content).toContain('<recall');
     bodies = (fetch as any).mock.calls.map((call: any[]) => JSON.parse(String(call[1]?.body || '{}')));
     expect(bodies.map((body: any) => body.event.name)).toEqual(['prompt.submit']);
+  });
+
+  it('waits for a pending startup request before the first turn', async () => {
+    const pi = makeMockPi();
+    let resolveStartup!: (response: any) => void;
+    vi.stubGlobal('fetch', vi.fn((url: string, init: any) => {
+      const body = JSON.parse(String(init?.body || '{}'));
+      if (body?.event?.name === 'session.start') {
+        return new Promise((resolve) => { resolveStartup = resolve; });
+      }
+      return Promise.resolve({
+        ok: true, status: 200, statusText: 'OK',
+        text: async () => JSON.stringify({ host_output: { mode: 'none', value: null } }),
+      });
+    }));
+
+    registerHooks(pi as any, {
+      baseUrl: 'http://host',
+      timeoutMs: 1000,
+      injectPromptGuidance: true,
+      recallEnabled: false,
+      startupHealthcheck: false,
+    });
+
+    const ctx = { sessionManager: { getSessionId: () => 'sess-race' } };
+    void pi.events.session_start({ reason: 'startup' }, ctx);
+    const turn = pi.events.before_agent_start({ prompt: 'first', systemPrompt: 'base' }, ctx);
+    resolveStartup({
+      ok: true, status: 200, statusText: 'OK',
+      text: async () => JSON.stringify({ host_output: { mode: 'return_value', value: { systemPromptAppend: 'RACE BASELINE' } } }),
+    });
+
+    expect((await turn)?.systemPrompt).toBe('base\n\nRACE BASELINE');
   });
 });

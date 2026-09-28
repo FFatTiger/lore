@@ -217,8 +217,12 @@ export function createOpenCodeLifecycleAdapter(args: {
       timeoutMs: config.startupTimeoutMs,
     })
       .then((response) => {
-        const catalog = readSkillCatalog(response);
-        if (catalog) state.skillCatalog = catalog;
+        // Session start records catalog identity only; never auto-downloads or reconciles.
+        // All skill download/update is on-demand via lore_skill_get.
+        if (config.skillsEnabled) {
+          const catalog = readSkillCatalog(response);
+          if (catalog) state.skillCatalog = catalog;
+        }
         const systemContext = hostValue(response, 'systemContext');
         if (systemContext) state.systemContext = systemContext;
         return systemContext;
@@ -281,11 +285,13 @@ export function createOpenCodeLifecycleAdapter(args: {
       });
 
       // Skill lane is independent of memory host_output; record catalog identity only.
-      const catalog = readSkillCatalog(response);
-      if (catalog) state.skillCatalog = catalog;
+      if (config.skillsEnabled) {
+        const catalog = readSkillCatalog(response);
+        if (catalog) state.skillCatalog = catalog;
+      }
 
       // Discovery-only: never download or inject local paths.
-      const skillBlock = skillDiscoveryBlockFromResponse(response);
+      const skillBlock = config.skillsEnabled ? skillDiscoveryBlockFromResponse(response) : '';
       const promptContext = hostValue(response, 'promptContext');
 
       // Append discovery block to promptContext even when memory recall is absent.

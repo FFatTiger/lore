@@ -7,6 +7,7 @@ const config = {
   startupTimeoutMs: 8_000,
   requestTimeoutMs: 30_000,
   defaultDomain: 'core',
+  skillsEnabled: true,
   loreHome: '/tmp/lore-home',
 };
 

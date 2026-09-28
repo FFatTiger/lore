@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { readJsonFileStrict, writeJsonAtomic, ensureDir } from './fs.js';
 import type { LoreConfig, TokenAction } from './types.js';
+import type { LoreServerProfile } from './capabilities.js';
 
 export async function readConfig(configPath: string): Promise<LoreConfig> {
   const data = await readJsonFileStrict<unknown>(configPath);
@@ -19,6 +20,7 @@ export async function writeConfig(
     writeVersion?: boolean;
     releaseVersion?: string;
     dockerManaged?: boolean | null;
+    serverProfile?: LoreServerProfile;
   } = {},
 ): Promise<LoreConfig> {
   await ensureDir(path.dirname(configPath));
@@ -37,6 +39,10 @@ export async function writeConfig(
   if (opts.dockerManaged === true) next.docker_managed = true;
   else if (opts.dockerManaged === false) next.docker_managed = false;
   else if (next.docker_managed === undefined) next.docker_managed = false;
+  if (opts.serverProfile) next.server_profile = {
+    ...opts.serverProfile,
+    capabilities: { ...opts.serverProfile.capabilities },
+  };
   await writeJsonAtomic(configPath, next, { mode: 0o600 });
   return next;
 }

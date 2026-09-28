@@ -33,7 +33,7 @@ export function discoveryCandidateEntries(candidates) {
 export function formatSkillCandidateBlock(candidates) {
   if (!Array.isArray(candidates) || candidates.length === 0) return '';
   const lines = ['<lore-skills>'];
-  lines.push('Matched Lore skills. Call lore_skill_get with skill_id to materialize a local work copy.');
+  lines.push('Matched Lore skills. Call lore_skill_get with skill_id to fetch a local copy; managed package files are read-only, and the skill directory stays writable for local outputs.');
   for (const c of candidates) {
     const skillId = skillIdOf(c);
     const name = String(c?.name || '').trim();

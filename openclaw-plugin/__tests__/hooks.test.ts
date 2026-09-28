@@ -249,8 +249,18 @@ describe('registerHooks', () => {
       startupHealthcheck: false,
       injectPromptGuidance: true,
       recallEnabled: false,
+      skillsEnabled: true,
       baseUrl: 'http://localhost',
-    });
+    }, {
+      onPromptLifecycle: async (response: any) => {
+        const candidates = response?.skill_candidates || [];
+        if (!candidates.length) return {};
+        const candidate = candidates[0];
+        return {
+          skillBlock: `<lore-skills>\nskill_id: ${candidate.skill_id}\nUse lore_skill_get to open the skill.\n</lore-skills>`,
+        };
+      },
+    } as any);
     const result = await api.events.before_prompt_build.handler(
       { prompt: 'find a skill', messages: [] },
       { sessionId: 'sess-skills' },

@@ -1,6 +1,6 @@
 /**
  * Prompt-time skill candidate discovery helpers (no download / no local path).
- * Work-copy materialization lives in vendor/skill-workcopy.
+ * Read-only mirror materialization lives in vendor/skill-workcopy.
  */
 
 import {
@@ -74,7 +74,7 @@ export function formatSkillCandidateBlock(candidates: Array<{
 }>): string {
   if (!candidates.length) return '';
   const lines = ['<lore-skills>'];
-  lines.push('Matched Lore skills. Call lore_skill_get with skill_id to materialize a local work copy.');
+  lines.push('Matched Lore skills. Call lore_skill_get with skill_id to fetch a local copy; managed package files are read-only, and the skill directory stays writable for local outputs.');
   for (const c of candidates) {
     const version = c.version === undefined || c.version === '' ? '' : ` v${c.version}`;
     const desc = c.description ? ` — ${String(c.description).replace(/\s+/g, ' ').trim()}` : '';

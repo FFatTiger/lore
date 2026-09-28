@@ -21,6 +21,7 @@ function ctx(p: Partial<ChannelContext> & { loreHome: string; homeDir: string })
     apiToken: 'lm_x',
     tokenAction: 'set',
     needInstall: 2,
+    capabilities: { skills: true },
     force: false,
     lang: 'en',
     releaseVersion: 'v1.3.15',

@@ -19,6 +19,7 @@ function baseSnapshot(over: Partial<InstallSnapshot> = {}): InstallSnapshot {
       openclaw: false,
       opencode: false,
       hermes: false,
+      zcode: false,
       docker: true,
     },
     channels: ALL_CHANNELS.map((id) => ({ id, state: 'missing' as const, details: [] })),

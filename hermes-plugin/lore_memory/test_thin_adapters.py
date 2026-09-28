@@ -1,8 +1,11 @@
 import sys
 import types
 import unittest
+import hashlib
 import json
 import os
+import shutil
+import stat
 import tempfile
 from pathlib import Path
 
@@ -765,6 +768,7 @@ class LoreProviderThinAdapterTests(unittest.TestCase):
         self.assertEqual(result, "Moved: core://old/path → core://new/path")
 
     def test_skill_tool_schemas_registered_without_artifact_or_guidance(self):
+        self.provider._skills_enabled = True
         schemas = {tool["name"]: tool for tool in self.provider.get_tool_schemas()}
         for name in (
             "lore_skill_list",
@@ -776,7 +780,8 @@ class LoreProviderThinAdapterTests(unittest.TestCase):
             "lore_skill_status",
         ):
             self.assertIn(name, schemas)
-        self.assertNotIn("lore_skill_artifact", schemas)
+        # No separate artifact-create tool.
+        self.assertNotIn("lore_skill_artifact_create", schemas)
         update = schemas["lore_skill_update"]
         self.assertEqual(schemas["lore_skill_get"]["parameters"]["required"], ["skill_id"])
         self.assertEqual(update["parameters"]["required"], ["skill_id", "expected_version"])
@@ -792,6 +797,7 @@ class LoreProviderThinAdapterTests(unittest.TestCase):
                 self.assertNotIn("always use", desc.lower())
 
     def test_skill_candidate_discovery_appended_even_when_memory_context_empty(self):
+        self.provider._skills_enabled = True
         class SkillAwareClient(FakeClient):
             def lifecycle_event(self, event_name, **kwargs):
                 self.lifecycle_calls.append((event_name, dict(kwargs)))
@@ -823,6 +829,7 @@ class LoreProviderThinAdapterTests(unittest.TestCase):
         self.assertEqual(self.provider._skill_catalog_revision, "cat-9")
 
     def test_skill_candidate_discovery_appended_to_memory_context(self):
+        self.provider._skills_enabled = True
         class SkillAwareClient(FakeClient):
             def lifecycle_event(self, event_name, **kwargs):
                 self.lifecycle_calls.append((event_name, dict(kwargs)))
@@ -903,6 +910,20 @@ class SkillClientApiTests(unittest.TestCase):
             client.update_skill("skill-1", {"expected_version": 1.5})
         with self.assertRaises(Exception):
             client.update_skill("skill-1", {})
+
+
+
+def _make_writable(root):
+    import stat as stat_mod
+    def walk(current):
+        st = os.lstat(current)
+        if stat_mod.S_ISDIR(st.st_mode) and not stat_mod.S_ISLNK(st.st_mode):
+            os.chmod(current, 0o755)
+            for entry in os.listdir(current):
+                walk(os.path.join(current, entry))
+        elif stat_mod.S_ISREG(st.st_mode):
+            os.chmod(current, 0o644)
+    walk(root)
 
 
 class SkillWorkCopyTests(unittest.TestCase):
@@ -1001,7 +1022,7 @@ class SkillWorkCopyTests(unittest.TestCase):
             ["SKILL.md", "refs/a.md"],
         )
 
-    def test_first_get_materializes_writable_work_copy(self):
+    def test_first_get_materializes_read_only_mirror(self):
         helper = "# helper\n"
         detail = self._skill_detail(files=[
             {
@@ -1032,6 +1053,8 @@ class SkillWorkCopyTests(unittest.TestCase):
         self.assertEqual(marker["skill_id"], "skill-1")
         self.assertEqual(marker["version"], 1)
         self.assertEqual(marker["managed_files"], ["SKILL.md", "refs/helper.md"])
+        self.assertEqual(marker["manifest_hash"], detail["manifest_hash"])
+        self.assertTrue(marker["readonly"])
 
         status = self.sw.inspect_local_work_copy(
             self.lore_home, self.project_id, "demo-skill",
@@ -1039,34 +1062,71 @@ class SkillWorkCopyTests(unittest.TestCase):
         )
         self.assertEqual(status["state"], "ready")
 
-        # Writable: local edits must succeed without chmod.
+        if os.name != "nt":
+            import stat as stat_mod
+            # Server-managed file is read-only; the installed directory is writable.
+            self.assertEqual(stat_mod.S_IMODE(os.lstat(os.path.join(install_path, "SKILL.md")).st_mode), 0o444)
+            self.assertEqual(stat_mod.S_IMODE(os.lstat(os.path.join(install_path, self.sw.LORE_SKILL_MARKER)).st_mode), 0o444)
+            self.assertEqual(stat_mod.S_IMODE(os.lstat(install_path).st_mode), 0o755)
+            with self.assertRaises(PermissionError):
+                with open(os.path.join(install_path, "SKILL.md"), "w", encoding="utf-8") as handle:
+                    handle.write("# edited\n")
+
+        # The writable directory accepts local outputs directly inside the same copy.
+        os.makedirs(os.path.join(install_path, "outputs"), exist_ok=True)
+        with open(os.path.join(install_path, "outputs", "result.json"), "w", encoding="utf-8") as handle:
+            handle.write('{"ok":true}\n')
+
+        # Same-version managed edit (after explicit chmod) is tampered and restored;
+        # the local output is preserved.
+        _make_writable(install_path)
         with open(os.path.join(install_path, "SKILL.md"), "w", encoding="utf-8") as handle:
             handle.write("# edited\n")
-        with open(os.path.join(install_path, "SKILL.md"), "r", encoding="utf-8") as handle:
-            self.assertEqual(handle.read(), "# edited\n")
-
-        # ensure same version preserves edits
+        self.assertEqual(
+            self.sw.inspect_local_work_copy(
+                self.lore_home, self.project_id, "demo-skill", {"version": 1}
+            )["state"],
+            "tampered",
+        )
         ensured = self.sw.ensure_skill_work_copy(
             skill_id="skill-1",
             lore_home=self.lore_home,
             project_id=self.project_id,
             load_skill=lambda _sid: detail,
         )
-        self.assertFalse(ensured["downloaded"])
-        self.assertEqual(ensured["skill_md"], "# edited\n")
+        self.assertTrue(ensured["downloaded"])
+        self.assertEqual(ensured["skill_md"], "# Demo Skill\n")
         self.assertEqual(ensured["skill_dir"], str(Path(install_path).resolve()))
+        self.assertEqual(
+            self.sw.inspect_local_work_copy(
+                self.lore_home, self.project_id, "demo-skill", {"version": 1}
+            )["state"],
+            "ready",
+        )
+        # The local output survives the managed restore.
+        with open(os.path.join(install_path, "outputs", "result.json"), "r", encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), '{"ok":true}\n')
 
-    def test_same_version_preserves_local_edits_and_extras(self):
+    def test_extras_do_not_trigger_tamper_and_survive_same_version_get(self):
         detail = self._skill_detail(version=1)
         result = self.sw.materialize_skill_work_copy(
             lore_home=self.lore_home, project_id=self.project_id, detail=detail,
         )
         install_path = result["install_path"]
-        with open(os.path.join(install_path, "SKILL.md"), "w", encoding="utf-8") as handle:
-            handle.write("# local edit\n")
         os.makedirs(os.path.join(install_path, "outputs"), exist_ok=True)
         with open(os.path.join(install_path, "outputs", "result.json"), "w", encoding="utf-8") as handle:
             handle.write('{"ok":true}\n')
+        with open(os.path.join(install_path, "extra-root.md"), "w", encoding="utf-8") as handle:
+            handle.write("extra\n")
+
+        # Extras never change integrity: still ready, managed hash unchanged.
+        self.assertEqual(
+            self.sw.inspect_local_work_copy(
+                self.lore_home, self.project_id, "demo-skill", {"version": 1},
+            )["state"],
+            "ready",
+        )
+        self.assertEqual(self.sw.hash_local_skill_files(install_path)["manifest_hash"], detail["manifest_hash"])
 
         ensured = self.sw.ensure_skill_work_copy(
             skill_id="skill-1",
@@ -1075,15 +1135,47 @@ class SkillWorkCopyTests(unittest.TestCase):
             load_skill=lambda _sid: detail,
         )
         self.assertFalse(ensured["downloaded"])
-        self.assertEqual(ensured["skill_md"], "# local edit\n")
-        with open(os.path.join(install_path, "outputs", "result.json"), "r", encoding="utf-8") as handle:
-            self.assertEqual(handle.read(), '{"ok":true}\n')
+        self.assertTrue(os.path.exists(os.path.join(install_path, "outputs", "result.json")))
+        self.assertTrue(os.path.exists(os.path.join(install_path, "extra-root.md")))
+
+    def test_managed_modification_restores_from_server_preserving_extras(self):
+        detail = self._skill_detail(version=1)
+        result = self.sw.materialize_skill_work_copy(
+            lore_home=self.lore_home, project_id=self.project_id, detail=detail,
+        )
+        install_path = result["install_path"]
+        with open(os.path.join(install_path, "local-output.txt"), "w", encoding="utf-8") as handle:
+            handle.write("agent\n")
+
+        _make_writable(install_path)
+        with open(os.path.join(install_path, "SKILL.md"), "w", encoding="utf-8") as handle:
+            handle.write("# local edit\n")
+
+        # Managed hash differs → tampered (extras alone would not).
+        self.assertNotEqual(self.sw.hash_local_skill_files(install_path)["manifest_hash"], detail["manifest_hash"])
+        self.assertEqual(
+            self.sw.inspect_local_work_copy(
+                self.lore_home, self.project_id, "demo-skill", {"version": 1},
+            )["state"],
+            "tampered",
+        )
+
+        ensured = self.sw.ensure_skill_work_copy(
+            skill_id="skill-1",
+            lore_home=self.lore_home,
+            project_id=self.project_id,
+            load_skill=lambda _sid: detail,
+        )
+        self.assertTrue(ensured["downloaded"])
+        self.assertEqual(ensured["skill_md"], "# Demo Skill\n\nDo the thing.\n")
+        with open(os.path.join(install_path, "local-output.txt"), "r", encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "agent\n")
         status = self.sw.inspect_local_work_copy(
             self.lore_home, self.project_id, "demo-skill", {"version": 1},
         )
         self.assertEqual(status["state"], "ready")
 
-    def test_upgrade_replaces_managed_and_preserves_extras(self):
+    def test_upgrade_replaces_managed_and_preserves_extra_local_files(self):
         v1_files = [
             {
                 "path": "SKILL.md",
@@ -1109,6 +1201,7 @@ class SkillWorkCopyTests(unittest.TestCase):
             lore_home=self.lore_home, project_id=self.project_id, detail=v1,
         )
         install_path = result["install_path"]
+        _make_writable(install_path)
         os.makedirs(os.path.join(install_path, "agent-out"), exist_ok=True)
         with open(os.path.join(install_path, "agent-out", "notes.txt"), "w", encoding="utf-8") as handle:
             handle.write("local output\n")
@@ -1148,12 +1241,147 @@ class SkillWorkCopyTests(unittest.TestCase):
         with open(os.path.join(install_path, "new.md"), "r", encoding="utf-8") as handle:
             self.assertEqual(handle.read(), "new\n")
         self.assertFalse(os.path.exists(os.path.join(install_path, "old.md")))
+        # Extra local files are preserved across the upgrade.
         with open(os.path.join(install_path, "agent-out", "notes.txt"), "r", encoding="utf-8") as handle:
             self.assertEqual(handle.read(), "local output\n")
         with open(os.path.join(install_path, "extra-root.md"), "r", encoding="utf-8") as handle:
             self.assertEqual(handle.read(), "extra\n")
+        if os.name != "nt":
+            import stat as stat_mod
+            self.assertEqual(stat_mod.S_IMODE(os.lstat(os.path.join(install_path, "SKILL.md")).st_mode), 0o444)
+            self.assertEqual(stat_mod.S_IMODE(os.lstat(install_path).st_mode), 0o755)
 
-    def test_legacy_migration_preserves_unknown_local_outputs(self):
+    def test_upgrade_managed_path_conflict_with_extra_fails_atomically(self):
+        v1 = self._skill_detail(version=1, files=[
+            {
+                "path": "SKILL.md",
+                "content": "# v1\n",
+                "sha256": self.sw.sha256_text("# v1\n"),
+                "size": len(b"# v1\n"),
+            },
+        ])
+        result = self.sw.materialize_skill_work_copy(
+            lore_home=self.lore_home, project_id=self.project_id, detail=v1,
+        )
+        install_path = result["install_path"]
+        # Local artifact occupies a path the next server version claims as managed.
+        with open(os.path.join(install_path, "conflict.md"), "w", encoding="utf-8") as handle:
+            handle.write("my artifact\n")
+
+        v2 = self._skill_detail(version=2, files=[
+            {
+                "path": "SKILL.md",
+                "content": "# v2\n",
+                "sha256": self.sw.sha256_text("# v2\n"),
+                "size": len(b"# v2\n"),
+            },
+            {
+                "path": "conflict.md",
+                "content": "server version\n",
+                "sha256": self.sw.sha256_text("server version\n"),
+                "size": len(b"server version\n"),
+            },
+        ])
+        with self.assertRaises(Exception) as ctx:
+            self.sw.materialize_skill_work_copy(
+                lore_home=self.lore_home, project_id=self.project_id, detail=v2,
+            )
+        self.assertIn("conflict", str(ctx.exception).lower())
+        # Installed copy untouched: still v1, artifact preserved.
+        with open(os.path.join(install_path, "SKILL.md"), "r", encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "# v1\n")
+        with open(os.path.join(install_path, "conflict.md"), "r", encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "my artifact\n")
+        self.assertEqual(self.sw.read_work_copy_marker(install_path)["version"], 1)
+
+    def test_symlinks_in_extras_are_safe_and_managed_symlink_is_tampered(self):
+        if os.name == "nt":
+            return
+        detail = self._skill_detail(version=1)
+        result = self.sw.materialize_skill_work_copy(
+            lore_home=self.lore_home, project_id=self.project_id, detail=detail,
+        )
+        install_path = result["install_path"]
+        target = os.path.join(self.lore_home, "symlink-target")
+        os.makedirs(target, exist_ok=True)
+        # Extra symlink (agent-created local content) does not break the copy.
+        os.symlink(target, os.path.join(install_path, "agent-link"))
+        self.assertEqual(
+            self.sw.inspect_local_work_copy(
+                self.lore_home, self.project_id, "demo-skill", {"version": 1},
+            )["state"],
+            "ready",
+        )
+        # A symlink replacing a managed file is tampered, then get restores it from
+        # server state rather than treating it as a local artifact conflict.
+        _make_writable(install_path)
+        os.unlink(os.path.join(install_path, "agent-link"))
+        os.unlink(os.path.join(install_path, "SKILL.md"))
+        os.symlink(target, os.path.join(install_path, "SKILL.md"))
+        self.assertEqual(
+            self.sw.inspect_local_work_copy(
+                self.lore_home, self.project_id, "demo-skill", {"version": 1},
+            )["state"],
+            "tampered",
+        )
+        restored = self.sw.ensure_skill_work_copy(
+            skill_id="skill-1",
+            lore_home=self.lore_home,
+            project_id=self.project_id,
+            load_skill=lambda _sid: detail,
+        )
+        self.assertTrue(restored["downloaded"])
+        self.assertFalse(os.path.islink(os.path.join(install_path, "SKILL.md")))
+        with open(os.path.join(install_path, "SKILL.md"), encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "# Demo Skill\n\nDo the thing.\n")
+
+    def test_refuses_symlinked_managed_path_ancestors_before_external_mutation(self):
+        if os.name == "nt":
+            return
+        detail = self._skill_detail(version=1)
+        detail["files"].append({
+            "path": "data/note.md",
+            "content": "managed\n",
+            "content_sha256": hashlib.sha256(b"managed\n").hexdigest(),
+            "size_bytes": len(b"managed\n"),
+        })
+        # Recompute server manifest for the expanded package.
+        detail["manifest_hash"] = self.sw.compute_manifest_hash([
+            {
+                "path": f["path"],
+                "sha256": f.get("content_sha256") or f.get("sha256"),
+                "size": f.get("size_bytes") if f.get("size_bytes") is not None else f.get("size"),
+            }
+            for f in detail["files"]
+        ])
+        result = self.sw.materialize_skill_work_copy(
+            lore_home=self.lore_home, project_id=self.project_id, detail=detail,
+        )
+        install_path = result["install_path"]
+        external = os.path.join(self.lore_home, "external-target")
+        os.makedirs(external, exist_ok=True)
+        external_file = os.path.join(external, "note.md")
+        with open(external_file, "w", encoding="utf-8") as handle:
+            handle.write("external\n")
+        os.chmod(external_file, 0o600)
+
+        _make_writable(install_path)
+        shutil.rmtree(os.path.join(install_path, "data"))
+        os.symlink(external, os.path.join(install_path, "data"))
+
+        v2 = self._skill_detail(version=2)
+        with self.assertRaises(Exception) as ctx:
+            self.sw.materialize_skill_work_copy(
+                lore_home=self.lore_home, project_id=self.project_id, detail=v2,
+            )
+        self.assertIn("symlink ancestor", str(ctx.exception))
+        with open(external_file, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "external\n")
+        self.assertEqual(stat.S_IMODE(os.stat(external_file).st_mode), 0o600)
+        self.assertEqual(self.sw.read_work_copy_marker(install_path)["version"], 1)
+        self.assertTrue(os.path.islink(os.path.join(install_path, "data")))
+
+    def test_legacy_migration_drops_unknown_local_outputs(self):
         install_path = os.path.join(self.lore_home, "skill-artifacts", self.project_id, "demo-skill")
         os.makedirs(os.path.join(install_path, "outputs"), exist_ok=True)
         with open(os.path.join(install_path, "SKILL.md"), "w", encoding="utf-8") as handle:
@@ -1182,10 +1410,13 @@ class SkillWorkCopyTests(unittest.TestCase):
             load_skill=lambda _sid: detail,
         )
         self.assertTrue(result["downloaded"])
-        with open(os.path.join(install_path, "unknown.txt"), "r", encoding="utf-8") as handle:
-            self.assertEqual(handle.read(), "local\n")
-        with open(os.path.join(install_path, "outputs", "report.md"), "r", encoding="utf-8") as handle:
-            self.assertEqual(handle.read(), "report\n")
+        marker = self.sw.read_work_copy_marker(install_path)
+        self.assertEqual(marker["schema"], self.sw.LORE_SKILL_SCHEMA)
+        self.assertEqual(marker["manifest_hash"], detail["manifest_hash"])
+        self.assertTrue(marker["readonly"])
+        # Legacy unknown files are not preserved as artifacts.
+        self.assertFalse(os.path.exists(os.path.join(install_path, "unknown.txt")))
+        self.assertFalse(os.path.exists(os.path.join(install_path, "outputs", "report.md")))
 
     def test_failed_upgrade_rolls_back(self):
         detail = self._skill_detail(version=1, content="# original\n")
@@ -1193,11 +1424,7 @@ class SkillWorkCopyTests(unittest.TestCase):
             lore_home=self.lore_home, project_id=self.project_id, detail=detail,
         )
         install_path = result["install_path"]
-        with open(os.path.join(install_path, "local-note.txt"), "w", encoding="utf-8") as handle:
-            handle.write("keep me\n")
-        os.makedirs(os.path.join(install_path, "conflict-path"), exist_ok=True)
-        with open(os.path.join(install_path, "conflict-path", "nested.txt"), "w", encoding="utf-8") as handle:
-            handle.write("nested\n")
+        # The mirror stays read-only through the failed upgrade; nothing is written into it.
 
         conflicting = self._skill_detail(
             version=2,
@@ -1216,18 +1443,38 @@ class SkillWorkCopyTests(unittest.TestCase):
                 },
             ],
         )
-        with self.assertRaises(Exception):
-            self.sw.materialize_skill_work_copy(
-                lore_home=self.lore_home, project_id=self.project_id, detail=conflicting,
-            )
+        if os.name == "nt":
+            # Force a failure by poisoning the install marker with a corrupt schema so the
+            # replaceable-install guard refuses to act on it (still leaves the tree intact).
+            marker_path = os.path.join(install_path, self.sw.LORE_SKILL_MARKER)
+            _make_writable(install_path)
+            with open(marker_path, "r", encoding="utf-8") as handle:
+                marker = json.load(handle)
+            marker["schema"] = "lore.skill.bogus.v9"
+            with open(marker_path, "w", encoding="utf-8") as handle:
+                json.dump(marker, handle)
+            with self.assertRaises(Exception):
+                self.sw.materialize_skill_work_copy(
+                    lore_home=self.lore_home, project_id=self.project_id, detail=conflicting,
+                )
+        else:
+            # Remove the staging area and make the mirror root read-only so the v2 stage
+            # cannot be created; the failure must leave the previous read-only mirror intact.
+            shutil.rmtree(os.path.join(self.lore_home, "skill-artifacts", ".staging"), ignore_errors=True)
+            os.chmod(os.path.join(self.lore_home, "skill-artifacts"), 0o555)
+            with self.assertRaises(Exception):
+                self.sw.materialize_skill_work_copy(
+                    lore_home=self.lore_home, project_id=self.project_id, detail=conflicting,
+                )
+            os.chmod(os.path.join(self.lore_home, "skill-artifacts"), 0o755)
+
         with open(os.path.join(install_path, "SKILL.md"), "r", encoding="utf-8") as handle:
             self.assertEqual(handle.read(), "# original\n")
-        with open(os.path.join(install_path, "local-note.txt"), "r", encoding="utf-8") as handle:
-            self.assertEqual(handle.read(), "keep me\n")
-        with open(os.path.join(install_path, "conflict-path", "nested.txt"), "r", encoding="utf-8") as handle:
-            self.assertEqual(handle.read(), "nested\n")
         marker = self.sw.read_work_copy_marker(install_path)
         self.assertEqual(marker["version"], 1)
+        if os.name != "nt":
+            import stat as stat_mod
+            self.assertEqual(stat_mod.S_IMODE(os.lstat(os.path.join(install_path, "SKILL.md")).st_mode), 0o444)
 
     def test_unmanaged_and_traversal_refused(self):
         install_dir = os.path.join(self.lore_home, "skill-artifacts", self.project_id, "demo-skill")
@@ -1251,6 +1498,7 @@ class SkillWorkCopyTests(unittest.TestCase):
         )
         install_path = result["install_path"]
         marker_path = os.path.join(install_path, self.sw.LORE_SKILL_MARKER)
+        _make_writable(install_path)
         with open(marker_path, "r", encoding="utf-8") as handle:
             marker = json.load(handle)
         marker["managed_files"] = ["SKILL.md", "../../etc/passwd"]
@@ -1275,6 +1523,7 @@ class SkillWorkCopyTests(unittest.TestCase):
 
     def test_provider_skill_get_and_update_expected_version(self):
         provider = LoreMemoryProvider()
+        provider._skills_enabled = True
         detail = self._skill_detail(version=1)
 
         class SkillClient(FakeClient):
@@ -1326,15 +1575,16 @@ class SkillWorkCopyTests(unittest.TestCase):
             self.assertIn("# Demo Skill", got)
             self.assertIn("downloaded: True", got)
 
-            # same version preserves
+            # same-version local edit is tampered and restored from server, never preserved
             install_path = os.path.join(
                 self.lore_home, "skill-artifacts", self.project_id, "demo-skill"
             )
+            _make_writable(install_path)
             with open(os.path.join(install_path, "SKILL.md"), "w", encoding="utf-8") as handle:
                 handle.write("# local\n")
             got2 = provider._tool_lore_skill_get({"skill_id": "skill-1"})
-            self.assertIn("downloaded: False", got2)
-            self.assertIn("# local", got2)
+            self.assertIn("downloaded: True", got2)
+            self.assertIn("# Demo Skill", got2)
 
             # expected_version validation at tool layer
             bad = provider.handle_tool_call("lore_skill_update", {"skill_id": "skill-1", "expected_version": 0})
@@ -1349,6 +1599,59 @@ class SkillWorkCopyTests(unittest.TestCase):
             status = provider._tool_lore_skill_status({})
             self.assertIn("demo-skill", status)
             self.assertIn("ready", status)
+        finally:
+            if old_home is None:
+                os.environ.pop("LORE_HOME", None)
+            else:
+                os.environ["LORE_HOME"] = old_home
+
+    def test_no_session_start_reconcile_and_no_artifact_tool(self):
+        provider = LoreMemoryProvider()
+        provider._skills_enabled = True
+        provider._skill_project_id = self.project_id
+
+        class NoSyncClient(FakeClient):
+            def __init__(self, home, project_id):
+                super().__init__()
+                self.home = home
+                self.project_id = project_id
+                self.list_calls = 0
+                self.reconcile_loads = []
+
+            def list_skills(self, include_disabled=True):
+                self.list_calls += 1
+                return {
+                    "project_id": self.project_id,
+                    "catalog_revision": "rev-1",
+                    "skills": [],
+                }
+
+            def get_skill(self, skill_id):
+                self.reconcile_loads.append(skill_id)
+                return self._detail
+
+        client = NoSyncClient(self.lore_home, self.project_id)
+        client._detail = self._skill_detail(name="demo-skill", version=1)
+        provider._client = client
+        provider._session_id = "sess-1"
+
+        old_home = os.environ.get("LORE_HOME")
+        os.environ["LORE_HOME"] = self.lore_home
+        try:
+            # Session start records catalog identity only — never reconciles/downloads.
+            provider.initialize("sess-2")
+            self.assertEqual(provider._skill_project_id, self.project_id)
+            self.assertEqual(client.list_calls, 0)
+            self.assertEqual(client.reconcile_loads, [])
+            self.assertFalse(os.path.exists(os.path.join(self.lore_home, "skill-artifacts")))
+
+            # No artifact-create tool schema and no artifact handler.
+            schemas = {t["name"]: t for t in provider.get_tool_schemas()}
+            self.assertNotIn("lore_skill_artifact_create", schemas)
+            self.assertFalse(hasattr(provider, "_tool_lore_skill_artifact_create"))
+            self.assertFalse(hasattr(self.sw, "reconcile_skill_mirrors"))
+            self.assertFalse(hasattr(self.sw, "create_skill_artifact_dir"))
+            self.assertFalse(hasattr(self.sw, "skill_artifacts_local_root"))
         finally:
             if old_home is None:
                 os.environ.pop("LORE_HOME", None)

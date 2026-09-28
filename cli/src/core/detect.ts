@@ -10,6 +10,7 @@ const AGENT_BINS = [
   'openclaw',
   'opencode',
   'hermes',
+  'zcode',
   'docker',
 ] as const;
 

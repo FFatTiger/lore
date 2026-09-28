@@ -50,6 +50,9 @@
       "loreHome": {
         "type": "string"
       },
+      "skillsEnabled": {
+        "type": "boolean"
+      },
       "injectPromptGuidance": {
         "type": "boolean"
       },
@@ -97,6 +100,10 @@
       "label": "Lore Home",
       "placeholder": "~/.lore",
       "help": "Local root for skill work copies. Falls back to LORE_HOME, then ~/.lore."
+    },
+    "skillsEnabled": {
+      "label": "Enable Lore Skills",
+      "help": "Enable only when the connected Lore server advertises Skills support."
     },
     "injectPromptGuidance": {
       "label": "Inject Prompt Guidance"

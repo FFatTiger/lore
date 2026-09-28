@@ -42,8 +42,38 @@ describe('OpenCode plugin configuration', () => {
       startupTimeoutMs: 8_000,
       requestTimeoutMs: 30_000,
       defaultDomain: 'core',
+      skillsEnabled: false,
       loreHome: join(home, '.lore'),
     });
+  });
+
+  it('treats a matching profile false as authoritative over a stale marker', () => {
+    const home = temporaryHome();
+    writeSharedConfig(home, {
+      base_url: 'https://file.example',
+      server_profile: {
+        base_url: 'https://file.example',
+        capabilities: { skills: false },
+      },
+    });
+    const markerDir = join(home, '.lore', 'opencode');
+    mkdirSync(markerDir, { recursive: true });
+    writeFileSync(join(markerDir, '.lore-skills-enabled'), '1\n');
+
+    expect(loadLorePluginConfig({}, home).skillsEnabled).toBe(false);
+  });
+
+  it('uses a matching positive profile and allows explicit false to disable it', () => {
+    const home = temporaryHome();
+    writeSharedConfig(home, {
+      base_url: 'https://file.example',
+      server_profile: {
+        base_url: 'https://file.example',
+        capabilities: { skills: true },
+      },
+    });
+    expect(loadLorePluginConfig({}, home).skillsEnabled).toBe(true);
+    expect(loadLorePluginConfig({ LORE_SKILLS_ENABLED: '0' }, home).skillsEnabled).toBe(false);
   });
 
   it('resolves loreHome from LORE_HOME else <home>/.lore', () => {
@@ -86,6 +116,7 @@ describe('OpenCode Lore API URL construction', () => {
     startupTimeoutMs: 8_000,
     requestTimeoutMs: 30_000,
     defaultDomain: 'core',
+    skillsEnabled: true,
     loreHome: '/tmp/lore-home',
   };
 

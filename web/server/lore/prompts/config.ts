@@ -7,6 +7,7 @@ import {
   DEFAULT_BOOT_DRAFT_CLIENT_OPENCLAW_INSTRUCTIONS,
   DEFAULT_BOOT_DRAFT_CLIENT_OPENCODE_INSTRUCTIONS,
   DEFAULT_BOOT_DRAFT_CLIENT_PI_INSTRUCTIONS,
+  DEFAULT_BOOT_DRAFT_CLIENT_ZCODE_INSTRUCTIONS,
   DEFAULT_BOOT_DRAFT_GLOBAL_AGENT_EXTRA_INSTRUCTIONS,
   DEFAULT_BOOT_DRAFT_ROLE_AGENT_INSTRUCTIONS,
   DEFAULT_BOOT_DRAFT_ROLE_SOUL_INSTRUCTIONS,
@@ -36,6 +37,7 @@ export interface ServerPromptConfig {
   bootDraftClientCodexInstructions: string;
   bootDraftClientPiInstructions: string;
   bootDraftClientOpencodeInstructions: string;
+  bootDraftClientZcodeInstructions: string;
   dreamSystem: string;
   dreamPoeticDiary: string;
   dreamPhaseDiagnose: string;
@@ -59,6 +61,7 @@ const PROMPT_KEYS = [
   'prompts.boot_draft.instructions.client_codex',
   'prompts.boot_draft.instructions.client_pi',
   'prompts.boot_draft.instructions.client_opencode',
+  'prompts.boot_draft.instructions.client_zcode',
   'prompts.dream.system',
   'prompts.dream.poetic_diary',
   'prompts.dream.phase.diagnose',
@@ -89,6 +92,7 @@ export async function loadServerPromptConfig(): Promise<ServerPromptConfig> {
     bootDraftClientCodexInstructions: textOrDefault(values['prompts.boot_draft.instructions.client_codex'], DEFAULT_BOOT_DRAFT_CLIENT_CODEX_INSTRUCTIONS),
     bootDraftClientPiInstructions: textOrDefault(values['prompts.boot_draft.instructions.client_pi'], DEFAULT_BOOT_DRAFT_CLIENT_PI_INSTRUCTIONS),
     bootDraftClientOpencodeInstructions: textOrDefault(values['prompts.boot_draft.instructions.client_opencode'], DEFAULT_BOOT_DRAFT_CLIENT_OPENCODE_INSTRUCTIONS),
+    bootDraftClientZcodeInstructions: textOrDefault(values['prompts.boot_draft.instructions.client_zcode'], DEFAULT_BOOT_DRAFT_CLIENT_ZCODE_INSTRUCTIONS),
     dreamSystem: textOrDefault(values['prompts.dream.system'], DEFAULT_DREAM_SYSTEM_PROMPT),
     dreamPoeticDiary: textOrDefault(values['prompts.dream.poetic_diary'], DEFAULT_DREAM_POETIC_DIARY_PROMPT),
     dreamPhaseDiagnose: textOrDefault(values['prompts.dream.phase.diagnose'], DEFAULT_DREAM_PHASE_DIAGNOSE_PROMPT),

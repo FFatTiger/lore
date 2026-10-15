@@ -11,14 +11,14 @@ const UriParam = Type.String({
   description: "Full memory URI, such as core://soul. Use core:// or project:// to browse a domain root; bare words are paths in the default domain.",
 });
 
-const GetNodeDescription = "Open a memory node. When opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag if available; usage is attributed automatically by newer servers.";
+const GetNodeDescription = "Open a memory node. REQUIRED when opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag.";
 
 const SessionIdParam = Type.String({
-  description: "Recall session id from a <recall> tag if available.",
+  description: "REQUIRED when the URI came from <recall>: copy the exact session_id from that <recall> tag.",
 });
 
 const QueryIdParam = Type.String({
-  description: "Recall query id from a <recall> tag if available; usage is attributed automatically by newer servers.",
+  description: "REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag.",
 });
 
 export function registerTools(api: any, pluginCfg: any, skillsSession?: SkillsSession) {

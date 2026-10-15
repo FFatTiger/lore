@@ -26,9 +26,9 @@ from . import formatters
 from . import skill_workcopy
 
 logger = logging.getLogger(__name__)
-RECALL_GET_NODE_DESCRIPTION = "Open a memory node. When opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag if available; usage is attributed automatically by newer servers."
-RECALL_SESSION_ID_DESCRIPTION = "Recall session id from a <recall> tag if available."
-RECALL_QUERY_ID_DESCRIPTION = "Recall query id from a <recall> tag if available; usage is attributed automatically by newer servers."
+RECALL_GET_NODE_DESCRIPTION = "Open a memory node. REQUIRED when opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag."
+RECALL_SESSION_ID_DESCRIPTION = "REQUIRED when the URI came from <recall>: copy the exact session_id from that <recall> tag."
+RECALL_QUERY_ID_DESCRIPTION = "REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag."
 
 def _detect_project_info() -> Dict[str, Optional[str]]:
     dir_name = os.path.basename(os.getcwd())

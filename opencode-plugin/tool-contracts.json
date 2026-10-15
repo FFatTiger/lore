@@ -16,7 +16,7 @@
   },
   {
     "name": "lore_get_node",
-    "description": "Open a memory node. When opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag if available; usage is attributed automatically by newer servers.",
+    "description": "Open a memory node. REQUIRED when opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag.",
     "parameters": [
       {
         "name": "uri",
@@ -30,12 +30,12 @@
       },
       {
         "name": "session_id",
-        "description": "Recall session id from a <recall> tag if available.",
+        "description": "REQUIRED when the URI came from <recall>: copy the exact session_id from that <recall> tag.",
         "required": false
       },
       {
         "name": "query_id",
-        "description": "Recall query id from a <recall> tag if available; usage is attributed automatically by newer servers.",
+        "description": "REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag.",
         "required": false
       }
     ]

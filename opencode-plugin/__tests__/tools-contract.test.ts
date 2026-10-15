@@ -57,12 +57,16 @@ describe('native OpenCode tool contract parity', () => {
       .toBe('Include the full content of the top result.');
   });
 
-  it('lore_get_node contract marks recall ids as optional with auto attribution', () => {
+  it('lore_get_node contract restores the required recall id guidance', () => {
     const getNode = contracts.find((contract) => contract.name === 'lore_get_node');
-    expect(getNode!.description).toContain('if available');
-    expect(getNode!.description).toContain('automatically by newer servers');
+    expect(getNode!.description)
+      .toBe('Open a memory node. REQUIRED when opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag.');
+    expect(getNode!.parameters.find((parameter) => parameter.name === 'session_id')!.description)
+      .toBe('REQUIRED when the URI came from <recall>: copy the exact session_id from that <recall> tag.');
     expect(getNode!.parameters.find((parameter) => parameter.name === 'query_id')!.description)
-      .toContain('attributed automatically');
+      .toBe('REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag.');
+    expect(getNode!.parameters.find((parameter) => parameter.name === 'session_id')!.required).toBe(false);
+    expect(getNode!.parameters.find((parameter) => parameter.name === 'query_id')!.required).toBe(false);
   });
 
   it('lore_create_node and lore_update_node contracts match the new edit surface', () => {

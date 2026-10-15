@@ -25,9 +25,9 @@ function makePluginCfg(overrides: any = {}) {
   };
 }
 
-const RECALL_GET_NODE_DESCRIPTION = 'Open a memory node. When opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag if available; usage is attributed automatically by newer servers.';
-const RECALL_SESSION_ID_DESCRIPTION = 'Recall session id from a <recall> tag if available.';
-const RECALL_QUERY_ID_DESCRIPTION = 'Recall query id from a <recall> tag if available; usage is attributed automatically by newer servers.';
+const RECALL_GET_NODE_DESCRIPTION = 'Open a memory node. REQUIRED when opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag.';
+const RECALL_SESSION_ID_DESCRIPTION = 'REQUIRED when the URI came from <recall>: copy the exact session_id from that <recall> tag.';
+const RECALL_QUERY_ID_DESCRIPTION = 'REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag.';
 
 describe('registerTools — tool registration', () => {
   it('registers all 16 tools including skills and no artifact tool', () => {

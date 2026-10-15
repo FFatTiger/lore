@@ -116,29 +116,81 @@ def format_boot_view(data: Dict) -> str:
     return "\n".join(lines).strip()
 
 
-def format_search_results(results: List[Dict], meta: Optional[Dict] = None) -> str:
-    """Format search results"""
+SEARCH_SNIPPET_MAX_CHARS = 300
+SEARCH_DISCLOSURE_MAX_CHARS = 160
+SEARCH_CLOSING_CUE = "Open a node with lore_get_node for full content."
+
+
+def _collapse_whitespace(value: Any) -> str:
+    return " ".join(str(value or "").split())
+
+
+def _truncate(value: str, max_chars: int) -> str:
+    return value[:max_chars]
+
+
+def _search_score(item: Dict) -> Optional[str]:
+    score = item.get("score_display")
+    if not isinstance(score, (int, float)):
+        score = item.get("score")
+    if isinstance(score, bool) or not isinstance(score, (int, float)):
+        return None
+    return f"{score:.2f}"
+
+
+def _search_date(item: Dict) -> str:
+    updated_at = item.get("updated_at")
+    if not isinstance(updated_at, str) or not updated_at.strip():
+        return ""
+    return updated_at.strip()[:10]
+
+
+def _search_passage(item: Dict) -> str:
+    snippet = _collapse_whitespace(item.get("snippet"))
+    if snippet:
+        return _truncate(snippet, SEARCH_SNIPPET_MAX_CHARS)
+    return _truncate(_collapse_whitespace(item.get("content")), SEARCH_SNIPPET_MAX_CHARS)
+
+
+def format_search_results(results: List[Dict], meta: Optional[Dict] = None, full: bool = False) -> str:
+    """Format search results under the new search contract
+
+    One block per result: uri + (score · date), a ``when:`` disclosure line,
+    and a ``>`` snippet/content passage line. When ``full`` was requested and
+    the top result carries content, the full content follows a ``---`` line.
+    """
     if not results:
         return "No matching memories found."
-    
-    lines = []
+
+    lines: List[str] = []
     for idx, item in enumerate(results, 1):
-        parts = [f"{idx}. {item.get('uri', '')} (priority: {item.get('priority', '')}"]
-        
-        if item.get("score") is not None:
-            parts.append(f"score: {item['score']:.3f}")
-        
-        if item.get("matched_on"):
-            parts.append(f"via: {'+'.join(item['matched_on'])}")
-        
-        lines.append(f"{', '.join(parts)})")
-        lines.append(f"   {item.get('snippet', '')}")
-    
+        meta_parts = []
+        score = _search_score(item)
+        if score:
+            meta_parts.append(score)
+        date = _search_date(item)
+        if date:
+            meta_parts.append(date)
+        meta_text = f"  ({' · '.join(meta_parts)})" if meta_parts else ""
+        lines.append(f"{idx}. {item.get('uri', '')}{meta_text}")
+        disclosure = _collapse_whitespace(item.get("disclosure"))
+        if disclosure:
+            lines.append(f"   when: {_truncate(disclosure, SEARCH_DISCLOSURE_MAX_CHARS)}")
+        passage = _search_passage(item)
+        if passage:
+            lines.append(f"   > {passage}")
+
+    first = results[0] if results else {}
+    first_content = first.get("content") if isinstance(first, dict) else None
+    if full and isinstance(first_content, str) and first_content.strip():
+        lines.extend(["", "---", "", first_content])
+
+    lines.extend(["", SEARCH_CLOSING_CUE])
     text = "\n".join(lines)
-    
+
     if meta and meta.get("semantic_error"):
         text += f"\n\nSemantic fallback skipped: {meta['semantic_error']}"
-    
+
     return text
 
 

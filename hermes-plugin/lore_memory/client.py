@@ -217,17 +217,22 @@ class LoreClient:
         self,
         query: str,
         domain: Optional[str] = None,
-        limit: int = 10,
-        content_limit: int = 5,
+        limit: int = 5,
+        full: bool = False,
         hybrid: bool = True
     ) -> Dict:
-        """Search memories by keyword"""
-        safe_limit = max(1, min(100, int(limit)))
-        safe_content_limit = max(0, min(20, int(content_limit)))
+        """Search memories by keyword
+
+        Sends ``full`` plus ``content_limit`` (1 when full, else 0) so both the
+        new hosted Core and the self-hosted backend return at most one full
+        content blob (for the top result).
+        """
+        safe_limit = max(1, min(20, int(limit)))
         data = {
             "query": query,
             "limit": safe_limit,
-            "content_limit": safe_content_limit,
+            "content_limit": 1 if full else 0,
+            "full": bool(full),
             "hybrid": hybrid,
         }
         if domain:

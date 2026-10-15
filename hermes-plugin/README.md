@@ -91,7 +91,7 @@ Environment variables remain as fallback compatibility:
 - `update_node(uri, content, priority, disclosure, glossary_add, glossary_remove)` - Update existing memory
 - `delete_node(uri)` - Delete memory
 - `move_node(old_uri, new_uri)` - Move or rename a memory node
-- `search(query, domain, limit, content_limit)` - Search memories
+- `search(query, domain, limit, full)` - Search memories (sends `full` and the derived `content_limit` so both backends return at most one full content)
 - `recall(query, session_id, limit, max_items)` - Semantic recall
 - `list_domains()` - List all domains
 - `mark_recall_used(query_id, session_id, uris)` - Mark recall events as adopted

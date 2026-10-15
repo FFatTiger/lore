@@ -32,9 +32,9 @@ from lore_memory.client import LoreClient, LoreError
 from lore_memory.formatters import format_boot_view
 
 
-RECALL_GET_NODE_DESCRIPTION = "Open a memory node. REQUIRED when opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag."
-RECALL_SESSION_ID_DESCRIPTION = "REQUIRED when the URI came from <recall>: copy the exact session_id from that <recall> tag."
-RECALL_QUERY_ID_DESCRIPTION = "REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag."
+RECALL_GET_NODE_DESCRIPTION = "Open a memory node. When opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag if available; usage is attributed automatically by newer servers."
+RECALL_SESSION_ID_DESCRIPTION = "Recall session id from a <recall> tag if available."
+RECALL_QUERY_ID_DESCRIPTION = "Recall query id from a <recall> tag if available; usage is attributed automatically by newer servers."
 
 
 class LoreClientThinAdapterTests(unittest.TestCase):
@@ -219,15 +219,51 @@ class LoreClientThinAdapterTests(unittest.TestCase):
         self.assertEqual([data["features"] for data in requests], [{"skills": True}, {"skills": True}])
 
 
+    def test_search_sends_full_and_derived_content_limit(self):
+        client = LoreClient(base_url="http://example.com")
+        requests = []
+        client._request = lambda *args, **kwargs: {"results": []} if not requests.append((args, kwargs)) else {}
+
+        client.search("hello", full=True)
+        client.search("hello")
+
+        self.assertEqual(requests[0][0], ("POST", "/browse/search"))
+        self.assertEqual(requests[0][1]["data"], {
+            "query": "hello",
+            "limit": 5,
+            "content_limit": 1,
+            "full": True,
+            "hybrid": True,
+        })
+        self.assertEqual(requests[1][1]["data"], {
+            "query": "hello",
+            "limit": 5,
+            "content_limit": 0,
+            "full": False,
+            "hybrid": True,
+        })
+
+    def test_search_clamps_limit_to_20(self):
+        client = LoreClient(base_url="http://example.com")
+        requests = []
+        client._request = lambda *args, **kwargs: {"results": []} if not requests.append((args, kwargs)) else {}
+
+        client.search("hello", limit=99)
+
+        self.assertEqual(requests[0][1]["data"]["limit"], 20)
+
+
 class FakeClient:
     def __init__(self):
         self.last_update_kwargs = None
+        self.last_create_kwargs = None
         self.ended_session_id = None
         self.lifecycle_calls = []
         self.prompt_submit_gate = None
         self.prompt_submit_delay = 0.0
         self.prompt_submit_entered = None
         self._prompt_submit_enter_count = 0
+        self.last_search_args = None
 
     def parse_uri(self, uri):
         return uri.split("://", 1)[0], uri.split("://", 1)[1]
@@ -235,7 +271,15 @@ class FakeClient:
     def build_uri(self, domain, path):
         return f"{domain}://{path}"
 
+    def get_node(self, domain, path, nav_only=False):
+        return {"node": {"uri": f"{domain}://{path}", "content": "alpha beta gamma beta"}}
+
+    def search(self, query, domain=None, limit=5, full=False):
+        self.last_search_args = {"query": query, "domain": domain, "limit": limit, "full": full}
+        return {"results": [], "meta": {}}
+
     def create_node(self, **kwargs):
+        self.last_create_kwargs = kwargs
         return {"uri": "core://agent/profile", "node_uuid": "uuid-create"}
 
     def update_node(self, **kwargs):
@@ -758,6 +802,107 @@ class LoreProviderThinAdapterTests(unittest.TestCase):
         self.assertEqual(props["session_id"]["description"], RECALL_SESSION_ID_DESCRIPTION)
         self.assertEqual(props["query_id"]["description"], RECALL_QUERY_ID_DESCRIPTION)
 
+    def test_search_schema_uses_full_without_content_limit(self):
+        schemas = {tool["name"]: tool for tool in self.provider.get_tool_schemas()}
+        props = schemas["lore_search"]["parameters"]["properties"]
+
+        self.assertIn("full", props)
+        self.assertNotIn("content_limit", props)
+        self.assertEqual(props["full"]["type"], "boolean")
+        self.assertIn("full content of the top result", props["full"]["description"])
+        self.assertEqual(props["limit"].get("maximum"), 20)
+        self.assertIn("1-20", props["limit"]["description"])
+
+    def test_search_tool_sends_full_and_formats_results(self):
+        def fake_search(query, domain=None, limit=5, full=False):
+            self.provider._client.last_search_args = {
+                "query": query, "domain": domain, "limit": limit, "full": full,
+            }
+            return {
+                "results": [
+                    {
+                        "uri": "project://a/b",
+                        "score_display": 0.71,
+                        "updated_at": "2026-10-15T10:43:56Z",
+                        "disclosure": "When working on search",
+                        "snippet": "best matching passage",
+                    },
+                    {
+                        "uri": "core://c",
+                        "score": 0.5,
+                        "content": "Full\n   content with\nnewlines",
+                    },
+                ],
+                "meta": {},
+            }
+
+        self.provider._client.search = fake_search
+        result = self.provider._tool_lore_search({"query": "hello"})
+        self.assertEqual(self.provider._client.last_search_args, {
+            "query": "hello", "domain": None, "limit": 5, "full": False,
+        })
+        self.assertEqual(result, "\n".join([
+            "1. project://a/b  (0.71 · 2026-10-15)",
+            "   when: When working on search",
+            "   > best matching passage",
+            "2. core://c  (0.50)",
+            "   > Full content with newlines",
+            "",
+            "Open a node with lore_get_node for full content.",
+        ]))
+
+        self.provider._tool_lore_search({"query": "hello", "full": True, "limit": 7})
+        self.assertTrue(self.provider._client.last_search_args["full"])
+        self.assertEqual(self.provider._client.last_search_args["limit"], 7)
+
+    def test_search_tool_appends_result_1_content_when_full(self):
+        def fake_search(query, domain=None, limit=5, full=False):
+            return {
+                "results": [
+                    {"uri": "project://a/b", "score_display": 0.71, "snippet": "passage", "content": "FULL BODY"},
+                    {"uri": "core://c", "score_display": 0.4},
+                ],
+                "meta": {},
+            }
+
+        self.provider._client.search = fake_search
+        result = self.provider._tool_lore_search({"query": "hello", "full": True})
+        self.assertEqual(result, "\n".join([
+            "1. project://a/b  (0.71)",
+            "   > passage",
+            "2. core://c  (0.40)",
+            "",
+            "---",
+            "",
+            "FULL BODY",
+            "",
+            "Open a node with lore_get_node for full content.",
+        ]))
+
+    def test_search_tool_keeps_no_results_text(self):
+        result = self.provider._tool_lore_search({"query": "hello"})
+        self.assertEqual(result, "No matching memories found.")
+
+    def test_create_schema_caps_glossary_at_12(self):
+        schemas = {tool["name"]: tool for tool in self.provider.get_tool_schemas()}
+        props = schemas["lore_create_node"]["parameters"]["properties"]
+        self.assertEqual(props["glossary"].get("maxItems"), 12)
+        self.assertIn("Terms a person would actually type", props["glossary"]["description"])
+        self.assertIn("ALL_CAPS test tokens", props["glossary"]["description"])
+
+    def test_create_tool_rejects_glossary_over_12_keywords(self):
+        with self.assertRaises(LoreError) as ctx:
+            self.provider._tool_lore_create_node({
+                "domain": "core",
+                "parent_path": "agent",
+                "title": "profile",
+                "content": "hello",
+                "priority": 2,
+                "glossary": [f"kw-{i}" for i in range(13)],
+            })
+        self.assertIn("12", str(ctx.exception))
+        self.assertIsNone(self.provider._client.last_create_kwargs)
+
     def test_update_tool_ignores_glossary_replacement_argument(self):
         result = self.provider._tool_lore_update_node({
             "uri": "core://agent/profile",
@@ -768,6 +913,40 @@ class LoreProviderThinAdapterTests(unittest.TestCase):
         self.assertEqual(result, "Updated: core://agent/profile-renamed")
         self.assertNotIn("glossary", self.provider._client.last_update_kwargs)
         self.assertEqual(self.provider._client.last_update_kwargs["glossary_add"], ["memory"])
+
+    def test_update_tool_applies_targeted_edit_through_get_then_update(self):
+        result = self.provider._tool_lore_update_node({
+            "uri": "core://agent/profile",
+            "old_text": "beta gamma",
+            "new_text": "BETA GAMMA",
+            "glossary_add": ["memory"],
+        })
+
+        self.assertEqual(result, "Updated: core://agent/profile-renamed")
+        self.assertEqual(self.provider._client.last_update_kwargs["content"], "alpha BETA GAMMA beta")
+        self.assertEqual(self.provider._client.last_update_kwargs["glossary_add"], ["memory"])
+        self.assertNotIn("old_text", self.provider._client.last_update_kwargs)
+
+    def test_update_tool_rejects_ambiguous_or_invalid_targeted_edits(self):
+        cases = [
+            ({"uri": "core://agent/profile", "old_text": "missing", "new_text": "x"}, "old_text not found"),
+            ({"uri": "core://agent/profile", "old_text": "beta", "new_text": "x"}, "old_text found 2 times"),
+            ({"uri": "core://agent/profile", "old_text": "", "new_text": "x"}, "old_text must not be empty"),
+            ({"uri": "core://agent/profile", "old_text": "beta", "new_text": "x", "content": "body"}, "not both"),
+        ]
+        for args, message in cases:
+            with self.assertRaises(LoreError) as ctx:
+                self.provider._tool_lore_update_node(args)
+            self.assertIn(message, str(ctx.exception))
+
+    def test_update_schema_offers_targeted_edits_and_discourages_dated_logs(self):
+        schemas = {tool["name"]: tool for tool in self.provider.get_tool_schemas()}
+        update = schemas["lore_update_node"]
+        props = update["parameters"]["properties"]
+        self.assertIn("old_text", props)
+        self.assertIn("new_text", props)
+        self.assertIn("targeted edits", update["description"])
+        self.assertIn("instead of appending dated logs", update["description"])
 
     def test_delete_tool_formats_canonical_delete_receipt(self):
         result = self.provider._tool_lore_delete_node({"uri": "core://legacy/profile"})

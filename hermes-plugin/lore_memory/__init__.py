@@ -26,9 +26,9 @@ from . import formatters
 from . import skill_workcopy
 
 logger = logging.getLogger(__name__)
-RECALL_GET_NODE_DESCRIPTION = "Open a memory node. REQUIRED when opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag."
-RECALL_SESSION_ID_DESCRIPTION = "REQUIRED when the URI came from <recall>: copy the exact session_id from that <recall> tag."
-RECALL_QUERY_ID_DESCRIPTION = "REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag."
+RECALL_GET_NODE_DESCRIPTION = "Open a memory node. When opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag if available; usage is attributed automatically by newer servers."
+RECALL_SESSION_ID_DESCRIPTION = "Recall session id from a <recall> tag if available."
+RECALL_QUERY_ID_DESCRIPTION = "Recall query id from a <recall> tag if available; usage is attributed automatically by newer servers."
 
 def _detect_project_info() -> Dict[str, Optional[str]]:
     dir_name = os.path.basename(os.getcwd())
@@ -431,7 +431,12 @@ class LoreMemoryProvider(MemoryProvider):
                     "properties": {
                         "content": {"type": "string", "description": "Memory text body"},
                         "priority": {"type": "integer", "minimum": 0, "description": "Importance tier (0=core identity, 1=key facts, 2+=general)"},
-                        "glossary": {"type": "array", "items": {"type": "string"}, "description": "Initial glossary keywords written with this node create event"},
+                        "glossary": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "maxItems": 12,
+                            "description": "Terms a person would actually type to find this; avoid commit hashes, version numbers, IPs/ports, file paths, and ALL_CAPS test tokens.",
+                        },
                         "uri": {"type": "string", "description": "Optional final memory URI. It names a durable concept identity; event time belongs in content or in explicit archive, diary, release, or incident concepts. Intermediate paths grow from real parent abstractions with content."},
                         "domain": {"type": "string", "description": "Target memory domain when not using uri"},
                         "parent_path": {"type": "string", "description": "Parent concept path inside the chosen domain; for multi-segment paths this parent abstraction explains why the children belong together and carries content, disclosure, and glossary."},
@@ -443,13 +448,15 @@ class LoreMemoryProvider(MemoryProvider):
             },
             {
                 "name": "lore_update_node",
-                "description": "Revise an existing long-term memory node. Omitted content, metadata, and glossary mutation fields are left unchanged",
+                "description": "Revise an existing long-term memory node. Prefer targeted edits (old_text/new_text) over replacing the whole content; rewrite the node to keep it current instead of appending dated logs. Omitted content, metadata, and glossary mutation fields are left unchanged",
                 "parameters": {
                     "type": "object",
                     "additionalProperties": False,
                     "properties": {
                         "uri": {"type": "string", "description": "Full memory URI for the node you want to revise"},
                         "content": {"type": "string", "description": "New content to replace the existing content; omit to leave content unchanged"},
+                        "old_text": {"type": "string", "description": "Exact passage in the current content to replace; must match exactly one occurrence"},
+                        "new_text": {"type": "string", "description": "Replacement for old_text; empty or omitted deletes the passage"},
                         "priority": {"type": "integer", "minimum": 0, "description": "New priority level; omit to leave priority unchanged"},
                         "disclosure": {"type": "string", "description": "New disclosure / trigger condition; omit to leave disclosure unchanged"},
                         "glossary_add": {"type": "array", "items": {"type": "string"}, "description": "Keywords to add as part of this same node update event"},
@@ -485,15 +492,15 @@ class LoreMemoryProvider(MemoryProvider):
             },
             {
                 "name": "lore_search",
-                "description": "Search memories by keyword, semantic similarity, or both. Returns full content for top results",
+                "description": "Search memories by keyword, semantic similarity, or both. Pass full=true to include the full content of the top result",
                 "parameters": {
                     "type": "object",
                     "additionalProperties": False,
                     "properties": {
                         "query": {"type": "string", "description": "Search query text. Not a wildcard — use a meaningful keyword or phrase. Passing an empty string or * with a domain filter browses that domain root."},
                         "domain": {"type": "string", "description": "Optional domain filter to narrow the search"},
-                        "limit": {"type": "integer", "description": "Maximum number of results (1-100)"},
-                        "content_limit": {"type": "integer", "description": "How many top results include full content (default 5)"},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 20, "description": "Maximum number of results (1-20, default 5)"},
+                        "full": {"type": "boolean", "description": "Include the full content of the top result"},
                     },
                     "required": ["query"],
                 },
@@ -747,6 +754,9 @@ class LoreMemoryProvider(MemoryProvider):
         disclosure = args.get("disclosure")
         glossary = args.get("glossary")
 
+        if isinstance(glossary, list) and len(glossary) > 12:
+            raise LoreError(f"glossary accepts at most 12 keywords (got {len(glossary)})")
+
         if uri:
             parsed_domain, parsed_path = self._client.parse_uri(uri)
             parts = parsed_path.split("/")
@@ -772,8 +782,25 @@ class LoreMemoryProvider(MemoryProvider):
     def _tool_lore_update_node(self, args: Dict) -> str:
         uri = args.get("uri", "")
         domain, path = self._client.parse_uri(uri)
+        content = args.get("content")
+        old_text = args.get("old_text")
+        if old_text is not None:
+            new_text = str(args.get("new_text") or "")
+            if not str(old_text):
+                raise LoreError("old_text must not be empty")
+            if content is not None:
+                raise LoreError("Pass either content or old_text/new_text, not both")
+            current = self._client.get_node(domain, path)
+            node = current.get("node") or {}
+            current_content = str(node.get("content") or "")
+            occurrences = current_content.count(str(old_text))
+            if occurrences == 0:
+                raise LoreError("old_text not found")
+            if occurrences > 1:
+                raise LoreError(f"old_text found {occurrences} times")
+            content = current_content.replace(str(old_text), new_text, 1)
         data = self._client.update_node(
-            domain=domain, path=path, content=args.get("content"),
+            domain=domain, path=path, content=content,
             priority=args.get("priority"), disclosure=args.get("disclosure"),
             glossary_add=args.get("glossary_add"),
             glossary_remove=args.get("glossary_remove")
@@ -803,16 +830,17 @@ class LoreMemoryProvider(MemoryProvider):
         if domain and (not query or query == "*"):
             data = self._client.get_node(domain, "", True)
             return f"Domain root: {domain}://\n\n{formatters.format_node(data)}"
+        full = args.get("full") is True
         data = self._client.search(
             query,
             domain,
-            args.get("limit", 10),
-            args.get("content_limit", 5),
+            args.get("limit", 5),
+            full,
         )
         results = data.get("results", [])
         if not results:
             return f"No matching memories found{' in domain ' + domain if domain else ''}."
-        return formatters.format_search_results(results, data.get("meta"))
+        return formatters.format_search_results(results, data.get("meta"), full)
 
     def _tool_lore_list_domains(self, args: Dict) -> str:
         data = self._client.list_domains()

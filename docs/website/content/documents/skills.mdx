@@ -1,0 +1,81 @@
+Skills are reusable instruction packages that Loremem Cloud gives to your agents. Each skill is a versioned package that agents see at session start and load only when they need it. Skills are available only on Loremem Cloud. The open-source server doesn't have them.
+
+## What a skill is
+
+A skill is a versioned package. Its one required file is `SKILL.md`. You can add supporting files, such as scripts, reference documents, or templates. Each save creates a new version of the package.
+
+`SKILL.md` starts with YAML frontmatter that gives the skill's `name` and `description`. The text after the frontmatter holds the instructions:
+
+```text
+---
+name: release-notes
+description: Write release notes for checkout-api from merged pull requests. Use when the user asks for release notes or a changelog.
+---
+
+# Release notes
+
+1. List pull requests merged since the last tag.
+2. Group them under Added, Changed, and Fixed.
+```
+
+The rules for these fields are:
+
+- The name uses lowercase letters, digits, and hyphens only. It is 1 to 64 characters long and can't start or end with a hyphen.
+- The `name` in the frontmatter is the skill's name, and it can't change after the skill is created.
+- The description can be up to 1,024 characters. Agents use it to decide when to load the skill.
+
+## How agents find and load skills
+
+1. At session start, an agent receives an `<available_skills>` list. Each entry shows the skill's name, description, and `skill_id`. Skills set to **User only** are not listed. The list holds up to 8,000 characters. If there are more skills than fit, the agent is told how many more exist and to call `lore_skill_list`.
+2. When a task matches a skill's description, the agent calls `lore_skill_get` with the `skill_id`.
+3. `lore_skill_get` returns the full `SKILL.md` and the absolute path of the skill's local directory.
+
+The local copy lives at `~/.lore/skill-artifacts/<project-id>/<skill-name>/`. If `LORE_HOME` is set, Lore uses that folder instead of `~/.lore`. Lore downloads a skill when an agent first loads it, and refreshes the copy when the version changes. It doesn't download skills at session start.
+
+## Invoke a skill yourself
+
+Type `$` followed by the skill name in a prompt, for example `$release-notes`. Lore loads that skill for the request, even if it is set to **User only**. One prompt can invoke up to three skills.
+
+## Visibility and invocation
+
+Each skill has three settings:
+
+| Setting | Options | Effect |
+| --- | --- | --- |
+| Enabled | On or off | When off, agents don't see or load the skill. |
+| Visible to | All agents, or one runtime | A skill limited to one runtime appears only for that runtime. |
+| Invocation | Agent and user (default), or User only | **User only** hides the skill from agents. It runs only when a user types `$name`. This is the same as `disable-model-invocation: true` in `SKILL.md`. |
+
+## Local copies and file permissions
+
+Lore manages two kinds of files in a local copy:
+
+- **Managed files** come from the server. Lore makes them read-only (`0444` on Linux and macOS). If you edit one, the next `lore_skill_get` restores it.
+- **Local files** are anything else in the skill directory, such as outputs an agent writes there. The directory stays writable. Lore never uploads local files, and they survive updates.
+
+When a new version arrives, Lore updates only the managed files. If a local file conflicts with a managed path in the new version, the update fails and the existing copy stays as it was.
+
+Lore doesn't set an executable bit on scripts. Run them through their interpreter, for example `python3 scripts/convert.py`.
+
+> [!WARNING]
+> Every agent that loads a skill downloads the full package, including all of its files. Don't put secrets, tokens, or private hostnames in a skill.
+
+## Skill tools
+
+| Tool | Use |
+| --- | --- |
+| `lore_skill_list` | List the skills in the active project. |
+| `lore_skill_search` | Search skills by query. |
+| `lore_skill_get` | Download or refresh the local copy, and return `SKILL.md` and the skill directory. |
+| `lore_skill_create` | Create a skill from a name and a list of files. |
+| `lore_skill_update` | Update a skill. Requires `expected_version`. |
+| `lore_skill_delete` | Archive a skill. |
+| `lore_skill_status` | Report whether each local copy is ready, missing, outdated, tampered, unmanaged, or invalid. It is read-only. |
+
+For the console and the create, update, and archive flows, see [Create and manage skills](/documents/skills/managing-skills).
+
+## Runtimes
+
+Skills work with Claude Code, Codex, OpenCode, Pi, OpenClaw, Hermes, and ZCode. Clients that connect through generic MCP (`client_type=mcp`) don't get skills.
+
+The CLI turns on the skill tools only when the server reports skills support. Loremem Cloud does. The open-source server doesn't.

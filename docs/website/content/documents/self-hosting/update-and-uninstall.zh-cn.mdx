@@ -1,0 +1,104 @@
+升级服务器和运行时集成、检查 CLI 安装了什么，并干净地卸载 Lore。你会看到发布渠道、升级前应做的备份，以及卸载后磁盘上会留下哪些内容。
+
+## 更新
+
+用一条命令更新服务器和运行时集成：
+
+```bash
+npx @loremem/cli update
+```
+
+`update` 的具体行为取决于服务器的运行方式：
+
+- **由 Docker 管理的服务器**（`~/.lore/config.json` 中的 `docker_managed` 为 `true`）：下载最新的 `docker-compose.yml`，并把旧文件保留为 `docker-compose.yml.bak.<时间戳>`。然后按发布渠道设置镜像标签，运行 `docker compose pull` 和 `docker compose up -d`，并等待健康检查通过。
+- **其他服务器**：包括 Loremem 云服务、已有服务器，或你自己管理的 Compose 服务栈。这时不会触碰 Docker 和服务器。自己管理的服务栈，请运行下一节中的命令。
+- **运行时集成**：`update` 会刷新每个处于 `installed` 或 `partial` 状态的运行时。如需自行选择，请使用 `--channels`。
+- **失败情况**：`update` 不会在失败时报告成功，而是以退出码 `1` 结束。出现以下任一情况都会如此：无法解析发布版本、选中的运行时安装失败，或选中的运行时被跳过（例如它的 CLI 已不再安装）。对于你已经移除的运行时，请运行 `uninstall --channels <运行时>`，或在 `--channels` 中将其排除。
+
+### 发布渠道
+
+| 渠道 | 参数 | 镜像标签 | 集成使用的发布版本 |
+| --- | --- | --- | --- |
+| `stable`（默认） | 无 | `latest` | 最新的稳定版 |
+| `pre` | `--pre` | `pre-latest` | 最新的预发布版 |
+| `dev` | `--dev` | `dev-latest` | 开发版 |
+
+> [!WARNING]
+> 每次更新都要传入相同的渠道参数。该参数同时决定镜像标签。如果你运行 `npx @loremem/cli update` 时不带 `--pre`，预发布服务器会被切回 `latest`。
+
+### 更新手动管理的 Compose 服务栈
+
+在你的 Compose 目录中，拉取新镜像并重新创建容器：
+
+```bash
+cd ~/lore-server
+docker compose pull
+docker compose up -d
+curl -fsS http://127.0.0.1:18901/api/health
+```
+
+## 检查安装状态
+
+```bash
+npx @loremem/cli status
+```
+
+输出包括配置文件路径、服务地址、已安装版本、CLI 是否管理 Docker，以及是否保存了令牌。它绝不会打印令牌本身。此外，它还会列出检测到的运行时，以及每个集成的状态：`installed`、`partial`、`missing` 或 `unknown`。该命令不会访问服务器。
+
+## 升级前备份
+
+1. 确认备份在正常运行。设置中的 `backup.enabled` 和 `backup.local.enabled` 应为 `true`（参见[设置项参考](/documents/reference/settings)）。同时检查 `SNAPSHOT_DATA_DIR` 中是否有较新的备份。
+2. 在你的 Compose 目录中导出数据库：
+
+   ```bash
+   docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > lore-$(date +%Y%m%d).sql
+   ```
+
+3. 把 `.env` 和 `~/.lore/config.json` 复制到安全的地方。它们包含数据库密码和令牌。
+
+> [!NOTE]
+> 导出的文件包含数据库中的全部记忆。请像保管其他密钥一样妥善保存。
+
+## 卸载
+
+`uninstall` 用于移除运行时集成。在终端中运行时，它会列出运行时，并询问 `Uninstall these channels? [y/N]`。在没有终端的环境中，它不会询问。
+
+```bash
+npx @loremem/cli uninstall                          # 所有运行时，会提示确认
+npx @loremem/cli uninstall --channels claudecode,pi # 仅卸载这些运行时
+npx @loremem/cli uninstall --purge -y               # 同时删除配置和 Docker 数据
+```
+
+### 清除前先停止服务栈
+
+`uninstall` 不会停止 Docker。如果服务栈是由 CLI 安装的，请先停止它再执行清除：
+
+```bash
+cd ~/.lore/docker && docker compose down
+npx @loremem/cli uninstall --purge -y
+```
+
+`docker compose down` 会停止容器，并保留数据。之后的清除操作才会删除这些数据。
+
+> [!WARNING]
+> `--purge` 会删除 `~/.lore/docker`，其中包括 `.env` 文件、PostgreSQL 数据、Redis 数据和备份。它还会删除 `~/.lore/config.json`。请先备份。
+
+## 卸载后留下的内容
+
+| 项目 | `uninstall` | `uninstall --purge` |
+| --- | --- | --- |
+| 容器（`lore-web`、`lore-postgres`、`lore-redis`） | 继续运行 | 继续运行，直到你执行 `docker compose down` |
+| `~/.lore/docker`（Compose 文件、`.env`、数据、备份） | 保留 | 删除 |
+| `~/.lore/config.json`（服务地址和令牌） | 保留 | 删除 |
+| Lore 为每个运行时写入的集成文件和配置项 | 删除 | 删除 |
+| 运行时的注册信息，且该运行时的 CLI 不在 `PATH` 中 | 保留。请用该运行时自己的插件命令移除。 | 保留 |
+| 你自己创建的 Hermes 链接 `~/.hermes/skills/lore_memory` | 保留，但已失效 | 保留，但已失效。请自行删除。 |
+| `~/.codex/config.toml` 中的 `[features]` `hooks = true` | 保留 | 保留 |
+| 不带 Lore 标记的 OpenCode `lore-memory.js` | 保留 | 保留 |
+| 你自己的 Compose 目录和数据 | 不受影响 | 不受影响 |
+
+卸载只会移除 CLI 能够触及的集成。它不会删除你自己的 Compose 目录、数据或你自己编写的其他文件。不再需要这些内容时，请自行删除。
+
+## 旧版 shell 安装脚本
+
+仓库中的 shell 脚本 `scripts/install.sh` 和 `scripts/uninstall.sh` 已冻结。它们仅为兼容而保留，不再添加新功能。安装、更新和卸载都请使用 `npx @loremem/cli`。如果某台机器是用旧脚本安装的，请先运行 `npx @loremem/cli status`，查看 CLI 检测到了什么。

@@ -1,0 +1,121 @@
+Move durable rules out of `CLAUDE.md`, `AGENTS.md`, and plugin prompts, and into Lore, so every agent loads the same rules. Do this after Lore is installed and at least one agent runtime receives boot context.
+
+Local files such as `CLAUDE.md`, `AGENTS.md`, and plugin rules are useful as bootstrap text. They shouldn't be the long-term home for shared preferences, project rules, coding standards, deploy commands, or working habits. If an instruction should affect more than one agent, move it into Lore.
+
+## What to keep local
+
+Keep a short bootstrap only if you want one. The Lore plugins already inject guidance and boot memory at session start, so most agents need no bootstrap. Agents that connect only through plain MCP don't boot automatically. They need one line that tells them to call `lore_boot`.
+
+A five-line bootstrap is enough:
+
+```text
+Use Lore as the durable memory source.
+Load boot memory at startup.
+Use recall for task-relevant context.
+Open recalled nodes before relying on them.
+Write durable new facts back to Lore.
+```
+
+Don't repeat these in every local file: product rules, user preferences, project deploy commands, or long process documents. Copies drift. One agent gets the newer rule while another keeps the old one.
+
+## Where each kind of instruction goes
+
+| Kind of instruction | Put it in |
+| --- | --- |
+| Rules every agent should follow | `core://agent` |
+| Persona and response style for every agent | `core://soul` |
+| Stable user preferences and working style | `preferences://user` |
+| Project commands, constraints, architecture decisions, and deploy notes | `project://<project>/...`, one node per topic, such as `commands`, `deployment`, `architecture`, or `constraints` |
+| Claude Code-only behavior | `core://agent/claudecode` |
+| Codex-only behavior | `core://agent/codex` |
+| OpenCode-only behavior | `core://agent/opencode` |
+| Pi-only behavior | `core://agent/pi` |
+| OpenClaw-only behavior | `core://agent/openclaw` |
+| Hermes-only behavior | `core://agent/hermes` |
+| ZCode-only behavior | `core://agent/zcode` |
+| Temporary task notes | Not in Lore. Keep them in the chat or your issue tracker. |
+| Secrets, API keys, and tokens | Not in Lore. Keep them in environment variables or a secret store. |
+
+A `core://agent/<client_type>` node holds only what is specific to that runtime. Shared rules stay in `core://agent`.
+
+## Files to audit per runtime
+
+Check these files on the machine you are configuring. Paths vary, so confirm the file your runtime actually reads.
+
+| Runtime | Local files to check |
+| --- | --- |
+| Claude Code | `~/.claude/CLAUDE.md`, each project's `CLAUDE.md`, and `~/.claude/settings.json` for auto memory |
+| Codex | `~/.codex/AGENTS.md` and each project's `AGENTS.md` |
+| OpenCode | Each project's `AGENTS.md`, and your OpenCode configuration under `~/.config/opencode/` |
+| Pi | Any guidance files you keep under `~/.pi/agent/` (or the directory set in `PI_CODING_AGENT_DIR`), and in each project |
+| OpenClaw | Your project notes, and the plugin settings in `~/.openclaw/openclaw.json` under `plugins.entries.lore.config` |
+| Hermes | Any local memory or provider settings you keep for Hermes. If you linked Lore's provider by hand, the link is usually `~/.hermes/skills/lore_memory` |
+| ZCode | The rules files your ZCode projects use. If `core://agent/zcode` is empty, create it in Lore |
+
+Two details to check:
+
+- Older Lore versions added an import of `~/.claude/lore-guidance.md` to `~/.claude/CLAUDE.md`. The installer removes that import. If you still see it, delete the line.
+- If you use `oh-my-openagent` (or the older `oh-my-opencode`) with OpenCode, the installer turns off its duplicate `lore@lore` hook when it can read the config safely. Make sure Lore isn't loaded twice.
+
+## Migration steps
+
+1. Copy each local file somewhere safe before you edit it.
+2. Split each file into sections: shared rules, user preferences, project facts, runtime-specific rules, and temporary notes.
+3. Move shared rules into `core://agent`.
+4. Move stable preferences into `preferences://user`.
+5. Move project material into `project://<project>/...` nodes, one topic per node. Create the parent `project://<project>` node first, with its own content, disclosure, and glossary.
+6. Move runtime-only rules into `core://agent/<client_type>`.
+7. Delete the duplicated long-form text from the local files. Keep the short bootstrap if you want one.
+8. Restart each runtime so its hooks reload the boot baseline.
+
+> [!TIP]
+> To edit a boot node, open it in the console's **Memory** page, or ask an agent to call `lore_update_node`.
+
+## Example split
+
+Before, `CLAUDE.md` and `AGENTS.md` both repeat:
+
+```text
+- user communication style
+- frontend standards
+- project install, build, and deploy commands
+- Codex-only hook notes
+- Claude-only plugin notes
+```
+
+After, Lore holds:
+
+```text
+core://agent                           shared workflow and quality rules
+preferences://user                     stable user preferences and working style
+project://checkout_api/commands        install, test, and build commands
+project://checkout_api/deployment      deploy notes and release process
+core://agent/codex                     Codex-specific hook or plugin behavior
+core://agent/claudecode                Claude Code-specific behavior
+```
+
+The local `AGENTS.md` or `CLAUDE.md` shrinks to the five-line bootstrap shown above.
+
+## Claude Code auto-memory
+
+Claude Code keeps its own auto memory, which can duplicate what Lore stores. To make Lore the only memory, turn auto memory off in `~/.claude/settings.json`:
+
+```json
+{
+  "autoMemoryEnabled": false
+}
+```
+
+You can also set `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` in the environment. Lore doesn't write to `CLAUDE.md`, so that file stays under your control.
+
+## Verify the migration
+
+1. Restart the agent runtime.
+2. Ask a question that depends on one of the migrated rules.
+3. Confirm that the startup context includes the shared boot node and the runtime's boot node.
+4. Ask about the project by name, and confirm that recall surfaces its memories.
+5. If recall misses a memory, fix its disclosure and glossary rather than copying the rule back into a local file. See [Improve recall quality](/documents/recall/improving-recall).
+
+## Never store secrets
+
+Don't store secrets, API keys, tokens, or one-off instructions in Lore. Memories are plain text, and recall injects them into prompts, so anything you save can reach a prompt. Keep secrets in environment variables or a secret manager, and keep temporary task notes in the current chat or your issue tracker.

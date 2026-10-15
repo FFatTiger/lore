@@ -1,0 +1,236 @@
+Agents read and write Lore through these tools. Parameter names are the same in every runtime; only the tool name prefix changes. Required parameters are marked **required**, and everything else is optional.
+
+## Memory tools
+
+| Tool | Purpose | Parameters |
+| --- | --- | --- |
+| `lore_guidance` | Load the full Lore usage rules. | None |
+| `lore_status` | Check that the memory backend is reachable. | None |
+| `lore_boot` | Load the boot memory for the runtime that calls it. | None |
+| `lore_get_node` | Open one node by URI. | Required: `uri`. Optional: `nav_only`, `session_id`, `query_id` |
+| `lore_search` | Search by keyword and meaning, and return full content for the top results. | Required: `query`. Optional: `domain`, `limit`, `content_limit` |
+| `lore_list_domains` | List the top-level domains. | None |
+| `lore_create_node` | Create a memory node. | Required: `content`, `priority`, `glossary`. Optional: `uri`, `domain`, `parent_path`, `title`, `disclosure` |
+| `lore_update_node` | Change fields on an existing node. | Required: `uri`. Optional: `content`, `priority`, `disclosure`, `glossary_add`, `glossary_remove` |
+| `lore_delete_node` | Remove a path that is obsolete, duplicated, or unwanted. | Required: `uri` |
+| `lore_move_node` | Move or rename a node. | Required: `old_uri`, `new_uri` |
+
+### lore_guidance
+
+Loads the full usage rules. Call it when your context does not already contain them.
+
+Parameters: none.
+
+```json
+{}
+```
+
+### lore_status
+
+Checks the memory backend. It returns `Lore online` when the database answers, or `Lore offline` with the error.
+
+Parameters: none.
+
+```json
+{}
+```
+
+### lore_boot
+
+Loads the fixed boot memory for the runtime that calls it. Call it when boot memory did not load at session start.
+
+Parameters: none.
+
+```json
+{}
+```
+
+### lore_get_node
+
+Opens one node. Call it before you rely on a memory from a `<recall>` block, and pass the `session_id` and `query_id` from that tag so that Lore records the use. A path without a scheme, such as `webhooks`, uses the default domain. Use `core://` or `project://` to browse a domain root.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `uri` | string | Yes | Full memory URI, such as `core://soul`. |
+| `nav_only` | boolean | No | If `true`, skip the expensive glossary processing. |
+| `session_id` | string | No | Required when the URI came from `<recall>`. Copy it from the tag. |
+| `query_id` | string | No | Required when the URI came from `<recall>`. Copy it from the tag. |
+
+```json
+{
+  "uri": "project://checkout_api/webhooks",
+  "session_id": "sess_8f3c",
+  "query_id": "q_41"
+}
+```
+
+### lore_search
+
+Searches memories by keyword, meaning, or both. It returns full content for the top results, so you do not need a separate `lore_get_node` call for them. An empty `query`, or `*` together with a `domain`, browses that domain's root. Without a domain, `*` is not a wildcard, so use a keyword or phrase.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `query` | string | Yes | Keyword or phrase to search for. |
+| `domain` | string | No | Narrows the search to one domain, such as `project`. |
+| `limit` | integer | No | Maximum number of results, from 1 to 100. Default `10`. |
+| `content_limit` | integer | No | How many top results include full content, from 0 to 20. Default `5`. |
+
+```json
+{
+  "query": "refund webhook",
+  "domain": "project",
+  "limit": 5
+}
+```
+
+### lore_list_domains
+
+Lists the top-level domains, such as `core`, `preferences`, and `project`, with the number of root nodes in each.
+
+Parameters: none.
+
+```json
+{}
+```
+
+### lore_create_node
+
+Creates a memory. Give either a full `uri`, or `domain` with `parent_path` and `title`. For a multi-segment path, the parent must already exist, with its own content, disclosure, and glossary. Lore can block the create when the priority budget or disclosure check fails. When priority `0` or `1` is full, the error gives the count and asks you to lower an existing node's priority first.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `content` | string | Yes | The memory text. |
+| `priority` | integer | Yes | `0` for core identity, `1` for key facts, `2` or higher for general memories. The minimum is `0`. |
+| `glossary` | string array | Yes | Keywords and aliases for the node. |
+| `uri` | string | No | Full URI of the new node. The last segment becomes the title. |
+| `domain` | string | No | Domain for the new node when you do not use `uri`. Default `core`. |
+| `parent_path` | string | No | Parent path inside the domain. The parent must already exist. |
+| `title` | string | No | Last segment of the new path. |
+| `disclosure` | string | No | When the memory should be recalled. |
+
+```json
+{
+  "domain": "project",
+  "parent_path": "checkout_api/webhooks",
+  "title": "refund_idempotency",
+  "content": "Refund webhooks are idempotent by event.id. Tests must replay the same event twice and assert a single refund row.",
+  "priority": 1,
+  "glossary": ["refund webhook", "idempotency key", "stripe"],
+  "disclosure": "When changing refund or payment webhooks in checkout-api"
+}
+```
+
+The example assumes that `project://checkout_api/webhooks` already exists, with its own content, disclosure, and glossary.
+
+### lore_update_node
+
+Changes fields on an existing node. Fields you omit stay unchanged. Use `glossary_add` and `glossary_remove` to change keywords without replacing the whole list.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `uri` | string | Yes | Full URI of the node to change. |
+| `content` | string | No | Replaces the content. |
+| `priority` | integer | No | New priority. |
+| `disclosure` | string | No | New disclosure, the situation in which the memory should be recalled. |
+| `glossary_add` | string array | No | Keywords to add in this update. |
+| `glossary_remove` | string array | No | Keywords to remove in this update. |
+
+```json
+{
+  "uri": "project://checkout_api/webhooks/refund_idempotency",
+  "glossary_add": ["event.id"]
+}
+```
+
+### lore_delete_node
+
+Removes a path that is obsolete, duplicated, or no longer wanted. Every change is recorded in the node's history, so you can roll the node back from its history page.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `uri` | string | Yes | Full URI of the path to remove. |
+
+```json
+{
+  "uri": "project://my_app/old_retry_policy"
+}
+```
+
+### lore_move_node
+
+Moves or renames a node. The new parent must already exist, because it becomes the node's new home.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `old_uri` | string | Yes | Current URI of the node. |
+| `new_uri` | string | Yes | New URI of the node. |
+
+```json
+{
+  "old_uri": "project://my_app/refund_flow",
+  "new_uri": "project://checkout_api/refund_flow"
+}
+```
+
+The example assumes that `project://checkout_api` already exists, with its own content, disclosure, and glossary.
+
+## Tool names by runtime
+
+| Runtime | How the tools appear | Example |
+| --- | --- | --- |
+| Claude Code | MCP tools with the prefix `mcp__plugin_lore_lore__<tool>`. Skills tools use `mcp__plugin_lore_lore-skills__<tool>`. | `mcp__plugin_lore_lore__lore_search` |
+| ZCode | MCP tools with the same prefix, `mcp__plugin_lore_lore__<tool>`. | `mcp__plugin_lore_lore__lore_search` |
+| OpenCode | Native tools with exact names. | `lore_search` |
+| Codex | MCP tools from the `lore` server. Skills tools come from `lore-skills`. | Named by Codex |
+| Pi, OpenClaw, Hermes | Tools registered by each plugin, with the same names. | `lore_search` |
+| Other MCP clients | Named by the client. Connect to `/api/mcp?client_type=mcp`. | Named by the client |
+
+In OpenCode, a name such as `lore_lore_search` means that you have an MCP entry instead of the native plugin. See [Agent connection issues](/documents/troubleshooting/agents).
+
+Pi, OpenClaw, and Hermes do not register `lore_guidance`. Their session-start context carries the same guidance text.
+
+## Skills tools (Loremem Cloud)
+
+Skills tools appear only when the connected server advertises Skills. Loremem Cloud does. The open-source server does not, so these tools do not appear there.
+
+| Tool | Purpose | Parameters |
+| --- | --- | --- |
+| `lore_skill_list` | List the project's skills. | Optional: `include_disabled` (default `true`) |
+| `lore_skill_search` | Search skills by query. | Required: `query`. Optional: `limit` (1 to 50) |
+| `lore_skill_get` | Create or refresh a local copy, and return `SKILL.md` and the absolute `skill_dir`. | Required: `skill_id` |
+| `lore_skill_create` | Create a skill from files. | Required: `name`, `files`. Optional: `enabled` (default `true`) |
+| `lore_skill_update` | Change files or the enabled state. Uses optimistic concurrency. | Required: `skill_id`, `expected_version`. Optional: `enabled`, `upsert_files`, `delete_paths` |
+| `lore_skill_delete` | Archive the skill on the server. | Required: `skill_id` |
+| `lore_skill_status` | Report the state of local copies. Read-only. | None |
+
+Notes:
+
+- `files` is a list of objects. Each object has a `path` (required), either `content` (UTF-8 text) or `content_base64` (binary), and an optional `media_type`. A new skill's files must include `SKILL.md`.
+- Use lowercase letters, numbers, and hyphens in `name`. You cannot change it later.
+- `expected_version` is the version you last read. If someone changed the skill first, the update fails. Read the current version with `lore_skill_list`, then try again.
+- `lore_skill_get` writes the local copy to `~/.lore/skill-artifacts/<project-id>/<skill-name>/`. Server-managed files are read-only. The directory stays writable for your outputs, and extra files survive updates.
+- `lore_skill_status` reports each copy as `ready`, `missing`, `outdated`, `tampered`, `unmanaged`, or `invalid`.
+- `lore_skill_delete` does not remove local copies from the machine.
+
+Create a skill:
+
+```json
+{
+  "name": "release-checklist",
+  "files": [
+    { "path": "SKILL.md", "content": "# Release checklist\n\nRun the checks in order.\n" }
+  ]
+}
+```
+
+Update a skill's files. Use the `skill_id` that `lore_skill_list` returns:
+
+```json
+{
+  "skill_id": "your-skill-id",
+  "expected_version": 3,
+  "upsert_files": [
+    { "path": "checklists/rollback.md", "content": "# Rollback\n\n1. Pause the deploy.\n" }
+  ]
+}
+```

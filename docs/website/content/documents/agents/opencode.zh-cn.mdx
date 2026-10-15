@@ -1,0 +1,89 @@
+OpenCode 接入会安装一个原生 OpenCode 插件，让 OpenCode 在系统上下文中获得启动记忆（boot），每条提示词前获得召回，并获得十个原生 `lore_*` 工具，且不使用 MCP。
+
+## 安装
+
+在使用 OpenCode 的机器上运行：
+
+```bash
+npx @loremem/cli install --channels opencode
+```
+
+接入 Loremem 云服务时，传入服务器地址和项目令牌：
+
+```bash
+npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token --channels opencode
+```
+
+如果 `opencode` 命令不在 `PATH` 中，安装程序会跳过 OpenCode。安装完成后，请重启 OpenCode。
+
+## 安装内容
+
+- 插件文件 `~/.config/opencode/plugins/lore-memory.js`，来自 `lore-opencode.zip`。安装程序会在文件中写入 `@lore-managed-opencode-plugin` 标记，并且只在检测到该标记时替换文件。如果该路径上已有没有标记的文件，安装程序会保留它并跳过 OpenCode。
+- `~/.lore/opencode/` 中的文件。启用技能时，该目录还会包含一个 `.lore-skills-enabled` 标记文件。
+- 十个原生工具：`lore_guidance`、`lore_status`、`lore_boot`、`lore_get_node`、`lore_search`、`lore_list_domains`、`lore_create_node`、`lore_update_node`、`lore_delete_node` 和 `lore_move_node`。在支持技能的服务器上，还会增加七个 `lore_skill_*` 工具。
+- 会话开始时，启动记忆通过实验性的 `experimental.chat.system.transform` 钩子进入系统上下文。每条提示词的召回则通过 `chat.message` 钩子添加。
+- 不添加 MCP 条目。安装程序不会添加。
+- 如果存在 oh-my-openagent 的配置文件，会对其做一次兼容性修改。参见下方的注意事项。
+
+## 验证
+
+1. 运行 `npx @loremem/cli status`。`opencode` 一行应显示 `installed`。
+2. 重启 OpenCode，开始一个新会话，让它调用 `lore_status`。它应返回服务器的健康状态。
+3. 让它调用 `lore_boot`。结果中应包含节点 `core://agent/opencode`。
+4. 发送一条与已有记忆相关的项目提示。提示中应出现召回内容。
+
+## 注意事项
+
+- **启动记忆和召回失败放行。** 如果 OpenCode 没有提供实验性的系统钩子，插件会记录一次警告，跳过启动记忆，并继续保留原生工具和提示召回。如果 Lore 无法访问或响应缓慢，插件会在该事件中不添加任何内容，OpenCode 继续运行。
+- **工具名称可以说明接入方式。** 原生工具使用精确的名称，例如 `lore_search`。`lore_lore_search` 这样的名称来自 MCP 接入，而不是原生插件。
+- **重复的 MCP 条目会被移除。** OpenCode 合并配置后，插件会移除 Lore 的 MCP 条目，包括名为 `lore` 或以 `:lore` 结尾的条目，以及指向 Lore `/api/mcp` 地址的远程条目。这样可以避免 Lore 被加载两次。
+- **与 oh-my-openagent 的兼容。** 有些 OpenCode 插件会导入 Claude Code 插件，这会让 Lore 的 Claude Code 钩子与原生插件同时运行。如果存在 `~/.config/opencode/` 下的 `oh-my-openagent.json` 或 `oh-my-openagent.jsonc`（或旧名称 `oh-my-opencode.json` 和 `oh-my-opencode.jsonc`），并且安装程序能够安全地解析该文件，安装程序会把 `claude_code.plugins_override["lore@lore"]` 设为 `false`。其他设置和注释保持不变，之前的值记录在 `~/.lore/opencode-compat.json` 中。卸载时会恢复这个值。这项修改需要 `python3`，没有它时安装程序会跳过该修改。卸载恢复同样需要 `python3`。如果无法安全地解析该文件，安装程序会给出警告并保持文件不变。安装程序从不创建该文件，也不修改 Claude Code 的文件。
+- **旧版 MCP 备用方案。** 只有当你希望 Lore 的 MCP 条目与原生插件同时存在时，才设置 `LORE_OPENCODE_ALLOW_MCP=1`。运行安装程序和启动 OpenCode 时都要设置它。带有此变量再次运行安装程序，会恢复 Lore 修改过的兼容性设置。
+- **修改后重启。** 重新安装或修改令牌后，请重启 OpenCode。
+
+## 手动安装（备用方案）
+
+手动安装需要自己复制插件文件。它会跳过兼容性修改，因此如果你使用 oh-my-openagent，请自行在该文件中把 `claude_code.plugins_override["lore@lore"]` 设为 `false`。
+
+1. 下载插件文件：
+
+   ```bash
+   curl -fsSL -o lore-opencode.zip https://github.com/FFatTiger/lore/releases/latest/download/lore-opencode.zip
+   unzip -qo lore-opencode.zip lore-memory.js
+   ```
+
+2. 把文件复制到目标位置。如果目标位置已有不是 Lore 创建的文件，该命令会拒绝覆盖：
+
+   ```bash
+   target="$HOME/.config/opencode/plugins/lore-memory.js"
+   mkdir -p "$(dirname "$target")"
+   if [ -f "$target" ] && ! grep -q '@lore-managed-opencode-plugin' "$target"; then
+     echo "Refusing to overwrite an unmarked plugin: $target" >&2
+     exit 1
+   fi
+   install -m 0644 lore-memory.js "$target"
+   rm -f lore-opencode.zip lore-memory.js
+   ```
+
+3. 把服务器配置写入 `~/.lore/config.json`。插件从该文件读取 `base_url` 和 `api_token`，缺少时会回退到 `LORE_BASE_URL` 和 `LORE_API_TOKEN`：
+
+   ```json
+   {
+     "base_url": "https://api.loremem.com",
+     "api_token": "lm_your_token"
+   }
+   ```
+
+   如果服务器支持技能，并且希望开启技能工具，请在启动 OpenCode 的环境中同时设置 `LORE_SKILLS_ENABLED=1`。
+
+4. 重启 OpenCode。
+
+## 卸载
+
+```bash
+npx @loremem/cli uninstall --channels opencode -y
+```
+
+这条命令会恢复 Lore 修改过的 oh-my-openagent 设置，这需要 `python3`。它只会在 `lore-memory.js` 带有 Lore 标记时删除该文件，并删除 `~/.lore/opencode`。卸载后请重启 OpenCode。
+
+如果 OpenCode 无法加载 Lore，请参见[Agent 接入问题](/documents/troubleshooting/agents)。

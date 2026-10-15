@@ -1,0 +1,90 @@
+The Codex integration gives Codex startup memory at the start of each session, recall before each prompt, and the Lore memory tools through MCP. It installs a local Codex plugin, turns on Codex hooks, and registers the `lore` MCP server.
+
+## Install
+
+Run this on the machine where you use Codex:
+
+```bash
+npx @loremem/cli install --channels codex
+```
+
+On Loremem Cloud, pass the server and your project token:
+
+```bash
+npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token --channels codex
+```
+
+The installer skips Codex when the `codex` command is not on your `PATH`. It writes Codex files under `CODEX_HOME`, which defaults to `~/.codex`.
+
+## What gets installed
+
+- The plugin from `lore-codex.zip`. The installer stages it in `~/.lore/codex/`, registers that folder as a local marketplace with `codex plugin marketplace add`, and copies the plugin to `$CODEX_HOME/plugins/cache/lore/lore/local/`.
+- Two hooks, bundled with the plugin. `SessionStart`, which runs on `startup`, `resume`, and `clear`, loads startup memory. `UserPromptSubmit` adds recall to each prompt. Each hook has a 10-second timeout.
+- The `lore` MCP server at `<server>/api/mcp?client_type=codex`, registered with `codex mcp add` and written to `config.toml`.
+- The `lore-skills` MCP server, only when the server has Skills. Without Skills, the installer removes that entry.
+- A bundled `lore-memory` skill. It tells Codex to load `lore_guidance` and `lore_boot` when a task depends on durable context.
+- Hook entries from earlier Lore installs are removed from `$CODEX_HOME/hooks.json`. Other hooks in that file stay.
+
+The installer writes `config.toml` with mode `0600` and sets these sections:
+
+```toml
+[plugins."lore@lore"]
+enabled = true
+
+[features]
+hooks = true
+
+[mcp_servers.lore]
+url = "https://api.loremem.com/api/mcp?client_type=codex"
+http_headers = { Authorization = "Bearer lm_your_token" }
+```
+
+The `http_headers` line appears only when you set a token. The token is stored in that header, so keep the file private.
+
+## Verify
+
+1. Run `npx @loremem/cli status`. The `codex` line should read `installed`.
+2. Run `codex mcp list`. It should list `lore`, and `lore-skills` on a server with Skills.
+3. Start Codex and open `/plugins`. If Lore is still listed as installable, install it from there.
+4. Open `/hooks` and trust the Lore hooks if Codex asks.
+5. Start a new session and ask Codex to call `lore_status`. It should return the server's health.
+6. Send a prompt about a project that has memories. The context should include a `<recall>` block.
+
+## Notes
+
+- **Trust the hooks.** If Codex reports that the hooks need review, open `/hooks` and trust the Lore hooks.
+- **Older Codex builds.** Legacy Codex builds need user-level hook entries in `~/.codex/hooks.json`. For those builds, run the installer with `LORE_CODEX_INSTALL_USER_HOOKS=1`:
+
+  ```bash
+  LORE_CODEX_INSTALL_USER_HOOKS=1 npx @loremem/cli install --channels codex
+  ```
+
+  This adds Lore's hook entries to `$CODEX_HOME/hooks.json`. It keeps the other hooks in that file.
+
+- **Restart after changes.** Hooks and MCP settings load at process start. Restart Codex after you change `config.toml`, the hooks, or the token.
+
+## Manual setup (fallback)
+
+This method adds the memory tools through MCP only. It doesn't install the hooks, so Codex gets no startup memory and no recall. Use the installer when you need those.
+
+```bash
+codex mcp add lore --url "https://api.loremem.com/api/mcp?client_type=codex"
+```
+
+If your server needs a token, add the server to `~/.codex/config.toml` instead of using the command. Use either the command or the TOML block, not both. Keep the file readable only by you (`chmod 600 ~/.codex/config.toml`).
+
+```toml
+[mcp_servers.lore]
+url = "https://api.loremem.com/api/mcp?client_type=codex"
+http_headers = { Authorization = "Bearer lm_your_token" }
+```
+
+## Uninstall
+
+```bash
+npx @loremem/cli uninstall --channels codex -y
+```
+
+This removes the Lore marketplace, the `lore` and `lore-skills` MCP entries, the Lore sections in `config.toml`, and the Lore hook entries in `hooks.json`. Other hooks stay. It also deletes `~/.lore/codex` and Lore's plugin cache. Restart Codex afterwards.
+
+If Codex doesn't load Lore, see [Agent connection issues](/documents/troubleshooting/agents).

@@ -1,54 +1,59 @@
-Troubleshooting starts by finding the failing boundary.
+Most problems come from setup, tokens, or a runtime that wasn't restarted, not from recall thresholds. Work through the eight checks below in order, and fix the first one that fails before you change anything else.
 
-Do not tune recall thresholds first. Most problems are caused by setup, auth, stale hooks, incomplete model settings, or weak memory shape.
+## Check the boundaries in order
 
-## Check in this order
+1. **Server health.** Confirm that the server answers. This check needs no token.
 
-1. **Server health** — `/api/health` responds and the Web Console loads.
-2. **Database and migrations** — `DATABASE_URL` is correct; PostgreSQL has `vector`; Chinese recall has `pg_jieba` or `zhparser` when needed.
-3. **Setup** — `/setup` reports complete embedding, View LLM, and boot memory setup.
-4. **Auth** — protected servers receive `Authorization: Bearer <API_TOKEN>` from REST and MCP clients.
-5. **Agent connection** — MCP URL includes the right `client_type`; plugin files and hooks are installed.
-6. **Runtime reload** — the agent was restarted after config, hook, or plugin changes.
-7. **Memory quality** — path, disclosure, glossary, and priority describe the future prompt clearly.
-8. **Recall settings** — only tune thresholds after the above checks pass.
+   ```bash
+   curl -fsS http://127.0.0.1:18901/api/health
+   ```
 
-## Use the focused pages
+   On Loremem Cloud, check `https://api.loremem.com/api/health` instead. A healthy self-hosted server returns `"status":"ok"` and `"database":"connected"`. If the request fails, run `curl -sS` on the same URL to read the response body. A `503` with `"database":"disconnected"` means the server cannot reach PostgreSQL.
 
-| Symptom | Page |
+2. **Database and extensions.** Confirm that the migrations ran. From the Compose directory, run `docker compose logs web` and look for `[migrations] failed`. Chinese recall also needs `pg_jieba` or `zhparser`. See [Install and setup issues](/documents/troubleshooting/setup).
+
+3. **Setup and models.** Open `/setup` on your server, for example `http://127.0.0.1:18901/setup`. The Embedding and View LLM steps must be saved, and the boot memories must exist. Recall needs a working embedding model before it can search.
+
+4. **Auth and token.** If the server sets `API_TOKEN`, every REST and MCP request must send `Authorization: Bearer <API_TOKEN>`. Send this request with a valid token. A `405` response means the token was accepted. A `401` response means the token is missing or wrong.
+
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' \
+     -H "Authorization: Bearer lm_your_token" \
+     "http://127.0.0.1:18901/api/mcp?client_type=mcp"
+   ```
+
+   Servers without `API_TOKEN` accept requests without a token.
+
+5. **Agent integration.** Run `npx @loremem/cli status` and find the channel for your runtime. `installed` means the integration files are in place. `partial` or `missing` means the install did not finish, so run `npx @loremem/cli install --channels <runtime>` again. Then ask the agent to call `lore_status`. A working connection returns `Lore online`.
+
+6. **Runtime restart.** Restart the agent after every install, config, hook, plugin, or token change. Hooks and MCP config load when the process starts. Pi needs `/reload` or a restart.
+
+7. **Memory shape.** Check that the memory you expect has a focused path, one concrete disclosure, real glossary terms, and an honest priority. The [Recall issues](/documents/troubleshooting/recall) page shows how to test one prompt.
+
+8. **Recall settings.** Change thresholds, weights, or timeouts only after checks 1 to 7 pass. The [settings reference](/documents/reference/settings) lists every key and its default.
+
+## Find your symptom
+
+| Symptom | Start with |
 | --- | --- |
-| server or setup is broken | [Setup issues](/documents/troubleshooting/setup-issues) |
-| memory exists but does not appear | [Recall issues](/documents/troubleshooting/recall-issues) |
-| agent does not receive boot or recall | [Agent issues](/documents/troubleshooting/agent-issues) |
-| unsure how Lore should be used | [Common questions](/documents/reference/common-questions) |
+| Install fails, the server does not start, `/api/health` fails, or a token is rejected | [Install and setup issues](/documents/troubleshooting/setup) |
+| The agent gets no boot memory or `<recall>` block, tools are missing, or Lore appears twice | [Agent connection issues](/documents/troubleshooting/agents) |
+| A memory never appears, the wrong memory appears, or recall is slow or skipped | [Recall issues](/documents/troubleshooting/recall) |
+| Tool names or parameters are unclear | [Agent tools reference](/documents/reference/tools) |
+| You are not sure how Lore should be used | [FAQ](/documents/reference/faq) |
 
-Keep troubleshooting evidence concrete: URL, `client_type`, token state, page name, query text, recalled URI, and whether the agent opened the memory node.
+## What to include when you ask for help
 
-## Uninstall
+Collect these details before you open an issue, and remove tokens and passwords first.
 
-To fully remove Lore from your machine:
+1. **Versions.** The `installed_version` line from `npx @loremem/cli status`. For Docker installs, also the `LORE_FRONTEND_IMAGE` value in `~/.lore/docker/.env`.
+2. **Server kind.** Loremem Cloud, a Docker server that the CLI manages, or another self-hosted server.
+3. **Status output.** The full output of `npx @loremem/cli status`. It shows the token only as `set` or `absent`.
+4. **Runtime and `client_type`.** For example `claudecode`, `codex`, `opencode`, `pi`, `openclaw`, `hermes`, `zcode`, or `mcp`.
+5. **The failing step.** The step number from the checklist above and the exact error text.
+6. **For recall problems.** The exact prompt, the `<recall>` block the agent received (or a note that none appeared), and whether the agent opened the node with `lore_get_node`.
 
-```bash
-# Stop and remove containers, networks, and volumes
-docker compose down -v
+> [!WARNING]
+> Never paste a token. The `.env` file, `~/.lore/config.json`, and agent settings files all contain secrets. Replace each token with `lm_your_token` before you share a snippet.
 
-# Remove local Lore state
-rm -rf ~/.lore
-
-# Remove Claude Code Lore integration
-rm -f ~/.claude/lore-guidance.md
-# Remove the @~/.claude/lore-guidance.md import line from ~/.claude/CLAUDE.md
-
-# Remove Codex MCP registration
-codex mcp remove lore || true
-
-# Remove OpenClaw plugin entry from ~/.openclaw/openclaw.json
-
-# Remove Pi extension
-rm -rf "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/extensions/lore"
-
-# Remove Hermes plugin symlink
-rm -f ~/.hermes/skills/lore_memory
-```
-
-Also remove `LORE_BASE_URL` and `LORE_API_TOKEN` from your shell profile if you added them.
+If these steps do not explain the failure, search the existing issues and open a new one at https://github.com/FFatTiger/lore/issues.

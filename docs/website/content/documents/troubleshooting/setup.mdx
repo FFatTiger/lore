@@ -1,0 +1,213 @@
+Each entry below covers one installer, server, or `/setup` failure: the symptom you see, the cause, and the fix. Run Compose commands from the directory that contains `docker-compose.yml`. For installs that the CLI manages, that directory is `~/.lore/docker`.
+
+## Installer and Docker
+
+### The CLI says a runtime was skipped
+
+**Symptom:** The install prints a line such as `claude CLI not found` and marks that runtime as skipped. If every selected runtime is skipped, the install ends with `Install failed`.
+
+**Cause:** The CLI finds each runtime by looking for its command on `PATH`. When the command is missing, the CLI skips that runtime instead of reporting it as configured.
+
+**Fix:**
+
+1. Check that the command resolves in the same shell where you run the installer:
+
+   ```bash
+   command -v claude
+   ```
+
+2. If the command prints nothing, install the runtime or add its directory to `PATH`, then open a new shell.
+3. Run the install again for that runtime:
+
+   ```bash
+   npx @loremem/cli install --channels claudecode
+   ```
+
+Hermes needs no runtime CLI. The installer only downloads its files, and you link them yourself. See [Agent connection issues](/documents/troubleshooting/agents).
+
+### Docker is not detected
+
+**Symptom:** `npx @loremem/cli install --docker` stops with `Docker is not available` or `Docker Compose is not available`.
+
+**Cause:** The CLI needs `docker version` to succeed, and either `docker compose version` or `docker-compose version` to succeed. The first error means Docker is not installed, its daemon is not running, or your user cannot reach it. The second means Compose is missing.
+
+**Fix:**
+
+1. Run `docker version`. It must print client and server information without errors. Start the Docker daemon if it does not.
+2. Run `docker compose version`. If it fails, install the Compose plugin.
+3. Run the install again:
+
+   ```bash
+   npx @loremem/cli install --docker
+   ```
+
+### Docker Compose fails or the health check times out
+
+**Symptom:** The installer prints `docker compose up failed` or `Lore Docker health check timed out for http://127.0.0.1:18901`. The installer waits up to three minutes for `/api/health`.
+
+**Cause:** A container failed to start, or `web` started but never became healthy. An unreachable database also fails the health check, so a timeout often points to PostgreSQL.
+
+**Fix:**
+
+1. Check the container states:
+
+   ```bash
+   cd ~/.lore/docker
+   docker compose ps
+   ```
+
+2. Read the logs of the service that is not running or not healthy:
+
+   ```bash
+   docker compose logs web
+   docker compose logs postgres
+   ```
+
+3. Fix the error in the logs, then run `docker compose up -d` again.
+
+## Server and database
+
+### The server does not start
+
+**Symptom:** The `web` service exits or restarts, or `/api/health` never answers.
+
+**Cause:** Common causes are a wrong `DATABASE_URL`, a port that another program already uses, or a PostgreSQL container that is not healthy.
+
+**Fix:**
+
+1. Read the `web` and `postgres` logs as shown above.
+2. Inside Docker, `DATABASE_URL` points to the `postgres` service on port `5432`. `POSTGRES_PORT` (default `55439`) is only the host port for connections from your machine.
+3. If port `18901` is in use, set `WEB_PORT` in `.env` to a free port, and use that port in your base URL.
+4. After you change `.env`, run `docker compose up -d` again so the containers pick up the new values.
+
+### Migration fails with a `vector` or `pg_jieba` error
+
+**Symptom:** The `web` log shows `[migrations] failed` followed by a database error. Startup stops at that migration.
+
+**Cause:** The `vector` extension (pgvector) is missing, or the database role cannot create the schema and its extensions. A missing `pg_jieba` or `zhparser` does not stop migrations. It only weakens Chinese search.
+
+**Fix:**
+
+1. Use the Lore PostgreSQL image, `fffattiger/pgvector-zhparser:pg16`. It includes pgvector, zhparser, and pg_jieba, and Docker installs use it by default.
+2. For your own PostgreSQL server, install pgvector. Use a role that can create schemas and extensions on first start, then switch to a restricted role.
+3. Check which extensions the Lore database has:
+
+   ```sql
+   SELECT extname FROM pg_extension WHERE extname IN ('vector', 'pg_jieba', 'zhparser');
+   ```
+
+4. To use `pg_jieba`, add it to `shared_preload_libraries` and restart PostgreSQL.
+
+### `/api/health` fails
+
+**Symptom:** `curl -fsS http://127.0.0.1:18901/api/health` reports connection refused, or returns an HTTP error such as `503`.
+
+**Cause:** Connection refused means `web` is not running, or the port in your URL differs from `WEB_PORT`. A `503` with `"status":"degraded"` means `web` cannot reach the database.
+
+**Fix:**
+
+1. Confirm that `web` and `postgres` are running with `docker compose ps`.
+2. For connection refused, compare the port in your URL with `WEB_PORT` in `.env`.
+3. For `503`, read the body with `curl -sS http://127.0.0.1:18901/api/health`, then check `DATABASE_URL` and the `postgres` logs.
+
+## Tokens and authentication
+
+### Requests fail with `401 Unauthorized`
+
+**Symptom:** The Web console, the API, or an agent receives `{"detail":"Unauthorized"}`, or MCP returns a JSON-RPC error with `Unauthorized`.
+
+**Cause:** The server sets `API_TOKEN`, and the request sends no token, the wrong token, or a token in a place Lore does not read. Lore reads the token from the `Authorization: Bearer <token>` header.
+
+**Fix:**
+
+1. Compare the server's `API_TOKEN` in `.env` with the token on the client. Do not paste either value. `npx @loremem/cli status` shows only whether a token is saved (`api_token: set` or `absent`), not whether it is correct.
+2. Send the correct token to the client. `--skip-docker` keeps your saved server and its Docker management:
+
+   ```bash
+   npx @loremem/cli install -y --skip-docker --api-token lm_your_token
+   ```
+
+3. Restart the agent. Each runtime stores the token in its own place. Claude Code uses the `env` block of `~/.claude/settings.json`. Codex uses an `Authorization` header under `[mcp_servers.lore]` in `~/.codex/config.toml`. OpenClaw uses its plugin entry in `~/.openclaw/openclaw.json`. The other runtimes read `~/.lore/config.json`.
+
+### The CLI refuses a token over plain HTTP
+
+**Symptom:** The install stops with `API tokens require HTTPS for non-loopback Lore servers (pass --allow-insecure-http to explicitly accept the risk for this run)`.
+
+**Cause:** The base URL uses `http://` with a host other than `localhost`, `127.0.0.1`, or `::1`. The CLI sends a token over plain HTTP only to loopback addresses.
+
+**Fix:**
+
+- Use HTTPS. Put the server behind a reverse proxy with TLS, and use the `https://` URL.
+- On a network you trust, accept the risk for one run:
+
+  ```bash
+  npx @loremem/cli install --base-url http://192.168.1.10:18901 --api-token lm_your_token --allow-insecure-http
+  ```
+
+> [!WARNING]
+> Anyone on the network path can read or change a token sent over plain HTTP. The `--allow-insecure-http` approval is not saved, and `-y` does not imply it.
+
+### Loremem Cloud rejects your token
+
+**Symptom:** Requests to `https://api.loremem.com` stop working, or the install stops with `Loremem SaaS requires an API token`.
+
+**Cause:** The token was revoked, or the install has no token. Tokens are shown only once, when you create them.
+
+**Fix:**
+
+1. Open the Tokens page in the console and check that the token still exists. If it was revoked, create a new project token on the Install page. Copy the token and the install command when they appear.
+2. Run the install with the new token:
+
+   ```bash
+   npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token
+   ```
+
+## Releases, models, and config
+
+### The installer cannot resolve a release
+
+**Symptom:** The install prints `Could not resolve GitHub release tag`, or a download fails with a `curl` or `unzip` error.
+
+**Cause:** The CLI reads the latest release tag from GitHub. Rate limits or a blocked network path cause the first error. Downloads use `curl` and `unzip`, so the second error means one of them is missing or the transfer failed.
+
+**Fix:**
+
+1. If GitHub rate limited the request, wait a few minutes and run the install again.
+2. Check that your machine can reach `github.com`.
+3. Install `curl` and `unzip` if either is missing.
+
+### `/setup` cannot save model settings
+
+**Symptom:** The Embedding or View LLM step says `Fill every field on this page before continuing` and lists the empty fields. Or the connection test fails.
+
+**Cause:** Each model step needs a base URL, an API key, and a model name. For embeddings, the server calls `<base URL>/embeddings`. If your provider serves its OpenAI-compatible routes under `/v1`, include `/v1` in the base URL, for example `http://127.0.0.1:8090/v1`. Do not add `/embeddings` yourself.
+
+**Fix:**
+
+1. Fill in all three fields for the step: base URL, API key, and model name.
+2. Run the connection test for the step. Its message names the failure. `HTTP 401` usually means the key is wrong. `HTTP 404` usually means the base URL or path is wrong. `response missing embedding vector` means the endpoint is not OpenAI-compatible.
+3. Save again. Saving a changed embedding model rebuilds all embeddings, and the save waits for the rebuild to finish.
+
+### The CLI rejects `~/.lore/config.json`
+
+**Symptom:** The CLI stops with `Invalid JSON in` and the full path of the file, followed by a parser message. Or it stops with `Lore config in ... must be a JSON object`.
+
+**Cause:** The shared config file is not valid JSON, or its top-level value is not an object. The CLI refuses to overwrite a malformed file, so the error repeats until you fix or move the file.
+
+**Fix:**
+
+1. Back up the file, then fix the syntax. Look for a trailing comma or a missing quote. A valid file has this shape:
+
+   ```json
+   {
+     "base_url": "http://127.0.0.1:18901",
+     "api_token": "lm_your_token"
+   }
+   ```
+
+2. If you cannot repair the file, move it aside and connect again with the same flags you used before. Use `--base-url` for an existing server, or `--docker` for a server that the CLI manages.
+
+   ```bash
+   mv ~/.lore/config.json ~/.lore/config.json.bak
+   npx @loremem/cli install --base-url http://127.0.0.1:18901 --api-token lm_your_token
+   ```

@@ -1,0 +1,81 @@
+Hermes 接入会为 Hermes 安装一个 Lore 记忆提供方（memory provider），让 Hermes 把启动记忆（boot）放入系统提示，为每条消息预先获取召回，并能使用 Lore 记忆工具。安装程序会下载插件文件，但需要你自己把它们链接到 Hermes 中。
+
+## 安装
+
+在使用 Hermes 的机器上运行安装程序：
+
+```bash
+npx @loremem/cli install --channels hermes
+```
+
+接入 Loremem 云服务时，传入服务器地址和项目令牌：
+
+```bash
+npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token --channels hermes
+```
+
+然后把插件链接到 Hermes：
+
+```bash
+mkdir -p ~/.hermes/skills
+ln -s ~/.lore/hermes/lore_memory ~/.hermes/skills/lore_memory
+```
+
+链接完成后，请重启 Hermes。
+
+> [!NOTE]
+> 安装程序不需要 Hermes 命令。默认情况下，只有当 `hermes` 命令在 `PATH` 中时，安装程序才会检测到 Hermes。无论是否找到该命令，都可以传入 `--channels hermes` 来安装插件文件。
+
+## 安装内容
+
+- 来自 `lore-hermes.zip` 的插件包，位于 `~/.lore/hermes/lore_memory/`。它包含记忆提供方、清单文件和相关辅助代码。
+- 安装程序不会自动链接到 Hermes。你需要按上面的步骤创建 `~/.hermes/skills/lore_memory` 链接。
+- 九个记忆工具：`lore_status`、`lore_boot`、`lore_get_node`、`lore_search`、`lore_list_domains`、`lore_create_node`、`lore_update_node`、`lore_delete_node` 和 `lore_move_node`。在支持技能的服务器上，还会增加七个 `lore_skill_*` 工具。
+- 会话开始时，Lore 返回的启动上下文会成为 Hermes 系统提示中的启动记忆块。每条用户消息发送前，Hermes 都会预先获取该消息的召回。
+- 服务器支持技能时会出现技能工具。当 `~/.lore/config.json` 中的 `server_profile` 为同一服务器地址记录了技能能力，或者 `LORE_SKILLS_ENABLED` 为 `1` 时，插件会开启技能工具。
+
+## 验证
+
+1. 运行 `npx @loremem/cli status`。`hermes` 一行应显示 `installed`。
+2. 运行 `ls -l ~/.hermes/skills/lore_memory`。输出应显示一个指向 `~/.lore/hermes/lore_memory` 的链接。
+3. 重启 Hermes。它的日志中应包含 `Lore memory provider initialized`，并显示你的服务器地址。
+4. 让 Hermes 调用 `lore_status`。它应返回服务器的健康状态。
+5. 发送一条与已有记忆相关的项目提示，然后询问 Hermes，这条提示收到了哪些记忆节点。
+
+## 注意事项
+
+- **配置位置。** Hermes 始终从你的主目录读取 `~/.lore/config.json`。设置 `LORE_HOME` 不会改变这个路径。`LORE_HOME` 用于指定技能工作副本的存放位置。
+- **环境变量备用值。** 如果配置文件中没有设置某个值，Hermes 会读取 `LORE_BASE_URL`、`LORE_API_TOKEN`、`LORE_TIMEOUT`（单位为秒，默认 `30`）和 `LORE_DEFAULT_DOMAIN`（默认 `core`）。
+- **修改后重启。** 链接插件或修改其设置后，请重启 Hermes。
+
+## 手动安装（备用方案）
+
+只有当安装程序无法运行时，才使用以下步骤。它们会下载相同的插件包，并创建相同的链接。
+
+```bash
+mkdir -p ~/.lore/hermes ~/.hermes/skills
+curl -fsSL -o lore-hermes.zip https://github.com/FFatTiger/lore/releases/latest/download/lore-hermes.zip
+unzip -qo lore-hermes.zip -d ~/.lore/hermes
+rm lore-hermes.zip
+ln -s ~/.lore/hermes/lore_memory ~/.hermes/skills/lore_memory
+```
+
+把服务器配置写入 `~/.lore/config.json`，然后重启 Hermes：
+
+```json
+{
+  "base_url": "https://api.loremem.com",
+  "api_token": "lm_your_token"
+}
+```
+
+## 卸载
+
+```bash
+npx @loremem/cli uninstall --channels hermes -y
+rm ~/.hermes/skills/lore_memory
+```
+
+卸载程序会删除 `~/.lore/hermes`，但会保留 Hermes 中的链接。`rm` 命令用于移除该链接。它不会处理链接指向的目录，而该目录已经被卸载程序删除。卸载后请重启 Hermes。
+
+如果 Hermes 无法加载 Lore，请参见[Agent 接入问题](/documents/troubleshooting/agents)。

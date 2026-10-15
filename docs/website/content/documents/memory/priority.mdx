@@ -1,0 +1,75 @@
+Priority tells Lore how important a memory is compared with the others. Use three tiers: `0` for core identity, `1` for key facts, and `2` or higher for everything else. The caps keep tiers `0` and `1` small enough to mean something.
+
+## The three tiers
+
+| Priority | Meaning | Cap (library-wide) | Typical content |
+| --- | --- | --- | --- |
+| `0` | Core identity: rules and identity that should shape every session | 5 | Boot nodes, and the few rules every session must follow |
+| `1` | Key facts: constraints, preferences, and workflows that most work on a project needs | 15 | Project constraints, stable preferences, high-value workflows |
+| `2+` | General knowledge. Higher numbers suit background and history. | None | Implementation notes, decisions, commands, historical context |
+
+## Caps
+
+The priority budget check is on by default. When you create a memory at priority `0` or `1`, or change one to that level, and the tier is already full, Lore blocks the write and asks you to lower an existing node first.
+
+The caps are fixed. You cannot change them in settings. You can turn the check off with `policy.priority_budget_enabled`, which is in Settings → Policy on Loremem Cloud and in `/settings` on a self-hosted server. Turning it off removes the limit, so leave it on unless you have a reason.
+
+> [!NOTE]
+> Boot nodes count toward the cap too. The setup flow creates the boot nodes at priority `0`, so the three global boot nodes already take three of the five slots at that tier. Each runtime boot node you add takes another.
+
+## What priority does in ranking
+
+Priority adds a small ranking bonus. With the default settings, it works like this:
+
+| Priority | Ranking bonus |
+| --- | --- |
+| 0 | 0.05 |
+| 1 | 0.04 |
+| 2 | 0.03 |
+| 3 | 0.02 |
+| 4 | 0.01 |
+| 5 and higher | 0 |
+
+These defaults come from `recall.bonus.priority_base` (0.05) and `recall.bonus.priority_step` (0.01). Keep these points in mind:
+
+- The bonus is small. Relevance still does most of the work.
+- Priority never forces a memory into recall. The display threshold (0.60 by default) still applies.
+- When two memories score the same, the one with the lower number (more important) comes first.
+- Memories at priority `0` and `1` do not lose their recency bonus as they age. See [How recall works](/documents/recall).
+
+## A typical distribution
+
+Most of your memories belong at priority `2`. The higher tiers stay small on purpose.
+
+| Tier | Typical use | How many to expect |
+| --- | --- | --- |
+| `0` | Boot nodes and the few rules every session must follow | Very few. The cap is 5. |
+| `1` | Key project constraints, stable preferences, and workflows that most tasks need | Some. The cap is 15. |
+| `2` | Implementation notes, ordinary decisions, and commands | Most of your memories |
+| `3+` | Background, history, and context you rarely need | Any number. These rank lower on their own. |
+
+## When everything is important
+
+When every memory feels like a `0` or a `1`, sort them with these steps:
+
+1. Ask which memories an agent must know in every session. Only those can be `0` or `1`.
+2. If a tier is full, pick the least useful node in it and lower it to `2` with `lore_update_node`.
+3. If a memory matters only for one kind of task, keep it at `1` and make its disclosure more specific. Do not raise its priority to compensate.
+4. Run a few real prompts through recall. If a memory still does not appear, the problem is its disclosure or glossary, not its priority.
+
+Priority ranks memories that already match. It cannot make a memory match.
+
+## Adjust priority later
+
+Change a node's priority with `lore_update_node`. Pass the `uri` and the new `priority`. Other fields stay as they are.
+
+```json
+{
+  "uri": "project://checkout_api/testing",
+  "priority": 2
+}
+```
+
+You can also change the Priority field in the memory editor, on the Memory page of Loremem Cloud or the `/memory` page of a self-hosted server.
+
+The cap is checked only when a node moves to `0` or `1` from another level. A node already at that level is not checked again. Lowering a node to `2` or higher is never blocked by the cap.

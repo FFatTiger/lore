@@ -1,0 +1,79 @@
+Disclosure decides when a memory surfaces, and the glossary decides which words find it. Write the disclosure as a situation and the glossary as the words people type, and recall can match the memory through both routes.
+
+## Disclosure
+
+A disclosure describes the situation that should bring the memory up. Write it as a future situation, not as a summary of the content. The agent reads the disclosure to decide whether the memory matters for the task in front of it, so name the task, the area, or the symptom.
+
+Use this pattern:
+
+```text
+When [doing a task], [touching an area], or [seeing a symptom] in [project or product].
+```
+
+| Disclosure | Verdict | Why |
+| --- | --- | --- |
+| When changing refund or payment webhooks in checkout-api | Good | One situation, with the area named |
+| When a refund webhook fails on retry in checkout-api | Good | Names a symptom the agent will see, and still one situation |
+| Important webhook info | Weak | Says nothing about when the memory applies |
+| Summary: webhooks are idempotent by event.id | Weak | Describes the content, not the situation |
+| When changing webhooks, refund emails, or invoices | Weak | Three situations joined by OR. Split it into three memories. |
+
+Follow three rules:
+
+1. **One situation per memory.** If you need "or" to describe the trigger, split the memory into one node per situation.
+2. **Describe the future, not the content.** Ask when someone will need this memory.
+3. **Use the words of the work.** Name the task, the area, or the symptom the way your team names it.
+
+> [!WARNING]
+> The disclosure check warns when a new memory has no disclosure. It also warns when a disclosure uses OR wording, both on create and when you change a disclosure. Warnings do not block the save. The check recognizes Chinese OR markers (或, 或者, 以及) but not the English word "or", so review your own disclosures for it.
+
+Lore also builds the memory's views from its disclosure. A clear situation therefore helps semantic recall as well as the disclosure check.
+
+## Glossary
+
+The glossary holds the words people actually type when they mean this memory. Keep it to terms that someone would use to find the memory: names, aliases, abbreviations, Chinese and English variants of the same term, and error names.
+
+| Add | Examples |
+| --- | --- |
+| Product and project names, including punctuated forms | `checkout api`, `checkout-api` |
+| Abbreviations | `RLS` (row-level security) |
+| Chinese and English variants | `退款回调`, `refund webhook` |
+| Error names and symptoms people paste | `duplicate key`, `idempotency conflict` |
+| Tool and file names that appear in prompts | `stripe`, `CLAUDE.md` |
+
+Leave these out:
+
+- **Generic words** such as `code`, `test`, or `fix`. They match too many memories.
+- **Whole sentences or pasted logs.** A glossary term is a short phrase.
+- **Words nobody would type.** A term that appears only in the content does not help recall.
+- **Duplicates in different forms.** Lore removes only exact duplicates, so `Stripe` and `stripe` can end up as two terms. Pick one form.
+
+## How the glossary feeds matching
+
+The glossary takes part in three kinds of matching:
+
+| Matching | What happens | Default weight |
+| --- | --- | --- |
+| Exact | A glossary term that appears in the prompt is an exact match. | 0.30 (`recall.weights.w_exact`) |
+| Glossary semantic | Glossary terms are embedded, so a prompt with a close meaning can match. | 0.25 (`recall.weights.w_glossary_semantic`) |
+| Full-text (lexical) | Glossary text is searched as words, along with other text. | 0.03 (`recall.weights.w_lexical`) |
+
+[How recall works](/documents/recall) explains how these signals combine.
+
+For example, take this prompt:
+
+```text
+Why does the stripe refund webhook insert two rows?
+```
+
+`stripe` and `refund webhook` are exact glossary matches. The question also sits close to the memory's disclosure. In this case the memory can match through both its glossary and its views. Two independent routes make the memory easier to find.
+
+## Disclosure, glossary, and content compared
+
+| | Disclosure | Glossary | Content |
+| --- | --- | --- | --- |
+| Answers the question | When should this memory surface? | Which words should find it? | What is true, and what should the agent do? |
+| Written as | One future situation | Short terms and aliases | Facts, rules, decisions, or workflows |
+| Example | When changing refund or payment webhooks in checkout-api | `refund webhook`, `stripe` | Refund webhooks are idempotent by event.id. |
+| Used by recall through | Views and keyword search | Exact, glossary semantic, and full-text matching | Views and keyword search |
+| Common mistake | Summarizing the content | Adding generic words | Putting the trigger into the content |

@@ -1,0 +1,154 @@
+Connect each agent runtime to Lore once, and it gets startup memory (boot), recall for each prompt, and the Lore memory tools. The installer below sets up each connection, and the later sections show how to check, update, and remove it.
+
+| Runtime | Boot and recall | Memory tools | Skills (Loremem Cloud) | Setup |
+| --- | --- | --- | --- | --- |
+| Claude Code | Yes | Yes (MCP) | Yes | [Claude Code](/documents/agents/claude-code) |
+| Codex | Yes | Yes (MCP) | Yes | [Codex](/documents/agents/codex) |
+| OpenCode | Yes | Yes (native `lore_*` tools) | Yes | [OpenCode](/documents/agents/opencode) |
+| Pi | Yes | Yes | Yes | [Pi](/documents/agents/pi) |
+| OpenClaw | Yes | Yes | Yes | [OpenClaw](/documents/agents/openclaw) |
+| Hermes | Yes | Yes | Yes | [Hermes](/documents/agents/hermes) |
+| ZCode | Yes | Yes (MCP) | Yes | [ZCode](/documents/agents/zcode) |
+| Other MCP clients | No. Call `lore_boot` yourself. | Yes | No | [Other MCP clients](/documents/agents/mcp) |
+
+Skills exist only on Loremem Cloud. The self-hosted server has none.
+
+## Install with the CLI
+
+Run the installer on the machine where your agents run. It works on macOS and Linux with Node.js 20 or later, Bash, `curl`, and `unzip`. Windows is not supported natively. The installer downloads runtime files from GitHub Releases, so the machine must be able to reach `github.com`.
+
+Run `npx @loremem/cli` in a terminal to open the installer. The first question is where your Lore server is:
+
+- **Connect Loremem SaaS**: enter a token only.
+- **Connect to an existing server**: enter the server URL and a token.
+- **Deploy the server on this machine with Docker**: the installer sets up a local server.
+
+Next, choose runtimes. The installer preselects the runtimes it detects on this machine. Confirm the plan, and the installer writes the files.
+
+To skip the prompts, add `-y`. Pass the server with `--base-url` or `--docker`, or reuse the server already saved in `~/.lore/config.json`. Choose runtimes with `--channels`, using these names: `claudecode`, `codex`, `pi`, `openclaw`, `hermes`, `opencode`, and `zcode`. Without `--channels`, `-y` installs every runtime it detects. The [CLI reference](/documents/reference/cli) lists every flag.
+
+### Loremem Cloud
+
+Create a project token on the Install page in the console. The page shows this command with the token filled in. Loremem Cloud always requires a token.
+
+```bash
+npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token
+```
+
+### A self-hosted server
+
+This example uses a server on the same machine. It needs no token when the server has no `API_TOKEN` set.
+
+```bash
+npx @loremem/cli install --base-url http://127.0.0.1:18901 --channels claudecode,codex
+```
+
+> [!NOTE]
+> A server on another machine, such as `http://192.168.1.10:18901`, works without a token. With a token, use an HTTPS URL. Plain HTTP is accepted with a token only for loopback addresses (`localhost`, `127.0.0.1`, `::1`). `--allow-insecure-http` allows it for one run, and the installer never saves that choice.
+
+### A local server with Docker
+
+```bash
+npx @loremem/cli install -y --docker
+```
+
+The installer downloads the Compose file into `~/.lore/docker`, starts the stack, waits until the server is healthy, and connects the runtimes it detects. Docker and Docker Compose must be installed. For server settings, see [Install with Docker](/documents/self-hosting).
+
+## What the installer writes
+
+The installer writes one shared client config, then one integration for each runtime it connects. If a runtime's command is missing, the installer reports that runtime as skipped and leaves it unconfigured. Hermes needs no command. See its page for the manual link step.
+
+### Shared client config
+
+The installer saves the server connection in `~/.lore/config.json`. The file has mode `0600`, so only your user can read it. Set `LORE_HOME` to use another folder instead of `~/.lore`.
+
+| Field | Meaning |
+| --- | --- |
+| `base_url` | Server URL, without a trailing slash. |
+| `api_token` | Token for the server. Present only when you set one. |
+| `installed_version` | Release the integrations were installed from. |
+| `docker_managed` | `true` when the installer runs the server in Docker. |
+| `server_profile` | Server URL and capabilities reported by the server, such as Skills. |
+
+A saved token is reused only while the server URL stays the same. If you change the server without passing a new token, the installer clears the old one.
+
+`--api-token` on the command line puts the token in your shell history. Remove that history entry, or leave the flag out and type the token at the wizard prompt.
+
+### Runtime files
+
+| Runtime | What the installer writes |
+| --- | --- |
+| Claude Code | Plugin files in `~/.lore/claudecode/`, registered as the `lore@lore` plugin. Connection values in the `env` block of `~/.claude/settings.json`. |
+| Codex | Plugin files in `~/.lore/codex/` and the Codex plugin cache, plus the `lore` MCP entry in `config.toml`. |
+| OpenCode | `~/.config/opencode/plugins/lore-memory.js` and files in `~/.lore/opencode/`. |
+| Pi | Extension files in `~/.lore/pi/`, linked from `~/.pi/agent/extensions/lore`. |
+| OpenClaw | Plugin files in `~/.lore/openclaw/`, and the `lore` entry in `~/.openclaw/openclaw.json`. |
+| Hermes | Plugin package in `~/.lore/hermes/lore_memory/`. You link it into Hermes yourself. |
+| ZCode | Plugin files in `~/.lore/zcode/`, registered and enabled as the `lore@lore` plugin. |
+
+Codex paths follow `CODEX_HOME`, which defaults to `~/.codex`. Each runtime folder under `~/.lore/` is replaced when the installer downloads a new release.
+
+## After installing
+
+Restart each runtime you connected. Hooks and MCP settings load when a process starts, so an open session keeps its old settings.
+
+Then check the connection in a new session:
+
+1. **Startup memory.** Ask the agent to summarize the rules it loaded at startup. The answer should draw on your boot memory: `core://agent`, `core://soul`, `preferences://user`, and the node for its runtime.
+2. **Recall.** Send a prompt about a project that has memories. The agent's context gets a `<recall>` block, similar to this:
+
+   ```text
+   <recall session_id="sess_8f3c" query_id="q_41" phase="prompt">
+   0.82 | project://checkout_api/webhooks | refund · idempotency key
+   0.71 | project://checkout_api/testing | flaky test · fake clock
+   0.64 | preferences://user | test first
+   </recall>
+   ```
+
+   A recall line is a lead, not a fact. Open the node with `lore_get_node` before you rely on it. If no memory scores high enough to show, no block appears. The [Recall analytics](/documents/recall/analytics) page lists each query, so you can confirm that the request reached Lore.
+3. **Tools.** Ask the agent to call `lore_status`. It returns the server's health.
+
+`npx @loremem/cli status` shows the state of each integration: `installed`, `partial`, or `missing`.
+
+## Update or remove an integration
+
+Update every integration that is installed or partly installed:
+
+```bash
+npx @loremem/cli update
+```
+
+To update only some, pass `--channels`:
+
+```bash
+npx @loremem/cli update --channels claudecode,codex
+```
+
+`update` stops with an error if it can't find the latest release or if a selected integration fails. It doesn't report success in those cases. Add `--force` to reinstall when the version hasn't changed. If the installer runs your server in Docker, `update` also pulls the new image.
+
+Remove integrations with `uninstall`. In a terminal it asks you to confirm. Add `-y` to skip the question:
+
+```bash
+npx @loremem/cli uninstall --channels claudecode,pi -y
+```
+
+Without `--channels`, `uninstall` removes all seven integrations. Add `--purge` to also delete the shared config and the local Docker folder:
+
+```bash
+npx @loremem/cli uninstall --purge -y
+```
+
+> [!WARNING]
+> `--purge` deletes `~/.lore/config.json` and `~/.lore/docker`. By default, the local server keeps its data under `~/.lore/docker`. Export a backup first. See [Backups and restore](/documents/maintenance/backups).
+
+## How integrations behave
+
+Each integration is thin. It sends session starts and prompts to the Lore server and shows what the server returns. The plugins don't carry usage rules of their own.
+
+- **Server-side guidance.** The usage guidance comes from the server. Session start includes the global guidance. You can edit it in Settings. On Loremem Cloud, it's on the Lifecycle tab.
+- **Session start.** The integration asks Lore for the startup context: the global guidance, the boot block, optional recall based on the project folder and repository name, and, on servers with Skills, the list of skills the agent may use.
+- **Boot nodes.** The boot block contains `core://agent` (workflow rules for all agents), `core://soul` (style and persona), `preferences://user` (stable user context), and `core://agent/<client_type>` for the current runtime. Claude Code, for example, loads `core://agent/claudecode`.
+- **Recall.** Each prompt gets a `<recall>` block. By default it shows at most three candidates. The agent opens a memory with `lore_get_node` and passes the `session_id` and `query_id` from the tag, so Lore records which recalled memories were used.
+- **`client_type`.** Each integration sends its runtime name, such as `claudecode`, `codex`, or `opencode`, as `client_type`. Lore uses it to choose the runtime's boot node and to show recall and usage per runtime in [Recall analytics](/documents/recall/analytics).
+- **Fail open.** If Lore is unreachable or slow, the integration returns nothing, and the agent continues without memory. Hooks stop waiting after their own timeout (10 seconds in Claude Code, Codex, and ZCode), so a slow server never blocks a prompt.
+- **Skills.** Skill tools appear only on servers that advertise Skills. See [Skills](/documents/skills).

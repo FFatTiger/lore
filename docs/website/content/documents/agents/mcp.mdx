@@ -1,0 +1,61 @@
+Connect any MCP client that supports Streamable HTTP to Lore's memory tools. The client gets the memory tools, but Lore doesn't load startup memory or recall for it, so the agent needs instructions to call `lore_boot` and `lore_search` itself.
+
+## Endpoint
+
+Point the client at `<server>/api/mcp?client_type=mcp`. Lore serves MCP over Streamable HTTP. The client sends JSON-RPC requests with POST, and Lore answers with JSON. Lore doesn't issue MCP session IDs.
+
+| Server | Endpoint | Header |
+| --- | --- | --- |
+| Loremem Cloud | `https://api.loremem.com/api/mcp?client_type=mcp` | `Authorization: Bearer lm_your_token` |
+| Self-hosted on this machine | `http://127.0.0.1:18901/api/mcp?client_type=mcp` | Only when the server sets `API_TOKEN` |
+
+Keep `client_type=mcp` in the URL. Lore uses it to show activity from generic MCP clients separately in [Recall analytics](/documents/recall/analytics).
+
+> [!NOTE]
+> If the server has `API_TOKEN` set, every request must send `Authorization: Bearer <token>`. Without it, Lore returns `401 Unauthorized`.
+
+## Example config
+
+Each client has its own configuration format, so treat this JSON as an example only. Use the keys your client expects.
+
+```json
+{
+  "mcpServers": {
+    "lore": {
+      "type": "http",
+      "url": "https://api.loremem.com/api/mcp?client_type=mcp",
+      "headers": {
+        "Authorization": "Bearer lm_your_token"
+      }
+    }
+  }
+}
+```
+
+## What you get
+
+- The memory tools: `lore_guidance`, `lore_status`, `lore_boot`, `lore_get_node`, `lore_search`, `lore_list_domains`, `lore_create_node`, `lore_update_node`, `lore_delete_node`, and `lore_move_node`. The [tools reference](/documents/reference/tools) lists the inputs of each tool.
+- Usage guidance. When the server has guidance text, Lore sends it as MCP server instructions in the `initialize` response. Clients that pass server instructions to the model give the agent that guidance.
+
+## What you don't get
+
+- **Startup memory.** The client doesn't call `lore_boot` by itself. `lore_boot` returns the global boot nodes, `core://agent`, `core://soul`, and `preferences://user`. A generic MCP client has no runtime boot node of its own.
+- **Recall.** No `<recall>` block is added to prompts.
+- **Skills.** The endpoint doesn't serve `lore_skill_*` tools. Skill tools come only from the runtime integrations.
+
+To close the gap, add these instructions to your client's system prompt:
+
+```text
+At the start of each session, call lore_boot and read the result before you answer.
+Before you rely on a remembered fact, call lore_search, then open the best match with lore_get_node.
+```
+
+Without these instructions, the agent reads Lore only when you ask it to.
+
+## Verify
+
+1. Call `lore_status` from the client. It returns the server's health.
+2. Call `lore_boot`. The result includes `core://agent`, `core://soul`, and `preferences://user`.
+3. Call `lore_search` with a term from a memory you have. The result lists the matching node.
+
+If the client can't connect, or it gets `401 Unauthorized`, see [Agent connection issues](/documents/troubleshooting/agents).

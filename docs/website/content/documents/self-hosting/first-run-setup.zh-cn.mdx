@@ -1,0 +1,124 @@
+在连接 Agent 之前，先完成 `/setup` 中的四个步骤。你要为 Lore 配置一个 embedding 模型和一个聊天模型，然后编写每次会话都会加载的启动记忆（boot）。
+
+## 开始前准备
+
+- 一个 **embedding 端点**：任何兼容 OpenAI 的 `/v1/embeddings` 服务，例如 OpenAI 或自建的模型服务。你需要它的 base URL、API key 和模型名称。
+- 一个 **聊天端点**，用于 View LLM。它支持三种协议之一：OpenAI 兼容 Chat、OpenAI Responses 或 Anthropic Messages。
+- 如果同一个服务商用一个 key 同时提供两种端点，就在两个步骤中填入同一个 key。
+
+## 1. Embedding
+
+在 **Embedding** 步骤中填写：
+
+| 字段 | 示例 | 说明 |
+| --- | --- | --- |
+| Base URL | `https://api.openai.com/v1` | 包含 `/v1`。Lore 会自动追加 `/embeddings`。 |
+| API key | `YOUR_EMBEDDING_API_KEY` | 只写不读。 |
+| Model | `text-embedding-3-small` | 默认的模型名称。 |
+
+语义召回需要 embedding 模型。
+
+## 2. View LLM
+
+View LLM 负责生成召回所搜索的 gist 视图和 question 视图，并且负责运行 Dream。选择与你的端点匹配的协议：
+
+| 步骤中的协议 | 设置中的值 | 说明 |
+| --- | --- | --- |
+| OpenAI 兼容 Chat | `openai_compatible` | 使用 OpenAI 风格的 `/chat/completions` 端点。这是默认值。 |
+| OpenAI Responses | `openai_responses` | 使用 OpenAI Responses 协议。 |
+| Anthropic Messages | `anthropic` | 原生 Anthropic 端点通常需要设置 `view_llm.api_version`。 |
+
+填写聊天端点的 base URL、API key 和模型。如果把 base URL 留空，就会关闭视图精修和 Dream 运行。
+
+## 3. 全局启动记忆
+
+每次会话都会加载三个全局节点，它们共同构成启动记忆（boot）基线。每个节点都写成简短、直接的文字。之后可以在 `/memory` 中修改任意节点。
+
+### `core://agent`：适用于所有 Agent 的规则
+
+填写：
+
+- Agent 应如何与你协作：何时先读记忆，何时把经验写回，何时先征求你的同意再行动。
+- 适用于所有运行时的决策默认值和边界。
+
+不要写只适用于某一个运行时的规则。这些规则应放在第 4 步的 `core://agent/<runtime>` 中。
+
+### `core://soul`：风格与人设
+
+填写：
+
+- 你想要的语气，例如直接、温和或简洁，以及 Agent 应如何提出不同意见。
+- Agent 在对话中应有的表现。
+
+不要写具体任务的细节。这个节点只描述风格。
+
+### `preferences://user`：你的工作方式
+
+填写：
+
+- 对任何 Agent 都有帮助的稳定信息，例如你的角色、常用语言和主要使用的技术栈。
+- 工作偏好，例如「先写失败的测试」。
+
+不要写猜测、一次性的任务细节和密钥。
+
+Lore 内置的使用规则是单独的设置（`lifecycle.guidance.global`）。你不需要把它们抄进启动记忆节点。
+
+> [!TIP]
+> 还不确定写什么？点击 **Skip**（跳过）。它会把默认文本保存到空的启动记忆节点中，然后继续。之后再替换这段文字即可。
+
+## 4. 渠道 Agent 记忆
+
+为你接入的每个运行时添加一个节点，URI 使用 `core://agent/<runtime>`，例如 `core://agent/claudecode`、`core://agent/codex`、`core://agent/opencode`、`core://agent/pi`、`core://agent/openclaw`、`core://agent/hermes` 或 `core://agent/zcode`。
+
+只写适用于该运行时内部的内容：
+
+- 钩子和插件的行为，例如启动记忆和召回如何送达 Agent。
+- 运行时显示的工具名称。在 Claude Code 中，Lore 工具带有 `mcp__plugin_lore_lore__` 前缀，例如 `mcp__plugin_lore_lore__lore_search`。
+- 只适用于该运行时的命令和约定。
+
+共享规则不要写在这里，应放在 `core://agent` 中。**Skip**（跳过）在这一步同样可用。
+
+## 5. 保存并重启
+
+保存设置，然后重启你接入的每个 Agent 运行时。钩子和 MCP 客户端会在启动时读取服务器配置。
+
+## 通过命令行保存设置
+
+你也可以用 `PUT /api/settings` 从脚本中设置同样的值。发送一个 `patch` 对象，其中的键与[设置项参考](/documents/reference/settings)一致。设置保存在数据库中，而不是 `.env` 中。
+
+```bash
+curl -fsS -X PUT http://127.0.0.1:18901/api/settings \
+  -H 'content-type: application/json' \
+  -H 'authorization: Bearer lm_your_token' \
+  --data '{
+    "patch": {
+      "embedding.provider": "openai_compatible",
+      "embedding.base_url": "https://api.openai.com/v1",
+      "embedding.api_key": "YOUR_EMBEDDING_API_KEY",
+      "embedding.model": "text-embedding-3-small",
+      "view_llm.provider": "openai_compatible",
+      "view_llm.base_url": "https://api.openai.com/v1",
+      "view_llm.api_key": "YOUR_CHAT_API_KEY",
+      "view_llm.model": "YOUR_CHAT_MODEL"
+    }
+  }'
+```
+
+- 如果服务器没有设置 `API_TOKEN`，就去掉 `authorization` 这一行。
+- Lore 不会再显示已保存的 `*.api_key` 值，只会显示是否已设置。
+
+## 验证
+
+1. 检查健康端点：
+
+   ```bash
+   curl -fsS http://127.0.0.1:18901/api/health
+   ```
+
+2. 打开 `/memory`，确认三个全局节点都已存在。
+3. 打开 `/recall`，用你某个项目中的真实问题发起查询，检查候选结果和分数。如果没有匹配的记忆，显示清楚的空结果也是正常的。
+4. 在已接入的运行时中开始一个新会话，让 Agent 调用 `lore_boot`。启动记忆基线应该会被加载。
+5. 发送一条真实的项目相关提示。此时应该会出现 `<recall>` 块。在依赖某条被召回的节点之前，先用 `lore_get_node` 打开它。
+
+> [!NOTE]
+> 服务器在线，不代表设置已经完成。请先完成全部四个步骤，再判断召回质量。如果召回仍然漏掉内容，请参阅[提升召回质量](/documents/recall/improving-recall)。

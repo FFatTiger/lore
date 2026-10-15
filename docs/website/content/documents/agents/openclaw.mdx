@@ -1,0 +1,99 @@
+The OpenClaw integration installs the Lore plugin for OpenClaw. OpenClaw adds startup memory to the system context on the first prompt of each session, adds recall to each prompt, and gets the Lore memory tools.
+
+## Install
+
+Run this on the machine where you use OpenClaw:
+
+```bash
+npx @loremem/cli install --channels openclaw
+```
+
+On Loremem Cloud, pass the server and your project token:
+
+```bash
+npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token --channels openclaw
+```
+
+The installer skips OpenClaw when the `openclaw` command is not on your `PATH`. It also needs `npm` and access to the npm registry, because it installs and builds the plugin. Restart OpenClaw after the install finishes.
+
+## What gets installed
+
+- The plugin files from `lore-openclaw.zip`, in `~/.lore/openclaw/`. The installer runs `npm install` and `npm run build` there.
+- The built plugin, installed with `openclaw plugins install . --force --dangerously-force-unsafe-install` and enabled with `openclaw plugins enable lore`. The installer passes these flags itself.
+- An entry under `plugins.entries.lore` in `~/.openclaw/openclaw.json`. The installer sets `enabled` to `true` if it isn't set, and it writes `baseUrl` and `skillsEnabled` into `config`. It also writes `apiToken` when you set a token.
+- Nine memory tools: `lore_status`, `lore_boot`, `lore_get_node`, `lore_search`, `lore_list_domains`, `lore_create_node`, `lore_update_node`, `lore_delete_node`, and `lore_move_node`. On a server with Skills, seven `lore_skill_*` tools are added.
+- Hooks. At session start, Lore prepares the startup context, and the plugin adds it to the system context on the first prompt of the session. Each prompt gets recall. When the gateway starts, the plugin runs a health check.
+
+## Plugin settings
+
+These settings go under `plugins.entries.lore.config`:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "lore": {
+        "enabled": true,
+        "config": {
+          "baseUrl": "https://api.loremem.com",
+          "apiToken": "lm_your_token",
+          "skillsEnabled": true
+        }
+      }
+    }
+  }
+}
+```
+
+| Field | Default | What it does |
+| --- | --- | --- |
+| `baseUrl` | `base_url` in `~/.lore/config.json`, then `LORE_BASE_URL`, then `http://127.0.0.1:18901` | Server URL. The installer writes it. |
+| `apiToken` | `api_token` in `~/.lore/config.json`, then `LORE_API_TOKEN` | Server token. The installer writes it when you set one. |
+| `timeoutMs` | `30000` | Request timeout in milliseconds, from 1000 to 120000. |
+| `defaultDomain` | `core` | Domain for memory tools when a call gives none. |
+| `loreHome` | `LORE_HOME`, then `~/.lore` | Folder for skill work copies. |
+| `skillsEnabled` | `false` | Turns on the Skill tools. The installer sets it from the server's capabilities. |
+| `injectPromptGuidance` | `true` | Set to `false` to skip the startup context at session start. |
+| `startupHealthcheck` | `true` | Set to `false` to skip the health check when the gateway starts. |
+| `recallEnabled` | `true` | Set to `false` to turn off recall for prompts. |
+
+## Verify
+
+1. Run `npx @loremem/cli status`. The `openclaw` line should read `installed`.
+2. Open `~/.openclaw/openclaw.json` and check that `plugins.entries.lore` has `"enabled": true`.
+3. Restart OpenClaw. With the health check on, the gateway log shows `lore: startup health check ok (<server URL>)`.
+4. Start a new session and ask OpenClaw to call `lore_status`. It should return the server's health.
+5. Send a prompt about a project that has memories. The prompt should receive recall.
+
+## Notes
+
+- **Installer values come first.** The plugin reads `baseUrl` and `apiToken` from its own settings before it reads `~/.lore/config.json`. The installer writes both values into the plugin entry, so later edits to `~/.lore/config.json` don't reach OpenClaw. After you change the server or the token, run the install again with the new values, or edit `plugins.entries.lore.config`.
+- **Restart after edits.** Restart OpenClaw after you change the plugin entry.
+
+## Manual setup (fallback)
+
+Use these steps only when the installer can't run. They run the same commands as the installer.
+
+```bash
+mkdir -p ~/.lore/openclaw
+curl -fsSL -o lore-openclaw.zip https://github.com/FFatTiger/lore/releases/latest/download/lore-openclaw.zip
+unzip -qo lore-openclaw.zip -d ~/.lore/openclaw
+rm lore-openclaw.zip
+cd ~/.lore/openclaw
+npm install --silent
+npm run build
+openclaw plugins install . --force --dangerously-force-unsafe-install
+openclaw plugins enable lore
+```
+
+Then add the `plugins.entries.lore` block shown above to `~/.openclaw/openclaw.json`, and restart OpenClaw.
+
+## Uninstall
+
+```bash
+npx @loremem/cli uninstall --channels openclaw -y
+```
+
+If `openclaw` is on your `PATH`, this disables and uninstalls the plugin. It also removes `plugins.entries.lore` from `~/.openclaw/openclaw.json` and deletes `~/.lore/openclaw`. Restart OpenClaw afterwards.
+
+If OpenClaw doesn't load Lore, see [Agent connection issues](/documents/troubleshooting/agents).

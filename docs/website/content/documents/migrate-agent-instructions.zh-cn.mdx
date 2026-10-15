@@ -1,0 +1,121 @@
+把 `CLAUDE.md`、`AGENTS.md` 和插件提示词中长期有效的规则迁入 Lore，让每个 Agent 都加载同一套规则。请在 Lore 安装完成、并且至少有一个 Agent 运行时已能接收启动记忆（boot）之后再操作。
+
+本地的 `CLAUDE.md`、`AGENTS.md` 和插件规则适合作为启动引导。但它们不应该长期保存共享偏好、项目规则、编码规范、部署命令或工作习惯。如果一条指令需要影响多个 Agent，就把它迁入 Lore。
+
+## 保留在本地的内容
+
+只保留必要的启动引导，而且这一步是可选的。Lore 插件会在会话开始时注入使用规则和启动记忆，所以多数 Agent 不需要引导文本。只通过普通 MCP 接入的客户端不会自动加载启动记忆，需要一行文字告诉它先调用 `lore_boot`。
+
+如果你想保留引导文本，五行就够了：
+
+```text
+把 Lore 作为长期记忆的唯一来源。
+启动时加载启动记忆（boot）。
+与任务相关的上下文，先用召回查找。
+依赖召回到的节点之前，先打开它。
+把新的长期事实写回 Lore。
+```
+
+不要在每个本地文件里重复保存这些内容：产品规则、用户偏好、项目部署命令，或篇幅很长的流程文档。副本会逐渐脱节：一个 Agent 拿到了新规则，另一个仍然用旧的。
+
+## 各类指令放在哪里
+
+| 指令类型 | 放在哪里 |
+| --- | --- |
+| 所有 Agent 都应遵循的规则 | `core://agent` |
+| 所有 Agent 的人设和回复风格 | `core://soul` |
+| 稳定的用户偏好和工作风格 | `preferences://user` |
+| 项目命令、约束、架构决策和部署说明 | `project://<project>/...`，每个主题一个节点，例如 `commands`、`deployment`、`architecture` 或 `constraints` |
+| 仅 Claude Code 的行为 | `core://agent/claudecode` |
+| 仅 Codex 的行为 | `core://agent/codex` |
+| 仅 OpenCode 的行为 | `core://agent/opencode` |
+| 仅 Pi 的行为 | `core://agent/pi` |
+| 仅 OpenClaw 的行为 | `core://agent/openclaw` |
+| 仅 Hermes 的行为 | `core://agent/hermes` |
+| 仅 ZCode 的行为 | `core://agent/zcode` |
+| 临时的任务笔记 | 不放进 Lore，保留在当前对话或问题跟踪工具中 |
+| 密钥、API 密钥和令牌 | 不放进 Lore，保存在环境变量或密钥管理服务中 |
+
+`core://agent/<client_type>` 节点只保存该运行时特有的内容。共享规则仍放在 `core://agent`。
+
+## 按运行时检查本地文件
+
+请在你要配置的那台机器上检查。路径可能不同，请确认你的运行时实际读取的是哪个文件。
+
+| 运行时 | 需要检查的本地文件 |
+| --- | --- |
+| Claude Code | `~/.claude/CLAUDE.md`、各项目的 `CLAUDE.md`，以及 `~/.claude/settings.json` 中的自动记忆设置 |
+| Codex | `~/.codex/AGENTS.md` 和各项目的 `AGENTS.md` |
+| OpenCode | 各项目的 `AGENTS.md`，以及 `~/.config/opencode/` 下的 OpenCode 配置 |
+| Pi | 你在 `~/.pi/agent/` 下保存的指导文件（如果设置了 `PI_CODING_AGENT_DIR`，则使用该目录），以及各项目中的指令文件 |
+| OpenClaw | 你的项目笔记，以及 `~/.openclaw/openclaw.json` 中 `plugins.entries.lore.config` 下的插件设置 |
+| Hermes | 你为 Hermes 保留的本地记忆或提供方设置。如果你手动创建过 Lore 提供方的链接，它通常位于 `~/.hermes/skills/lore_memory` |
+| ZCode | 各 ZCode 项目使用的规则文件。如果 `core://agent/zcode` 为空，请在 Lore 中创建它 |
+
+需要检查的两个细节：
+
+- 旧版本 Lore 会在 `~/.claude/CLAUDE.md` 中加入对 `~/.claude/lore-guidance.md` 的导入。安装程序会移除这行导入。如果你仍然看到它，请手动删除。
+- 如果你在 OpenCode 中使用 `oh-my-openagent`（或更早的 `oh-my-opencode`），并且配置文件能被安全解析，安装程序会关闭其中重复的 `lore@lore` hook。请确认 Lore 没有被加载两次。
+
+## 迁移步骤
+
+1. 编辑前，先把每个本地文件复制一份，保存到安全的位置。
+2. 把每个文件拆分成几个部分：共享规则、用户偏好、项目事实、运行时专用规则和临时笔记。
+3. 把共享规则迁入 `core://agent`。
+4. 把稳定的个人偏好迁入 `preferences://user`。
+5. 把项目内容迁入 `project://<project>/...` 节点，每个主题一个节点。先创建父节点 `project://<project>`，并为它设置内容、触发条件和术语。
+6. 把只属于某个运行时的规则迁入 `core://agent/<client_type>`。
+7. 从本地文件中删除重复的长篇内容。如果需要，保留简短的启动引导。
+8. 重启每个运行时，让它的 hook 重新加载启动基线。
+
+> [!TIP]
+> 要修改启动节点，可以在控制台的 **记忆** 页中打开它编辑，也可以让 Agent 调用 `lore_update_node`。
+
+## 迁移示例
+
+迁移前，`CLAUDE.md` 和 `AGENTS.md` 都重复了以下内容：
+
+```text
+- 用户的沟通风格
+- 前端规范
+- 项目的安装、构建和部署命令
+- 仅 Codex 的 hook 说明
+- 仅 Claude 的插件说明
+```
+
+迁移后，Lore 中保存的是：
+
+```text
+core://agent                           共享的工作流和质量规则
+preferences://user                     稳定的用户偏好和工作风格
+project://checkout_api/commands        安装、测试和构建命令
+project://checkout_api/deployment      部署说明和发布流程
+core://agent/codex                     Codex 专用的 hook 或插件行为
+core://agent/claudecode                Claude Code 专用的行为
+```
+
+本地的 `AGENTS.md` 或 `CLAUDE.md` 只剩上文的五行启动引导。
+
+## Claude Code 自动记忆
+
+Claude Code 自己也有自动记忆，可能和 Lore 中保存的内容重复。如果想让 Lore 成为唯一的记忆来源，请在 `~/.claude/settings.json` 中关闭自动记忆：
+
+```json
+{
+  "autoMemoryEnabled": false
+}
+```
+
+也可以在环境变量中设置 `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`。Lore 不会写入 `CLAUDE.md`，所以这个文件仍然由你自己掌控。
+
+## 验证迁移
+
+1. 重启 Agent 运行时。
+2. 提一个需要依赖已迁移规则才能回答的问题。
+3. 确认启动上下文同时包含共享启动节点和该运行时的启动节点。
+4. 在提问中提到项目名，确认召回会返回该项目的记忆。
+5. 如果召回漏掉了某条记忆，请修正它的触发条件和术语，而不是把规则重新抄回本地文件。详见[提升召回质量](/documents/recall/improving-recall)。
+
+## 不要存放密钥
+
+不要把密钥、API 密钥、令牌或一次性指令存入 Lore。记忆是纯文本，召回会把它们注入提示词，所以你保存的任何内容都可能进入提示词。请把密钥保存在环境变量或密钥管理服务中，把临时的任务笔记留在当前对话或问题跟踪工具里。

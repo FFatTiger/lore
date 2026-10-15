@@ -1,0 +1,154 @@
+把每个 Agent 运行时接入 Lore 一次，它就能获得启动记忆（boot）、每条提示词的召回，以及 Lore 记忆工具。下面的安装程序负责完成接入，后文说明如何检查、更新和移除接入。
+
+| 运行时 | 启动记忆与召回 | 记忆工具 | 技能（Loremem 云服务） | 设置指南 |
+| --- | --- | --- | --- | --- |
+| Claude Code | 是 | 是（MCP） | 是 | [Claude Code](/documents/agents/claude-code) |
+| Codex | 是 | 是（MCP） | 是 | [Codex](/documents/agents/codex) |
+| OpenCode | 是 | 是（原生 `lore_*` 工具） | 是 | [OpenCode](/documents/agents/opencode) |
+| Pi | 是 | 是 | 是 | [Pi](/documents/agents/pi) |
+| OpenClaw | 是 | 是 | 是 | [OpenClaw](/documents/agents/openclaw) |
+| Hermes | 是 | 是 | 是 | [Hermes](/documents/agents/hermes) |
+| ZCode | 是 | 是（MCP） | 是 | [ZCode](/documents/agents/zcode) |
+| 其他 MCP 客户端 | 否，需要自己调用 `lore_boot` | 是 | 否 | [其他 MCP 客户端](/documents/agents/mcp) |
+
+技能只在 Loremem 云服务上提供。自托管服务器没有技能。
+
+## 使用 CLI 安装
+
+在 Agent 运行的机器上运行安装程序。它支持 macOS 和 Linux，需要 Node.js 20 或更高版本、Bash、`curl` 和 `unzip`，不支持原生 Windows。安装程序从 GitHub Releases 下载运行时文件，因此这台机器必须能访问 `github.com`。
+
+在终端中运行 `npx @loremem/cli` 会打开安装程序。第一个问题是 Lore 服务器在哪里：
+
+- **连接 Loremem 云服务**：只需输入令牌。
+- **连接已有服务器**：输入服务器地址和令牌。
+- **在本机用 Docker 部署服务器**：安装程序会在本机搭建服务。
+
+接下来选择运行时。安装程序会预先勾选它在这台机器上检测到的运行时。确认方案后，安装程序才会写入文件。
+
+要跳过交互，请添加 `-y`。用 `--base-url` 或 `--docker` 指定服务器，也可以沿用 `~/.lore/config.json` 中已保存的服务器。用 `--channels` 选择运行时，可用名称包括 `claudecode`、`codex`、`pi`、`openclaw`、`hermes`、`opencode` 和 `zcode`。不加 `--channels` 时，`-y` 会安装检测到的全部运行时。[CLI 参考](/documents/reference/cli) 列出了所有参数。
+
+### Loremem 云服务
+
+在控制台的安装页面创建项目令牌。该页面会显示已填入令牌的命令。Loremem 云服务始终需要令牌。
+
+```bash
+npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token
+```
+
+### 自托管服务器
+
+这个示例使用同一台机器上的服务器。如果服务器没有设置 `API_TOKEN`，就不需要令牌。
+
+```bash
+npx @loremem/cli install --base-url http://127.0.0.1:18901 --channels claudecode,codex
+```
+
+> [!NOTE]
+> 其他机器上的服务器（例如 `http://192.168.1.10:18901`）可以不使用令牌。如果使用令牌，请改用 HTTPS 地址。只有回环地址（`localhost`、`127.0.0.1`、`::1`）允许通过明文 HTTP 使用令牌。`--allow-insecure-http` 可以仅为本次执行放行，安装程序不会保存这个选择。
+
+### 本机 Docker 服务器
+
+```bash
+npx @loremem/cli install -y --docker
+```
+
+安装程序会把 Compose 文件下载到 `~/.lore/docker`，启动服务，等待服务就绪，然后接入检测到的运行时。需要先安装 Docker 和 Docker Compose。服务器设置见[用 Docker 部署](/documents/self-hosting)。
+
+## 安装程序写入的内容
+
+安装程序会写入一份共享的客户端配置，然后为每个接入的运行时写入一个接入配置。如果某个运行时的命令不存在，安装程序会把它标记为已跳过，并且不做配置。Hermes 不需要命令，手动链接步骤见它的页面。
+
+### 共享客户端配置
+
+安装程序把服务器连接信息保存在 `~/.lore/config.json` 中。该文件的权限为 `0600`，只有当前用户可以读取。如果不想使用 `~/.lore`，可以设置 `LORE_HOME` 指定其他目录。
+
+| 字段 | 含义 |
+| --- | --- |
+| `base_url` | 服务器地址，末尾不带斜杠。 |
+| `api_token` | 服务器令牌。只有设置了令牌时才会出现。 |
+| `installed_version` | 接入所安装的发布版本。 |
+| `docker_managed` | 安装程序用 Docker 运行服务器时为 `true`。 |
+| `server_profile` | 服务器报告的地址和能力，例如技能。 |
+
+保存的令牌只在服务器地址不变时复用。如果更换了服务器却没有传入新令牌，安装程序会清除旧令牌。
+
+命令行中的 `--api-token` 会把令牌写入 shell 历史。请删除该历史记录，或者不加这个参数，在向导提示中输入令牌。
+
+### 运行时文件
+
+| 运行时 | 安装程序写入的内容 |
+| --- | --- |
+| Claude Code | `~/.lore/claudecode/` 中的插件文件，并注册为 `lore@lore` 插件。连接配置写入 `~/.claude/settings.json` 的 `env` 块。 |
+| Codex | `~/.lore/codex/` 和 Codex 插件缓存中的插件文件，以及 `config.toml` 中的 `lore` MCP 条目。 |
+| OpenCode | `~/.config/opencode/plugins/lore-memory.js`，以及 `~/.lore/opencode/` 中的文件。 |
+| Pi | `~/.lore/pi/` 中的扩展文件，并链接到 `~/.pi/agent/extensions/lore`。 |
+| OpenClaw | `~/.lore/openclaw/` 中的插件文件，以及 `~/.openclaw/openclaw.json` 中的 `lore` 条目。 |
+| Hermes | `~/.lore/hermes/lore_memory/` 中的插件包。需要你自己链接到 Hermes。 |
+| ZCode | `~/.lore/zcode/` 中的插件文件，注册并启用为 `lore@lore` 插件。 |
+
+Codex 的路径跟随 `CODEX_HOME`，默认为 `~/.codex`。每次安装程序下载新版本时，`~/.lore/` 下对应运行时的目录都会被替换。
+
+## 安装之后
+
+重启你接入的每个运行时。钩子和 MCP 设置在进程启动时加载，因此已经打开的会话仍然使用旧设置。
+
+然后在新会话中检查接入是否正常：
+
+1. **启动记忆。** 让 Agent 概述它在启动时加载的规则。回答应当来自你的启动记忆（boot）：`core://agent`、`core://soul`、`preferences://user`，以及该运行时对应的节点。
+2. **召回。** 发送一条与已有记忆相关的项目提示。Agent 的上下文中会出现一个 `<recall>` 块，类似这样：
+
+   ```text
+   <recall session_id="sess_8f3c" query_id="q_41" phase="prompt">
+   0.82 | project://checkout_api/webhooks | refund · idempotency key
+   0.71 | project://checkout_api/testing | flaky test · fake clock
+   0.64 | preferences://user | test first
+   </recall>
+   ```
+
+   召回的每一行只是线索，不是事实。依赖之前，请先用 `lore_get_node` 打开该节点。如果没有记忆的分数高到可以显示，就不会出现召回块。[召回分析](/documents/recall/analytics) 页面会列出每次查询，可以用来确认请求确实到达了 Lore。
+3. **工具。** 让 Agent 调用 `lore_status`。它会返回服务器的健康状态。
+
+`npx @loremem/cli status` 会显示每个接入的状态：`installed`（已安装）、`partial`（部分安装）或 `missing`（未安装）。
+
+## 更新或移除接入
+
+更新所有已安装或部分安装的接入：
+
+```bash
+npx @loremem/cli update
+```
+
+只更新部分接入时，用 `--channels` 指定：
+
+```bash
+npx @loremem/cli update --channels claudecode,codex
+```
+
+如果无法获取最新版本，或者某个所选接入失败，`update` 会报错退出，不会报告成功。版本未变化时，添加 `--force` 可以强制重装。如果安装程序用 Docker 运行你的服务器，`update` 还会拉取新镜像。
+
+移除接入使用 `uninstall`。在终端中，它会要求确认；添加 `-y` 可以跳过确认：
+
+```bash
+npx @loremem/cli uninstall --channels claudecode,pi -y
+```
+
+不加 `--channels` 时，`uninstall` 会移除全部七个接入。添加 `--purge` 还会删除共享配置和本机 Docker 目录：
+
+```bash
+npx @loremem/cli uninstall --purge -y
+```
+
+> [!WARNING]
+> `--purge` 会删除 `~/.lore/config.json` 和 `~/.lore/docker`。默认情况下，本机服务器的数据保存在 `~/.lore/docker` 下。执行前请先导出备份，参见[备份与恢复](/documents/maintenance/backups)。
+
+## 接入的工作方式
+
+每个接入都很轻量。它把会话开始和每条提示词发送给 Lore 服务器，并展示服务器返回的内容。插件本身不包含使用规则。
+
+- **服务器端指引。** 使用规则由服务器提供。会话开始时会包含全局指引，你可以在设置中修改它。在 Loremem 云服务上，它位于“生命周期”标签页。
+- **会话开始。** 接入会向 Lore 请求启动上下文：全局指引、启动记忆块、可选的项目召回（基于项目目录名和仓库名），以及在支持技能的服务器上，Agent 可以使用的技能列表。
+- **启动记忆节点。** 启动记忆块包含 `core://agent`（所有 Agent 的工作流规则）、`core://soul`（风格与人设）、`preferences://user`（稳定的用户背景），以及当前运行时的 `core://agent/<client_type>`。例如，Claude Code 会加载 `core://agent/claudecode`。
+- **召回。** 每条提示词都会获得一个 `<recall>` 块，默认最多显示三条候选。Agent 用 `lore_get_node` 打开记忆，并把标签中的 `session_id` 和 `query_id` 原样传回，Lore 由此记录哪些被召回的记忆真正被使用。
+- **`client_type`。** 每个接入都会把自己的运行时名称（例如 `claudecode`、`codex` 或 `opencode`）作为 `client_type` 发送。Lore 用它选择该运行时的启动记忆节点，并在[召回分析](/documents/recall/analytics)中按运行时显示召回和使用情况。
+- **失败放行。** 如果 Lore 无法访问或响应缓慢，接入会返回空结果，Agent 会在没有记忆的情况下继续工作。钩子有自己的等待上限（Claude Code、Codex 和 ZCode 为 10 秒），服务器再慢也不会卡住提问。
+- **技能。** 只有声明支持技能的服务器才会出现技能工具。参见[技能](/documents/skills)。

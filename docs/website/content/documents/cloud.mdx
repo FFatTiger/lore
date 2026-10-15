@@ -1,0 +1,67 @@
+Loremem Cloud is the hosted Lore service at `https://app.loremem.com`. You sign in, keep memory in projects, create tokens, and connect agents. The memory model is the same as on a self-hosted server.
+
+## Sign in
+
+Sign in at `https://app.loremem.com/login` with GitHub or Google. Accounts that an administrator creates can also sign in with an email address and password. Loremem Cloud doesn't offer public email registration.
+
+Your first sign-in creates a personal organization and a default project.
+
+## Organizations and projects
+
+An organization contains projects. A **project** is a separate memory space with its own memory graph, recall analytics, Dream runs, settings, tokens, and skills.
+
+Use the organization and project switchers at the top of the console to change where you are. Create a separate project for each product or codebase whose memory should stay apart.
+
+## Tokens
+
+Each token belongs to one project. To create one:
+
+1. Open **Install** and enter a **Token note**, such as `laptop`. The note only records where the token is used.
+2. Select **Create token**.
+3. Copy the token and the install command. Both are shown only once.
+
+Manage tokens on the **Tokens** page (`/apitokens`). It lists each token's name, prefix, last four characters, status, and last-used time. Select **Revoke** to disable a token. Tokens look like `lm_your_token`.
+
+## Connect agents
+
+The **Install** page shows an install command with your API address and the new token filled in:
+
+```bash
+npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token
+```
+
+Run the command on each machine where you use an agent, then restart each agent runtime. The CLI connects the runtimes it finds on the machine. Pass `--channels` to choose them yourself.
+
+## Models
+
+Each project selects two preconfigured profiles in **Settings → Models**: an embedding profile for recall, and a runtime LLM profile for Dream. You don't need to enter API keys.
+
+Changing the embedding profile rebuilds the project's views and recall indexes, and it uses model quota. Changing only the runtime LLM profile saves right away without a rebuild.
+
+## What is the same and what is different
+
+The memory model, recall, Dream, and backup settings work the same way on both. These are the differences:
+
+| Area | Self-hosted server | Loremem Cloud |
+| --- | --- | --- |
+| Memory model | Nodes, paths, disclosure, glossary, priority, and history | Same |
+| Recall | Your embedding endpoint and recall settings | Same settings, using the project's embedding profile |
+| Dream | Runs on your View LLM | Runs on the project's runtime LLM profile. Schedules follow the service clock. |
+| Backups | Local files and WebDAV. Run, export, and restore from **Settings** | Same schedule, retention, and WebDAV settings. The Backup tab has no run, export, or restore buttons. |
+| Skills | Not available | Available. See [Skills](/documents/skills). |
+| Organizations and projects | One memory space per server | Organizations contain projects, and each project is separate |
+| Models | You enter the embedding and View LLM endpoints and keys | Preconfigured profiles. No API keys to enter. |
+
+## API and MCP endpoints
+
+- API base URL: `https://api.loremem.com`
+- Generic MCP endpoint: `https://api.loremem.com/api/mcp?client_type=mcp`, with the header `Authorization: Bearer lm_your_token`
+
+## Security notes
+
+- Create a token for each machine, or for each place it is used, and give it a note that says where it is.
+- Revoke any token you no longer use. Check **Last used** on the Tokens page to find idle tokens.
+- Never paste a token into a memory, a skill, a prompt, or a shared chat.
+- The CLI sends a token only over HTTPS, or over plain HTTP to a loopback address such as `localhost`.
+
+To move memory from a self-hosted server into a project, see [Import a self-hosted backup](/documents/cloud/import-self-hosted-backup).

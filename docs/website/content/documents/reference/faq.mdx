@@ -1,0 +1,67 @@
+Get short, direct answers to the questions people ask most often. Each answer links to the page with the details.
+
+## About Lore and your data
+
+### Is Lore a vector database?
+
+No. Lore stores memories as a graph of plain-text nodes, each with a path, priority, disclosure, and glossary. Its PostgreSQL store uses pgvector for one signal: semantic similarity on memory views. Recall combines that with exact path and glossary matches and full-text search, then ranks the candidates. See [How recall works](/documents/recall).
+
+### Does Lore read or upload my code?
+
+No. Lore never reads your source files. The plugins send prompt text and session IDs, plus the names of your working directory and Git repository at session start. Your agent still reads and sends code to its own model provider, as it does without Lore. See [How Lore works](/documents/how-lore-works).
+
+### What leaves my machine when I self-host?
+
+Your Lore server, database, and cache stay on your machine. Requests leave it only for the endpoints you configure: the embedding endpoint, the View LLM endpoint (for memory views and Dream), and a WebDAV target if you turn on backup upload. The installer and updates also download release files and container images. Your coding agents still send their prompts to their own model providers. To keep Lore's traffic local too, point the embedding and View LLM settings at models you run yourself.
+
+### Should every chat become a memory?
+
+No. Save durable facts that will still matter next month: rules, decisions, commands, constraints, and stable preferences. Skip one-off tasks, guesses, and anything you haven't verified. Never save secrets. See [Writing good memories](/documents/memory/writing-memories).
+
+### What happens if Lore is down?
+
+Your agents keep working. Plugins fail open: if Lore is unreachable or slow, the plugin returns nothing, and the agent continues without memory for that step. Recall is time-boxed as well: when it's slow, the prompt goes ahead without it.
+
+## Agents and memory
+
+### Can several agents share one memory?
+
+Yes. Connect every agent to the same server, and for Loremem Cloud use a token from the same project. Each plugin sends its `client_type`, so Lore loads the boot node for that runtime and records recall and usage per runtime. Shared rules live once, in `core://agent`.
+
+### Do I still need CLAUDE.md or AGENTS.md?
+
+Not for shared rules. Move durable rules into Lore, and keep a short bootstrap only if you want one. Lore never writes to `CLAUDE.md`. Agents that connect only through plain MCP don't boot automatically, so they need one line that tells them to call `lore_boot`. See [Move CLAUDE.md and AGENTS.md into Lore](/documents/migrate-agent-instructions).
+
+### Does Chinese work well?
+
+Yes, when PostgreSQL has a Chinese text-search parser. Lore prefers `pg_jieba` and falls back to `zhparser`. The Lore PostgreSQL image includes both. Without either, PostgreSQL uses its `simple` configuration, and Chinese keyword matching is weaker. Semantic recall depends on the embedding model you choose. If you run your own PostgreSQL, see [Use your own PostgreSQL](/documents/self-hosting/postgresql).
+
+## Install and hosting
+
+### Do I need Docker?
+
+Only if you self-host. The Docker stack runs the Lore server, PostgreSQL with pgvector, and Redis. Redis is optional. If you use Loremem Cloud or connect to an existing server, you don't need Docker.
+
+### Which platforms does the installer support?
+
+macOS and Linux. The installer doesn't support Windows natively. It needs Bash, `curl`, and `unzip`. A local self-hosted server also needs Docker with Docker Compose.
+
+### How do I move from self-hosted to Loremem Cloud?
+
+1. Create a backup on your self-hosted server. Open **Settings** and use **Backup Actions**, or use the latest nightly backup in the snapshot directory (`./data/snapshots` by default).
+2. In Loremem Cloud, open **Install** and select **Open-source backup import**. Upload the `lore-backup-v1` JSON file and select **Import backup**. The import replaces the current project's memory. Settings, Dream runs, recall analytics, and embeddings are skipped, and Lore rebuilds the indexes.
+3. Create a project token on the same page, then reconnect each agent with the install command: `npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token`.
+
+### How do I remove Lore?
+
+Run `npx @loremem/cli uninstall` to remove Lore from your agent runtimes. To also remove the `~/.lore` configuration and the Docker data of a self-hosted server, run `npx @loremem/cli uninstall --purge -y`. Purging deletes `~/.lore/docker`, which holds your self-hosted PostgreSQL data and snapshots, so [create a backup](/documents/maintenance/backups) first. The uninstaller doesn't stop the Docker stack, so run `docker compose down` in `~/.lore/docker` before you purge.
+
+## Cost and Skills
+
+### How much does it cost?
+
+Self-hosting is free. Lore is open source under the MIT license. You pay for the machine that runs the server, plus any hosted model APIs you point it at. Loremem Cloud has a free plan. Sign in with GitHub or Google to start.
+
+### Where do Skills come from?
+
+Skills are a Loremem Cloud feature. Create one with **New skill** in the console, or upload a `.skill` or `.zip` package with **Upload package**. An agent with the Lore skill tools can also create one with `lore_skill_create`. The open-source server has no Skills. See [Skills](/documents/skills).

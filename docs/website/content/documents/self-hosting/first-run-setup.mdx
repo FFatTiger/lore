@@ -1,0 +1,124 @@
+Finish the four steps at `/setup` before you connect agents. You give Lore an embedding model and a chat model, then write the boot memories that every session loads.
+
+## Before you start
+
+- An **embedding endpoint**: any OpenAI-compatible `/v1/embeddings` service, such as OpenAI or a self-hosted model server. You need its base URL, an API key, and a model name.
+- A **chat endpoint** for the View LLM, in one of three protocols: OpenAI-compatible Chat, OpenAI Responses, or Anthropic Messages.
+- If one provider gives you both endpoints with one key, enter that key in both steps.
+
+## 1. Embedding
+
+Fill in the **Embedding** step:
+
+| Field | Example | Notes |
+| --- | --- | --- |
+| Base URL | `https://api.openai.com/v1` | Include `/v1`. Lore appends `/embeddings`. |
+| API key | `YOUR_EMBEDDING_API_KEY` | Stored write-only. |
+| Model | `text-embedding-3-small` | The default model name. |
+
+Semantic recall needs an embedding model.
+
+## 2. View LLM
+
+The View LLM writes the gist and question views that recall searches, and it runs Dream. Pick the provider that matches your endpoint:
+
+| Provider in the step | Value in settings | Notes |
+| --- | --- | --- |
+| OpenAI-compatible Chat | `openai_compatible` | Uses the OpenAI-style `/chat/completions` endpoint. This is the default. |
+| OpenAI Responses | `openai_responses` | Uses the OpenAI Responses protocol. |
+| Anthropic Messages | `anthropic` | Native Anthropic endpoints often need `view_llm.api_version`. |
+
+Enter the base URL, API key, and model for the chat endpoint. Leave the base URL empty to turn off view refinement and Dream runs.
+
+## 3. Global boot memories
+
+Every session loads three global nodes. Together they are the boot baseline. Write each node as short, direct text. You can edit any node later at `/memory`.
+
+### `core://agent`: rules for every agent
+
+Write:
+
+- How agents should work with you: when to read memory first, when to write a lesson back, and when to ask before acting.
+- Decision defaults and boundaries that apply in every runtime.
+
+Leave out rules for one runtime. Put those in `core://agent/<runtime>` in step 4.
+
+### `core://soul`: style and persona
+
+Write:
+
+- The tone you want, such as direct, warm, or terse, and how the agent should push back.
+- How the agent should behave in conversation.
+
+Leave out task details. This node covers style only.
+
+### `preferences://user`: how you work
+
+Write:
+
+- Stable facts that help any agent, such as your role, the languages you use, and the stack you work in most.
+- Working preferences, such as "write the failing test first."
+
+Leave out guesses, one-off task details, and secrets.
+
+Lore's built-in usage rules are a separate setting (`lifecycle.guidance.global`). You don't need to copy them into a boot node.
+
+> [!TIP]
+> Not sure what to write yet? Click **Skip**. It saves the default text into an empty boot node and continues. Replace the text later.
+
+## 4. Channel agent memories
+
+Add one node for each runtime you connect. Use the URI `core://agent/<runtime>`, for example `core://agent/claudecode`, `core://agent/codex`, `core://agent/opencode`, `core://agent/pi`, `core://agent/openclaw`, `core://agent/hermes`, or `core://agent/zcode`.
+
+Write only what applies inside that runtime:
+
+- Hook and plugin behavior, such as how boot and recall reach the agent.
+- Tool names as the runtime shows them. In Claude Code, Lore tools carry the `mcp__plugin_lore_lore__` prefix, for example `mcp__plugin_lore_lore__lore_search`.
+- Commands and conventions that apply only there.
+
+Leave out shared rules. They belong in `core://agent`. **Skip** works here too.
+
+## 5. Save and restart
+
+Save the settings, then restart each agent runtime you connected. Hooks and MCP clients read the server configuration when they start.
+
+## Save settings from the command line
+
+Use `PUT /api/settings` to set the same values from a script. Send a `patch` object whose keys match the [settings reference](/documents/reference/settings). Settings are stored in the database, not in `.env`.
+
+```bash
+curl -fsS -X PUT http://127.0.0.1:18901/api/settings \
+  -H 'content-type: application/json' \
+  -H 'authorization: Bearer lm_your_token' \
+  --data '{
+    "patch": {
+      "embedding.provider": "openai_compatible",
+      "embedding.base_url": "https://api.openai.com/v1",
+      "embedding.api_key": "YOUR_EMBEDDING_API_KEY",
+      "embedding.model": "text-embedding-3-small",
+      "view_llm.provider": "openai_compatible",
+      "view_llm.base_url": "https://api.openai.com/v1",
+      "view_llm.api_key": "YOUR_CHAT_API_KEY",
+      "view_llm.model": "YOUR_CHAT_MODEL"
+    }
+  }'
+```
+
+- Leave out the `authorization` header if the server has no `API_TOKEN`.
+- Lore never displays a saved `*.api_key` value. It shows only whether one is set.
+
+## Verify
+
+1. Check the health endpoint:
+
+   ```bash
+   curl -fsS http://127.0.0.1:18901/api/health
+   ```
+
+2. Open `/memory` and confirm the three global nodes exist.
+3. Open `/recall`, run a realistic query from one of your projects, and check the candidates and scores. A clear empty result is valid when no memory matches.
+4. Start a new session in a connected runtime and ask the agent to call `lore_boot`. The boot baseline should load.
+5. Send a realistic project prompt. A `<recall>` block should appear. Open a recalled node with `lore_get_node` before you rely on it.
+
+> [!NOTE]
+> A server can be online while setup is incomplete. Finish all four steps before you judge recall quality. If recall still misses, see [Improve recall quality](/documents/recall/improving-recall).

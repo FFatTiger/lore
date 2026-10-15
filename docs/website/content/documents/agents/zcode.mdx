@@ -1,0 +1,73 @@
+The ZCode integration installs the Lore plugin for ZCode. ZCode gets startup memory from its runtime boot node, recall before each prompt, and the Lore memory tools through a local MCP bridge.
+
+## Install
+
+Run this on the machine where you use ZCode:
+
+```bash
+npx @loremem/cli install --channels zcode
+```
+
+On Loremem Cloud, pass the server and your project token:
+
+```bash
+npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token --channels zcode
+```
+
+The installer skips ZCode when the `zcode` command is not on your `PATH`. Restart ZCode after the install finishes.
+
+## What gets installed
+
+- The plugin files from `lore-zcode.zip`, in `~/.lore/zcode/`. The installer registers that folder as the `lore` marketplace, installs `lore@lore` if it isn't listed, and enables it with `zcode plugins enable lore@lore`. It removes and re-adds the marketplace on each install.
+- A local MCP bridge named `lore`. It forwards MCP requests to `<server>/api/mcp?client_type=zcode`. ZCode shows the tools under the `mcp__plugin_lore_lore__` prefix.
+- Two hooks. `SessionStart`, which runs on `startup`, `resume`, and `clear`, loads startup memory, with an 8-second timeout. `UserPromptSubmit` adds recall to each prompt, with a 10-second timeout.
+- Skill tools, only when the server advertises Skills.
+
+## Verify
+
+1. Run `npx @loremem/cli status`. The `zcode` line should read `installed`.
+2. Run `zcode plugins list`. The output should include `lore@lore`.
+3. Check that `core://agent/zcode` has content. See the notes below.
+4. Start a new ZCode session and ask it to call `lore_status`. The tool appears as `mcp__plugin_lore_lore__lore_status`.
+5. Send a prompt about a project that has memories. Then ask ZCode which memory nodes it was given for that prompt.
+
+## Notes
+
+- **ZCode boot node.** ZCode loads its startup memory from `core://agent/zcode`. If that node is empty, create it with the rules you want ZCode agents to start with. Use the Memory page in the console. On a self-hosted server, that page is `/memory`.
+- **Fail open.** If Lore is unreachable, the hooks exit without output, and ZCode keeps working.
+- **Configuration.** The bridge and the hooks read `${LORE_HOME:-~/.lore}/config.json`. The environment variables `LORE_BASE_URL`, `LORE_API_TOKEN`, and `API_TOKEN` are fallbacks. The token never appears in the plugin manifest or in command arguments.
+- **Skills.** Skills stay off unless the server advertises them. Setting `LORE_SKILLS_ENABLED=0` turns them off.
+- **Restart after changes.** Restart ZCode after you change the configuration or the token.
+
+## Manual setup (fallback)
+
+Use these steps only when the installer can't run. They install the same plugin with the ZCode command.
+
+```bash
+mkdir -p ~/.lore/zcode
+curl -fsSL -o lore-zcode.zip https://github.com/FFatTiger/lore/releases/latest/download/lore-zcode.zip
+unzip -qo lore-zcode.zip -d ~/.lore/zcode
+rm lore-zcode.zip
+zcode plugins marketplace add ~/.lore/zcode
+zcode plugins install lore@lore
+zcode plugins enable lore@lore
+```
+
+Write the server settings to `~/.lore/config.json`, then restart ZCode:
+
+```json
+{
+  "base_url": "https://api.loremem.com",
+  "api_token": "lm_your_token"
+}
+```
+
+## Uninstall
+
+```bash
+npx @loremem/cli uninstall --channels zcode -y
+```
+
+If `zcode` is on your `PATH`, this uninstalls `lore@lore` and removes the `lore` marketplace. It then deletes `~/.lore/zcode`. Restart ZCode afterwards.
+
+If ZCode doesn't load Lore, see [Agent connection issues](/documents/troubleshooting/agents).

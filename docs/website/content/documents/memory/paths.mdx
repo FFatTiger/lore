@@ -1,0 +1,113 @@
+A path is the address of a memory, and a good path tells an agent what the memory is about before it opens it. Choosing a domain, following the naming rules, and building the tree in the right order keep memories easy to browse as a project grows. Moves and renames are safe, because history keeps the old address.
+
+## URI shape
+
+| Part | Example | Rule |
+| --- | --- | --- |
+| Domain | `project` | By convention, one of `core`, `preferences`, or `project`. |
+| Path | `checkout_api/webhooks/refund_idempotency` | Segments separated by `/`. Each segment follows the naming rules below. |
+
+Use full URIs in tool calls, such as `project://checkout_api/webhooks`. A bare path resolves in the default domain, but a full URI leaves no room for doubt.
+
+## Choose a domain
+
+Use the first rule that matches:
+
+1. Is it a rule for all agents, or for one runtime? Use `core://`.
+2. Is it about you as a user, across projects? Use `preferences://`.
+3. Is it about one codebase, product, or team? Use `project://<project_name>/`.
+
+## Naming rules
+
+1. **Name the concept, not the event.** `project://checkout_api/webhooks` stays valid for years. `project://checkout_api/webhook_fix_march` does not.
+2. **Use lowercase snake_case.** Use lowercase letters, digits, and single underscores. Lore rejects hyphens, spaces, capital letters, and non-ASCII characters in a path segment.
+3. **Keep dates out of normal paths.** Put dates in the content. Archive, diary, release, and incident nodes are the exception, because the event itself is the concept.
+4. **Be specific.** `deployment` and `refund_idempotency` say something. `misc` and `notes` do not.
+5. **Use one name per concept.** If a concept already has a node, update that node instead of creating a second one under another name.
+
+> [!WARNING]
+> Project names are path segments too. Write `checkout_api`, not `checkout-api`. Put the hyphenated form in the glossary so that people who type it still find the memory.
+
+| Path | Verdict | Why |
+| --- | --- | --- |
+| `project://checkout_api/webhooks` | Good | One concept, lowercase, specific |
+| `project://checkout_api/webhooks/refund_idempotency` | Good | A child of a real parent that names one idea |
+| `preferences://user` | Good | Short and stable. It is a boot node. |
+| `core://agent/codex` | Good | Follows the `core://agent/<client_type>` pattern |
+| `project://notes` | Weak | Collects unrelated facts |
+| `project://misc` | Weak | Agents cannot guess what is inside |
+| `project://fix_march_14` | Weak | A date in the path, and it names an event |
+| `project://checkout-api/webhooks` | Rejected | A hyphen in a path segment |
+
+## The tree
+
+A path with several segments sits under the path one level up. `project://checkout_api/webhooks` is a child of `project://checkout_api`.
+
+A parent must exist as a real node before you create its children. The parent needs content that explains why its children belong together, a disclosure, and glossary terms. Lore does not create missing parents for you. Creating a node under a parent that does not exist fails with `Parent path not found`.
+
+To create a branch:
+
+1. Create the parent node. Write content that describes what its children cover, and set a disclosure, glossary terms, and a priority.
+2. Create each child under the parent, using its full URI.
+
+Create the parent with `lore_create_node`:
+
+```json
+{
+  "uri": "project://checkout_api",
+  "content": "Parent node for checkout_api. Children cover webhooks, testing, and deployment.",
+  "priority": 2,
+  "disclosure": "When starting any task in checkout-api",
+  "glossary": ["checkout api", "checkout-api"]
+}
+```
+
+Then create a child:
+
+```json
+{
+  "uri": "project://checkout_api/webhooks",
+  "content": "Refund webhooks are idempotent by event.id. Tests must replay the same event twice and assert a single refund row.",
+  "priority": 1,
+  "disclosure": "When changing refund or payment webhooks in checkout-api",
+  "glossary": ["refund webhook", "idempotency key", "stripe"]
+}
+```
+
+## Move and rename
+
+`lore_move_node` changes a node's address. Renaming is a move to a new last segment.
+
+```json
+{
+  "old_uri": "project://checkout_api/webhook_notes",
+  "new_uri": "project://checkout_api/webhooks/refund_idempotency"
+}
+```
+
+Before you move a node, check these points:
+
+- The target path must not already exist. Lore returns an error if it does.
+- The new parent must already exist as a real parent node with content. A move does not create parents.
+- Children move with the node. Moving `project://checkout_api/webhooks` moves everything under it.
+- Fixed boot nodes cannot be moved or deleted.
+
+A move is recorded in history as a `move` event that keeps the old and new addresses.
+
+## Runtime-specific nodes
+
+Each runtime has one node, `core://agent/<client_type>`, for rules that apply only to that runtime. The plugin loads it at session start, together with the shared nodes.
+
+| Runtime | Node |
+| --- | --- |
+| Claude Code | `core://agent/claudecode` |
+| Codex | `core://agent/codex` |
+| OpenCode | `core://agent/opencode` |
+| Pi | `core://agent/pi` |
+| OpenClaw | `core://agent/openclaw` |
+| Hermes | `core://agent/hermes` |
+| ZCode | `core://agent/zcode` |
+
+For ZCode, create `core://agent/zcode` if that node is empty.
+
+Keep each runtime node to the differences for that runtime. Put shared rules in `core://agent`, so you maintain them in one place.

@@ -1,14 +1,34 @@
-## Core terms
+Look up a Lore term here. Terms are in alphabetical order, and each row links to the page that explains the term in full.
 
-| Term | Meaning |
-| --- | --- |
-| Boot memory | fixed startup context loaded from global and channel-specific paths |
-| Recall | task-specific retrieval of candidate memories |
-| Disclosure | the future situation where a memory should appear |
-| Domain | top-level namespace such as `core`, `preferences`, or `project` |
-| Memory path | stable URI for a memory |
-| Glossary | aliases and keywords that help recall find the right memory |
-| Priority | importance signal used alongside recall scoring |
-| Dream | maintenance workflow that reviews and improves memory quality |
-| View | generated searchable representation of memory content, such as a gist or question |
-| Client type | runtime identifier such as `codex`, `claudecode`, `openclaw`, `pi`, or `hermes` |
+## Terms
+
+| Term | Meaning | Read more |
+| --- | --- | --- |
+| Boot | The fixed baseline Lore sends at session start: global guidance and the boot nodes. | [How Lore works](/documents/how-lore-works) |
+| Boot node | A memory in the boot list: `core://agent`, `core://soul`, `preferences://user`, or `core://agent/<client_type>`. | [How Lore works](/documents/how-lore-works) |
+| Client type | The runtime's name, such as `claudecode`, which plugins send with every event as `client_type`. | [Connect agents](/documents/agents) |
+| Cue terms | The query terms that matched a recalled memory. They appear after the URI in each recall line. | [Recall](/documents/recall) |
+| Disclosure | A short statement of the one situation in which a memory should surface. | [Disclosure and glossary](/documents/memory/disclosure-and-glossary) |
+| Domain | The part of a URI before `://`, such as `core`, `preferences`, or `project`. | [Paths and domains](/documents/memory/paths) |
+| Dream | Scheduled maintenance run by the View LLM. It finds and fixes duplicates, vague triggers, and stale nodes. | [Dream](/documents/dream) |
+| Dream diary | The summary and narrative that Dream writes for each run. | [Dream](/documents/dream) |
+| Embedding | A list of numbers that represents the meaning of text. Lore uses embeddings for semantic recall. | [Recall](/documents/recall) |
+| Fail open | When Lore is unreachable or slow, plugins return nothing, and the agent continues without memory for that step. | [How Lore works](/documents/how-lore-works) |
+| Glossary | Keywords and aliases on a node that help recall match it, such as product names and error names. | [Disclosure and glossary](/documents/memory/disclosure-and-glossary) |
+| History | The recorded events for a node: each create, update, move, and delete. | [Memory model](/documents/memory) |
+| Lifecycle event | A message a plugin sends at a session or prompt milestone, such as `session.start` or `prompt.submit`. | [How Lore works](/documents/how-lore-works) |
+| Memory node | A plain-text memory with a path, content, priority, disclosure, glossary, and views. | [Memory model](/documents/memory) |
+| Memory path (URI) | A node's stable address in the form `domain://path`, such as `project://checkout_api/webhooks`. | [Paths and domains](/documents/memory/paths) |
+| Organization | In Loremem Cloud, the container for your projects. The first sign-in creates a personal one. | [Loremem Cloud](/documents/cloud) |
+| Priority | An integer rank: `0` for core identity, `1` for key facts, and `2` and up for general memories. | [Priority](/documents/memory/priority) |
+| Priority budget | The caps on how many memories can use priority `0` (5) and priority `1` (15). | [Priority](/documents/memory/priority) |
+| Project | In Loremem Cloud, a separate memory space with its own graph, analytics, Dream, settings, tokens, and skills. | [Loremem Cloud](/documents/cloud) |
+| Read before trust | The rule that an agent opens a recalled node before it relies on the content. | [How Lore works](/documents/how-lore-works) |
+| Recall | Lore's per-prompt search for memories that match the prompt. Results are candidates, not facts. | [Recall](/documents/recall) |
+| Recall block | The `<recall>` text Lore injects before a prompt. Each line holds a score, a URI, and cue terms. | [How Lore works](/documents/how-lore-works) |
+| Skill | A folder with a `SKILL.md` and optional files that agents can load when relevant. Loremem Cloud only. | [Skills](/documents/skills) |
+| Startup recall | Recall at session start, based on the working directory and repository name. | [How Lore works](/documents/how-lore-works) |
+| Token | The credential a client sends to Lore. Loremem Cloud tokens look like `lm_…`; self-hosted servers use `API_TOKEN`. | [Loremem Cloud](/documents/cloud) |
+| View (gist/question) | A generated summary of a node that powers semantic search: a gist of the content and a question the node answers. | [Memory model](/documents/memory) |
+| View LLM | The model Lore uses to write views and run Dream. You set it during first-run setup. | [First-run setup](/documents/self-hosting/first-run-setup) |
+| Work copy | A local copy of a skill's files under `~/.lore/skill-artifacts/` that agents read. | [Skills](/documents/skills) |

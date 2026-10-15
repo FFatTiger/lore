@@ -1,0 +1,91 @@
+Learn which settings belong in `.env` and which live in the database, what each environment variable does, and where to look first when the server misbehaves. Every runtime setting and its default is listed in the [settings reference](/documents/reference/settings).
+
+## Two kinds of settings
+
+| Kind | Where it lives | Examples | How to change it |
+| --- | --- | --- | --- |
+| Deployment settings | `.env` next to `docker-compose.yml`, or the server's environment | Database URL, ports, `API_TOKEN`, Redis, storage paths, timezone | Edit `.env`, then run `docker compose up -d` |
+| Runtime settings | The Lore database | Embedding and View LLM, recall tuning, Dream and backup schedules, prompts | `/setup`, `/settings`, or `PUT /api/settings` |
+
+Keep the database credentials and the token in `.env`. Enter model keys in the runtime settings. Lore doesn't read model keys from `.env`.
+
+## Environment variables
+
+These are the variables the stock `docker-compose.yml` reads. A value in `.env` overrides the default.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `TZ` | `Asia/Shanghai` | Clock and timezone for the web and PostgreSQL containers. Dream and backup schedules use it. |
+| `POSTGRES_DB` | `lore` | Database that the bundled PostgreSQL container creates. |
+| `POSTGRES_USER` | `lore` | Role that the bundled PostgreSQL container creates. |
+| `POSTGRES_PASSWORD` | `change-me` | Password for `POSTGRES_USER`. The CLI generates a random one. |
+| `POSTGRES_PORT` | `55439` | Host port for the bundled PostgreSQL. |
+| `POSTGRES_DATA_DIR` | `./data/postgres` | Host directory for PostgreSQL data. |
+| `DATABASE_URL` | `postgresql://lore:change-me@postgres:5432/lore` | Database the web server uses. Point it at your own database if you run one. Keep its password in sync with `POSTGRES_PASSWORD`. |
+| `WEB_PORT` | `18901` | Host port for the web console and API. |
+| `API_TOKEN` | empty | Bearer token that web and API requests must send. Empty means no authentication. |
+| `LORE_DB_POOL_SIZE` | `10` | Number of database connections the web server can hold open. |
+| `REDIS_URL` | `redis://redis:6379/0` | Redis cache. When unset, or unreachable at startup, Lore uses an in-process cache. |
+| `REDIS_DATA_DIR` | `./data/redis` | Host directory for Redis data. |
+| `CACHE_KEY_PREFIX` | `lore` | Prefix for cache keys. |
+| `CACHE_LOCAL_MAX_ITEMS` | `2000` | Maximum entries in the in-process cache. |
+| `SNAPSHOT_DATA_DIR` | `./data/snapshots` | Host directory for backups and pending review changesets. |
+| `LORE_POSTGRES_IMAGE` | `fffattiger/pgvector-zhparser:pg16` | PostgreSQL image. |
+| `LORE_REDIS_IMAGE` | `redis:7-alpine` | Redis image. |
+| `LORE_FRONTEND_IMAGE` | `fffattiger/lore:latest` | Web server image. The prerelease and dev channels use `pre-latest` and `dev-latest`. |
+
+The CLI writes its own `.env`. It sets a random `POSTGRES_PASSWORD`, a matching `DATABASE_URL`, `TZ=Asia/Shanghai`, and absolute data paths under `~/.lore/docker/data`.
+
+## Redis or the local cache
+
+- **`REDIS_URL` is set and reachable at startup:** Lore caches in Redis. Use Redis when you run more than one Lore web process.
+- **`REDIS_URL` is unset, or Redis is unreachable at startup:** Lore caches in process memory, up to `CACHE_LOCAL_MAX_ITEMS` entries. That's enough for one web process.
+- **`CACHE_KEY_PREFIX`:** keeps Lore's keys apart when Redis is shared with other apps.
+- **`cache.enabled`:** a runtime setting that is on by default. Set it to `false` to skip all cache reads and writes.
+
+## Storage and persistence
+
+| Host path (default) | Mounted at | Contents |
+| --- | --- | --- |
+| `./data/postgres` (`POSTGRES_DATA_DIR`) | `/var/lib/postgresql/data` | Memory nodes, history, and settings |
+| `./data/redis` (`REDIS_DATA_DIR`) | `/data` | Cache data, kept in an append-only file |
+| `./data/snapshots` (`SNAPSHOT_DATA_DIR`) | `/app/snapshots` | Automatic backups and pending review changesets |
+
+Keep these directories on persistent storage. Back up the PostgreSQL and snapshot directories before you upgrade. See [Update and uninstall](/documents/self-hosting/update-and-uninstall).
+
+## Database pool
+
+`LORE_DB_POOL_SIZE` sets how many PostgreSQL connections the web server can hold open. The default is `10`. Keep the default unless you have measured a need for more.
+
+## Timezone
+
+`TZ` sets the clock for the web and PostgreSQL containers. The stock file defaults to `Asia/Shanghai`. Dream and backup schedules run on that clock, so the default `dream.cron` of `0 3 * * *` runs at 03:00 in `Asia/Shanghai`. To change it, set an IANA timezone name such as `Europe/Berlin`, then run `docker compose up -d`.
+
+## Runtime settings
+
+Runtime settings live in the database. Set them in `/setup` the first time, in `/settings` afterward, or with `PUT /api/settings`. The [settings reference](/documents/reference/settings) lists every key with its default and effect. The groups are:
+
+- **Recall:** display threshold, item limit, query and timeout safeguards, weights, bonuses, and recency.
+- **Views:** weights and priors for the gist and question views.
+- **Models:** the embedding endpoint and the View LLM.
+- **Lifecycle:** the usage rules and preambles that the server injects at session start.
+- **Policy:** the priority budget and disclosure checks.
+- **Dream** and **Backup:** schedules and retention.
+- **Cache** and **Prompts:** the cache switch and the prompt templates.
+
+Secret fields (`embedding.api_key`, `view_llm.api_key`, and `backup.webdav.password`) are write-only. Lore shows only whether they are set.
+
+## Quick diagnosis
+
+| Symptom | Check | Fix |
+| --- | --- | --- |
+| `/api/health` fails | `docker compose ps` and `docker compose logs web` | Wait until `postgres` and `redis` are healthy. Check that `DATABASE_URL` matches the database settings. |
+| The web container can't connect to PostgreSQL after you change `POSTGRES_PASSWORD` | PostgreSQL reads that variable only when it creates the data directory | Change the role's password inside PostgreSQL with `ALTER ROLE`, then update `DATABASE_URL` to match. |
+| Chinese queries match poorly | Run `\dx` in `psql` and look for `pg_jieba` or `zhparser` | Install and preload `pg_jieba`. See [Use your own PostgreSQL](/documents/self-hosting/postgresql). |
+| Recall is empty | Open `/recall` and check the candidates and scores | Check the embedding settings, then `recall.display.min_display_score`. See [Improve recall quality](/documents/recall/improving-recall). |
+| Dream never runs | `dream.enabled` is `true`, and `view_llm.base_url` is set | Configure the View LLM. Check `TZ` and `dream.cron`. |
+| No backup files appear | `backup.enabled` and `backup.local.enabled` are `true`. Run `docker compose exec web ls /app/snapshots`. | Turn the settings on, or fix the `SNAPSHOT_DATA_DIR` mount. |
+| Clients are rejected | `API_TOKEN` in `.env`, and the token each client sends | Re-run the installer with `-y --api-token` and the same value, then restart the runtimes. See [Protect the server](/documents/self-hosting#protect-the-server-with-api-token). |
+| A port is already in use | `WEB_PORT` or `POSTGRES_PORT` in `.env` | Change the port, then run `docker compose up -d`. The CLI's `--docker` health check expects port `18901`. |
+
+For agent-side problems, see [Agent connection issues](/documents/troubleshooting/agents).

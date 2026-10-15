@@ -1,0 +1,138 @@
+Look up every runtime setting that Lore stores, with its key, default, and effect. These settings live in the database. Change them in the console or through the API, not in `.env`. Deployment variables are listed in [Server configuration](/documents/self-hosting/configuration).
+
+## How to change a setting
+
+- **Self-hosted:** open `/settings` in the web console, or send a `PUT /api/settings` request with a `patch` object. Use the JSON type that each value needs: numbers and booleans without quotes, and strings in quotes.
+
+  ```bash
+  curl -fsS -X PUT http://127.0.0.1:18901/api/settings \
+    -H 'content-type: application/json' \
+    -H 'authorization: Bearer lm_your_token' \
+    --data '{"patch": {"recall.display.min_display_score": 0.6, "dream.cron": "0 2 * * *"}}'
+  ```
+
+- **Loremem Cloud:** open **Settings** for your project. The tabs are **Preferences**, **Lifecycle**, **Policy**, **Dream**, **Models**, and **Backup**. On the **Models** tab, you choose an embedding profile and a runtime LLM profile. Cloud doesn't need API keys.
+- **Secrets:** `embedding.api_key`, `view_llm.api_key`, and `backup.webdav.password` are write-only. Lore never shows a saved value again. It shows only whether each one is set. To replace one, send a new value.
+
+## Recall
+
+### Display and safeguards
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `recall.display.min_display_score` | `0.60` | Candidates scoring below this value aren't injected into the prompt. Range `0` to `1`. |
+| `recall.display.max_display_items` | `3` | Maximum memories injected per recall. Range `1` to `20`. |
+| `recall.safety.max_query_chars` | `200` | For long prompts, recall uses only the first N characters and notes the cut. Range `50` to `2000`. |
+| `recall.safety.timeout_ms` | `2000` | Recall is skipped with a notice after this many milliseconds. Applies to prompt recall on Loremem Cloud and to the recall API on self-hosted servers, where agent hooks use their own timeouts. Range `500` to `30000`. |
+
+### Weights
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `recall.weights.w_exact` | `0.30` | Weight of exact matches on path, glossary, and query terms. |
+| `recall.weights.w_glossary_semantic` | `0.25` | Weight of semantic similarity between the query and glossary terms. |
+| `recall.weights.w_dense` | `0.30` | Weight of dense embedding similarity. |
+| `recall.weights.w_lexical` | `0.03` | Weight of full-text (lexical) matches. |
+
+### Bonuses
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `recall.bonus.priority_base` | `0.05` | Bonus for priority 0. Each +1 in priority removes `priority_step`. |
+| `recall.bonus.priority_step` | `0.01` | Bonus removed for each +1 in priority. |
+| `recall.bonus.multi_view_step` | `0.015` | Bonus for each additional view type (gist or question) that matches. |
+| `recall.bonus.multi_view_cap` | `0.05` | Upper limit on the multi-view bonus. |
+
+### Recency
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `recall.recency.enabled` | `true` | Gives recently updated memories a bonus and gives older ones less. `false` uses the scoring from earlier versions. |
+| `recall.recency.half_life_days` | `180` | Days until the recency bonus falls to half of its maximum. Range `7` to `3650`. |
+| `recall.recency.max_bonus` | `0.04` | Maximum recency bonus, for a memory updated just now. Range `0` to `0.3`. |
+| `recall.recency.priority_exempt` | `1` | Memories at or below this priority never decay. `-1` makes every memory decay. |
+
+## Views
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `views.weight.gist` | `1.0` | Multiplier for gist-view matches in dense and lexical ranking. |
+| `views.weight.question` | `0.96` | Multiplier for question-view matches in dense and lexical ranking. |
+| `views.prior.gist` | `0.03` | Bonus added when a gist view matches. |
+| `views.prior.question` | `0.02` | Bonus added when a question view matches. |
+
+## Models
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `embedding.provider` | `openai_compatible` | Embedding API protocol. Only the OpenAI-compatible `/embeddings` protocol is supported. |
+| `embedding.base_url` | Empty | Base URL of the embedding service, such as `https://api.openai.com/v1`. |
+| `embedding.api_key` | Empty (write-only) | API key for the embedding service. |
+| `embedding.model` | `text-embedding-3-small` | Embedding model name. |
+| `view_llm.provider` | `openai_compatible` | Chat protocol for views and Dream: `openai_compatible`, `openai_responses`, or `anthropic`. |
+| `view_llm.base_url` | Empty | Base URL of the chat endpoint. When empty, view refinement and Dream runs are off. |
+| `view_llm.api_key` | Empty (write-only) | API key for the chat endpoint. |
+| `view_llm.model` | `deepseek-v4-flash` | Model that writes the gist and question views. |
+| `view_llm.temperature` | `0.2` | Sampling temperature. `0` is the most deterministic. Range `0` to `2`. |
+| `view_llm.max_docs_per_run` | `4` | Maximum documents the LLM refines in one index build. Range `0` to `100`. |
+| `view_llm.timeout_ms` | `1800000` | Timeout for each View and Dream LLM call, which is 30 minutes by default. Range `1000` to `1800000`. |
+| `view_llm.api_version` | Empty | Optional API version header. Native Anthropic endpoints often need it. |
+
+## Lifecycle
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `lifecycle.guidance.enabled` | `true` | Injects Lore's global usage rules at session start. |
+| `lifecycle.guidance.global` | Built-in text | The usage rules that session start injects for every runtime. |
+| `lifecycle.boot.preamble` | Built-in text | Text shown before the boot node list. Agents still read node content with `lore_boot`. |
+| `lifecycle.startup_recall.preamble` | Built-in text | Text shown before the startup `<recall>` block. |
+| `lifecycle.prompt_recall.preamble` | Empty | Text shown before each prompt's `<recall>` block. When empty, only the block is injected. |
+
+The built-in defaults for the lifecycle texts are written in Chinese.
+
+## Policy
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `policy.priority_budget_enabled` | `true` | Enforces the library-wide caps on creates and updates: 5 memories at priority 0 and 15 at priority 1. |
+| `policy.disclosure_warning_enabled` | `true` | Warns when a new memory has no disclosure, or when its disclosure joins situations with 或, 或者, or 以及. |
+
+## Dream
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `dream.enabled` | `true` | Runs Dream on schedule. Requires a View LLM. |
+| `dream.cron` | `0 3 * * *` | Five-field cron expression (minute, hour, day, month, weekday) in the server's timezone. |
+| `dream.auto_approve_changes` | `false` | Marks Dream's changes approved automatically. When off, the changes wait for review. |
+
+## Backup
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `backup.enabled` | `true` | Runs backups on schedule. |
+| `backup.cron` | `0 4 * * *` | Five-field cron expression for backups. `0 * * * *` runs hourly. |
+| `backup.retention_count` | `7` | Number of latest local backups to keep. Older ones are deleted. Range `1` to `100`. |
+| `backup.local.enabled` | `true` | Saves backup files under `SNAPSHOT_DATA_DIR`. |
+| `backup.webdav.enabled` | `false` | Uploads backups to a WebDAV server. |
+| `backup.webdav.url` | Empty | WebDAV address, such as `https://dav.example.com/backups/`. |
+| `backup.webdav.username` | Empty | WebDAV user name. |
+| `backup.webdav.password` | Empty (write-only) | WebDAV password. |
+| `backup.include_recall_events` | `false` | Includes recall events in backups. They can make backups large. |
+
+## Cache
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `cache.enabled` | `true` | Uses the cache. `false` skips all cache reads and writes. Redis is used when `REDIS_URL` is set. |
+
+## Prompts
+
+The prompt keys are long templates. Each group below is one row, not one row per key.
+
+| Group | Keys | Used for |
+| --- | --- | --- |
+| `prompts.view_generation.system` | 1 | System prompt for writing the gist and question views |
+| `prompts.boot_draft.*` | 13 | Drafting boot memories: one system prompt, plus instructions for the shared nodes, each `client_<runtime>` node, and the extra constraints |
+| `prompts.dream.*` | 7 | Dream's system prompt, the diary rewrite prompt, and one prompt for each phase: diagnose, plan, preflight, apply, and audit |
+
+Prompts contain placeholders such as `{{instructions}}`, `{{client_type}}`, `{{guidance}}`, `{{plan_json}}`, and `{{apply}}`. Keep the placeholders that each prompt expects. Change Dream prompts only when you know what each phase does with its output.

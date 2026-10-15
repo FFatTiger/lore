@@ -1,0 +1,136 @@
+好的记忆简短、具体，而且值得信任。写之前先判断它是否属于 Lore，再把它写得足够具体，让 Agent 在需要时能找到它，并且能照着去做。
+
+## 哪些内容应该放进 Lore
+
+| 应该放进 Lore | 示例 |
+| --- | --- |
+| 下个月仍然重要的决策 | 退款 webhook 按 event.id 保证幂等。 |
+| Agent 没有它就会做错的规则 | 测试必须对同一事件重放两次，并断言只产生一条退款记录。 |
+| 很难重新找到的命令 | 运行 webhook 重放测试的确切命令，以及它需要的参数。 |
+| 稳定的偏好 | 回复保持简短，除非被要求，否则不要总结。 |
+| 项目约束 | 不要在没有升级版本号的情况下修改公开的 webhook 负载结构。 |
+| 曾经耗费大量时间才解决的坑 | 重试测试每次运行都需要一个全新的时钟。 |
+
+| 不应放进 Lore | 原因 | 应该放在哪里 |
+| --- | --- | --- |
+| 敏感信息：API 密钥、令牌、密码、私钥 | Agent 会读取记忆，备份中也包含记忆 | 你的密钥管理工具，或环境变量 |
+| 任务进度和待办清单 | 一天之内就会过时 | 你的任务跟踪工具，或会话本身 |
+| 原始日志、堆栈信息和粘贴的对话记录 | 太长，通常只有一行有用 | 写成一行经验，把错误名称放进术语 |
+| 已经存在于代码或文档中的事实 | 两份副本会逐渐不一致 | 代码仓库或文档。需要时可以在内容中链接过去。 |
+| 未经验证的猜测 | Agent 会相信它们 | 验证之前先不要写 |
+| 你不希望被重复提及的个人细节 | Agent 每次会话都会使用记忆 | 不要写 |
+
+## 两个问题的测试
+
+写一条记忆之前，先回答这两个问题：
+
+1. **忘记这件事会导致重复劳动或错误吗？** 如果不会，就不要写。
+2. **我能描述出它应该出现的情境吗？** 如果不能，说明这个主题还不够明确。先收窄主题，或者先写下情境。
+
+只有两个问题的答案都是“是”，才值得写下这条记忆。
+
+## 何时写
+
+在决策稳定之后立即写：方案已经选定并经过验证。不要拖到项目结束再写，也不要在方案还在探索时就写。
+
+## 检查清单
+
+1. 一个主题，一个触发情境。
+2. 路径为概念命名，使用小写 snake_case，不包含日期。
+3. 内容是经过验证的事实、规则、决策或工作流，脱离产生它的对话也能看懂。
+4. 触发条件只描述一个未来的情境，不使用“或”。
+5. 术语包含人们会输入的词，包括另一种语言的写法。
+6. 优先级要如实设置。只有当规则应该影响大多数会话时，才使用 `0` 或 `1`。
+7. 用一个应当能找到它的提示词测试一次。参见[提升召回质量](/documents/recall/improving-recall)。
+8. 记忆中不包含敏感信息。
+
+## 前后对比的示例
+
+模糊的记忆很难被找到，也很难让人信任。下面是一条记忆修改前后的样子。
+
+修改前：
+
+```text
+URI:        project://checkout_api/webhook_jan
+Priority:   0
+Disclosure: Important webhook info
+Glossary:   (none)
+Content:    We fixed the webhook thing last week. Use the new approach.
+```
+
+问题在于：
+
+- 路径中有日期，而且描述的是某个事件。
+- 优先级 `0` 只留给核心身份，而这只是一个局部细节。
+- 触发条件只是一个标签，不是一个情境。
+- 没有术语，人们用自己的词根本找不到它。
+- 内容说的是“新的做法”，却没有说明它是什么。
+
+修改后：
+
+```text
+URI:        project://checkout_api/webhooks
+Priority:   1
+Disclosure: When changing refund or payment webhooks in checkout-api
+Glossary:   refund webhook, idempotency key, stripe
+Content:    Refund webhooks are idempotent by event.id. Tests must replay the same event twice and assert a single refund row.
+```
+
+日期从路径中移除了；优先级反映的是项目的关键事实；触发条件描述的是 Agent 能够识别的一个具体情境。
+
+## 何时拆分
+
+在以下情况下，应当把一条记忆拆开：
+
+- 触发条件里需要用到“或”。两个情境需要两条记忆。
+- 内容包含两个会在不同情境下出现的决策，例如部署步骤和数据库迁移规则。
+- 内容已经超出一个主题。过于宽泛的记忆会匹配到与之无关的提示词。
+
+## 更新还是新建
+
+优先更新已经负责这条事实的节点。为同一件事新建第二个节点，会让 Agent 得到两个答案，而它无法判断哪个是最新的。
+
+1. 先用 `lore_search` 搜索，关键词用主题本身的词。
+2. 如果已有节点负责这个主题，用 `lore_update_node` 更新它。只传需要修改的字段，未传的字段保持不变。
+3. 如果没有节点负责这个主题，就在合适的父节点下新建。
+
+## 让 Agent 替你写记忆
+
+你可以让 Agent 保存记忆。告诉它应该放在哪里，并要求它先检查是否已有节点：
+
+```text
+Save this decision in Lore under project://checkout_api/webhooks. Search for an existing node first, and update it if one already owns this topic.
+```
+
+```text
+We decided refund webhooks stay idempotent by event.id. Record this with priority 1 and a disclosure for webhook changes in checkout-api.
+```
+
+```text
+Review what we learned about the test setup today. Save only durable rules, and skip task progress.
+```
+
+之后，打开节点或它的历史记录，检查 Agent 实际保存了什么。
+
+## 绝不保存敏感信息
+
+不要把 API 密钥、访问令牌（包括 `lm_` 开头的令牌）、密码、私钥或带凭据的连接字符串写入记忆。
+
+如果敏感信息已经写入，应先轮换该密钥。仅从记忆中删除并不够，因为早期版本仍保留在节点的历史中，备份中也包含它们。
+
+## 新项目的入门记忆集
+
+在 Agent 需要之前先建立项目记忆。从一个父节点和四个子节点开始：
+
+1. 创建父节点 `project://my_app`。内容说明项目是什么；为它设置适用于项目内任何任务的触发条件，并为其名称设置术语。
+2. 在父节点下创建子节点：
+   - `project://my_app/overview`：项目是什么、代码在哪里、由谁负责。
+   - `project://my_app/commands`：安装、开发、测试、构建和部署命令。
+   - `project://my_app/constraints`：架构规则，以及不允许的改动。
+   - `project://my_app/deployment`：托管方式、环境变量的名称（不写具体值），以及发布和回滚说明。
+3. 用一个真实的提示词跑一遍召回，确认其中某条记忆会出现。
+
+> [!TIP]
+> 从小处开始。当 Agent 连续两次问同一个问题时，再添加一条记忆。
+
+字段规则请参见[优先级](/documents/memory/priority)和[触发条件与术语](/documents/memory/disclosure-and-glossary)。

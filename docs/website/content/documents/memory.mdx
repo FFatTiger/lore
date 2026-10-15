@@ -1,0 +1,91 @@
+Every memory in Lore is a plain-text node with an address, a trigger, a priority, and a history. Each field has one job. Knowing what each one is for, and who sets it, is the fastest way to write memories that are easy to find and safe to change.
+
+## Anatomy of a node
+
+| Field | What it is for | Who sets it |
+| --- | --- | --- |
+| URI (path) | A stable address in the form `domain://path`. It names the concept, not the event. See [Paths and domains](/documents/memory/paths). | You or the agent, when the node is created. Changed later with `lore_move_node`. |
+| Content | The durable fact, rule, decision, or workflow, as plain text. | You or the agent. Changed with `lore_update_node`. |
+| Priority | How important the memory is: `0` core identity, `1` key facts, `2+` general. Adds a small ranking bonus. See [Priority](/documents/memory/priority). | You or the agent. Priority `0` and `1` are subject to library-wide caps. |
+| Disclosure | The future situation in which the memory should surface. See [Disclosure and glossary](/documents/memory/disclosure-and-glossary). | You or the agent. The disclosure check warns when it is missing or uses OR wording. |
+| Glossary | Keywords and aliases people actually type: names, abbreviations, Chinese and English variants, error names. | You or the agent. Edited with `glossary_add` and `glossary_remove`. |
+| Views | A generated **gist** (short summary) and **question** (questions the memory answers), embedded for semantic recall. | The View LLM generates them. You do not write them. |
+| History | Every create, update, move, delete, and glossary change, with the content at that point. | Recorded automatically. |
+
+## An annotated example
+
+```text
+URI:        project://checkout_api/webhooks
+Priority:   1
+Disclosure: When changing refund or payment webhooks in checkout-api
+Glossary:   refund webhook, idempotency key, stripe
+Content:    Refund webhooks are idempotent by event.id. Tests must replay the same event twice and assert a single refund row.
+```
+
+| Line | Why it is written this way |
+| --- | --- |
+| `URI` | Names the project and the concept. No date, lowercase, snake_case. |
+| `Priority: 1` | A key project fact. Priority `0` is reserved for core identity. |
+| `Disclosure` | One future situation: a task that touches refund or payment webhooks. It does not summarize the content. |
+| `Glossary` | The words someone types when they mean this memory: a concept, a term, and a vendor name. |
+| `Content` | The fact, plus the rule that follows from it, specific enough for an agent to act on. |
+
+## Domains
+
+| Domain | Use it for | Examples |
+| --- | --- | --- |
+| `core://` | Agent-wide rules, persona, and runtime-specific rules | `core://agent`, `core://agent/codex` |
+| `preferences://` | Stable user preferences and context | `preferences://user` |
+| `project://` | Facts, decisions, commands, and constraints for one project | `project://checkout_api/webhooks` |
+
+Run `lore_list_domains` to see which domains your server has.
+
+## The fixed boot nodes
+
+At session start, Lore injects the boot nodes as the startup baseline. Their addresses are fixed. Nobody can delete or move them, and Dream does not change them. You can edit their content at any time.
+
+| Node | Role | What it should contain |
+| --- | --- | --- |
+| `core://agent` | Working rules for every runtime | Collaboration boundaries, execution style, safety checks, coding workflow, and how to verify work. Leave out anything that applies to one runtime only. |
+| `core://soul` | Style and persona | Tone, self-definition, and how the agent should behave in conversation. Keep it stable across sessions. |
+| `preferences://user` | Stable user context | Durable preferences, collaboration habits, and background that rarely changes. Do not add details you have not confirmed. |
+| `core://agent/<client_type>` | Rules for one runtime | Only the differences for that runtime: its hooks, tools, and quirks. Assume `core://agent` already covers the shared rules. |
+
+Runtime nodes use these client types: `claudecode`, `codex`, `opencode`, `pi`, `openclaw`, `hermes`, and `zcode`. Each runtime loads only its own node.
+
+The boot block also lists the five most recently written memories by path, priority, and disclosure. It does not include their content. Recall never returns boot nodes, because the agent already has them.
+
+> [!NOTE]
+> Agents that connect through a generic MCP client (`mcp`) get no automatic boot. They call `lore_boot` themselves.
+
+## Generated views
+
+Lore builds two views of each memory: a gist and a set of questions the memory answers. The View LLM writes them, and Lore embeds them as vectors. A prompt can then match a memory by meaning, even when it does not use the memory's words.
+
+Views are rebuilt when the content, disclosure, or glossary changes. Changing the embedding profile rebuilds all of them. Without a View LLM, Lore builds simpler rule-based views from the start of the content, the disclosure, and the glossary.
+
+> [!TIP]
+> A view is only as clear as the memory it comes from. Clear content and a concrete disclosure do more for recall than any setting.
+
+## History and rollback
+
+Every node has a history. On Loremem Cloud, open it from the memory editor. On a self-hosted server, open `/memory/history`. Each entry shows what changed and where the change came from: an agent through MCP, the console, or Dream. For agent writes, the entry also records the runtime.
+
+To undo a change:
+
+1. Open the node's history.
+2. Choose the create or update event you want to return to.
+3. Roll back to that event.
+
+A rollback restores the content, priority, disclosure, and glossary from that event. It is recorded as a new update, so the history keeps the record of the rollback too. Only create and update events can be rolled back. Move and delete events stay visible in the history, but you cannot roll them back from there.
+
+Dream changes are recorded in the same history. To undo a whole Dream run, use the Dream page. Only the most recent run can be rolled back. See [Dream](/documents/dream).
+
+## How the pieces work together
+
+- **Paths make memory browsable.** Walking a path such as `project://checkout_api/` shows what exists before you open anything.
+- **Disclosure and glossary make memory findable.** Disclosure says when a memory matters. Glossary says which words bring it up.
+- **Priority breaks ties.** When two memories score about the same, the more important one comes first. Priority never forces a memory into recall.
+- **History makes it safe.** Every change is recorded, and content changes can be rolled back, so agents can write memory without you reviewing every edit.
+
+Continue with [Paths and domains](/documents/memory/paths), [Writing good memories](/documents/memory/writing-memories), and [How recall works](/documents/recall).

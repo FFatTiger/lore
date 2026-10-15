@@ -1,54 +1,59 @@
-故障排查从定位失败边界开始。
+大多数问题出在设置、令牌，或者运行时没有重启，而不是召回阈值。按顺序完成下面八项检查，先修复第一个失败的环节，再动其他设置。
 
-不要一开始就调召回阈值。多数问题来自设置、认证、过期 hooks、不完整模型设置或弱记忆结构。
+## 按顺序检查各环节
 
-## 按这个顺序检查
+1. **服务器健康状况。** 确认服务器能够响应。这项检查不需要令牌。
 
-1. **服务器健康** — `/api/health` 有响应，Web Console 能打开。
-2. **数据库和迁移** — `DATABASE_URL` 正确；PostgreSQL 有 `vector`；需要中文召回时有 `pg_jieba` 或 `zhparser`。
-3. **设置** — `/setup` 显示 embedding、View LLM 和启动记忆设置完整。
-4. **认证** — 受保护服务器能从 REST 和 MCP 客户端收到 `Authorization: Bearer <API_TOKEN>`。
-5. **Agent 连接** — MCP URL 包含正确 `client_type`；插件文件和 hooks 已安装。
-6. **运行时重载** — 配置、hook 或插件变更后 Agent 已重启。
-7. **记忆质量** — path、disclosure、glossary 和 priority 能清楚描述未来 prompt。
-8. **召回设置** — 上述检查通过后再调阈值。
+   ```bash
+   curl -fsS http://127.0.0.1:18901/api/health
+   ```
 
-## 使用聚焦页面
+   使用 Loremem 云服务时，改为检查 `https://api.loremem.com/api/health`。健康的自托管服务器会返回 `"status":"ok"` 和 `"database":"connected"`。如果请求失败，对同一地址运行 `curl -sS`，读取响应正文。返回 `503` 且 `"database":"disconnected"`，说明服务器无法连接 PostgreSQL。
 
-| 现象 | 页面 |
+2. **数据库和扩展。** 确认迁移已经执行。在 Compose 目录中运行 `docker compose logs web`，查找 `[migrations] failed`。中文召回还需要 `pg_jieba` 或 `zhparser`。参见[安装与设置问题](/documents/troubleshooting/setup)。
+
+3. **设置和模型。** 在服务器上打开 `/setup`，例如 `http://127.0.0.1:18901/setup`。嵌入模型（Embedding）和视图 LLM（View LLM）两步必须已经保存，启动记忆（boot）也必须存在。召回在搜索前需要可用的嵌入模型。
+
+4. **认证和令牌。** 如果服务器设置了 `API_TOKEN`，每个 REST 和 MCP 请求都必须带上 `Authorization: Bearer <API_TOKEN>`。用有效令牌发送下面的请求：返回 `405` 表示令牌已被接受，返回 `401` 表示令牌缺失或有误。
+
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' \
+     -H "Authorization: Bearer lm_your_token" \
+     "http://127.0.0.1:18901/api/mcp?client_type=mcp"
+   ```
+
+   没有设置 `API_TOKEN` 的服务器不需要令牌也能接受请求。
+
+5. **Agent 集成。** 运行 `npx @loremem/cli status`，找到你的运行时对应的通道。`installed` 表示集成文件已经就位。`partial` 或 `missing` 表示安装没有完成，请重新运行 `npx @loremem/cli install --channels <runtime>`。然后让 Agent 调用 `lore_status`，连接正常时会返回 `Lore online`。
+
+6. **重启运行时。** 每次修改安装、配置、Hook、插件或令牌之后，都要重启 Agent。Hook 和 MCP 配置在进程启动时加载。Pi 需要运行 `/reload` 或重启。
+
+7. **记忆结构。** 检查你期望的记忆是否有聚焦的路径、一个具体的触发条件、真实的术语，以及诚实的优先级。[召回问题](/documents/troubleshooting/recall)页面说明了如何测试一条提示词。
+
+8. **召回设置。** 只有在第 1 到 7 项全部通过后，才调整阈值、权重或超时时间。[设置项参考](/documents/reference/settings)列出了每个设置键及其默认值。
+
+## 按症状查找
+
+| 症状 | 从这里开始 |
 | --- | --- |
-| 服务器或 setup 损坏 | [设置问题](/zh-cn/documents/troubleshooting/setup-issues) |
-| 记忆存在但不出现 | [召回问题](/zh-cn/documents/troubleshooting/recall-issues) |
-| Agent 收不到 boot 或 recall | [Agent 问题](/zh-cn/documents/troubleshooting/agent-issues) |
-| 不确定应该如何使用 Lore | [常见问题](/zh-cn/documents/reference/common-questions) |
+| 安装失败、服务器无法启动、`/api/health` 失败，或令牌被拒绝 | [安装与设置问题](/documents/troubleshooting/setup) |
+| Agent 没有启动记忆或 `<recall>` 块、工具缺失，或 Lore 出现两次 | [Agent 接入问题](/documents/troubleshooting/agents) |
+| 记忆一直不出现、出现了错误的记忆，或召回很慢、被跳过 | [召回问题](/documents/troubleshooting/recall) |
+| 工具名称或参数不清楚 | [Agent 工具参考](/documents/reference/tools) |
+| 不确定应该如何使用 Lore | [常见问题](/documents/reference/faq) |
 
-排障证据要具体：URL、`client_type`、token 状态、页面名称、查询文本、召回 URI，以及 Agent 是否打开了记忆节点。
+## 求助时需要提供的信息
 
-## 卸载
+提交问题前，先收集以下信息，并先删除令牌和密码。
 
-从机器上完全移除 Lore：
+1. **版本。** `npx @loremem/cli status` 输出中的 `installed_version` 行。如果是 Docker 安装，还要提供 `~/.lore/docker/.env` 中的 `LORE_FRONTEND_IMAGE` 值。
+2. **服务器类型。** Loremem 云服务、由 CLI 管理的 Docker 服务器，还是其他自托管服务器。
+3. **状态输出。** `npx @loremem/cli status` 的完整输出。它只会把令牌显示为 `set` 或 `absent`。
+4. **运行时和 `client_type`。** 例如 `claudecode`、`codex`、`opencode`、`pi`、`openclaw`、`hermes`、`zcode` 或 `mcp`。
+5. **失败的环节。** 上面检查清单中的环节编号，以及完整的报错信息。
+6. **召回问题。** 完整的提示词、Agent 收到的 `<recall>` 块（或没有出现该块的说明），以及 Agent 是否调用 `lore_get_node` 打开过该节点。
 
-```bash
-# 停止并删除容器、网络和卷
-docker compose down -v
+> [!WARNING]
+> 不要粘贴令牌。`.env` 文件、`~/.lore/config.json` 和 Agent 的设置文件都包含敏感信息。分享代码片段前，请把每个令牌替换为 `lm_your_token`。
 
-# 删除本地 Lore 状态
-rm -rf ~/.lore
-
-# 移除 Claude Code Lore 集成
-rm -f ~/.claude/lore-guidance.md
-# 从 ~/.claude/CLAUDE.md 中删除 @~/.claude/lore-guidance.md 导入行
-
-# 移除 Codex MCP 注册
-codex mcp remove lore || true
-
-# 从 ~/.openclaw/openclaw.json 中移除 OpenClaw 插件 entry
-
-# 移除 Pi 扩展
-rm -rf "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/extensions/lore"
-
-# 移除 Hermes 插件 symlink
-rm -f ~/.hermes/skills/lore_memory
-```
-
-如果你在 shell profile 中添加过 `LORE_BASE_URL` 和 `LORE_API_TOKEN`，也一并移除。
+如果以上步骤仍无法解释故障，请先搜索已有的 issue，再到 https://github.com/FFatTiger/lore/issues 新建一个 issue。

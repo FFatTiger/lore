@@ -1,31 +1,48 @@
-Lore gives AI agents one shared long-term memory system.
+Rules copied across `CLAUDE.md`, `AGENTS.md`, and plugin prompts drift out of sync, and each copy goes stale on its own. What one agent learns stays locked in its own chat, so the next agent has to learn it again.
 
-It replaces the pattern of copying rules into every local `CLAUDE.md`, `AGENTS.md`, and plugin file. Instead, agents read and write a single memory graph that survives sessions, runtimes, and machines.
+## What Lore does
 
-## The short version
+Every connected agent runs the same loop:
 
-- **Boot memory** provides stable startup context such as shared agent rules, user preferences, and runtime-specific constraints.
-- **Recall** provides task-specific candidate memories for the current prompt.
-- **Agents should open recalled nodes** before treating them as facts.
-- **Durable changes should be written back into Lore**, not copied into every local agent file.
-- **Dream** helps review and improve memory quality, but important changes still need human review.
+1. **Boot.** At session start, Lore sends a fixed baseline: shared workflow rules, the persona, your stable preferences, and the rules for the current runtime.
+2. **Recall.** Before each prompt, Lore adds a short `<recall>` block with the memories that might matter.
+3. **Read before trust.** A recall line is a lead, not a fact. The agent opens the node with `lore_get_node` before it relies on the content.
+4. **Write back.** When the agent learns a durable fact, it saves the fact as a memory node with the memory tools.
+5. **Dream.** On a schedule (03:00 by default), Dream reviews the memory graph, fixes duplicates and vague triggers, and records every change.
 
-## How agents use Lore
+Per-node history and backups make these changes reversible.
 
-```text
-Startup  →  Load boot context (core rules, preferences, channel rules)
-Prompt   →  Receive recall candidates for the current task
-Work     →  Open relevant nodes, use them as context
-Write    →  Save durable facts, decisions, and rules back to Lore
-Review   →  Dream checks memory quality, suggests improvements
-```
+## Key ideas
 
-## What to read next
+| Concept | What it means | Read more |
+| --- | --- | --- |
+| Memory node and path | A plain-text memory with a stable address, such as `project://checkout_api/webhooks`. | [Memory model](/documents/memory) |
+| Boot | The fixed baseline Lore sends at session start. | [How Lore works](/documents/how-lore-works) |
+| Recall | Candidate memories that match the current prompt. | [How recall works](/documents/recall) |
+| Disclosure and glossary | When a memory should surface, and the words that point to it. | [Disclosure and glossary](/documents/memory/disclosure-and-glossary) |
+| Priority | An integer rank: `0` for core identity, `1` for key facts, `2` and up for general memories. | [Priority](/documents/memory/priority) |
+| Dream | Scheduled maintenance that keeps the memory graph clean. | [Dream](/documents/dream) |
+| Skills (Cloud) | Reusable instruction packages that agents load when they are relevant. | [Skills](/documents/skills) |
 
-Start with the three concept pages if you are new to Lore:
+## Two ways to run Lore
 
-1. [What Lore is for](/documents/introduction/what-lore-is-for)
-2. [How Lore works](/documents/introduction/how-lore-works)
-3. [When to use it](/documents/introduction/when-to-use-it)
+Both options use the same agent plugins. The installer connects your agents to whichever server you choose.
 
-Then read the memory model pages when you are ready to write better memories: paths, disclosure triggers, priority, and glossary terms.
+| | Loremem Cloud | Self-hosted |
+| --- | --- | --- |
+| Who runs it | Loremem, at `https://app.loremem.com` | You, on your own machine or server |
+| Setup | Sign in, create a token, and run the prefilled install command | Run `npx @loremem/cli`, choose Docker, then finish setup at `/setup` |
+| Models | Preconfigured. Choose an embedding profile and a runtime LLM profile in Settings → Models. No API keys needed | Bring your own OpenAI-compatible embedding endpoint and a chat model for View LLM |
+| Skills | Yes | No |
+| Where data lives | Loremem's hosted service | Your machine or server |
+| Cost | Free plan. Sign in with GitHub or Google | Free and open source (MIT). You pay for your host and any model APIs you use |
+
+> [!NOTE]
+> You can move a self-hosted memory to Loremem Cloud later by importing a backup. See [Import a self-hosted backup](/documents/cloud/import-self-hosted-backup).
+
+## Where to go next
+
+- [Quickstart](/documents/quickstart): connect your first agent and save a memory.
+- [How Lore works](/documents/how-lore-works): what Lore sends and records during a session.
+- [Connect agents](/documents/agents): setup for each runtime and for other MCP clients.
+- [Writing good memories](/documents/memory/writing-memories): the shape of a memory that recall can find.

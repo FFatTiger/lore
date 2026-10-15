@@ -1,0 +1,97 @@
+Most recall problems come from how memories are written, not from the settings. Fix the memory first, check the result with real prompts, and change a setting only when the memory is right and the result is still wrong.
+
+## Fix the memory shape first
+
+Work through these steps in order:
+
+1. Make the memory about one topic. See [What belongs in Lore](/documents/memory/writing-memories).
+2. Give it a specific path, named for the concept, with no date. See [Paths and domains](/documents/memory/paths).
+3. Write a concrete disclosure: one future situation. See [Disclosure and glossary](/documents/memory/disclosure-and-glossary).
+4. Add glossary terms for the words people actually type, including the other language.
+5. Set the priority honestly. See [Priority](/documents/memory/priority).
+6. Check that the embedding model is configured. Recall needs it. See [Embeddings must be configured](#embeddings-must-be-configured).
+7. Test with real prompts, and read the results before you change any setting.
+
+## Symptom and first fix
+
+| Symptom | First thing to check |
+| --- | --- |
+| The right memory never appears | Its disclosure and glossary. Test with a prompt written in the words your team uses. |
+| A memory appears in unrelated prompts | Whether it is too broad. Split it, look for OR wording in its disclosure, and lower its priority if it is background. |
+| Too many weak memories appear | Whether the memories are sharp. If they are, raise `recall.display.min_display_score`. See the settings below. |
+| Chinese prompts match poorly | Whether PostgreSQL has `pg_jieba` or `zhparser`. See [Chinese recall](#chinese-recall). Add Chinese glossary terms either way. |
+| Semantic matches are missing | Whether the embedding model is configured. Changing it rebuilds views. |
+| Recall never returns anything | Whether the embedding model is configured. Without it, recall fails. Check `lore_status` for backend health. |
+| Recall is often skipped | Whether the server is slow. A timeout skips recall and adds a notice. |
+| A long prompt loses its point | Only the first 200 characters are used for recall. Lead with the topic. |
+| A useful memory ranks too low | Its disclosure and glossary. Priority adds only a small bonus. |
+
+## Settings to tune
+
+Change settings only after the memory shape is right. Change one value at a time, then run the same prompts again.
+
+| Setting | Default | What it does | Change it when |
+| --- | --- | --- | --- |
+| `recall.display.min_display_score` | 0.60 | Candidates scoring below this value are withheld | Raise it when Shown is high and Used is low. Lower it only when a memory you know is correct keeps being withheld just below the cutoff. |
+| `recall.display.max_display_items` | 3 | Most memories shown per recall | Lower it for quieter prompts. Raise it only when relevant memories keep being cut by the limit. |
+| `recall.safety.max_query_chars` | 200 | Characters of a long prompt used for recall | Raise it when long prompts lose key terms. Keep the topic near the start of the prompt. |
+| `recall.safety.timeout_ms` | 2000 | Time after which recall is skipped | Raise it only when your server is consistently slow. A timeout means no recall at all for that prompt. |
+| `recall.weights.w_exact` | 0.30 | Weight of exact matches | Leave it alone. Fix the glossary first. |
+| `recall.weights.w_glossary_semantic` | 0.25 | Weight of glossary semantic matches | Consider raising it when meaning-based matches on glossary terms are weak. |
+| `recall.weights.w_dense` | 0.30 | Weight of view (semantic) matches | Consider raising it when memories are found by meaning but ranked too low. |
+| `recall.weights.w_lexical` | 0.03 | Weight of full-text matches | Leave it alone unless Chinese full-text search is set up. See [Chinese recall](#chinese-recall). |
+| `recall.bonus.priority_base` and `recall.bonus.priority_step` | 0.05 and 0.01 | Priority bonus | Leave them alone. Set priority honestly instead. |
+| `recall.recency.enabled` | `true` | Turns the recency bonus on or off | Turn it off when old, stable rules should rank the same as recent notes. |
+| `recall.recency.half_life_days` | 180 | Days until the recency bonus halves | Lower it, for example to 30, to favor recent work. Keep 180 for a gentler effect. |
+| `recall.recency.max_bonus` | 0.04 | Largest recency bonus | Leave it alone. |
+| `recall.recency.priority_exempt` | 1 | Priority at or below this value never decays | Leave it alone. |
+
+On a self-hosted server, change settings at `/settings`, or through the API. Send the `Authorization` header only when the server sets `API_TOKEN`:
+
+```bash
+curl -X PUT http://127.0.0.1:18901/api/settings \
+  -H "Authorization: Bearer lm_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{"patch": {"recall.display.min_display_score": 0.65}}'
+```
+
+On Loremem Cloud, the recall behavior settings are in Settings → Preferences.
+
+## Chinese recall
+
+Chinese text has no spaces between words, so lexical matching depends on a Chinese tokenizer in PostgreSQL. Lore uses `pg_jieba` when it is available, and `zhparser` otherwise.
+
+- If neither extension is installed, PostgreSQL falls back to its `simple` text search. Chinese matching is then weaker.
+- The Lore Postgres image, `fffattiger/pgvector-zhparser:pg16`, includes both extensions and preloads `pg_jieba`.
+- If you run your own PostgreSQL, see [Use your own PostgreSQL](/documents/self-hosting/postgresql).
+- Whatever the database, add Chinese terms to the glossary, such as `退款回调`. People type these words directly.
+
+## Embeddings must be configured
+
+Recall uses an embedding model for semantic matching. Without one, recall cannot run. The call fails, and the plugin continues without a recall block.
+
+- **Loremem Cloud:** models are preconfigured. Choose an embedding profile in Settings → Models. Changing it rebuilds views and recall indexes, and it uses model quota.
+- **Self-hosted:** set the embedding endpoint at `/setup`, or later at `/settings`. It must be an OpenAI-compatible `/v1/embeddings` endpoint, with a base URL, an API key, and a model name.
+
+The View LLM is needed for the richest gist and question views. Without one, Lore builds simpler views from the content, the disclosure, and the glossary. See [Generated views](/documents/memory#generated-views).
+
+## Test with real prompts
+
+Test with prompts written the way you would type them while working. A keyword test you invent does not show what an agent will actually send.
+
+1. Open the Recall page: on Loremem Cloud, the Recall page in the console. On a self-hosted server, `/recall`.
+2. Enter a real prompt and run recall.
+3. Read the candidates, their order, and their scores.
+4. Find out where the right memory stops. If it is missing from every stage, fix the memory. If it is found but withheld, look at the display threshold and the item limit. See [Recall analytics](/documents/recall/analytics) for what each stage shows.
+5. Fix the memory, then run the same prompt again. Change a setting only when the memory itself is right.
+
+## A short regular check
+
+1. After each important decision, write or update the memory. See [Writing good memories](/documents/memory/writing-memories).
+2. Once a week, run a few real prompts for each active project, and check which memories appear.
+3. Review the [recall analytics](/documents/recall/analytics) for noisy or unused memories.
+4. Fix one memory for each problem you find. Do not change several settings at once.
+5. Back up before a large cleanup. See [Backups and restore](/documents/maintenance/backups).
+
+> [!TIP]
+> Record the prompt, what you expected, and what came back. Running the same prompts after each change shows whether the change helped.

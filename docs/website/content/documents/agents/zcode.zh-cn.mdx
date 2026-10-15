@@ -1,0 +1,73 @@
+ZCode 接入会为 ZCode 安装 Lore 插件。ZCode 从其运行时的启动记忆（boot）节点获得启动记忆，每条提示词前获得召回，并通过本地 MCP 桥接获得 Lore 记忆工具。
+
+## 安装
+
+在使用 ZCode 的机器上运行：
+
+```bash
+npx @loremem/cli install --channels zcode
+```
+
+接入 Loremem 云服务时，传入服务器地址和项目令牌：
+
+```bash
+npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token --channels zcode
+```
+
+如果 `zcode` 命令不在 `PATH` 中，安装程序会跳过 ZCode。安装完成后，请重启 ZCode。
+
+## 安装内容
+
+- 来自 `lore-zcode.zip` 的插件文件，位于 `~/.lore/zcode/`。安装程序会把该目录注册为 `lore` 插件市场，如果列表中没有 `lore@lore`，则安装它，并通过 `zcode plugins enable lore@lore` 启用。每次安装时，插件市场都会先移除再重新添加。
+- 名为 `lore` 的本地 MCP 桥接。它把 MCP 请求转发到 `<server>/api/mcp?client_type=zcode`。ZCode 中的工具带有 `mcp__plugin_lore_lore__` 前缀。
+- 两个钩子。`SessionStart` 在 `startup`、`resume` 和 `clear` 时运行，加载启动记忆，超时时间为 8 秒。`UserPromptSubmit` 为每条提示词添加召回，超时时间为 10 秒。
+- 技能工具，仅在服务器声明支持技能时出现。
+
+## 验证
+
+1. 运行 `npx @loremem/cli status`。`zcode` 一行应显示 `installed`。
+2. 运行 `zcode plugins list`。输出中应包含 `lore@lore`。
+3. 检查 `core://agent/zcode` 是否有内容。参见下方的注意事项。
+4. 开始一个新的 ZCode 会话，让它调用 `lore_status`。该工具名为 `mcp__plugin_lore_lore__lore_status`。
+5. 发送一条与已有记忆相关的项目提示，然后询问 ZCode，这条提示收到了哪些记忆节点。
+
+## 注意事项
+
+- **ZCode 启动记忆节点。** ZCode 从 `core://agent/zcode` 加载启动记忆。如果该节点为空，请用你希望 ZCode Agent 开始工作时遵循的规则创建它。请使用控制台中的记忆页面；自托管服务器上，该页面为 `/memory`。
+- **失败放行。** 如果无法访问 Lore，钩子会在没有输出的情况下退出，ZCode 继续工作。
+- **配置。** 桥接和钩子读取 `${LORE_HOME:-~/.lore}/config.json`。环境变量 `LORE_BASE_URL`、`LORE_API_TOKEN` 和 `API_TOKEN` 是备用来源。令牌不会出现在插件清单或命令参数中。
+- **技能。** 除非服务器声明支持技能，否则技能保持关闭。设置 `LORE_SKILLS_ENABLED=0` 可以强制关闭技能。
+- **修改后重启。** 修改配置或令牌后，请重启 ZCode。
+
+## 手动安装（备用方案）
+
+只有当安装程序无法运行时，才使用以下步骤。它们通过 ZCode 命令安装相同的插件。
+
+```bash
+mkdir -p ~/.lore/zcode
+curl -fsSL -o lore-zcode.zip https://github.com/FFatTiger/lore/releases/latest/download/lore-zcode.zip
+unzip -qo lore-zcode.zip -d ~/.lore/zcode
+rm lore-zcode.zip
+zcode plugins marketplace add ~/.lore/zcode
+zcode plugins install lore@lore
+zcode plugins enable lore@lore
+```
+
+把服务器配置写入 `~/.lore/config.json`，然后重启 ZCode：
+
+```json
+{
+  "base_url": "https://api.loremem.com",
+  "api_token": "lm_your_token"
+}
+```
+
+## 卸载
+
+```bash
+npx @loremem/cli uninstall --channels zcode -y
+```
+
+如果 `zcode` 在你的 `PATH` 中，这条命令会卸载 `lore@lore` 并移除 `lore` 插件市场，然后删除 `~/.lore/zcode`。卸载后请重启 ZCode。
+
+如果 ZCode 无法加载 Lore，请参见[Agent 接入问题](/documents/troubleshooting/agents)。

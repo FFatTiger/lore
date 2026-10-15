@@ -1,0 +1,104 @@
+Upgrade the server and its runtime integrations, check what the CLI has installed, and remove Lore cleanly. You get the release channels, the backup to take before an upgrade, and a list of what an uninstall leaves on disk.
+
+## Update
+
+Update the server and its runtime integrations with one command:
+
+```bash
+npx @loremem/cli update
+```
+
+What `update` does depends on how the server is run:
+
+- **Docker-managed server** (`docker_managed` is `true` in `~/.lore/config.json`): downloads the current `docker-compose.yml` and keeps the previous file as `docker-compose.yml.bak.<timestamp>`. It sets the image tag for the release channel, runs `docker compose pull` and `docker compose up -d`, and waits for the health check.
+- **Any other server:** a Loremem Cloud server, an existing server, or a Compose stack you manage. Docker and the server aren't touched. For your own stack, run the commands in the next section.
+- **Runtime integrations:** `update` refreshes each runtime that is `installed` or `partial`. Use `--channels` to choose the runtimes yourself.
+- **Failures:** `update` exits with code `1` rather than reporting success. That happens when the release can't be resolved, a selected runtime fails, or a selected runtime is skipped, for example because its CLI is no longer installed. For a runtime you removed, run `uninstall --channels <runtime>`, or leave it out with `--channels`.
+
+### Release channels
+
+| Channel | Flag | Image tag | Integration release |
+| --- | --- | --- | --- |
+| `stable` (default) | None | `latest` | The latest stable release |
+| `pre` | `--pre` | `pre-latest` | The newest prerelease |
+| `dev` | `--dev` | `dev-latest` | The dev build |
+
+> [!WARNING]
+> Pass the same channel flag every time you update. The flag also sets the image tag. Running `npx @loremem/cli update` without `--pre` moves a prerelease server back to `latest`.
+
+### Update a manual Compose stack
+
+From your Compose directory, pull the new images and recreate the containers:
+
+```bash
+cd ~/lore-server
+docker compose pull
+docker compose up -d
+curl -fsS http://127.0.0.1:18901/api/health
+```
+
+## Check the install
+
+```bash
+npx @loremem/cli status
+```
+
+The output shows the config path, the base URL, the installed version, whether the CLI manages Docker, and whether a token is saved. It never prints the token. It also lists the detected runtimes and each integration's state: `installed`, `partial`, `missing`, or `unknown`. The command doesn't contact the server.
+
+## Back up before you upgrade
+
+1. Confirm that backups run. `backup.enabled` and `backup.local.enabled` should be `true` in the settings (see the [settings reference](/documents/reference/settings)). Check that `SNAPSHOT_DATA_DIR` holds a recent backup.
+2. Dump the database from your Compose directory:
+
+   ```bash
+   docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > lore-$(date +%Y%m%d).sql
+   ```
+
+3. Copy `.env` and `~/.lore/config.json` somewhere safe. They hold the database password and the token.
+
+> [!NOTE]
+> The dump contains every memory in the database. Store it with the same care as any other secret.
+
+## Uninstall
+
+`uninstall` removes runtime integrations. On a terminal, it lists the runtimes and asks `Uninstall these channels? [y/N]`. Without a terminal, it doesn't ask.
+
+```bash
+npx @loremem/cli uninstall                          # all runtimes, with a prompt
+npx @loremem/cli uninstall --channels claudecode,pi # only these runtimes
+npx @loremem/cli uninstall --purge -y               # also remove config and Docker data
+```
+
+### Stop the stack before you purge
+
+`uninstall` doesn't stop Docker. If the CLI installed the local stack, stop it before you purge:
+
+```bash
+cd ~/.lore/docker && docker compose down
+npx @loremem/cli uninstall --purge -y
+```
+
+`docker compose down` stops the containers and keeps the data in place. The purge then deletes that data.
+
+> [!WARNING]
+> `--purge` deletes `~/.lore/docker`, which holds the `.env` file, the PostgreSQL data, the Redis data, and the backups. It also deletes `~/.lore/config.json`. Back up first.
+
+## What uninstall leaves behind
+
+| Item | `uninstall` | `uninstall --purge` |
+| --- | --- | --- |
+| Containers (`lore-web`, `lore-postgres`, `lore-redis`) | Keep running | Keep running until you run `docker compose down` |
+| `~/.lore/docker` (Compose file, `.env`, data, backups) | Kept | Deleted |
+| `~/.lore/config.json` (server URL and token) | Kept | Deleted |
+| Integration files and config entries that Lore wrote for each runtime | Removed | Removed |
+| Runtime registrations when that runtime's CLI isn't on your `PATH` | Kept. Remove them with the runtime's own plugin commands. | Kept |
+| Hermes link you created, `~/.hermes/skills/lore_memory` | Stays, now broken | Stays, now broken. Delete it yourself. |
+| `[features]` `hooks = true` in `~/.codex/config.toml` | Stays | Stays |
+| An OpenCode `lore-memory.js` without the Lore marker | Kept | Kept |
+| Your own Compose directory and data | Untouched | Untouched |
+
+Uninstall removes integrations that the CLI can reach. It doesn't remove your own Compose directory, your data, or other files you wrote. Delete those yourself when you no longer need them.
+
+## Legacy shell installers
+
+The shell scripts `scripts/install.sh` and `scripts/uninstall.sh` in the repository are frozen. They are kept for compatibility and get no new features. Use `npx @loremem/cli` for installs, updates, and uninstalls. Run `npx @loremem/cli status` first to see what the CLI detects on a machine that an older script installed.

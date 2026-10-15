@@ -1,0 +1,105 @@
+Connect one agent to a Lore server and save your first memory. Choose Loremem Cloud for the fastest start, or run a server on your own machine with Docker.
+
+## Option A: Loremem Cloud
+
+You need Node.js 20 or later and the agent runtimes you want to connect.
+
+1. Sign in at `https://app.loremem.com/login` with GitHub or Google. Your first sign-in creates a personal organization and a default project.
+2. Use the project switcher at the top of the console to pick the project. Then open the **Install** page.
+3. Enter a **Token note** that says where you will use the token, such as `laptop`, and select **Create token**.
+4. Select **Copy command**. The command includes your token. The token and command are shown once, so copy them before you close the dialog.
+5. Run the command in a terminal:
+
+   ```bash
+   npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token
+   ```
+
+   The installer uses the server and token from the command, and connects the runtimes it detects on this machine. A runtime that isn't installed is reported as skipped. To choose runtimes yourself, add `--channels`, for example `--channels claudecode,codex`.
+
+6. Restart each agent runtime. Hooks and MCP configuration load when a runtime starts.
+
+> [!TIP]
+> `--api-token` leaves the token in your shell history. Keep the token in a password manager, and don't paste it into shared logs.
+
+## Option B: Self-hosted
+
+You need the following. The installer supports macOS and Linux.
+
+- Node.js 20 or later, to run `npx @loremem/cli`.
+- Docker with Docker Compose.
+- An OpenAI-compatible embedding endpoint (base URL, API key, and model).
+- A chat model for View LLM. Lore accepts OpenAI-compatible Chat, OpenAI Responses, or Anthropic Messages.
+
+1. Run the installer:
+
+   ```bash
+   npx @loremem/cli
+   ```
+
+   In a terminal, choose **Deploy the server on this machine with Docker**. For a non-interactive run, use this command instead:
+
+   ```bash
+   npx @loremem/cli install -y --docker
+   ```
+
+   The installer downloads `docker-compose.yml` into `~/.lore/docker`, writes a `.env` with a random database password next to it, starts the stack, waits until it is healthy, writes `~/.lore/config.json`, and connects the runtimes it detects.
+
+2. Open `http://127.0.0.1:18901/setup` and finish the four setup steps:
+
+   1. **Embedding:** the base URL, API key, and model for your OpenAI-compatible `/v1/embeddings` endpoint.
+   2. **View LLM:** the provider, base URL, API key, and model. Lore uses it to write memory views and to run Dream.
+   3. **Global boot memories:** `core://agent`, `core://soul`, and `preferences://user`. Select **Skip** to save the default text for an empty boot node and continue.
+   4. **Channel agent memories:** `core://agent/<runtime>` for each runtime you connect.
+
+   Setup saves settings in the database, not in `.env`. You can change them later at `/settings`.
+
+3. Restart each agent runtime.
+
+> [!WARNING]
+> The Docker stack publishes port 18901 on all network interfaces, and `API_TOKEN` is empty by default. Anyone who can reach the port can read and change your memory. On a shared network, set `API_TOKEN` in `~/.lore/docker/.env`, run `docker compose up -d` in `~/.lore/docker`, and then run `npx @loremem/cli install -y --skip-docker --api-token your_api_token` so your agents send the token.
+
+## Verify it works
+
+Check these four things in order. The first two confirm that memory is saved and recalled. The last two confirm that the console sees the activity.
+
+1. **Boot.** Start a new session in the project. Ask the agent what startup memory it received. It should describe the boot nodes you set up, such as `core://agent` and `preferences://user`.
+2. **Write.** Ask the agent to save a real project fact, such as the example in the next section. Then open **Memory** (in Loremem Cloud) or `/memory` (self-hosted) and find the new node. A new memory graph has little to recall, so start with a fact you will reuse.
+3. **Recall.** Send a prompt with the same words, for example "How should I test refund webhooks in checkout_api?" Then ask the agent to quote the `<recall>` block it received for that prompt. If the new memory appears as a line, recall works.
+4. **Console activity.** In Loremem Cloud, open **Overview** to see Queries, Shown, and Used, plus recent queries. On a self-hosted server, open **Analytics** (`/recall/drilldown`). The Queries count rises after each prompt.
+
+> [!TIP]
+> If the recall line doesn't appear, open **Recall** and run the same query to see the candidates and their scores. [Recall issues](/documents/troubleshooting/recall) lists common causes.
+
+## Write your first memory
+
+Ask the agent to save a durable fact. For example:
+
+```text
+Save this as a long-term memory for the checkout_api project. Create the parent node project://checkout_api first. Then create project://checkout_api/webhooks with priority 1, a disclosure for changing refund or payment webhooks, and the glossary terms refund webhook, idempotency key, and stripe. Content: refund webhooks are idempotent by event.id, and tests must replay the same event twice and assert a single refund row.
+```
+
+The saved memory has this shape:
+
+```text
+URI:        project://checkout_api/webhooks
+Priority:   1
+Disclosure: When changing refund or payment webhooks in checkout-api
+Glossary:   refund webhook, idempotency key, stripe
+Content:    Refund webhooks are idempotent by event.id. Tests must replay the same event twice and assert a single refund row.
+```
+
+- **URI** is the stable address. Use snake_case segments and keep dates out of the path. A child path needs its parent node first, so `project://checkout_api` must exist with its own content, disclosure, and glossary.
+- **Priority 1** marks a key fact. Lore allows up to 15 nodes at priority 1.
+- **Disclosure** describes one situation in which the memory should surface. If you find yourself writing "A or B", write two memories instead.
+- **Glossary** lists the words people actually type, including product names and error names.
+- **Content** is the fact itself, in plain text.
+
+For each field in more detail, see [Writing good memories](/documents/memory/writing-memories).
+
+## Next steps
+
+- [Move CLAUDE.md and AGENTS.md into Lore](/documents/migrate-agent-instructions): move shared rules out of local files.
+- [Connect agents](/documents/agents): add the other runtimes on this machine.
+- [How Lore works](/documents/how-lore-works): see what each agent receives and records.
+- [The web console](/documents/console): inspect and fix memories in the browser.
+- [Server configuration](/documents/self-hosting/configuration): change settings on a self-hosted server.

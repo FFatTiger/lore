@@ -1,0 +1,118 @@
+Every session follows the same lifecycle: Lore sends a baseline at session start, adds recall to each prompt, and records what agents read and write. Knowing the flow tells you why an agent saw a memory and which settings change that.
+
+## Session start
+
+When a session starts, Lore sends four things, in this order:
+
+1. **Global guidance.** Short usage rules for Lore. The text is managed on the server, and you can edit it in Settings. The setting is `lifecycle.guidance.enabled`, on by default.
+2. **Boot block.** The fixed baseline described below.
+3. **Startup recall.** Optional candidates chosen from the working directory and repository name.
+4. **Skills list** (Loremem Cloud only). An `<available_skills>` list of the skills the agent may use.
+
+### Boot nodes
+
+Boot nodes are fixed, so every session starts from the same baseline.
+
+| Node | What it holds | Loaded for |
+| --- | --- | --- |
+| `core://agent` | Workflow rules for all agents | Every runtime |
+| `core://soul` | Style and persona | Every runtime |
+| `preferences://user` | Stable context about you | Every runtime |
+| `core://agent/<client_type>` | Rules for one runtime, such as `core://agent/claudecode` | The current runtime only |
+
+### Skills (Loremem Cloud)
+
+The agent sees the name, description, and `skill_id` of each enabled skill. It decides when a skill is relevant and loads it with `lore_skill_get`. You can run an enabled skill yourself by typing `$skill-name` in a prompt.
+
+## Every prompt: recall
+
+Before each prompt, Lore finds memories that match it and adds a `<recall>` block:
+
+```text
+<recall session_id="sess_8f3c" query_id="q_41" phase="prompt">
+0.82 | project://checkout_api/webhooks | refund · idempotency key
+0.71 | project://checkout_api/testing | flaky test · fake clock
+0.64 | preferences://user | test first
+</recall>
+```
+
+Each line shows a score, a URI, and the cue terms that matched. A line is a lead, not a fact. Open the node before you rely on it.
+
+Lore uses these default display rules:
+
+| Rule | Default | Effect |
+| --- | --- | --- |
+| Minimum score | 0.60 | Candidates below this score aren't shown |
+| Maximum lines | 3 | At most three lines per block |
+| Query length | 200 characters | The query is truncated to 200 characters |
+| Timeout | 2000 ms | Slow recall is skipped and the prompt goes ahead without it ([details](/documents/recall#display-rules)) |
+
+The keys for these settings are listed in the [settings reference](/documents/reference/settings).
+
+Recall scores each candidate from exact matches on path, glossary, and query terms, semantic similarity on glossary and memory views, and full-text matches. It adds small bonuses for priority, for several matching views, and for recent updates. The recency bonus fades over a 180-day half-life, and memories at priority 0 or 1 never decay.
+
+## During the session: reading
+
+When an agent needs a memory, it opens the node with `lore_get_node`. If the URI came from a `<recall>` block, the agent also passes the `session_id` and `query_id` from that tag:
+
+```json
+{
+  "uri": "project://checkout_api/webhooks",
+  "session_id": "sess_8f3c",
+  "query_id": "q_41"
+}
+```
+
+Lore counts a recalled memory as **used** only when the agent opens it with those IDs, so the analytics can show which recalled memories the agent actually used. To browse instead of recalling, the agent calls `lore_search` with an empty query or `*` and a `domain`, or calls `lore_list_domains`.
+
+## During the session: writing
+
+Agents save durable changes with `lore_create_node`, `lore_update_node`, `lore_move_node`, and `lore_delete_node`. Two write-time checks run by default:
+
+- **Priority budget** caps the memories at priority 0 at 5 and at priority 1 at 15. It applies on create and update.
+- **Disclosure check** warns when a disclosure is missing or strings two situations together. It recognizes the Chinese connectives 或, 或者, and 以及; English "or" isn't flagged, so watch for it yourself.
+
+Lore records every create, update, move, and delete in the node's history, along with the runtime that made the change.
+
+## Maintenance
+
+- **Dream** runs every night at 03:00 by default and needs a View LLM. It applies its changes directly with the memory tools and marks each one for your review; you can roll back the latest run. See [Dream](/documents/dream).
+- **Backups** run every night at 04:00 by default. A self-hosted server keeps the latest 7 local backups. Loremem Cloud has the same settings on its Backup tab. See [Backups and restore](/documents/maintenance/backups).
+
+## How integrations work
+
+Each agent connects through a thin plugin or an MCP server. Plugins carry no prompts of their own. Each lifecycle event follows the same path:
+
+1. The runtime reaches a lifecycle point, such as session start or prompt submit.
+2. The plugin sends the event to the server at `POST /api/lifecycle/event`, with the session ID, the prompt text when there is one, and the `client_type`.
+3. The server returns text that is ready to inject: guidance, boot blocks, or a recall block.
+4. The plugin passes that text to the runtime.
+
+Three properties follow from this design:
+
+- **Guidance lives on the server.** Edit it once in Settings, and every connected agent uses the new text at its next session or prompt.
+- **`client_type` identifies the runtime.** Lore uses it to load the right runtime boot node and to attribute recall and usage per runtime. Other MCP clients send `client_type=mcp` in the endpoint URL.
+- **Plugins fail open.** If Lore is unreachable or slow, a plugin returns nothing, and the agent continues without memory for that step.
+
+| Runtime | How it connects | Automatic boot and recall |
+| --- | --- | --- |
+| Claude Code, Codex, ZCode | Plugin with session and prompt hooks, plus MCP tools | Yes |
+| OpenCode | Native plugin with `lore_*` tools (no MCP) | Yes |
+| Pi, OpenClaw, Hermes | Extension, plugin, or memory provider | Yes |
+| Other MCP clients | Streamable HTTP MCP endpoint | No. Call `lore_boot` yourself |
+
+## What Lore sees
+
+Lore sees:
+
+- **Prompt text**, which it uses to find recall candidates for that prompt.
+- **Session IDs**, which tie recall and usage to a session.
+- **At session start**, the name of the working directory and, when that directory is a Git repository with a remote, the repository name taken from the remote URL. This is best effort.
+- **What agents write**, such as new or updated memory nodes.
+
+Lore never reads your source files. The plugin only asks Git for the URL of the first remote.
+
+Lore also keeps recall events for analytics. Backups leave them out unless you turn on **Include recall events**.
+
+> [!TIP]
+> Lore stores what agents write as written. Keep secrets, tokens, and one-off notes out of memory.

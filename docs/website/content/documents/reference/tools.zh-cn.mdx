@@ -1,0 +1,236 @@
+Agent 通过下面这些工具读写 Lore。各运行时的参数名相同，只有工具名称的前缀不同。必填参数在表格中标注为“必填”，其余参数均为可选。
+
+## 记忆工具
+
+| 工具 | 用途 | 参数 |
+| --- | --- | --- |
+| `lore_guidance` | 加载完整的 Lore 使用规则。 | 无 |
+| `lore_status` | 检查记忆后端是否可达。 | 无 |
+| `lore_boot` | 为调用它的运行时加载启动记忆（boot）。 | 无 |
+| `lore_get_node` | 按 URI 打开一个节点。 | 必填：`uri`。可选：`nav_only`、`session_id`、`query_id` |
+| `lore_search` | 按关键词和语义搜索，并返回排名靠前结果的完整内容。 | 必填：`query`。可选：`domain`、`limit`、`content_limit` |
+| `lore_list_domains` | 列出顶层域。 | 无 |
+| `lore_create_node` | 创建一个记忆节点。 | 必填：`content`、`priority`、`glossary`。可选：`uri`、`domain`、`parent_path`、`title`、`disclosure` |
+| `lore_update_node` | 修改已有节点的字段。 | 必填：`uri`。可选：`content`、`priority`、`disclosure`、`glossary_add`、`glossary_remove` |
+| `lore_delete_node` | 删除已过时、重复或不再需要的路径。 | 必填：`uri` |
+| `lore_move_node` | 移动或重命名节点。 | 必填：`old_uri`、`new_uri` |
+
+### lore_guidance
+
+加载完整的使用规则。当上下文中还没有这些规则时调用。
+
+参数：无。
+
+```json
+{}
+```
+
+### lore_status
+
+检查记忆后端。数据库正常时返回 `Lore online`，否则返回 `Lore offline` 和错误信息。
+
+参数：无。
+
+```json
+{}
+```
+
+### lore_boot
+
+为调用它的运行时加载固定的启动记忆。会话开始时启动记忆没有加载，可以调用它。
+
+参数：无。
+
+```json
+{}
+```
+
+### lore_get_node
+
+打开一个节点。在依赖 `<recall>` 块中的记忆之前调用它，并传入标签中的 `session_id` 和 `query_id`，让 Lore 记录这次采用。不带协议的路径（例如 `webhooks`）使用默认域。使用 `core://` 或 `project://` 可以浏览域的根节点。
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `uri` | 字符串 | 是 | 完整的记忆 URI，例如 `core://soul`。 |
+| `nav_only` | 布尔值 | 否 | 为 `true` 时跳过开销较大的术语处理。 |
+| `session_id` | 字符串 | 否 | URI 来自 `<recall>` 时必填。从标签中原样复制。 |
+| `query_id` | 字符串 | 否 | URI 来自 `<recall>` 时必填。从标签中原样复制。 |
+
+```json
+{
+  "uri": "project://checkout_api/webhooks",
+  "session_id": "sess_8f3c",
+  "query_id": "q_41"
+}
+```
+
+### lore_search
+
+按关键词、语义或两者结合搜索记忆，并为排名靠前的结果返回完整内容，因此无需再为这些结果单独调用 `lore_get_node`。`query` 为空，或 `query` 为 `*` 且指定了 `domain` 时，会浏览该域的根节点。没有指定域时，`*` 不是通配符，请使用关键词或短语。
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `query` | 字符串 | 是 | 要搜索的关键词或短语。 |
+| `domain` | 字符串 | 否 | 把搜索限制在一个域内，例如 `project`。 |
+| `limit` | 整数 | 否 | 最多返回的结果数，范围 1 到 100。默认 `10`。 |
+| `content_limit` | 整数 | 否 | 排名靠前的多少条结果包含完整内容，范围 0 到 20。默认 `5`。 |
+
+```json
+{
+  "query": "refund webhook",
+  "domain": "project",
+  "limit": 5
+}
+```
+
+### lore_list_domains
+
+列出顶层域，例如 `core`、`preferences` 和 `project`，并显示每个域的根节点数量。
+
+参数：无。
+
+```json
+{}
+```
+
+### lore_create_node
+
+创建一条记忆。可以提供完整的 `uri`，也可以提供 `domain`、`parent_path` 和 `title`。对于多段路径，父节点必须已经存在，并且有自己的内容、触发条件和术语。当优先级预算或触发条件检查未通过时，Lore 可能会阻止创建。如果优先级 `0` 或 `1` 已满，错误信息会给出数量，并要求你先降低一个现有节点的优先级。
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `content` | 字符串 | 是 | 记忆正文。 |
+| `priority` | 整数 | 是 | `0` 表示核心身份，`1` 表示关键事实，`2` 或更高表示一般记忆。最小值为 `0`。 |
+| `glossary` | 字符串数组 | 是 | 节点的术语，包括关键词和别名。 |
+| `uri` | 字符串 | 否 | 新节点的完整 URI。最后一段成为标题。 |
+| `domain` | 字符串 | 否 | 不使用 `uri` 时，新节点所属的域。默认 `core`。 |
+| `parent_path` | 字符串 | 否 | 域内的父路径。父节点必须已经存在。 |
+| `title` | 字符串 | 否 | 新路径的最后一段。 |
+| `disclosure` | 字符串 | 否 | 这条记忆应在什么情况下被召回。 |
+
+```json
+{
+  "domain": "project",
+  "parent_path": "checkout_api/webhooks",
+  "title": "refund_idempotency",
+  "content": "Refund webhooks are idempotent by event.id. Tests must replay the same event twice and assert a single refund row.",
+  "priority": 1,
+  "glossary": ["refund webhook", "idempotency key", "stripe"],
+  "disclosure": "When changing refund or payment webhooks in checkout-api"
+}
+```
+
+示例假设 `project://checkout_api/webhooks` 已经存在，并且有自己的内容、触发条件和术语。
+
+### lore_update_node
+
+修改已有节点的字段。省略的字段保持不变。使用 `glossary_add` 和 `glossary_remove` 可以增减术语，而不必替换整个列表。
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `uri` | 字符串 | 是 | 要修改的节点的完整 URI。 |
+| `content` | 字符串 | 否 | 替换正文。 |
+| `priority` | 整数 | 否 | 新的优先级。 |
+| `disclosure` | 字符串 | 否 | 新的触发条件，即这条记忆应在什么情况下被召回。 |
+| `glossary_add` | 字符串数组 | 否 | 本次修改中要添加的术语。 |
+| `glossary_remove` | 字符串数组 | 否 | 本次修改中要删除的术语。 |
+
+```json
+{
+  "uri": "project://checkout_api/webhooks/refund_idempotency",
+  "glossary_add": ["event.id"]
+}
+```
+
+### lore_delete_node
+
+删除已过时、重复或不再需要的路径。每次修改都会记录在节点的历史中，你可以在历史页面中把节点回滚。
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `uri` | 字符串 | 是 | 要删除的路径的完整 URI。 |
+
+```json
+{
+  "uri": "project://my_app/old_retry_policy"
+}
+```
+
+### lore_move_node
+
+移动或重命名节点。新的父节点必须已经存在，因为它会成为节点的新归属。
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `old_uri` | 字符串 | 是 | 节点当前的 URI。 |
+| `new_uri` | 字符串 | 是 | 节点的新 URI。 |
+
+```json
+{
+  "old_uri": "project://my_app/refund_flow",
+  "new_uri": "project://checkout_api/refund_flow"
+}
+```
+
+示例假设 `project://checkout_api` 已经存在，并且有自己的内容、触发条件和术语。
+
+## 各运行时的工具名称
+
+| 运行时 | 工具的显示方式 | 示例 |
+| --- | --- | --- |
+| Claude Code | MCP 工具，前缀为 `mcp__plugin_lore_lore__<tool>`。技能工具使用 `mcp__plugin_lore_lore-skills__<tool>`。 | `mcp__plugin_lore_lore__lore_search` |
+| ZCode | MCP 工具，前缀同样为 `mcp__plugin_lore_lore__<tool>`。 | `mcp__plugin_lore_lore__lore_search` |
+| OpenCode | 原生工具，名称完全一致。 | `lore_search` |
+| Codex | 来自 `lore` 服务的 MCP 工具。技能工具来自 `lore-skills`。 | 由 Codex 显示 |
+| Pi、OpenClaw、Hermes | 由各自的插件注册，名称相同。 | `lore_search` |
+| 其他 MCP 客户端 | 由客户端命名。连接 `/api/mcp?client_type=mcp`。 | 由客户端命名 |
+
+在 OpenCode 中，`lore_lore_search` 这样的名称表示你注册的是 MCP 条目，而不是原生插件。参见 [Agent 接入问题](/documents/troubleshooting/agents)。
+
+Pi、OpenClaw 和 Hermes 不注册 `lore_guidance`。它们的会话开始上下文中包含同样的指导文字。
+
+## 技能工具（仅限 Loremem 云服务）
+
+只有当连接的服务器声明支持 Skills 时，才会出现技能工具。Loremem 云服务支持。开源服务器不支持，因此这些工具不会出现在那里。
+
+| 工具 | 用途 | 参数 |
+| --- | --- | --- |
+| `lore_skill_list` | 列出项目中的技能。 | 可选：`include_disabled`（默认 `true`） |
+| `lore_skill_search` | 按查询内容搜索技能。 | 必填：`query`。可选：`limit`（1 到 50） |
+| `lore_skill_get` | 创建或刷新本地副本，并返回 `SKILL.md` 和绝对路径 `skill_dir`。 | 必填：`skill_id` |
+| `lore_skill_create` | 用文件创建技能。 | 必填：`name`、`files`。可选：`enabled`（默认 `true`） |
+| `lore_skill_update` | 修改文件或启用状态。使用乐观并发控制。 | 必填：`skill_id`、`expected_version`。可选：`enabled`、`upsert_files`、`delete_paths` |
+| `lore_skill_delete` | 在服务器上归档技能。 | 必填：`skill_id` |
+| `lore_skill_status` | 报告本地副本的状态。只读。 | 无 |
+
+说明：
+
+- `files` 是对象列表。每个对象都有 `path`（必填），以及 `content`（UTF-8 文本）或 `content_base64`（二进制）之一，另外还可以有可选的 `media_type`。新技能的文件必须包含 `SKILL.md`。
+- `name` 只能使用小写字母、数字和连字符。创建后无法修改。
+- `expected_version` 是你最后一次读取到的版本。如果有人先修改了该技能，更新会失败。请用 `lore_skill_list` 读取当前版本，然后重试。
+- `lore_skill_get` 会把本地副本写入 `~/.lore/skill-artifacts/<project-id>/<skill-name>/`。服务器管理的文件是只读的，目录本身保持可写，供你保存输出。额外的文件在更新后会保留。
+- `lore_skill_status` 会把每个副本报告为 `ready`、`missing`、`outdated`、`tampered`、`unmanaged` 或 `invalid` 之一。
+- `lore_skill_delete` 不会删除本机上的本地副本。
+
+创建技能：
+
+```json
+{
+  "name": "release-checklist",
+  "files": [
+    { "path": "SKILL.md", "content": "# Release checklist\n\nRun the checks in order.\n" }
+  ]
+}
+```
+
+修改技能的文件。使用 `lore_skill_list` 返回的 `skill_id`：
+
+```json
+{
+  "skill_id": "your-skill-id",
+  "expected_version": 3,
+  "upsert_files": [
+    { "path": "checklists/rollback.md", "content": "# Rollback\n\n1. Pause the deploy.\n" }
+  ]
+}
+```

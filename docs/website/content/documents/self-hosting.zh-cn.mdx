@@ -1,0 +1,191 @@
+用 Docker 在你自己的机器上运行 Lore 服务器。你会得到 Web 控制台和 API、带 pgvector 的 PostgreSQL 数据库，以及可选的 Redis 缓存。想最快完成安装，就用 CLI；想自己编写 Compose 配置，就按手动方式安装。
+
+## 你会运行的容器
+
+这套服务由三个容器组成。Web 容器要等数据库和 Redis 健康检查通过后才会启动。
+
+| 容器 | 镜像 | 端口 | 数据（默认宿主机路径） | 作用 |
+| --- | --- | --- | --- | --- |
+| `web`（容器名 `lore-web`） | `fffattiger/lore:latest` | `18901`（`WEB_PORT`） | `./data/snapshots`（`SNAPSHOT_DATA_DIR`） | Web 控制台、API 和 MCP 端点。备份和待审核的变更记录也存放在这里。 |
+| `postgres`（容器名 `lore-postgres`） | `fffattiger/pgvector-zhparser:pg16` | 宿主机 `55439`（`POSTGRES_PORT`） | `./data/postgres`（`POSTGRES_DATA_DIR`） | 记忆图谱、历史和设置 |
+| `redis`（容器名 `lore-redis`） | `redis:7-alpine` | 不对外发布 | `./data/redis`（`REDIS_DATA_DIR`） | 共享缓存。没有 Redis 时，Lore 使用进程内缓存。 |
+
+相对数据路径以包含 `docker-compose.yml` 的目录为基准。CLI 则使用 `~/.lore/docker/data` 下的绝对路径。
+
+## 系统要求
+
+- Node.js 20 或更高版本，用于运行 `npx`。
+- macOS 或 Linux。不支持原生 Windows。
+- 带 Compose 的 Docker：`docker compose` 插件，或独立的 `docker-compose` 命令。
+- Bash、`curl` 和 `unzip`。
+- 宿主机上的 `18901` 和 `55439` 端口空闲，或者在 `WEB_PORT` 和 `POSTGRES_PORT` 中设置其他端口。
+- 你要接入的每个运行时对应的 CLI，例如 `claude` 或 `codex`。完整列表见 [CLI 参考](/documents/reference/cli)。
+
+## 用 CLI 安装
+
+CLI 会启动这套服务，等待它就绪，并接入这台机器上检测到的运行时。
+
+### 交互式安装
+
+运行安装器，按提示回答：
+
+```bash
+npx @loremem/cli
+```
+
+1. 选择语言。如果你设置了 `--lang` 或 `LORE_INSTALL_LANG`，就会跳过这一步。
+2. 回答「Lore 服务端在哪里？」，可选项如下：
+   - **在本机用 Docker 部署服务端**：运行本地服务。
+   - **连接已有服务（仅配置客户端）**：填写服务地址和令牌。
+   - **连接 Loremem SaaS**：只填写令牌。参见 [Loremem 云服务](/documents/cloud)。
+3. 选择「发布通道」：`stable`（默认）、`pre` 或 `dev`。
+4. 在「选择渠道（安装）」中选择运行时。CLI 已在 `PATH` 中找到的运行时会预先勾选。
+5. 在「确认开始？」处确认。
+
+如果 Lore 已经安装，安装器会改为询问「你要做什么？」。可选项包括「更新所选插件」「重新配置连接」「仅管理插件」「卸载插件」和「只看状态 / 退出」。
+
+### 非交互式安装
+
+加上 `-y`，就会直接按参数运行，不再提示：
+
+```bash
+npx @loremem/cli install -y --docker
+```
+
+使用 `-y` 时，未设置的选项采用默认值：发布通道为 `stable`，运行时为这台机器上检测到的运行时。服务端必须来自 `--docker`、`--base-url` 或已保存的配置。
+
+### CLI 做了什么
+
+1. 检查 Docker 和 Docker Compose 是否可用。
+2. 把 `docker-compose.yml` 下载到 `~/.lore/docker/`。如果已有同名文件，会先保存一份带时间戳的副本。
+3. 如果 `~/.lore/docker/.env` 不存在，就创建它。新文件包含随机生成的 PostgreSQL 密码、`TZ=Asia/Shanghai`，文件权限为 `0600`。已有的 `.env` 保持不变。
+4. 运行 `docker compose up -d`，然后最多等待 3 分钟，直到 `http://127.0.0.1:18901/api/health` 检查通过。
+5. 把服务地址、令牌和安装状态写入 `~/.lore/config.json`。
+6. 为每个选中的运行时安装集成。如果某个运行时的 CLI 未安装，它会被标记为跳过，而不是失败。
+7. 输出设置页地址 `http://127.0.0.1:18901/setup`。
+
+## 手动用 Docker Compose 安装
+
+如果你想自己掌控 `.env` 和整套服务，就手动创建 Compose 目录。之后 CLI 只负责接入运行时，不会管理 Docker。
+
+1. 创建目录并下载 Compose 文件：
+
+   ```bash
+   mkdir -p ~/lore-server && cd ~/lore-server
+   curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/docker-compose.yml -o docker-compose.yml
+   ```
+
+2. 在同一目录中创建 `.env`。参考下面的示例，替换密码，并让 `DATABASE_URL` 中的密码与 `POSTGRES_PASSWORD` 保持一致：
+
+   ```env
+   # 容器时区。Dream 和备份的定时任务使用这个时区。
+   TZ=Asia/Shanghai
+
+   # 内置 PostgreSQL
+   POSTGRES_DB=lore
+   POSTGRES_USER=lore
+   POSTGRES_PASSWORD=replace-with-a-long-random-password
+   POSTGRES_PORT=55439
+   POSTGRES_DATA_DIR=./data/postgres
+   DATABASE_URL=postgresql://lore:replace-with-a-long-random-password@postgres:5432/lore
+
+   # Lore Web 服务
+   WEB_PORT=18901
+   # 留空表示不做身份验证。设置令牌即可要求验证。
+   API_TOKEN=
+   LORE_DB_POOL_SIZE=10
+
+   # 缓存
+   REDIS_URL=redis://redis:6379/0
+   REDIS_DATA_DIR=./data/redis
+   CACHE_KEY_PREFIX=lore
+   CACHE_LOCAL_MAX_ITEMS=2000
+
+   # 备份和待审核的变更记录
+   SNAPSHOT_DATA_DIR=./data/snapshots
+
+   # 镜像
+   LORE_POSTGRES_IMAGE=fffattiger/pgvector-zhparser:pg16
+   LORE_REDIS_IMAGE=redis:7-alpine
+   LORE_FRONTEND_IMAGE=fffattiger/lore:latest
+   ```
+
+3. 启动服务：
+
+   ```bash
+   docker compose up -d
+   ```
+
+4. 检查容器状态，再检查健康端点：
+
+   ```bash
+   docker compose ps
+   curl -fsS http://127.0.0.1:18901/api/health
+   ```
+
+5. 接入这台机器上的运行时。`--skip-docker` 让 CLI 不管理 Docker，因此 `update` 不会为这套服务拉取镜像：
+
+   ```bash
+   npx @loremem/cli install --base-url http://127.0.0.1:18901 --skip-docker
+   ```
+
+   在终端中运行时，安装器会打开，并已填好这些答案。加上 `-y` 即可不再提示。
+
+> [!WARNING]
+> 未设置 `POSTGRES_PASSWORD` 时，Compose 会使用 `change-me`。首次启动前，请设置你自己的密码。
+
+## 用 `API_TOKEN` 保护服务器
+
+只要有任何你不完全信任的人或程序能访问服务器，就设置 `API_TOKEN`。设置后，Web 控制台、MCP 客户端和插件都会发送 `Authorization: Bearer <API_TOKEN>`。
+
+1. 生成一个足够长的随机值，例如用 `openssl rand -hex 32`，然后写入 `.env`：
+
+   ```env
+   API_TOKEN=lm_your_token
+   ```
+
+2. 在 Compose 目录中应用更改：
+
+   ```bash
+   docker compose up -d
+   ```
+
+3. 把令牌交给 CLI。加上 `-y`，让参数直接生效。手动 Compose 服务使用：
+
+   ```bash
+   npx @loremem/cli install -y --base-url http://127.0.0.1:18901 --api-token lm_your_token --skip-docker
+   ```
+
+   由 CLI 安装在 `~/.lore/docker` 中的服务使用：
+
+   ```bash
+   npx @loremem/cli install -y --skip-docker --api-token lm_your_token
+   ```
+
+4. 重启 Agent 运行时。它们会在启动时读取新令牌。
+
+> [!WARNING]
+> `install --docker` 会清除已保存的令牌，并忽略 `--api-token`。设置 `API_TOKEN` 之后，不要再运行它。
+
+### 明文 HTTP 与令牌
+
+CLI 只会通过 HTTPS 发送令牌。通过明文 HTTP 时，只有 `localhost`、`127.0.0.1` 和 `::1` 允许发送令牌。对于其他主机，CLI 会拒绝通过明文 HTTP 发送令牌。若要为单次运行放行，请添加 `--allow-insecure-http`。该参数不会被保存，`-y` 也不会隐含它。
+
+> [!WARNING]
+> 明文 HTTP 会以未加密的形式传输你的令牌和记忆。凡是其他机器需要访问的服务器，都请使用 HTTPS。
+
+## 从其他机器访问服务器
+
+- Docker 会在所有网络接口上发布 Web 端口。其他机器可以通过 `http://<主机>:18901` 访问服务器，例如 `http://192.168.1.10:18901`。
+- 把服务器放在 HTTPS 后面。运行一个终止 TLS 的反向代理，并转发到 `127.0.0.1:18901`，然后用 `https://` 地址接入客户端：
+
+  ```bash
+  npx @loremem/cli install -y --base-url https://lore.example.com --api-token lm_your_token
+  ```
+
+- 只要 Web 端口可被访问，就保持设置 `API_TOKEN`。
+- 官方 Compose 文件还会在所有网络接口上发布 PostgreSQL 的 `POSTGRES_PORT`（默认 `55439`）。其他机器不需要这个端口，请用防火墙拦截。防火墙规则在 CLI 更新后依然有效。而你对 `~/.lore/docker` 中的 Compose 文件所做的修改不会保留，因为 `update` 会替换该文件。
+
+## 下一步
+
+打开 `http://127.0.0.1:18901/setup`，按照 [首次设置](/documents/self-hosting/first-run-setup) 完成四个步骤。然后阅读 [服务器配置](/documents/self-hosting/configuration) 了解所有环境变量，并在首次升级前阅读 [更新与卸载](/documents/self-hosting/update-and-uninstall)。

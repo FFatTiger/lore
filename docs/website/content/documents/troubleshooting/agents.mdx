@@ -1,0 +1,110 @@
+An agent that runs without boot memory, recall, or Lore tools, or that shows Lore twice, usually has a local integration problem. Check the server and the token first: plugins fail open, so a broken connection looks exactly like Lore being turned off.
+
+> [!NOTE]
+> Plugins fail open. If Lore is unreachable, slow, or rejects the token, the plugin returns nothing and the agent keeps working. Check [server health and the token](/documents/troubleshooting) before you debug the runtime.
+
+## Check each runtime
+
+Run the check for your runtime, and restart the runtime after any change.
+
+| Runtime | Check | After a change |
+| --- | --- | --- |
+| Claude Code | `claude plugin list` includes `lore@lore`. In a session, `/mcp` shows `lore` as connected. | Restart Claude Code. |
+| Codex | `codex mcp list` lists `lore`. Open `/hooks` and trust the Lore hooks. `/plugins` no longer lists Lore as installable. `~/.codex/config.toml` sets `hooks = true` under `[features]`. | Restart Codex. |
+| OpenCode | `~/.config/opencode/plugins/lore-memory.js` exists and contains `@lore-managed-opencode-plugin`. Native tools use exact `lore_*` names. | Restart OpenCode. |
+| Pi | `~/.pi/agent/extensions/lore` exists. | Run `/reload` in Pi, or restart Pi. |
+| OpenClaw | `~/.openclaw/openclaw.json` has a `plugins.entries.lore` entry, and the plugin is enabled. | Restart OpenClaw. |
+| Hermes | `~/.hermes/skills/lore_memory` is a symlink to `~/.lore/hermes/lore_memory`. | Restart Hermes. |
+| ZCode | `zcode plugins list` includes `lore@lore`, and `zcode plugins enable lore@lore` has run. | Restart ZCode. |
+| Other MCP clients | The client connects to `<server>/api/mcp?client_type=mcp` with an `Authorization: Bearer` header. Nothing loads boot or recall automatically, so call `lore_boot` yourself. | Restart the client. |
+
+## No boot memory at session start
+
+**Cause:** The session-start hook did not run, or it returned nothing. The usual causes are a server or token problem, a disabled plugin, a runtime that was not restarted, or an empty runtime boot node.
+
+**Fix:**
+
+1. Ask the agent to call `lore_boot`. If it returns the boot view, the server and token work, and the hook is the problem. If the call fails, fix the connection first.
+2. Check your runtime in the table above, then restart it.
+3. For ZCode, add content to the node `core://agent/zcode` if that node is empty.
+4. For OpenCode, boot needs the experimental `experimental.chat.system.transform` hook. If your OpenCode build does not provide it, the plugin logs one warning, skips boot, and keeps native tools and prompt recall working. The warning starts with `Lore OpenCode system context is unavailable`. Update OpenCode and restart it.
+
+## No `<recall>` block appears
+
+**Cause:** Lore writes a `<recall>` block only when at least one memory passes the display threshold. The block also does not appear when the prompt hook did not run, or when recall failed, for example because no embedding model is configured.
+
+**Fix:**
+
+1. Ask the agent to call `lore_search` with a keyword from your prompt. If search finds the memory, the hook path works, and the problem is in recall. See [Recall issues](/documents/troubleshooting/recall).
+2. If search finds nothing either, check the server health and token, then check your runtime in the table above.
+3. Test with a real question. Recall needs a prompt to search.
+
+## Lore tools are missing
+
+**Cause:** The runtime is not connected to Lore's MCP server, or the plugin did not register its tools.
+
+**Fix:**
+
+- **Claude Code and ZCode:** Memory tools appear as `mcp__plugin_lore_lore__<tool>`. In Claude Code, check with `/mcp` that `lore` is connected.
+- **Codex:** `codex mcp list` must list `lore`. On servers with Skills, it also lists `lore-skills`.
+- **OpenCode:** The native tools must use the exact names from `lore_guidance` through `lore_move_node`. A name such as `lore_lore_search` means an MCP entry is registered instead of the native plugin. See the next section.
+- **Skills tools** (`lore_skill_*`) appear only when the server advertises Skills. The open-source server has none. Loremem Cloud does.
+
+## Lore appears twice
+
+**Cause:** More than one integration loads Lore. The usual sources are an old user-level MCP entry, duplicate hooks, or a compatibility layer that imports Claude Code plugins.
+
+**Fix:**
+
+- **Claude Code:** An earlier install may have left user-scope `lore` or `lore-skills` MCP entries. Remove them, then run the install again. Skip any command that reports the server was not found.
+
+  ```bash
+  claude mcp remove --scope user lore
+  claude mcp remove --scope user lore-skills
+  ```
+
+- **Codex:** Run `npx @loremem/cli install --channels codex`. The installer removes obsolete Lore entries from `~/.codex/hooks.json` and keeps unrelated hooks. Set `LORE_CODEX_INSTALL_USER_HOOKS=1` only for an older Codex build that needs user-level hooks.
+- **OpenCode:** If you see both `lore` and `lore:lore`, or the console records two client types for one prompt, another plugin is importing Claude Code Lore hooks. Run `npx @loremem/cli install --channels opencode --force`. When the installer can parse `oh-my-openagent.json[c]` (or the legacy `oh-my-opencode.json[c]`) safely, it sets `claude_code.plugins_override["lore@lore"]` to `false` there. If it skips the file, set that value yourself, keep your other settings, and restart OpenCode. Do not set `LORE_OPENCODE_ALLOW_MCP=1` unless you want the legacy MCP fallback alongside the native plugin.
+- **OpenCode, unmarked file:** If the installer reports that `lore-memory.js` is not managed by Lore and keeps it, move that file aside and run the install again.
+
+## Behavior changed after an update
+
+**Cause:** The runtime still runs old hooks, tools, or plugin files. Hooks and MCP config load when the process starts.
+
+**Fix:**
+
+1. Restart the runtime. In Pi, run `/reload` or restart.
+2. Update the integrations:
+
+   ```bash
+   npx @loremem/cli update
+   ```
+
+   `update` changes only integrations whose state is `installed` or `partial`. It fails instead of reporting success when an integration cannot be updated. Use `--channels` to pick specific runtimes.
+
+3. To reinstall one runtime even when its version has not changed, run:
+
+   ```bash
+   npx @loremem/cli install --channels claudecode --force
+   ```
+
+Claude Code keeps its own auto-memory. To make Lore the only memory, set `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` or `"autoMemoryEnabled": false` in `~/.claude/settings.json`. Lore never writes to `CLAUDE.md`. If `~/.claude/CLAUDE.md` still imports `@~/.claude/lore-guidance.md`, delete that line.
+
+## Every Lore call fails
+
+**Cause:** The server is down, the base URL or token is wrong, or `~/.lore/config.json` is malformed. The plugin hides the error from the agent, so every call looks empty.
+
+**Fix:**
+
+1. Check the server and the token with the checks on the [troubleshooting](/documents/troubleshooting) page.
+2. Run `npx @loremem/cli status` and confirm that `base_url` is the server you expect.
+3. Run the install again with the correct server and token:
+
+   ```bash
+   npx @loremem/cli install --base-url http://127.0.0.1:18901 --api-token lm_your_token
+   ```
+
+   Claude Code reads `LORE_BASE_URL` and `LORE_API_TOKEN` from the `env` block of `~/.claude/settings.json`, and the installer updates them.
+
+> [!WARNING]
+> `--base-url` marks the server as not managed by Docker. If the CLI runs your server in Docker, change only the token with `npx @loremem/cli install -y --skip-docker --api-token lm_your_token` instead.

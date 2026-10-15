@@ -1,0 +1,72 @@
+Pi 接入会为 Pi 安装一个 Lore 扩展。Pi 会在系统提示中获得启动记忆（boot），每条提示词前获得一条召回消息，并能使用 Lore 记忆工具。
+
+## 安装
+
+在使用 Pi 的机器上运行：
+
+```bash
+npx @loremem/cli install --channels pi
+```
+
+接入 Loremem 云服务时，传入服务器地址和项目令牌：
+
+```bash
+npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token --channels pi
+```
+
+如果 `pi` 命令不在 `PATH` 中，安装程序会跳过 Pi。安装完成后，请在 Pi 中运行 `/reload`，或者重启 Pi。
+
+## 安装内容
+
+- 来自 `lore-pi.zip` 的扩展文件，位于 `~/.lore/pi/`。
+- 一个指向 `~/.lore/pi/` 的链接，位于 `~/.pi/agent/extensions/lore`。Pi 从 `~/.pi/agent/extensions/` 加载扩展。
+- 九个记忆工具：`lore_status`、`lore_boot`、`lore_get_node`、`lore_search`、`lore_list_domains`、`lore_create_node`、`lore_update_node`、`lore_delete_node` 和 `lore_move_node`。在支持技能的服务器上，还会增加七个 `lore_skill_*` 工具。
+- 会话开始时，启动上下文会追加到 Pi 的系统提示中。Pi 每一轮都会重建系统提示，因此扩展会在每一轮重新追加该上下文。
+- 每条提示词之前会加入一条召回消息。该消息在聊天界面中是隐藏的。
+- 会话开始时默认执行一次健康检查。如果 Pi 能显示通知，会显示 `Lore connected: <服务器地址>`。
+
+## 验证
+
+1. 运行 `npx @loremem/cli status`。`pi` 一行应显示 `installed`。
+2. 运行 `ls -l ~/.pi/agent/extensions/lore`。输出应显示一个指向 `~/.lore/pi` 的链接。
+3. 在 Pi 中运行 `/reload`。Pi 应显示 `Lore connected: <服务器地址>`。
+4. 让 Pi 调用 `lore_status`。它应返回服务器的健康状态。
+5. 发送一条与已有记忆相关的项目提示，然后询问 Pi，这条提示收到了哪些记忆节点。
+
+## 注意事项
+
+- **修改后重载。** 安装或修改配置后，请在 Pi 中运行 `/reload`，或者重启 Pi。
+- **已有目录。** 如果 `~/.pi/agent/extensions/lore` 是一个真实目录，而不是链接，安装程序会停止，并保持该目录不变。请先把该目录移走，再重新运行安装。
+- **服务器配置。** Pi 从 `~/.lore/config.json` 读取服务器地址和令牌。如果设置了 `LORE_HOME`，Pi 会读取该目录下的 `config.json`。`LORE_BASE_URL` 和 `LORE_API_TOKEN` 是备用来源。
+- **技能列表。** Pi 自带的 `/skill` 列表可能要等到运行 `/reload` 后，才会显示 Lore 刚下载的技能。`lore_skill_get` 会立即返回技能目录和 `SKILL.md` 的内容。
+
+## 手动安装（备用方案）
+
+只有当安装程序无法运行时，才使用以下步骤。它们会设置相同的链接和文件。
+
+```bash
+mkdir -p ~/.lore/pi ~/.pi/agent/extensions
+curl -fsSL -o lore-pi.zip https://github.com/FFatTiger/lore/releases/latest/download/lore-pi.zip
+unzip -qo lore-pi.zip -d ~/.lore/pi
+rm lore-pi.zip
+ln -s ~/.lore/pi ~/.pi/agent/extensions/lore
+```
+
+如果 `~/.pi/agent/extensions/lore` 已经存在，`ln` 命令会失败。请先删除旧的条目。然后把服务器配置写入 `~/.lore/config.json`，并在 Pi 中运行 `/reload`：
+
+```json
+{
+  "base_url": "https://api.loremem.com",
+  "api_token": "lm_your_token"
+}
+```
+
+## 卸载
+
+```bash
+npx @loremem/cli uninstall --channels pi -y
+```
+
+这条命令会移除 `~/.pi/agent/extensions/lore` 处的链接，并删除 `~/.lore/pi`。如果该路径是真实目录，则保持不变。卸载后，请在 Pi 中运行 `/reload`。
+
+如果 Pi 无法加载 Lore，请参见[Agent 接入问题](/documents/troubleshooting/agents)。

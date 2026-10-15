@@ -1,31 +1,48 @@
-Lore 为 AI Agent 提供一套共享的长期记忆系统。
+把规则分别抄进 `CLAUDE.md`、`AGENTS.md` 和插件提示词里，这些副本会逐渐脱节，各自过时。一个 Agent 学到的东西只留在它自己的对话里，下一个 Agent 还得从头再学一遍。
 
-它替代了在每个本地 `CLAUDE.md`、`AGENTS.md` 和插件文件中反复复制规则的模式。Agent 只需读写同一个记忆图谱，记忆可以跨会话、跨运行时、跨机器长期保存。
+## Lore 做什么
 
-## 简短版本
+每个接入的 Agent 都走同一个循环：
 
-- **Boot memory** 提供稳定的启动上下文，例如共享 Agent 规则、用户偏好和运行时专属约束。
-- **Recall** 为当前 prompt 提供任务专属的候选记忆。
-- **Agent 应该先打开被召回节点**，再把它们当作事实使用。
-- **持久变更应该写回 Lore**，而不是复制到每个本地 Agent 文件里。
-- **Dream** 帮助审阅并改善记忆质量，但重要变更仍然需要人工审阅。
+1. **启动记忆（boot）**：会话开始时，Lore 发送一份固定的基线，包括共享的工作流规则、人设、稳定的用户偏好，以及当前运行时的规则。
+2. **召回**：每次提交提示词前，Lore 加入一个简短的 `<recall>` 块，列出可能有用的记忆。
+3. **先读后信**：召回结果只是线索，不是事实。Agent 依赖其中的内容之前，先用 `lore_get_node` 打开节点。
+4. **写回**：Agent 学到长期有效的事实时，用记忆工具把它保存为记忆节点。
+5. **Dream**：Dream 定时运行（默认每天 03:00），检查记忆图谱，修复重复和模糊的触发条件，并记录每一项变更。
 
-## Agent 如何使用 Lore
+节点历史和备份让这些变更都可以撤销。
 
-```text
-启动  →  加载 boot context（核心规则、偏好、渠道规则）
-Prompt →  接收当前任务的 recall 候选
-工作  →  打开相关节点，将其作为上下文使用
-写入  →  把持久事实、决策和规则保存回 Lore
-审阅  →  Dream 检查记忆质量，提出改进建议
-```
+## 核心概念
 
-## 接下来读什么
+| 概念 | 含义 | 详见 |
+| --- | --- | --- |
+| 记忆节点与路径 | 一条纯文本记忆，有稳定的地址，例如 `project://checkout_api/webhooks`。 | [记忆模型](/documents/memory) |
+| 启动记忆 | 会话开始时 Lore 发送的固定基线。 | [Lore 如何工作](/documents/how-lore-works) |
+| 召回 | 与当前提示词匹配的候选记忆。 | [召回如何工作](/documents/recall) |
+| 触发条件与术语 | 一条记忆应在什么情境下出现，以及指向它的词。 | [触发条件与术语](/documents/memory/disclosure-and-glossary) |
+| 优先级 | 整数排名：`0` 为核心身份，`1` 为关键事实，`2` 及以上为一般记忆。 | [优先级](/documents/memory/priority) |
+| Dream | 定时维护，保持记忆图谱整洁。 | [Dream](/documents/dream) |
+| 技能（仅 Loremem 云服务） | Agent 在需要时加载的可复用指令包。 | [技能](/documents/skills) |
 
-如果你刚开始使用 Lore，先读这三个概念页面：
+## 两种运行方式
 
-1. [Lore 适合保存什么](/zh-cn/documents/introduction/what-lore-is-for)
-2. [Lore 如何工作](/zh-cn/documents/introduction/how-lore-works)
-3. [什么时候使用 Lore](/zh-cn/documents/introduction/when-to-use-it)
+两种方式使用相同的 Agent 插件。安装程序会把你的 Agent 接入你选择的服务器。
 
-准备写出更好的记忆时，再阅读记忆模型页面：路径、披露触发条件、优先级和术语。
+| | Loremem 云服务 | 自托管 |
+| --- | --- | --- |
+| 由谁运行 | Loremem 托管，访问 `https://app.loremem.com` | 你自己在本机或服务器上运行 |
+| 设置方式 | 登录、创建令牌，然后运行控制台生成的安装命令 | 运行 `npx @loremem/cli`，选择用 Docker 部署服务端，然后在 `/setup` 完成设置 |
+| 模型 | 已预先配置。在“设置 → 模型”中选择嵌入模型配置和运行时 LLM 配置，无需 API 密钥 | 自备兼容 OpenAI 的嵌入接口，以及供 View LLM 使用的聊天模型 |
+| 技能 | 支持 | 不支持 |
+| 数据存放在哪里 | Loremem 托管的云服务中 | 你的机器或服务器上 |
+| 费用 | 提供免费套餐，可使用 GitHub 或 Google 登录 | 免费开源（MIT）。主机和所用的模型 API 费用由你承担 |
+
+> [!NOTE]
+> 之后可以通过导入备份，把自托管的记忆迁移到 Loremem 云服务。详见[导入自托管备份](/documents/cloud/import-self-hosted-backup)。
+
+## 下一步
+
+- [快速开始](/documents/quickstart)：接入第一个 Agent，并保存一条记忆。
+- [Lore 如何工作](/documents/how-lore-works)：会话期间 Lore 发送和记录什么。
+- [接入 Agent](/documents/agents)：各个运行时以及其他 MCP 客户端的接入方法。
+- [写好一条记忆](/documents/memory/writing-memories)：能被召回找到的记忆是什么样子。

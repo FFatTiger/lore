@@ -1,0 +1,105 @@
+Claude Code 接入让 Claude Code 在每次会话开始时获得启动记忆（boot），在每条提示词前获得召回，并能使用 Lore 记忆工具。它以 `lore@lore` 插件的形式安装，通过钩子（Hook）和 MCP 连接 Claude Code 与 Lore。
+
+## 安装
+
+在使用 Claude Code 的机器上运行：
+
+```bash
+npx @loremem/cli install --channels claudecode
+```
+
+接入 Loremem 云服务时，传入服务器地址和项目令牌：
+
+```bash
+npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token --channels claudecode
+```
+
+如果 `claude` 命令不在 `PATH` 中，安装程序会跳过 Claude Code。安装完成后，请重启 Claude Code。
+
+## 安装内容
+
+- 来自 `lore-claudecode.zip` 的插件文件，位于 `~/.lore/claudecode/`。安装程序会把该目录注册为插件市场，并安装 `lore@lore`。
+- 两个钩子。`SessionStart` 加载启动记忆，`UserPromptSubmit` 为每条提示词添加召回。每个钩子的超时时间为 10 秒。钩子通过 `npx tsx` 运行。
+- 两个 MCP 服务。`lore` 连接到 `<server>/api/mcp?client_type=claudecode`，并使用 `LORE_API_TOKEN` 中的令牌。`lore-skills` 在本地运行，除非启用了技能，否则它的技能工具保持隐藏。
+- `~/.claude/settings.json` 的 `env` 块中的连接配置：`LORE_BASE_URL`、`LORE_HOME`、`LORE_CLIENT_TYPE`（值为 `claudecode`）、`LORE_SKILLS_ENABLED`（`1` 或 `0`），以及设置了令牌时的 `LORE_API_TOKEN`。
+- 清理早期安装留下的内容：移除用户级别的 `lore` 和 `lore-skills` MCP 条目，并删除旧的 `~/.claude/lore-guidance.md` 文件，以及 `~/.claude/CLAUDE.md` 中指向它的导入行。
+
+Claude Code 中 Lore 工具带有 `mcp__plugin_lore_lore__` 前缀，例如 `mcp__plugin_lore_lore__lore_search`。
+
+## 验证
+
+1. 运行 `npx @loremem/cli status`。`claudecode` 一行应显示 `installed`。
+2. 运行 `claude plugin list`。输出中应包含 `lore@lore`。
+3. 开始一个新的 Claude Code 会话，让 Claude 概述它在启动时加载的规则。回答应当来自你的启动记忆。
+4. 让 Claude Code 调用 `lore_status`。它应返回服务器的健康状态。
+5. 发送一条与已有记忆相关的项目提示。上下文中应包含一个 `<recall>` 块。
+
+## 注意事项
+
+- **自动记忆。** Claude Code 自带自动记忆。如果希望 Lore 成为唯一的记忆来源，请在 `~/.claude/settings.json` 中关闭自动记忆：
+
+  ```json
+  {
+    "autoMemoryEnabled": false
+  }
+  ```
+
+  也可以在同一文件的 `env` 块中把 `CLAUDE_CODE_DISABLE_AUTO_MEMORY` 设为 `1`。
+
+- **`CLAUDE.md`。** Lore 不会写入 `CLAUDE.md`。如需把长期规则从该文件迁移到 Lore，请参见[把 CLAUDE.md 和 AGENTS.md 迁入 Lore](/documents/migrate-agent-instructions)。
+- **`npx` 需在 `PATH` 中。** 钩子通过 `npx tsx` 运行，因此 Claude Code 使用的 `PATH` 中必须包含 `npx`。
+- **修改后重启。** 钩子和 MCP 设置在进程启动时加载。修改 `~/.claude/settings.json` 或令牌后，请重启 Claude Code。
+
+## 手动安装（备用方案）
+
+只有当安装程序无法在你的机器上运行时，才使用以下步骤。它们会设置相同的插件和配置，但不包含安装程序的检查。
+
+1. 下载并解压插件：
+
+   ```bash
+   mkdir -p ~/.lore/claudecode
+   curl -fsSL -o lore-claudecode.zip https://github.com/FFatTiger/lore/releases/latest/download/lore-claudecode.zip
+   unzip -qo lore-claudecode.zip -d ~/.lore/claudecode
+   rm lore-claudecode.zip
+   ```
+
+2. 注册插件市场并安装插件：
+
+   ```bash
+   claude plugin marketplace add ~/.lore/claudecode
+   claude plugin install lore@lore
+   ```
+
+3. 在 `~/.claude/settings.json` 的 `env` 块中添加服务器配置。如果服务器没有设置 `API_TOKEN`，请去掉 `LORE_API_TOKEN`：
+
+   ```json
+   {
+     "env": {
+       "LORE_BASE_URL": "https://api.loremem.com",
+       "LORE_API_TOKEN": "lm_your_token"
+     }
+   }
+   ```
+
+4. 把同样的值写入 `~/.lore/config.json`。钩子会优先读取这个文件：
+
+   ```json
+   {
+     "base_url": "https://api.loremem.com",
+     "api_token": "lm_your_token"
+   }
+   ```
+
+5. 重启 Claude Code。
+
+手动安装不会开启技能。如需开启，请在同一个 `env` 块中把 `LORE_SKILLS_ENABLED` 设为 `1`，并且只在支持技能的服务器上这样做。
+
+## 卸载
+
+```bash
+npx @loremem/cli uninstall --channels claudecode -y
+```
+
+如果 `claude` 命令可用，这条命令会移除 `lore@lore` 插件和 `lore` MCP 条目。它还会删除 `~/.claude/settings.json` 的 `env` 块中的 Lore 配置项，并删除 `~/.lore/claudecode`。卸载后请重启 Claude Code。
+
+如果 Claude Code 无法加载 Lore，请参见[Agent 接入问题](/documents/troubleshooting/agents)。

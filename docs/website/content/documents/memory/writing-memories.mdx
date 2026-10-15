@@ -1,0 +1,136 @@
+Good memories are short, specific, and easy to trust. Before you write one, decide whether it belongs in Lore at all. Then make it specific enough that an agent can find it when it matters and act on it once it does.
+
+## What belongs in Lore
+
+| Belongs in Lore | Example |
+| --- | --- |
+| Decisions that will still matter next month | Refund webhooks are idempotent by event.id. |
+| Rules an agent would otherwise get wrong | Tests must replay the same event twice and assert a single refund row. |
+| Commands that are hard to rediscover | The exact command for the webhook replay tests, and the flags it needs. |
+| Stable preferences | Keep replies short. Do not summarize unless asked. |
+| Project constraints | Do not change the public webhook payload shape without a version bump. |
+| Pitfalls that cost time once | Retry tests need a fresh clock for every run. |
+
+| Keep out of Lore | Why | Put it here instead |
+| --- | --- | --- |
+| Secrets: API keys, tokens, passwords, private keys | Agents read memory, and backups contain it | Your secret manager, or environment variables |
+| Task progress and to-do lists | Stale within a day | Your task tracker, or the session itself |
+| Raw logs, stack traces, and pasted transcripts | Too long to be a memory. One line is usually the useful part. | A one-line lesson, with the error name in the glossary |
+| Facts that already live in code or docs | Two copies drift apart | The repo or the docs. Link to them from the content if needed. |
+| Unverified guesses | Agents will trust them | Leave them out until you have verified them |
+| Personal details you would not want repeated | Agents use memory in every session | Leave them out |
+
+## The two-question test
+
+Before you write a memory, answer both questions:
+
+1. **Would forgetting this cause repeated work or mistakes?** If not, do not write it.
+2. **Can I describe the situation where it should appear?** If not, the topic is not sharp enough yet. Narrow it, or write down the situation first.
+
+Write the memory only when both answers are yes.
+
+## When to write
+
+Write a memory right after a decision stabilizes, once the approach is chosen and verified. Do not wait until the end of the project. Do not write while the approach is still being explored.
+
+## Checklist
+
+1. One topic, one trigger.
+2. The path names the concept. It is lowercase snake_case and has no date.
+3. The content is a verified fact, rule, decision, or workflow, and it makes sense without the chat that produced it.
+4. The disclosure names one future situation, with no "or".
+5. The glossary lists the words people type, including the other language.
+6. The priority is honest. Use `0` or `1` only when the rule should shape most sessions.
+7. Run a prompt that should find the memory. See [Improve recall quality](/documents/recall/improving-recall).
+8. The memory contains no secrets.
+
+## Worked example
+
+A vague memory is hard to find and hard to trust. Here is one before and after.
+
+Before:
+
+```text
+URI:        project://checkout_api/webhook_jan
+Priority:   0
+Disclosure: Important webhook info
+Glossary:   (none)
+Content:    We fixed the webhook thing last week. Use the new approach.
+```
+
+What is wrong:
+
+- The path contains a date and names an event.
+- Priority `0` is reserved for core identity, and this is a local detail.
+- The disclosure is a label, not a situation.
+- With no glossary, nobody will find it by the words they type.
+- The content refers to "the new approach" without saying what it is.
+
+After:
+
+```text
+URI:        project://checkout_api/webhooks
+Priority:   1
+Disclosure: When changing refund or payment webhooks in checkout-api
+Glossary:   refund webhook, idempotency key, stripe
+Content:    Refund webhooks are idempotent by event.id. Tests must replay the same event twice and assert a single refund row.
+```
+
+The date moved out of the path, the priority reflects a key project fact, and the disclosure names a situation an agent will recognize.
+
+## When to split
+
+Split a memory when:
+
+- Its disclosure needs "or". Two situations need two memories.
+- Its content covers two decisions that come up in different situations, such as deployment steps and database migration rules.
+- It has grown past one topic. A broad memory matches prompts it has nothing to do with.
+
+## Update or create
+
+Prefer updating the node that already owns the fact. Creating a second node for the same fact gives agents two answers, and they will not know which one is current.
+
+1. Search first with `lore_search`, using the keywords of the topic.
+2. If a node owns the topic, update it with `lore_update_node`. Send only the fields that change. Omitted fields stay as they are.
+3. If no node owns the topic, create one under the right parent.
+
+## Ask your agent to write memories
+
+You can ask an agent to save a memory. Say where it belongs, and ask it to check for an existing node first:
+
+```text
+Save this decision in Lore under project://checkout_api/webhooks. Search for an existing node first, and update it if one already owns this topic.
+```
+
+```text
+We decided refund webhooks stay idempotent by event.id. Record this with priority 1 and a disclosure for webhook changes in checkout-api.
+```
+
+```text
+Review what we learned about the test setup today. Save only durable rules, and skip task progress.
+```
+
+Afterward, open the node or its history and check what the agent saved.
+
+## Never store secrets
+
+Do not put API keys, access tokens (including `lm_` tokens), passwords, private keys, or connection strings with credentials into a memory.
+
+If a secret gets in, rotate it first. Removing it from the memory is not enough, because earlier versions stay in the node's history and backups include them.
+
+## A starter set for a new project
+
+Create project memory before an agent needs it. Start with a parent node and four children:
+
+1. Create the parent `project://my_app`. Its content says what the project is. Give it a disclosure for any task in the project, and glossary terms for its names.
+2. Create the children under the parent:
+   - `project://my_app/overview`: what the project is, where it lives, and who owns it.
+   - `project://my_app/commands`: install, development, test, build, and deploy commands.
+   - `project://my_app/constraints`: architecture rules and changes that are off limits.
+   - `project://my_app/deployment`: hosting, the names of environment variables (never their values), and release and rollback notes.
+3. Run a realistic prompt through recall and check that one of these memories appears.
+
+> [!TIP]
+> Start small. Add a memory when an agent asks the same question twice.
+
+For the field rules, see [Priority](/documents/memory/priority) and [Disclosure and glossary](/documents/memory/disclosure-and-glossary).

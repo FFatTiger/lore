@@ -25,9 +25,9 @@ function makePluginCfg(overrides: any = {}) {
   };
 }
 
-const RECALL_GET_NODE_DESCRIPTION = 'Open a memory node. REQUIRED when opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag.';
-const RECALL_SESSION_ID_DESCRIPTION = 'REQUIRED when the URI came from <recall>: copy the exact session_id from that <recall> tag.';
-const RECALL_QUERY_ID_DESCRIPTION = 'REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag.';
+const RECALL_GET_NODE_DESCRIPTION = 'Open a memory node. When opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag if available; usage is attributed automatically by newer servers.';
+const RECALL_SESSION_ID_DESCRIPTION = 'Recall session id from a <recall> tag if available.';
+const RECALL_QUERY_ID_DESCRIPTION = 'Recall query id from a <recall> tag if available; usage is attributed automatically by newer servers.';
 
 describe('registerTools — tool registration', () => {
   it('registers all 16 tools including skills and no artifact tool', () => {
@@ -100,8 +100,14 @@ describe('tool parameter schemas', () => {
     expect(props.__session_key).toBeUndefined();
   });
 
-  it('lore_search exposes content_limit', () => {
-    expect(tools.lore_search.parameters.properties.content_limit).toBeDefined();
+  it('lore_search exposes full instead of content_limit', () => {
+    const props = tools.lore_search.parameters.properties;
+    expect(props.full).toBeDefined();
+    expect(props.full.type).toBe('boolean');
+    expect(props.full.description).toContain('full content of the top result');
+    expect(props.content_limit).toBeUndefined();
+    expect(props.limit.maximum).toBe(20);
+    expect(props.limit.description).toContain('1-20');
   });
 
   it('lore_create_node requires content, priority, glossary', () => {
@@ -109,6 +115,13 @@ describe('tool parameter schemas', () => {
     expect(req).toContain('content');
     expect(req).toContain('priority');
     expect(req).toContain('glossary');
+  });
+
+  it('lore_create_node caps glossary at 12 keywords', () => {
+    const props = tools.lore_create_node.parameters.properties;
+    expect(props.glossary.maxItems).toBe(12);
+    expect(props.glossary.description).toContain('Terms a person would actually type');
+    expect(props.glossary.description).toContain('ALL_CAPS test tokens');
   });
 
   it('lore_create_node explains semantic tree identity and date meaning', () => {
@@ -131,6 +144,14 @@ describe('tool parameter schemas', () => {
     expect(props.glossary_add).toBeDefined();
     expect(props.glossary_remove).toBeDefined();
     expect(tools.lore_update_node.description).not.toContain('glossary fields');
+  });
+
+  it('lore_update_node offers targeted edits and discourages dated logs', () => {
+    const props = tools.lore_update_node.parameters.properties;
+    expect(props.old_text).toBeDefined();
+    expect(props.new_text).toBeDefined();
+    expect(tools.lore_update_node.description).toContain('targeted edits');
+    expect(tools.lore_update_node.description).toContain('instead of appending dated logs');
   });
 
   it('lore_delete_node requires uri', () => {
@@ -358,20 +379,159 @@ describe('tool response formatting', () => {
     const api2 = makeMockApi();
     registerTools(api2 as any, makePluginCfg({ recallEnabled: false }));
     mockFetch({ results: [] });
-    const result = await api2.tools.lore_search.execute(null, { query: 'hello', content_limit: 3 });
+    const result = await api2.tools.lore_search.execute(null, { query: 'hello', full: true });
     // GET path: no results case
     expect(result.content[0].text).toContain('No matching memories found');
     const [callArgs] = (fetch as any).mock.calls;
     expect(callArgs[1].method).toBe('GET');
-    expect(String(callArgs[0])).toContain('content_limit=3');
+    expect(String(callArgs[0])).toContain('content_limit=1');
+    expect(String(callArgs[0])).toContain('full=true');
+    expect(String(callArgs[0])).toContain('limit=5');
   });
 
   it('lore_search uses POST when recallEnabled=true', async () => {
     mockFetch({ results: [] });
-    const result = await tools.lore_search.execute(null, { query: 'hello', content_limit: 7 });
+    const result = await tools.lore_search.execute(null, { query: 'hello' });
     expect(result.content[0].text).toContain('No matching memories found');
     const [callArgs] = (fetch as any).mock.calls;
     expect(callArgs[1].method).toBe('POST');
-    expect(JSON.parse(callArgs[1].body)).toMatchObject({ content_limit: 7 });
+    expect(JSON.parse(callArgs[1].body)).toMatchObject({ full: false, content_limit: 0, limit: 5 });
+  });
+
+  it('lore_search formats results with disclosure, snippet, and closing cue', async () => {
+    mockFetch({
+      results: [
+        {
+          uri: 'project://a/b',
+          score_display: 0.71,
+          updated_at: '2026-10-15T10:43:56Z',
+          disclosure: 'When working on search',
+          snippet: 'best matching passage',
+          matched_on: ['glossary', 'content'],
+        },
+        {
+          uri: 'core://c',
+          score: 0.5,
+          content: 'Full\n   content with\nnewlines and spacing',
+        },
+      ],
+      meta: {},
+    });
+    const result = await tools.lore_search.execute(null, { query: 'hello' });
+    expect(result.content[0].text).toBe([
+      '1. project://a/b  (0.71 · 2026-10-15)',
+      '   when: When working on search',
+      '   > best matching passage',
+      '2. core://c  (0.50)',
+      '   > Full content with newlines and spacing',
+      '',
+      'Open a node with lore_get_node for full content.',
+    ].join('\n'));
+  });
+
+  it('lore_search appends result 1 content after --- when full is requested', async () => {
+    mockFetch({
+      results: [
+        { uri: 'project://a/b', score_display: 0.71, snippet: 'passage', content: 'FULL BODY' },
+        { uri: 'core://c', score_display: 0.4 },
+      ],
+      meta: {},
+    });
+    const result = await tools.lore_search.execute(null, { query: 'hello', full: true });
+    expect(result.content[0].text).toBe([
+      '1. project://a/b  (0.71)',
+      '   > passage',
+      '2. core://c  (0.40)',
+      '',
+      '---',
+      '',
+      'FULL BODY',
+      '',
+      'Open a node with lore_get_node for full content.',
+    ].join('\n'));
+  });
+
+  it('lore_create_node rejects glossary longer than 12 keywords', async () => {
+    mockFetch({ uri: 'core://agent/profile' });
+    const result = await tools.lore_create_node.execute(null, {
+      domain: 'core',
+      parent_path: 'agent',
+      title: 'profile',
+      content: 'hello',
+      priority: 2,
+      glossary: Array.from({ length: 13 }, (_unused, i) => `kw-${i}`),
+    });
+    expect(result.details.ok).toBe(false);
+    expect(result.content[0].text).toContain('12');
+    expect((fetch as any).mock.calls).toHaveLength(0);
+  });
+
+  it('lore_update_node applies a targeted old_text edit through GET then PUT', async () => {
+    (fetch as any)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: async () => JSON.stringify({ node: { uri: 'core://agent/profile', content: 'alpha beta gamma beta' } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: async () => JSON.stringify({ uri: 'core://agent/profile', node_uuid: 'uuid-update' }),
+      });
+
+    const result = await tools.lore_update_node.execute(null, {
+      uri: 'core://agent/profile',
+      old_text: 'beta gamma',
+      new_text: 'BETA GAMMA',
+      glossary_add: ['memory'],
+    });
+
+    expect(result.details.ok).toBe(true);
+    expect((fetch as any).mock.calls).toHaveLength(2);
+    expect((fetch as any).mock.calls[0][1].method).toBe('GET');
+    expect((fetch as any).mock.calls[1][1].method).toBe('PUT');
+    const body = JSON.parse((fetch as any).mock.calls[1][1].body);
+    expect(body.content).toBe('alpha BETA GAMMA beta');
+    expect(body.glossary_add).toEqual(['memory']);
+  });
+
+  it('lore_update_node rejects ambiguous or invalid targeted edits', async () => {
+    mockFetch({ node: { uri: 'core://agent/profile', content: 'beta and beta' } });
+
+    const notFound = await tools.lore_update_node.execute(null, {
+      uri: 'core://agent/profile',
+      old_text: 'missing',
+      new_text: 'x',
+    });
+    expect(notFound.details.ok).toBe(false);
+    expect(notFound.content[0].text).toContain('old_text not found');
+
+    const ambiguous = await tools.lore_update_node.execute(null, {
+      uri: 'core://agent/profile',
+      old_text: 'beta',
+      new_text: 'x',
+    });
+    expect(ambiguous.details.ok).toBe(false);
+    expect(ambiguous.content[0].text).toContain('old_text found 2 times');
+
+    const empty = await tools.lore_update_node.execute(null, {
+      uri: 'core://agent/profile',
+      old_text: '',
+      new_text: 'x',
+    });
+    expect(empty.details.ok).toBe(false);
+    expect(empty.content[0].text).toContain('old_text must not be empty');
+
+    const combined = await tools.lore_update_node.execute(null, {
+      uri: 'core://agent/profile',
+      old_text: 'beta',
+      new_text: 'x',
+      content: 'whole new body',
+    });
+    expect(combined.details.ok).toBe(false);
+    expect(combined.content[0].text).toContain('not both');
+    expect((fetch as any).mock.calls).toHaveLength(2);
   });
 });

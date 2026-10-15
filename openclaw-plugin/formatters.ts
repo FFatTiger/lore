@@ -123,6 +123,66 @@ export function normalizeSearchResults(data: any) {
   return [];
 }
 
+const SEARCH_SNIPPET_MAX_CHARS = 300;
+const SEARCH_DISCLOSURE_MAX_CHARS = 160;
+const SEARCH_CLOSING_CUE = "Open a node with lore_get_node for full content.";
+
+export function collapseWhitespace(value: unknown) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function truncateText(value: string, max: number) {
+  return value.length > max ? value.slice(0, max) : value;
+}
+
+function searchResultScore(item: any) {
+  const score = Number.isFinite(item?.score_display) ? item.score_display : (Number.isFinite(item?.score) ? item.score : null);
+  return score === null ? "" : Number(score).toFixed(2);
+}
+
+function searchResultDate(item: any) {
+  const raw = typeof item?.updated_at === "string" ? item.updated_at.trim() : "";
+  return raw ? raw.slice(0, 10) : "";
+}
+
+function searchResultPassage(item: any) {
+  const snippet = collapseWhitespace(item?.snippet);
+  if (snippet) return truncateText(snippet, SEARCH_SNIPPET_MAX_CHARS);
+  return truncateText(collapseWhitespace(item?.content), SEARCH_SNIPPET_MAX_CHARS);
+}
+
+export function formatSearchResults(results: any, opts: { full?: boolean } = {}) {
+  const items = Array.isArray(results) ? results : [];
+  if (items.length === 0) return "";
+  const lines: string[] = [];
+  items.forEach((item: any, idx: number) => {
+    const meta: string[] = [];
+    const score = searchResultScore(item);
+    if (score) meta.push(score);
+    const date = searchResultDate(item);
+    if (date) meta.push(date);
+    const metaText = meta.length > 0 ? `  (${meta.join(" · ")})` : "";
+    lines.push(`${idx + 1}. ${item?.uri || ""}${metaText}`);
+    const disclosure = collapseWhitespace(item?.disclosure);
+    if (disclosure) lines.push(`   when: ${truncateText(disclosure, SEARCH_DISCLOSURE_MAX_CHARS)}`);
+    const passage = searchResultPassage(item);
+    if (passage) lines.push(`   > ${passage}`);
+  });
+  const first = items[0] || {};
+  if (opts.full && typeof first?.content === "string" && first.content.trim()) {
+    lines.push("", "---", "", first.content);
+  }
+  lines.push("", SEARCH_CLOSING_CUE);
+  return lines.join("\n");
+}
+
+export const SEARCH_RESULT_LIMIT_MAX = 20;
+export const SEARCH_RESULT_LIMIT_DEFAULT = 5;
+
+export function resolveSearchLimit(value: unknown) {
+  return Number.isFinite(value as number) ? Math.max(1, Math.min(SEARCH_RESULT_LIMIT_MAX, Number(value))) : SEARCH_RESULT_LIMIT_DEFAULT;
+}
+
 export function normalizeKeywordList(values: any) {
   if (!Array.isArray(values)) return [];
   const seen = new Set();

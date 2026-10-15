@@ -24,8 +24,7 @@ function optional(schema: unknown): boolean {
 }
 
 describe('native OpenCode tool contract parity', () => {
-  it('matches canonical MCP names, descriptions, argument descriptions, and required fields', () => {
-    const tools = createLoreTools({
+  it('matches canonical MCP names, descriptions, argument descriptions, and required fields', () => {    const tools = createLoreTools({
       baseUrl: 'https://api.example.test',
       apiToken: '',
       startupTimeoutMs: 8_000,
@@ -46,5 +45,36 @@ describe('native OpenCode tool contract parity', () => {
         expect(!optional(schema)).toBe(parameter.required);
       }
     }
+  });
+
+  it('lore_search contract advertises full instead of content_limit', () => {
+    const search = contracts.find((contract) => contract.name === 'lore_search');
+    expect(search).toBeDefined();
+    const names = search!.parameters.map((parameter) => parameter.name);
+    expect(names).toContain('full');
+    expect(names).not.toContain('content_limit');
+    expect(search!.parameters.find((parameter) => parameter.name === 'full')!.description)
+      .toBe('Include the full content of the top result.');
+  });
+
+  it('lore_get_node contract marks recall ids as optional with auto attribution', () => {
+    const getNode = contracts.find((contract) => contract.name === 'lore_get_node');
+    expect(getNode!.description).toContain('if available');
+    expect(getNode!.description).toContain('automatically by newer servers');
+    expect(getNode!.parameters.find((parameter) => parameter.name === 'query_id')!.description)
+      .toContain('attributed automatically');
+  });
+
+  it('lore_create_node and lore_update_node contracts match the new edit surface', () => {
+    const create = contracts.find((contract) => contract.name === 'lore_create_node');
+    expect(create!.parameters.find((parameter) => parameter.name === 'glossary')!.description)
+      .toContain('Terms a person would actually type');
+
+    const update = contracts.find((contract) => contract.name === 'lore_update_node');
+    expect(update!.description).toContain('targeted edits');
+    expect(update!.description).toContain('instead of appending dated logs');
+    const names = update!.parameters.map((parameter) => parameter.name);
+    expect(names).toContain('old_text');
+    expect(names).toContain('new_text');
   });
 });

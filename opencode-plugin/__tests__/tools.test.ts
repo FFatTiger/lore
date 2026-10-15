@@ -139,7 +139,7 @@ describe('native OpenCode Lore tools', () => {
         session_id: 'ses-explicit',
         query_id: 'query-1',
       }, toolContext),
-      tools.lore_search.execute({ query: 'OpenCode', domain: 'project', limit: 10, content_limit: 5 }, toolContext),
+      tools.lore_search.execute({ query: 'OpenCode', domain: 'project', limit: 10, full: false }, toolContext),
       tools.lore_list_domains.execute({}, toolContext),
       tools.lore_create_node.execute({
         uri: 'project://runtime/opencode',
@@ -383,5 +383,87 @@ describe('native OpenCode Lore tools', () => {
       session_id: 'ses-context',
       query_id: 'query-2',
     }));
+  });
+
+  it('lore_search sends full and the derived content_limit', async () => {
+    const calls: Array<{ url: URL; init: RequestInit }> = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init = {}) => {
+      calls.push({ url: new URL(String(input)), init });
+      return jsonResponse({ results: [], meta: {} });
+    });
+
+    const tools = createLoreTools(config);
+    await tools.lore_search.execute({ query: 'hello', full: true }, context());
+    await tools.lore_search.execute({ query: 'hello' }, context());
+
+    const first = JSON.parse(String(calls[0].init.body));
+    expect(first).toMatchObject({ full: true, content_limit: 1, limit: 5 });
+    const second = JSON.parse(String(calls[1].init.body));
+    expect(second).toMatchObject({ full: false, content_limit: 0, limit: 5 });
+  });
+
+  it('lore_search rejects limits above 20 at the schema level', async () => {
+    const tools = createLoreTools(config);
+    await expect(tools.lore_search.execute({ query: 'hello', limit: 21 }, context()))
+      .rejects.toThrow();
+    expect(Object.keys(tools.lore_search.args)).toEqual(['query', 'domain', 'limit', 'full']);
+  });
+
+  it('lore_create_node caps glossary at 12 keywords', async () => {
+    const tools = createLoreTools(config);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => jsonResponse({ uri: 'core://x' }));
+
+    await expect(tools.lore_create_node.execute({
+      content: 'hello',
+      priority: 2,
+      glossary: Array.from({ length: 13 }, (_unused, i) => `kw-${i}`),
+    }, context())).rejects.toThrow(/12/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('lore_update_node applies a targeted old_text edit through GET then PUT', async () => {
+    const calls: Array<{ url: URL; init: RequestInit }> = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init = {}) => {
+      const url = new URL(String(input));
+      calls.push({ url, init });
+      if (url.pathname === '/api/browse/node' && (init.method ?? 'GET') === 'GET') {
+        return jsonResponse({ node: { uri: 'core://agent/profile', content: 'alpha beta gamma beta' } });
+      }
+      return jsonResponse({ uri: 'core://agent/profile' });
+    });
+
+    const result = await createLoreTools(config).lore_update_node.execute({
+      uri: 'core://agent/profile',
+      old_text: 'beta gamma',
+      new_text: 'BETA GAMMA',
+      glossary_add: ['memory'],
+    }, context());
+
+    expect(resultOutput(result)).toContain('Updated core://agent/profile');
+    expect(calls.map(({ url, init }) => `${init.method ?? 'GET'} ${url.pathname}`)).toEqual([
+      'GET /api/browse/node',
+      'PUT /api/browse/node',
+    ]);
+    const body = JSON.parse(String(calls[1].init.body));
+    expect(body.content).toBe('alpha BETA GAMMA beta');
+    expect(body.glossary_add).toEqual(['memory']);
+    expect(body.old_text).toBeUndefined();
+  });
+
+  it('lore_update_node rejects ambiguous or invalid targeted edits', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => jsonResponse({
+      node: { uri: 'core://agent/profile', content: 'beta and beta' },
+    }));
+    const tools = createLoreTools(config);
+
+    await expect(tools.lore_update_node.execute({ uri: 'core://agent/profile', old_text: 'missing', new_text: 'x' }, context()))
+      .rejects.toThrow('old_text not found');
+    await expect(tools.lore_update_node.execute({ uri: 'core://agent/profile', old_text: 'beta', new_text: 'x' }, context()))
+      .rejects.toThrow('old_text found 2 times');
+    await expect(tools.lore_update_node.execute({ uri: 'core://agent/profile', old_text: '', new_text: 'x' }, context()))
+      .rejects.toThrow('old_text must not be empty');
+    await expect(tools.lore_update_node.execute({ uri: 'core://agent/profile', old_text: 'beta', new_text: 'x', content: 'body' }, context()))
+      .rejects.toThrow(/not both/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

@@ -49,7 +49,7 @@ type ToolName = typeof OPEN_CODE_TOOL_NAMES[number];
 type ToolContract = typeof contracts[number];
 
 type LoreNodePayload = {
-  node?: { uri?: string };
+  node?: { uri?: string; content?: string };
   children?: unknown[];
 };
 
@@ -207,8 +207,8 @@ export function createLoreTools(
       args: {
         query: tool.schema.string().describe(parameterDescription('lore_search', 'query')),
         domain: tool.schema.string().optional().describe(parameterDescription('lore_search', 'domain')),
-        limit: tool.schema.number().int().min(1).max(100).optional().describe(parameterDescription('lore_search', 'limit')),
-        content_limit: tool.schema.number().int().min(0).max(20).optional().describe(parameterDescription('lore_search', 'content_limit')),
+        limit: tool.schema.number().int().min(1).max(20).optional().describe(parameterDescription('lore_search', 'limit')),
+        full: tool.schema.boolean().optional().describe(parameterDescription('lore_search', 'full')),
       },
       async execute(args, context) {
         const query = args.query.trim();
@@ -219,16 +219,18 @@ export function createLoreTools(
           });
           return result(context, 'Lore domain', `Domain root: ${domain}://\n\n${formatNode(data)}`);
         }
+        const full = args.full === true;
         const data = await request(config, context, '/browse/search', {
           method: 'POST',
           body: {
             query,
             domain,
-            limit: args.limit ?? 10,
-            content_limit: args.content_limit ?? 5,
+            limit: args.limit ?? 5,
+            content_limit: full ? 1 : 0,
+            full,
           },
         });
-        return result(context, 'Lore search', formatSearchResults(data, domain));
+        return result(context, 'Lore search', formatSearchResults(data, domain, full));
       },
     }),
 
@@ -253,7 +255,7 @@ export function createLoreTools(
       args: {
         content: tool.schema.string().describe(parameterDescription('lore_create_node', 'content')),
         priority: tool.schema.number().int().min(0).describe(parameterDescription('lore_create_node', 'priority')),
-        glossary: tool.schema.array(tool.schema.string()).describe(parameterDescription('lore_create_node', 'glossary')),
+        glossary: tool.schema.array(tool.schema.string().describe(parameterDescription('lore_create_node', 'glossary'))).max(12).describe(parameterDescription('lore_create_node', 'glossary')),
         uri: tool.schema.string().optional().describe(parameterDescription('lore_create_node', 'uri')),
         domain: tool.schema.string().optional().describe(parameterDescription('lore_create_node', 'domain')),
         parent_path: tool.schema.string().optional().describe(parameterDescription('lore_create_node', 'parent_path')),
@@ -278,6 +280,9 @@ export function createLoreTools(
           parentPath = derived.parentPath;
           title = derived.title;
         }
+        if (args.glossary.length > 12) {
+          throw new Error(`glossary accepts at most 12 keywords (got ${args.glossary.length})`);
+        }
         const glossary = normalizeKeywordList(args.glossary);
         const data = await request<Record<string, unknown>>(config, context, '/browse/node', {
           method: 'POST',
@@ -301,6 +306,8 @@ export function createLoreTools(
       args: {
         uri: tool.schema.string().describe(parameterDescription('lore_update_node', 'uri')),
         content: tool.schema.string().optional().describe(parameterDescription('lore_update_node', 'content')),
+        old_text: tool.schema.string().optional().describe(parameterDescription('lore_update_node', 'old_text')),
+        new_text: tool.schema.string().optional().describe(parameterDescription('lore_update_node', 'new_text')),
         priority: tool.schema.number().int().min(0).optional().describe(parameterDescription('lore_update_node', 'priority')),
         disclosure: tool.schema.string().optional().describe(parameterDescription('lore_update_node', 'disclosure')),
         glossary_add: tool.schema.array(tool.schema.string()).optional().describe(parameterDescription('lore_update_node', 'glossary_add')),
@@ -315,15 +322,27 @@ export function createLoreTools(
         });
         const glossaryAdd = normalizeKeywordList(args.glossary_add);
         const glossaryRemove = normalizeKeywordList(args.glossary_remove);
+        const search = new URLSearchParams({ domain: locator.domain, path: locator.path });
         const body: Record<string, unknown> = { session_id: context.sessionID };
-        if (args.content !== undefined) body.content = args.content;
+        if (args.old_text !== undefined) {
+          if (args.old_text.length === 0) throw new Error('old_text must not be empty');
+          if (args.content !== undefined) throw new Error('Pass either content or old_text/new_text, not both');
+          const current = await request<LoreNodePayload>(config, context, '/browse/node', { search });
+          const currentContent = typeof current.node?.content === 'string' ? current.node.content : '';
+          const occurrences = currentContent.split(args.old_text).length - 1;
+          if (occurrences === 0) throw new Error('old_text not found');
+          if (occurrences > 1) throw new Error(`old_text found ${occurrences} times`);
+          body.content = currentContent.replace(args.old_text, args.new_text ?? '');
+        } else if (args.content !== undefined) {
+          body.content = args.content;
+        }
         if (args.priority !== undefined) body.priority = args.priority;
         if (args.disclosure !== undefined) body.disclosure = args.disclosure;
         if (glossaryAdd.length > 0) body.glossary_add = glossaryAdd;
         if (glossaryRemove.length > 0) body.glossary_remove = glossaryRemove;
         const data = await request<Record<string, unknown>>(config, context, '/browse/node', {
           method: 'PUT',
-          search: new URLSearchParams({ domain: locator.domain, path: locator.path }),
+          search,
           body,
         });
         return result(context, 'Lore update', `Updated ${String(data.uri ?? args.uri)}`);

@@ -60,21 +60,59 @@ describe('OpenCode REST output formatters', () => {
     expect(text).toContain('Use native Lore tools.');
   });
 
-  it('formats search results and provides an explicit empty result', () => {
+  it('formats search results with score, date, disclosure, snippet, and closing cue', () => {
     expect(formatSearchResults({ results: [] })).toBe('No matching memories found.');
     expect(formatSearchResults({
-      results: [{
-        uri: 'project://runtime/opencode',
-        priority: 1,
-        score_display: 0.875,
-        cues: ['OpenCode', 'native tools'],
-        content: 'Full memory content.',
-      }],
+      results: [
+        {
+          uri: 'project://runtime/opencode',
+          score_display: 0.875,
+          updated_at: '2026-10-15T10:43:56Z',
+          disclosure: 'when integrating OpenCode',
+          snippet: 'best matching passage',
+          cues: ['OpenCode', 'native tools'],
+        },
+        {
+          uri: 'core://c',
+          score: 0.5,
+          content: 'Full   content with\nspacing',
+        },
+      ],
     })).toBe([
-      '1. project://runtime/opencode (priority: 1, score: 0.875)',
-      '   via: OpenCode, native tools',
-      '   ---',
+      '1. project://runtime/opencode  (0.88 · 2026-10-15)',
+      '   when: when integrating OpenCode',
+      '   > best matching passage',
+      '2. core://c  (0.50)',
+      '   > Full content with spacing',
+      '',
+      'Open a node with lore_get_node for full content.',
+    ].join('\n'));
+  });
+
+  it('appends result 1 content after --- when full is requested', () => {
+    expect(formatSearchResults({
+      results: [
+        { uri: 'project://runtime/opencode', score_display: 0.875, snippet: 'passage', content: 'Full memory content.' },
+        { uri: 'core://c', score_display: 0.4 },
+      ],
+    }, null, true)).toBe([
+      '1. project://runtime/opencode  (0.88)',
+      '   > passage',
+      '2. core://c  (0.40)',
+      '',
+      '---',
+      '',
       'Full memory content.',
+      '',
+      'Open a node with lore_get_node for full content.',
+    ].join('\n'));
+  });
+
+  it('omits absent score, date, disclosure, and passage', () => {
+    expect(formatSearchResults({ results: [{ uri: 'core://c' }] })).toBe([
+      '1. core://c',
+      '',
+      'Open a node with lore_get_node for full content.',
     ].join('\n'));
   });
 

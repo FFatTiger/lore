@@ -120,24 +120,62 @@ export function formatBootView(data: unknown): string {
   return lines.join('\n').trim();
 }
 
-export function formatSearchResults(data: unknown, domain?: string | null): string {
+const SEARCH_SNIPPET_MAX_CHARS = 300;
+const SEARCH_DISCLOSURE_MAX_CHARS = 160;
+const SEARCH_CLOSING_CUE = 'Open a node with lore_get_node for full content.';
+
+function collapseWhitespace(value: unknown): string {
+  return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function truncateText(value: string, max: number): string {
+  return value.length > max ? value.slice(0, max) : value;
+}
+
+function searchResultScore(item: Record<string, unknown>): string {
+  const score = finiteNumber(item.score_display) ?? finiteNumber(item.score);
+  return score === null ? '' : score.toFixed(2);
+}
+
+function searchResultDate(item: Record<string, unknown>): string {
+  const raw = text(item.updated_at).trim();
+  return raw ? raw.slice(0, 10) : '';
+}
+
+function searchResultPassage(item: Record<string, unknown>): string {
+  const snippet = collapseWhitespace(item.snippet);
+  if (snippet) return truncateText(snippet, SEARCH_SNIPPET_MAX_CHARS);
+  return truncateText(collapseWhitespace(item.content), SEARCH_SNIPPET_MAX_CHARS);
+}
+
+export function formatSearchResults(data: unknown, domain?: string | null, full = false): string {
   const payload = record(data);
-  const results = Array.isArray(data) ? data.map(record) : array(payload.results).map(record);
+  const results = (Array.isArray(data) ? data : array(payload.results)) as unknown[];
   if (results.length === 0) {
     return `No matching memories found${domain ? ` in domain ${domain}` : ''}.`;
   }
 
-  return results.map((item, index) => {
-    const score = finiteNumber(item.score_display) ?? finiteNumber(item.score);
-    const metadata = [`priority: ${item.priority ?? ''}`];
-    if (score !== null) metadata.push(`score: ${score}`);
-    const lines = [`${index + 1}. ${text(item.uri)} (${metadata.join(', ')})`];
-    const cues = array(item.cues).map(text).filter(Boolean);
-    if (cues.length > 0) lines.push(`   via: ${cues.join(', ')}`);
-    if (text(item.content)) lines.push('   ---', text(item.content));
-    else if (text(item.snippet)) lines.push(`   ${text(item.snippet)}`);
-    return lines.join('\n');
-  }).join('\n\n');
+  const items = results.map(record);
+  const lines: string[] = [];
+  items.forEach((item, index) => {
+    const meta: string[] = [];
+    const score = searchResultScore(item);
+    if (score) meta.push(score);
+    const date = searchResultDate(item);
+    if (date) meta.push(date);
+    const metaText = meta.length > 0 ? `  (${meta.join(' · ')})` : '';
+    lines.push(`${index + 1}. ${text(item.uri)}${metaText}`);
+    const disclosure = collapseWhitespace(item.disclosure);
+    if (disclosure) lines.push(`   when: ${truncateText(disclosure, SEARCH_DISCLOSURE_MAX_CHARS)}`);
+    const passage = searchResultPassage(item);
+    if (passage) lines.push(`   > ${passage}`);
+  });
+  const first = items[0];
+  if (full && typeof first.content === 'string' && first.content.trim()) {
+    lines.push('', '---', '', first.content);
+  }
+  lines.push('', SEARCH_CLOSING_CUE);
+  return lines.join('\n');
 }
 
 export function normalizeKeywordList(values: unknown): string[] {

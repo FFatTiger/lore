@@ -16,7 +16,7 @@
   },
   {
     "name": "lore_get_node",
-    "description": "Open a memory node. REQUIRED when opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag.",
+    "description": "Open a memory node. When opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag if available; usage is attributed automatically by newer servers.",
     "parameters": [
       {
         "name": "uri",
@@ -30,19 +30,19 @@
       },
       {
         "name": "session_id",
-        "description": "REQUIRED when the URI came from <recall>: copy the exact session_id from that <recall> tag.",
+        "description": "Recall session id from a <recall> tag if available.",
         "required": false
       },
       {
         "name": "query_id",
-        "description": "REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag.",
+        "description": "Recall query id from a <recall> tag if available; usage is attributed automatically by newer servers.",
         "required": false
       }
     ]
   },
   {
     "name": "lore_search",
-    "description": "Search memories by keyword, semantic similarity, or both. Returns full content for top results \u2014 use this when you need to read memory content directly without a separate get_node call.",
+    "description": "Search memories by keyword, semantic similarity, or both. Pass full=true to include the full content of the top result.",
     "parameters": [
       {
         "name": "query",
@@ -56,12 +56,12 @@
       },
       {
         "name": "limit",
-        "description": "Maximum number of results.",
+        "description": "Maximum number of results (1-20, default 5).",
         "required": false
       },
       {
-        "name": "content_limit",
-        "description": "How many top results include full content (default 5).",
+        "name": "full",
+        "description": "Include the full content of the top result.",
         "required": false
       }
     ]
@@ -87,7 +87,7 @@
       },
       {
         "name": "glossary",
-        "description": "Initial glossary keywords written with this node create event.",
+        "description": "Terms a person would actually type to find this; avoid commit hashes, version numbers, IPs/ports, file paths, and ALL_CAPS test tokens.",
         "required": true
       },
       {
@@ -119,7 +119,7 @@
   },
   {
     "name": "lore_update_node",
-    "description": "Revise an existing long-term memory node. Omitted content, metadata, and glossary mutation fields are left unchanged.",
+    "description": "Revise an existing long-term memory node. Prefer targeted edits (old_text/new_text) over replacing the whole content; rewrite the node to keep it current instead of appending dated logs. Omitted content, metadata, and glossary mutation fields are left unchanged.",
     "parameters": [
       {
         "name": "uri",
@@ -129,6 +129,16 @@
       {
         "name": "content",
         "description": "New content to replace the existing content; omit to leave content unchanged.",
+        "required": false
+      },
+      {
+        "name": "old_text",
+        "description": "Exact passage in the current content to replace; must match exactly one occurrence.",
+        "required": false
+      },
+      {
+        "name": "new_text",
+        "description": "Replacement for old_text; empty or omitted deletes the passage.",
         "required": false
       },
       {

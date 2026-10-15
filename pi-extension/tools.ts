@@ -1,13 +1,13 @@
 import { textResult, fetchJson, hasRecallConfig } from './api';
 import { resolveMemoryLocator, splitParentPathAndTitle, trimSlashes } from './uri';
-import { formatNode, formatBootView, normalizeSearchResults, normalizeKeywordList } from './formatters';
+import { formatNode, formatBootView, normalizeSearchResults, normalizeKeywordList, formatSearchResults, resolveSearchLimit } from './formatters';
 import { registerSkillTools, type SkillsSession } from './skills';
 
 const Type = {
   String: (meta?: Record<string, unknown>) => ({ type: 'string', ...meta }),
   Number: (meta?: Record<string, unknown>) => ({ type: 'number', ...meta }),
   Boolean: (meta?: Record<string, unknown>) => ({ type: 'boolean', ...meta }),
-  Array: (items: Record<string, unknown>) => ({ type: 'array', items }),
+  Array: (items: Record<string, unknown>, meta?: Record<string, unknown>) => ({ type: 'array', items, ...meta }),
   Optional: (schema: Record<string, unknown>) => ({ ...schema }),
   Object: (properties: Record<string, unknown>, rest?: Record<string, unknown>) => ({
     type: 'object',
@@ -16,9 +16,9 @@ const Type = {
   }),
 };
 
-const RECALL_GET_NODE_DESCRIPTION = 'Open a memory node. REQUIRED when opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag.';
-const RECALL_SESSION_ID_DESCRIPTION = 'REQUIRED when the URI came from <recall>: copy the exact session_id from that <recall> tag.';
-const RECALL_QUERY_ID_DESCRIPTION = 'REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag.';
+const RECALL_GET_NODE_DESCRIPTION = 'Open a memory node. When opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag if available; usage is attributed automatically by newer servers.';
+const RECALL_SESSION_ID_DESCRIPTION = 'Recall session id from a <recall> tag if available.';
+const RECALL_QUERY_ID_DESCRIPTION = 'Recall query id from a <recall> tag if available; usage is attributed automatically by newer servers.';
 
 export function registerTools(pi: any, pluginCfg: any, skillsSession?: SkillsSession) {
   pi.registerTool({
@@ -65,7 +65,7 @@ export function registerTools(pi: any, pluginCfg: any, skillsSession?: SkillsSes
     promptSnippet: 'Open a Lore memory node by URI.',
     promptGuidelines: [
       'Use lore_get_node to open a recalled Lore URI before relying on it in an answer or code change.',
-      'When opening a URI from a <recall>, copy the exact session_id and query_id from that <recall> tag.',
+      'When opening a URI from a <recall>, copy the exact session_id and query_id from that <recall> tag if available.',
     ],
     async execute(_toolCallId: string, params: any = {}, _signal?: AbortSignal, _onUpdate?: unknown, _ctx?: any) {
       const navOnly = params?.nav_only === true;
@@ -104,12 +104,12 @@ export function registerTools(pi: any, pluginCfg: any, skillsSession?: SkillsSes
   pi.registerTool({
     name: 'lore_search',
     label: 'Lore search',
-    description: 'Search memories by keyword, semantic similarity, or both. Returns full content for top results.',
+    description: 'Search memories by keyword, semantic similarity, or both. Pass full=true to include the full content of the top result.',
     parameters: Type.Object({
       query: Type.String({ description: 'Search query text. Use a meaningful keyword or phrase; passing an empty string or * with a domain filter browses that domain root.' }),
       domain: Type.Optional(Type.String({ description: 'Optional domain filter to narrow the search.' })),
-      limit: Type.Optional(Type.Number({ minimum: 1, maximum: 100, description: 'Maximum number of results (1-100).' })),
-      content_limit: Type.Optional(Type.Number({ minimum: 0, maximum: 20, description: 'How many top results include full content (default 5).' })),
+      limit: Type.Optional(Type.Number({ minimum: 1, maximum: 20, description: 'Maximum number of results (1-20, default 5).' })),
+      full: Type.Optional(Type.Boolean({ description: 'Include the full content of the top result.' })),
     }),
     promptSnippet: 'Search Lore long-term memory for durable project or user context.',
     promptGuidelines: [
@@ -118,8 +118,9 @@ export function registerTools(pi: any, pluginCfg: any, skillsSession?: SkillsSes
     async execute(_toolCallId: string, params: any = {}, _signal?: AbortSignal, _onUpdate?: unknown, _ctx?: any) {
       const query = String(params?.query || '').trim();
       const domainFilter = typeof params?.domain === 'string' && params.domain.trim() ? params.domain.trim() : null;
-      const safeLimit = Number.isFinite(params?.limit) ? Math.max(1, Math.min(100, params.limit)) : 10;
-      const safeContentLimit = Number.isFinite(params?.content_limit) ? Math.max(0, Math.min(20, params.content_limit)) : 5;
+      const full = params?.full === true;
+      const safeLimit = resolveSearchLimit(params?.limit);
+      const safeContentLimit = full ? 1 : 0;
       try {
         if (domainFilter && (!query || query === '*')) {
           const qs = new URLSearchParams({ domain: domainFilter, path: '', nav_only: 'true' });
@@ -136,6 +137,7 @@ export function registerTools(pi: any, pluginCfg: any, skillsSession?: SkillsSes
               domain: domainFilter,
               limit: safeLimit,
               content_limit: safeContentLimit,
+              full,
               hybrid: true,
             }),
           });
@@ -144,17 +146,13 @@ export function registerTools(pi: any, pluginCfg: any, skillsSession?: SkillsSes
           if (domainFilter) qs.set('domain', domainFilter);
           qs.set('limit', String(safeLimit));
           qs.set('content_limit', String(safeContentLimit));
+          qs.set('full', String(full));
           data = await fetchJson(pluginCfg, `/browse/search?${qs.toString()}`, { method: 'GET' });
         }
         const results = normalizeSearchResults(data);
         const meta = data?.meta || null;
         const text = results.length > 0
-          ? results.map((item: any, idx: number) => {
-              const parts = [`${idx + 1}. ${item.uri} (priority: ${item.priority}`];
-              if (typeof item?.score === 'number') parts.push(`score: ${item.score.toFixed(3)}`);
-              if (Array.isArray(item?.matched_on) && item.matched_on.length > 0) parts.push(`via: ${item.matched_on.join('+')}`);
-              return `${parts.join(', ')})\n   ${item.snippet}`;
-            }).join('\n')
+          ? formatSearchResults(results, { full })
           : `No matching memories found${domainFilter ? ` in domain ${domainFilter}` : ''}.`;
         const suffix = meta?.semantic_error ? `\n\nSemantic fallback skipped: ${meta.semantic_error}` : '';
         return textResult(`${text}${suffix}`, { ok: true, results, meta });
@@ -189,7 +187,7 @@ export function registerTools(pi: any, pluginCfg: any, skillsSession?: SkillsSes
     parameters: Type.Object({
       content: Type.String({ description: 'Memory text body.' }),
       priority: Type.Number({ minimum: 0, description: 'Importance tier: 0=core identity (max 5), 1=key facts (max 15), 2+=general.' }),
-      glossary: Type.Array(Type.String({ description: 'Search keyword.' }), { description: 'Initial glossary keywords written with this node create event for later retrieval.' }),
+      glossary: Type.Array(Type.String({ description: 'Search keyword.' }), { maxItems: 12, description: 'Terms a person would actually type to find this; avoid commit hashes, version numbers, IPs/ports, file paths, and ALL_CAPS test tokens.' }),
       uri: Type.Optional(Type.String({ description: 'Optional final memory URI. It names a durable concept identity; event time belongs in content or in explicit archive, diary, release, or incident concepts. Intermediate paths grow from real parent abstractions with content.' })),
       domain: Type.Optional(Type.String({ description: 'Target memory domain when not using uri.' })),
       parent_path: Type.Optional(Type.String({ description: 'Parent concept path inside the chosen domain; for multi-segment paths this parent abstraction explains why the children belong together and carries content, disclosure, and glossary.' })),
@@ -206,6 +204,9 @@ export function registerTools(pi: any, pluginCfg: any, skillsSession?: SkillsSes
         glossary,
       };
       try {
+        if (Array.isArray(params?.glossary) && params.glossary.length > 12) {
+          throw new Error(`glossary accepts at most 12 keywords (got ${params.glossary.length})`);
+        }
         if (typeof params?.title === 'string') body.title = params.title.trim();
         if (typeof params?.disclosure === 'string') body.disclosure = params.disclosure;
 
@@ -242,28 +243,42 @@ export function registerTools(pi: any, pluginCfg: any, skillsSession?: SkillsSes
   pi.registerTool({
     name: 'lore_update_node',
     label: 'Lore update node',
-    description: 'Revise an existing long-term memory node. Omitted content, metadata, and glossary mutation fields are left unchanged.',
+    description: 'Revise an existing long-term memory node. Prefer targeted edits (old_text/new_text) over replacing the whole content; rewrite the node to keep it current instead of appending dated logs. Omitted content, metadata, and glossary mutation fields are left unchanged.',
     parameters: Type.Object({
       uri: Type.String({ description: 'Full memory URI for the node you want to revise.' }),
       content: Type.Optional(Type.String({ description: 'New content to replace the existing content; omit to leave content unchanged.' })),
+      old_text: Type.Optional(Type.String({ description: 'Exact passage in the current content to replace; must match exactly one occurrence.' })),
+      new_text: Type.Optional(Type.String({ description: 'Replacement for old_text; empty or omitted deletes the passage.' })),
       priority: Type.Optional(Type.Number({ minimum: 0, description: 'New priority level; omit to leave priority unchanged.' })),
       disclosure: Type.Optional(Type.String({ description: 'New disclosure / trigger condition; omit to leave disclosure unchanged.' })),
       glossary_add: Type.Optional(Type.Array(Type.String({ description: 'Search keyword.' }), { description: 'Keywords to add as part of this same node update event.' })),
       glossary_remove: Type.Optional(Type.Array(Type.String({ description: 'Search keyword.' }), { description: 'Keywords to remove as part of this same node update event.' })),
     }),
     async execute(_toolCallId: string, params: any = {}, _signal?: AbortSignal, _onUpdate?: unknown, _ctx?: any) {
-      const body: any = {};
       const glossaryAdd = normalizeKeywordList(params?.glossary_add);
       const glossaryRemove = normalizeKeywordList(params?.glossary_remove);
-      if (typeof params?.content === 'string') body.content = params.content;
-      if (Number.isFinite(params?.priority)) body.priority = params.priority;
-      if (typeof params?.disclosure === 'string') body.disclosure = params.disclosure;
-      if (glossaryAdd.length > 0) body.glossary_add = glossaryAdd;
-      if (glossaryRemove.length > 0) body.glossary_remove = glossaryRemove;
       let domain = pluginCfg.defaultDomain;
       let path = '';
       try {
         ({ domain, path } = resolveMemoryLocator(params, { defaultDomain: pluginCfg.defaultDomain, pathKey: '__unused_path', allowEmptyPath: false, label: 'uri' }));
+        const oldText = typeof params?.old_text === 'string' ? params.old_text : null;
+        const body: any = {};
+        if (oldText !== null) {
+          if (oldText.length === 0) throw new Error('old_text must not be empty');
+          if (typeof params?.content === 'string') throw new Error('Pass either content or old_text/new_text, not both');
+          const current = await fetchJson(pluginCfg, `/browse/node?${new URLSearchParams({ domain, path }).toString()}`, { method: 'GET' });
+          const currentContent = String(current?.node?.content ?? '');
+          const occurrences = currentContent.split(oldText).length - 1;
+          if (occurrences === 0) throw new Error('old_text not found');
+          if (occurrences > 1) throw new Error(`old_text found ${occurrences} times`);
+          body.content = currentContent.replace(oldText, typeof params?.new_text === 'string' ? params.new_text : '');
+        } else if (typeof params?.content === 'string') {
+          body.content = params.content;
+        }
+        if (Number.isFinite(params?.priority)) body.priority = params.priority;
+        if (typeof params?.disclosure === 'string') body.disclosure = params.disclosure;
+        if (glossaryAdd.length > 0) body.glossary_add = glossaryAdd;
+        if (glossaryRemove.length > 0) body.glossary_remove = glossaryRemove;
         const qs = new URLSearchParams({ domain, path });
         const data = await fetchJson(pluginCfg, `/browse/node?${qs.toString()}`, { method: 'PUT', body: JSON.stringify(body) });
         const suffixParts: string[] = [];

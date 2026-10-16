@@ -378,7 +378,7 @@ describe('skills adapter ensure DI + work-copy smoke', () => {
     }
   });
 
-  it('ensureSkillWorkCopy errors on wrong skill_id identity', async () => {
+  it('ensureSkillWorkCopy replaces a copy left by an older skill with the same name', async () => {
     materializeSkillWorkCopy({
       loreHome,
       projectId,
@@ -406,12 +406,13 @@ describe('skills adapter ensure DI + work-copy smoke', () => {
       text: async () => JSON.stringify(detail),
     })));
 
-    await expect(ensureSkillWorkCopy({
+    const result = await ensureSkillWorkCopy({
       pluginCfg: { baseUrl: 'http://host', apiToken: '', timeoutMs: 1000, loreHome },
       loreHome,
       skillId: 'skill-1',
       projectId,
-    })).rejects.toThrow(/skill_id mismatch|invalid/);
+    });
+    expect(result.marker.skill_id).toBe('skill-1');
   });
 });
 

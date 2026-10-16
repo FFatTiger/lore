@@ -1278,6 +1278,20 @@ class SkillWorkCopyTests(unittest.TestCase):
         with open(os.path.join(install_path, "outputs", "result.json"), "r", encoding="utf-8") as handle:
             self.assertEqual(handle.read(), '{"ok":true}\n')
 
+    def test_copy_left_by_older_skill_with_same_name_is_replaced(self):
+        self.sw.materialize_skill_work_copy(
+            lore_home=self.lore_home, project_id=self.project_id,
+            detail=self._skill_detail(id="old-skill", version=2),
+        )
+        ensured = self.sw.ensure_skill_work_copy(
+            skill_id="skill-1",
+            lore_home=self.lore_home,
+            project_id=self.project_id,
+            load_skill=lambda _sid: self._skill_detail(id="skill-1", version=1),
+        )
+        self.assertTrue(ensured["downloaded"])
+        self.assertEqual(ensured["marker"]["skill_id"], "skill-1")
+
     def test_extras_do_not_trigger_tamper_and_survive_same_version_get(self):
         detail = self._skill_detail(version=1)
         result = self.sw.materialize_skill_work_copy(

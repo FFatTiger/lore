@@ -687,11 +687,13 @@ def inspect_local_work_copy(
             "message": "mirror marker missing manifest_hash; rematerialize required",
         }
 
+    # Work copies are keyed by name. A different skill_id means the old skill was
+    # archived or deleted and a new one took its name, so replace the copy.
     if expected.get("skill_id") and marker["skill_id"] != expected["skill_id"]:
         return {
             "name": skill_name,
             "skill_id": marker["skill_id"],
-            "state": "invalid",
+            "state": "outdated",
             "path": dir_path,
             "version": marker["version"],
             "revision_hash": marker.get("revision_hash"),

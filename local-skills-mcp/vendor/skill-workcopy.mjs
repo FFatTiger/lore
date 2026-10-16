@@ -848,11 +848,13 @@ export function inspectLocalWorkCopy(loreHome, projectId, skillName, expected) {
     };
   }
 
+  // Work copies are keyed by name. A different skill_id means the old skill was
+  // archived or deleted and a new one took its name, so replace the copy.
   if (expected?.skill_id && marker.skill_id !== expected.skill_id) {
     return {
       name: skillName,
       skill_id: marker.skill_id,
-      state: 'invalid',
+      state: 'outdated',
       path: dir,
       version: marker.version,
       revision_hash: marker.revision_hash,

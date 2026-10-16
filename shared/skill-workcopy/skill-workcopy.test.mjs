@@ -813,7 +813,7 @@ describe('local work-copy lifecycle', () => {
     assert.equal(fs.readFileSync(path.join(installPath, 'data'), 'utf-8'), 'flat-again\n');
   });
 
-  it('ensureSkillWorkCopy errors on wrong skill_id identity', async () => {
+  it('ensureSkillWorkCopy replaces a copy left by an older skill with the same name', async () => {
     materializeSkillWorkCopy({
       loreHome,
       projectId,
@@ -826,15 +826,14 @@ describe('local work-copy lifecycle', () => {
     fs.writeFileSync(path.join(installPath, LORE_SKILL_MARKER), JSON.stringify(marker));
 
     const detail = skillDetail({ id: 'skill-1', version: 1 });
-    await assert.rejects(
-      () => ensureSkillWorkCopy({
-        loreHome,
-        skillId: 'skill-1',
-        projectId,
-        loadSkill: async () => detail,
-      }),
-      /skill_id mismatch|invalid/,
-    );
+    const result = await ensureSkillWorkCopy({
+      loreHome,
+      skillId: 'skill-1',
+      projectId,
+      loadSkill: async () => detail,
+    });
+    assert.equal(result.downloaded, true);
+    assert.equal(result.marker.skill_id, 'skill-1');
   });
 
   it('first get downloads all files and returns skill_md + absolute skill_dir', async () => {

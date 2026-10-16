@@ -46,6 +46,25 @@ npx @loremem/cli uninstall --channels opencode -y
 npx @loremem/cli uninstall --purge -y
 ```
 
+## Import local skills
+
+`skills import` copies Agent Skills into a Lore server that advertises `capabilities.skills`. It only reads the local directories. Nothing on disk is modified, moved, or deleted.
+
+```bash
+# ~/.agents/skills by default; each direct child with SKILL.md is one skill
+npx @loremem/cli skills import
+npx @loremem/cli skills import ./skills --dry-run
+npx @loremem/cli skills import --json
+```
+
+A skill whose name already exists in Lore is skipped. Other server errors are reported and the remaining skills continue. Afterward, remove or rename the local copies yourself — hosts still load them, so leaving both in place means two copies.
+
+On Loremem SaaS, `install` can run the same import after the channels are installed. It asks first (default No) when the default directory has importable skills. `--import-skills` imports without asking; `--skip-skills-import` never asks. Non-interactive runs skip this unless `--import-skills` is set. Open-source and other self-hosted servers are never offered the import.
+
+```bash
+npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_... --import-skills
+```
+
 By default, `update` targets integrations whose local state is `installed` or `partial`. It fails instead of claiming success when the target GitHub release cannot be resolved, a selected integration fails, or a selected integration is skipped. Use `--channels` to select update targets explicitly.
 
 ## Connection and token safety

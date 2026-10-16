@@ -25,6 +25,8 @@ import { createTTYPrompt, type PromptService } from '../ui/prompt.js';
 import { runInteractiveWizard, type InstallPlan, type WizardPresets } from '../ui/wizard.js';
 import { runUninstall } from './uninstall.js';
 import { runStatus } from './status.js';
+import { importSkills } from './skills.js';
+import { defaultSkillsDir, scanSkillsDir } from '../core/skills.js';
 
 export type InstallDeps = {
   env?: NodeJS.ProcessEnv;
@@ -49,6 +51,11 @@ type ExecutionPlan = {
   force: boolean;
   skipDocker: boolean;
   allowInsecureHttp: boolean;
+  importSkills: boolean;
+  skipSkillsImport: boolean;
+  /** True when this run may ask the user a question. */
+  canPrompt: boolean;
+  prompt?: PromptService;
 };
 
 function resolveLang(args: GlobalArgs, env: NodeJS.ProcessEnv): Lang {
@@ -83,6 +90,56 @@ function noDetectedChannelsMessage(lang: Lang): string {
   return lang === 'zh'
     ? '未检测到任何受支持的 Agent 运行时。请用 --channels 指定要安装的渠道。'
     : 'No supported agent runtimes detected. Pass --channels to choose integrations explicitly.';
+}
+
+async function maybeImportSkills(
+  plan: ExecutionPlan,
+  deps: {
+    env: NodeJS.ProcessEnv;
+    fetchImpl: typeof fetch;
+    log: ReturnType<typeof createLogger>;
+    prompt?: PromptService;
+  },
+): Promise<number> {
+  if (plan.skipSkillsImport || !plan.baseUrl || !isSaasBaseUrl(plan.baseUrl, deps.env)) return 0;
+  if (!plan.importSkills && !plan.canPrompt) return 0;
+  const profile = await fetchServerProfile({
+    baseUrl: plan.baseUrl,
+    apiToken: plan.apiToken,
+    fetchImpl: deps.fetchImpl,
+  });
+  if (profile.capabilities.skills !== true) return 0;
+
+  const dir = defaultSkillsDir(deps.env);
+  const scanned = await scanSkillsDir(dir);
+  const importable = scanned.filter((item) => item.kind === 'import');
+  const skipped = scanned.filter((item) => item.kind === 'skip');
+  if (importable.length === 0) return 0;
+
+  deps.log.info(t(plan.lang, 'skills.would_import', { count: String(importable.length) }));
+  for (const item of importable) deps.log.ok(item.skill.name);
+  if (skipped.length > 0) {
+    deps.log.info(t(plan.lang, 'skills.would_skip', { count: String(skipped.length) }));
+    for (const item of skipped) deps.log.warn(`${item.skip.name}: ${item.skip.reason}`);
+  }
+
+  if (!plan.importSkills) {
+    const prompt = deps.prompt ?? createTTYPrompt({ lang: plan.lang });
+    const yes = await prompt.askYesNo(
+      t(plan.lang, 'skills.import_ask', {
+        count: String(importable.length),
+        skipped: String(skipped.length),
+      }),
+      false,
+    );
+    if (!yes) return 0;
+  }
+
+  const result = await importSkills(
+    { dirs: [dir], dryRun: false, json: false, lang: plan.lang },
+    { env: deps.env, fetchImpl: deps.fetchImpl, log: deps.log },
+  );
+  return result.code;
 }
 
 function usageError(log: ReturnType<typeof createLogger>, error: unknown): number {
@@ -303,6 +360,10 @@ async function executeInstallPlan(
     log.info(t(plan.lang, 'config.path', { path: configPath }));
     log.info(t(plan.lang, 'setup.url', { baseUrl: resolvedBase }));
     log.info(t(plan.lang, 'restart.next', { baseUrl: resolvedBase }));
+    if (plan.operation === 'install') {
+      const skillsCode = await maybeImportSkills(plan, { env, fetchImpl, log, prompt: plan.prompt });
+      if (skillsCode !== 0) return skillsCode;
+    }
     return 0;
   }
 
@@ -414,6 +475,10 @@ async function runInstallOperation(
           force: plan.force,
           skipDocker: plan.skipDocker,
           allowInsecureHttp: plan.allowInsecureHttp,
+          importSkills: args.importSkills,
+          skipSkillsImport: args.skipSkillsImport,
+          canPrompt: true,
+          prompt,
         },
         { env, run, artifactRun, fetchImpl, log, loreHome, configPath },
       );
@@ -472,6 +537,10 @@ async function runInstallOperation(
       force: args.force,
       skipDocker: args.skipDocker,
       allowInsecureHttp: args.allowInsecureHttp,
+      importSkills: args.importSkills,
+      skipSkillsImport: args.skipSkillsImport,
+      canPrompt: isTTY && !args.yes,
+      prompt: deps.prompt ?? undefined,
     },
     { env, run, artifactRun, fetchImpl, log, loreHome, configPath },
   );

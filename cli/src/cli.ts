@@ -2,14 +2,16 @@ import { parseArgv } from './core/args.js';
 import { runInstall, runUpdate } from './commands/install.js';
 import { runUninstall } from './commands/uninstall.js';
 import { runStatus } from './commands/status.js';
+import { runSkills } from './commands/skills.js';
 
-const USAGE = `Usage: npx @loremem/cli [install|update|uninstall|status] [options]
+const USAGE = `Usage: npx @loremem/cli [install|update|uninstall|status|skills] [options]
 
 Commands:
   install (connect)  Install or connect Lore to agent runtimes (default)
   update             Update Lore server artifacts and channel integrations
   uninstall          Remove Lore integrations
   status             Show local Lore install status
+  skills import      Copy local Agent Skills into Loremem SaaS (read-only)
 
 Install runs an interactive wizard on a TTY; flags preselect its answers.
 Add -y to run straight from flags: unset options use defaults, and the
@@ -28,6 +30,10 @@ Common flags:
   --pre | --dev        Release channel
   --lang en|zh
   --purge              Uninstall only: remove config + docker data
+  --import-skills      Install only: import ~/.agents/skills without asking
+  --skip-skills-import Install only: never import local skills
+  skills import [dir...] [--dry-run] [--json]
+                         Import skills (default dir: ~/.agents/skills)
   -y, --yes            Non-interactive; skip ordinary confirmations
                          (not insecure HTTP approval)
   -h, --help
@@ -59,6 +65,8 @@ export async function run(argv: string[]): Promise<number> {
       return runUninstall(args);
     case 'status':
       return runStatus(args);
+    case 'skills':
+      return runSkills(args.rest);
     default:
       console.error('Not implemented');
       return 1;

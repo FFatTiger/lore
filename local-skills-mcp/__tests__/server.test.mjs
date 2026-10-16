@@ -258,7 +258,7 @@ test('lore_skill_get materializes work copy via fake HTTP and returns SKILL.md +
     const result = await callTool(config, 'lore_skill_get', { skill_id: 'skill-1' }, state);
     assert.equal(result.isError, undefined);
     const text = result.content[0].text;
-    assert.match(text, /Skill read-only mirror ready: demo-skill/);
+    assert.match(text, /Skill ready: demo-skill/);
     assert.match(text, /skill_dir:/);
     assert.match(text, /# Demo Skill/);
     assert.match(text, /downloaded: true/);
@@ -360,15 +360,15 @@ test('lore_skill_get restores tampered managed files (downloaded=true) while ext
 
 test('lore_skill_status lists local work copies without server project context', async () => {
   const loreHome = tempDir();
-  mkdirSync(path.join(loreHome, 'skill-artifacts', 'project-a', 'demo-skill'), { recursive: true });
-  writeFileSync(path.join(loreHome, 'skill-artifacts', 'project-a', 'demo-skill', 'SKILL.md'), '# demo\n');
+  mkdirSync(path.join(loreHome, 'skills', 'project-a', 'demo-skill'), { recursive: true });
+  writeFileSync(path.join(loreHome, 'skills', 'project-a', 'demo-skill', 'SKILL.md'), '# demo\n');
   const markerContent = '# demo\n';
   const markerHash = computeManifestHash([{
     path: 'SKILL.md',
     sha256: sha256Text(markerContent),
     size: Buffer.byteLength(markerContent, 'utf-8'),
   }]);
-  writeFileSync(path.join(loreHome, 'skill-artifacts', 'project-a', 'demo-skill', '.lore-skill-marker.json'), JSON.stringify({
+  writeFileSync(path.join(loreHome, 'skills', 'project-a', 'demo-skill', '.lore-skill-marker.json'), JSON.stringify({
     schema: 'lore.skill.workcopy.v1', project_id: 'project-a', skill_id: 'skill-a', name: 'demo-skill', version: 1,
     managed_files: ['SKILL.md'], manifest_hash: markerHash, readonly: true, synced_at: new Date().toISOString(),
   }));

@@ -1567,7 +1567,7 @@ class SkillWorkCopyTests(unittest.TestCase):
         self.assertTrue(os.path.islink(os.path.join(install_path, "data")))
 
     def test_legacy_migration_drops_unknown_local_outputs(self):
-        install_path = os.path.join(self.lore_home, "skill-artifacts", self.project_id, "demo-skill")
+        install_path = os.path.join(self.lore_home, "skills", self.project_id, "demo-skill")
         os.makedirs(os.path.join(install_path, "outputs"), exist_ok=True)
         with open(os.path.join(install_path, "SKILL.md"), "w", encoding="utf-8") as handle:
             handle.write("# legacy\n")
@@ -1645,13 +1645,13 @@ class SkillWorkCopyTests(unittest.TestCase):
         else:
             # Remove the staging area and make the mirror root read-only so the v2 stage
             # cannot be created; the failure must leave the previous read-only mirror intact.
-            shutil.rmtree(os.path.join(self.lore_home, "skill-artifacts", ".staging"), ignore_errors=True)
-            os.chmod(os.path.join(self.lore_home, "skill-artifacts"), 0o555)
+            shutil.rmtree(os.path.join(self.lore_home, "skills", ".staging"), ignore_errors=True)
+            os.chmod(os.path.join(self.lore_home, "skills"), 0o555)
             with self.assertRaises(Exception):
                 self.sw.materialize_skill_work_copy(
                     lore_home=self.lore_home, project_id=self.project_id, detail=conflicting,
                 )
-            os.chmod(os.path.join(self.lore_home, "skill-artifacts"), 0o755)
+            os.chmod(os.path.join(self.lore_home, "skills"), 0o755)
 
         with open(os.path.join(install_path, "SKILL.md"), "r", encoding="utf-8") as handle:
             self.assertEqual(handle.read(), "# original\n")
@@ -1662,7 +1662,7 @@ class SkillWorkCopyTests(unittest.TestCase):
             self.assertEqual(stat_mod.S_IMODE(os.lstat(os.path.join(install_path, "SKILL.md")).st_mode), 0o444)
 
     def test_unmanaged_and_traversal_refused(self):
-        install_dir = os.path.join(self.lore_home, "skill-artifacts", self.project_id, "demo-skill")
+        install_dir = os.path.join(self.lore_home, "skills", self.project_id, "demo-skill")
         os.makedirs(install_dir, exist_ok=True)
         with open(os.path.join(install_dir, "SKILL.md"), "w", encoding="utf-8") as handle:
             handle.write("# local unmanaged\n")
@@ -1694,7 +1694,7 @@ class SkillWorkCopyTests(unittest.TestCase):
             self.sw.inspect_local_work_copy(self.lore_home, self.project_id, "demo-skill")["state"],
             "invalid",
         )
-        outside = os.path.join(self.lore_home, "skill-artifacts", "should-not-delete.txt")
+        outside = os.path.join(self.lore_home, "skills", "should-not-delete.txt")
         with open(outside, "w", encoding="utf-8") as handle:
             handle.write("safe\n")
         with self.assertRaises(Exception):
@@ -1762,7 +1762,7 @@ class SkillWorkCopyTests(unittest.TestCase):
 
             # same-version local edit is tampered and restored from server, never preserved
             install_path = os.path.join(
-                self.lore_home, "skill-artifacts", self.project_id, "demo-skill"
+                self.lore_home, "skills", self.project_id, "demo-skill"
             )
             _make_writable(install_path)
             with open(os.path.join(install_path, "SKILL.md"), "w", encoding="utf-8") as handle:
@@ -1828,7 +1828,7 @@ class SkillWorkCopyTests(unittest.TestCase):
             self.assertEqual(provider._skill_project_id, self.project_id)
             self.assertEqual(client.list_calls, 0)
             self.assertEqual(client.reconcile_loads, [])
-            self.assertFalse(os.path.exists(os.path.join(self.lore_home, "skill-artifacts")))
+            self.assertFalse(os.path.exists(os.path.join(self.lore_home, "skills")))
 
             # No artifact-create tool schema and no artifact handler.
             schemas = {t["name"]: t for t in provider.get_tool_schemas()}

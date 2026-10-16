@@ -208,7 +208,7 @@ Notes:
 - `files` is a list of objects. Each object has a `path` (required), either `content` (UTF-8 text) or `content_base64` (binary), and an optional `media_type`. A new skill's files must include `SKILL.md`.
 - Use lowercase letters, numbers, and hyphens in `name`. You cannot change it later.
 - `expected_version` is the version you last read. If someone changed the skill first, the update fails. Read the current version with `lore_skill_list`, then try again.
-- `lore_skill_get` writes the local copy to `~/.lore/skill-artifacts/<project-id>/<skill-name>/`. Server-managed files are read-only. The directory stays writable for your outputs, and extra files survive updates.
+- `lore_skill_get` writes the local copy to `~/.lore/skills/<project-id>/<skill-name>/`. Server-managed files are read-only. Any other file in the directory is an artifact: Lore never checks or uploads it, and it survives updates.
 - `lore_skill_status` reports each copy as `ready`, `missing`, `outdated`, `tampered`, `unmanaged`, or `invalid`.
 - `lore_skill_delete` does not remove local copies from the machine.
 

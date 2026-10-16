@@ -208,7 +208,7 @@ describe('local work-copy lifecycle', () => {
   });
 
   function installPath() {
-    return path.join(loreHome, 'skill-artifacts', projectId, 'demo-skill');
+    return path.join(loreHome, 'skills', projectId, 'demo-skill');
   }
 
   it('first materialize writes marker, all files, writable dirs, managed files 0444', () => {
@@ -403,8 +403,8 @@ describe('local work-copy lifecycle', () => {
     if (process.platform !== 'win32') {
       // Force the v2 materialize to fail at staging creation: remove the staging
       // area and make the mirror root read-only so mkdir/rename cannot proceed.
-      fs.rmSync(path.join(loreHome, 'skill-artifacts', '.staging'), { recursive: true, force: true });
-      fs.chmodSync(path.join(loreHome, 'skill-artifacts'), 0o555);
+      fs.rmSync(path.join(loreHome, 'skills', '.staging'), { recursive: true, force: true });
+      fs.chmodSync(path.join(loreHome, 'skills'), 0o555);
     }
 
     assert.throws(() => materializeSkillWorkCopy({
@@ -414,7 +414,7 @@ describe('local work-copy lifecycle', () => {
     }), /EACCES|EPERM|ENOTEMPTY|mkdir|rename/);
 
     if (process.platform !== 'win32') {
-      fs.chmodSync(path.join(loreHome, 'skill-artifacts'), 0o755);
+      fs.chmodSync(path.join(loreHome, 'skills'), 0o755);
     }
 
     // Previous copy intact, still valid, outputs preserved.
@@ -543,7 +543,7 @@ describe('local work-copy lifecycle', () => {
     assert.equal(readWorkCopyMarker(installPath), null);
     assert.equal(inspectLocalWorkCopy(loreHome, projectId, 'demo-skill').state, 'invalid');
 
-    const outside = path.join(loreHome, 'skill-artifacts', 'should-not-delete.txt');
+    const outside = path.join(loreHome, 'skills', 'should-not-delete.txt');
     fs.writeFileSync(outside, 'safe\n', 'utf-8');
     assert.throws(() => materializeSkillWorkCopy({
       loreHome,
@@ -654,7 +654,7 @@ describe('local work-copy lifecycle', () => {
   });
 
   it('migrates legacy same-version mirror to a managed_files workcopy', async () => {
-    const installPath = path.join(loreHome, 'skill-artifacts', projectId, 'demo-skill');
+    const installPath = path.join(loreHome, 'skills', projectId, 'demo-skill');
     fs.mkdirSync(installPath, { recursive: true });
     fs.writeFileSync(path.join(installPath, 'SKILL.md'), '# legacy\n', 'utf-8');
     fs.writeFileSync(path.join(installPath, 'extra-managed.md'), 'extra\n', 'utf-8');
@@ -706,7 +706,7 @@ describe('local work-copy lifecycle', () => {
   });
 
   it('workcopy marker without manifest_hash rematerializes once and preserves extras', async () => {
-    const installPath = path.join(loreHome, 'skill-artifacts', projectId, 'demo-skill');
+    const installPath = path.join(loreHome, 'skills', projectId, 'demo-skill');
     fs.mkdirSync(installPath, { recursive: true });
     fs.writeFileSync(path.join(installPath, 'SKILL.md'), '# pre-manifest\n', 'utf-8');
     fs.writeFileSync(path.join(installPath, LORE_SKILL_MARKER), JSON.stringify({
@@ -819,7 +819,7 @@ describe('local work-copy lifecycle', () => {
       projectId,
       detail: skillDetail({ id: 'skill-1', version: 1 }),
     });
-    const installPath = path.join(loreHome, 'skill-artifacts', projectId, 'demo-skill');
+    const installPath = path.join(loreHome, 'skills', projectId, 'demo-skill');
     makeWritable(installPath);
     const marker = JSON.parse(fs.readFileSync(path.join(installPath, LORE_SKILL_MARKER), 'utf-8'));
     marker.skill_id = 'other-skill';
@@ -866,7 +866,7 @@ describe('local work-copy lifecycle', () => {
     assert.equal(result.skill_md, '# Get Skill\n');
     assert.equal(
       result.skill_dir,
-      path.resolve(path.join(loreHome, 'skill-artifacts', projectId, 'demo-skill')),
+      path.resolve(path.join(loreHome, 'skills', projectId, 'demo-skill')),
     );
     assert.equal(fs.existsSync(path.join(result.skill_dir, 'lib', 'util.md')), true);
     assert.equal(result.server_version, 3);

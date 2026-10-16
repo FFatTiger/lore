@@ -198,7 +198,7 @@ describe('skills adapter ensure DI + work-copy smoke', () => {
   it('ensureSkillWorkCopy reuses a same-version copy; extra local files never trigger tamper', async () => {
     const detail = skillDetail({ version: 1 });
     materializeSkillWorkCopy({ loreHome, projectId, detail });
-    const installPath = path.join(loreHome, 'skill-artifacts', projectId, 'demo-skill');
+    const installPath = path.join(loreHome, 'skills', projectId, 'demo-skill');
 
     // Extra local output inside the writable dir must not count as tamper.
     fs.mkdirSync(path.join(installPath, 'outputs'), { recursive: true });
@@ -234,7 +234,7 @@ describe('skills adapter ensure DI + work-copy smoke', () => {
   it('ensureSkillWorkCopy restores a managed-file edit (downloaded) while preserving extra local files', async () => {
     const detail = skillDetail({ version: 1 });
     materializeSkillWorkCopy({ loreHome, projectId, detail });
-    const installPath = path.join(loreHome, 'skill-artifacts', projectId, 'demo-skill');
+    const installPath = path.join(loreHome, 'skills', projectId, 'demo-skill');
 
     // Extra local output that must survive the managed-file restore.
     fs.mkdirSync(path.join(installPath, 'outputs'), { recursive: true });
@@ -315,14 +315,14 @@ describe('skills adapter ensure DI + work-copy smoke', () => {
     });
     expect(result.downloaded).toBe(true);
     expect(result.skill_md).toBe('# Get Skill\n');
-    expect(result.skill_dir).toBe(path.resolve(path.join(loreHome, 'skill-artifacts', projectId, 'demo-skill')));
+    expect(result.skill_dir).toBe(path.resolve(path.join(loreHome, 'skills', projectId, 'demo-skill')));
     expect(fs.existsSync(path.join(result.skill_dir, 'lib', 'util.md'))).toBe(true);
     expect(result.server_version).toBe(3);
     expect(result.local_version).toBe(3);
   });
 
   it('ensureSkillWorkCopy migrates legacy same-version mirror', async () => {
-    const installPath = path.join(loreHome, 'skill-artifacts', projectId, 'demo-skill');
+    const installPath = path.join(loreHome, 'skills', projectId, 'demo-skill');
     fs.mkdirSync(installPath, { recursive: true });
     fs.writeFileSync(path.join(installPath, 'SKILL.md'), '# legacy\n', 'utf-8');
     fs.writeFileSync(path.join(installPath, LORE_SKILL_MARKER), JSON.stringify({
@@ -384,8 +384,8 @@ describe('skills adapter ensure DI + work-copy smoke', () => {
       projectId,
       detail: skillDetail({ id: 'skill-1', version: 1 }),
     });
-    const installPath = path.join(loreHome, 'skill-artifacts', projectId, 'demo-skill');
-    fs.chmodSync(path.join(loreHome, 'skill-artifacts', projectId), 0o755);
+    const installPath = path.join(loreHome, 'skills', projectId, 'demo-skill');
+    fs.chmodSync(path.join(loreHome, 'skills', projectId), 0o755);
     const walk = (current: string) => {
       const st = fs.lstatSync(current);
       if (st.isDirectory()) {
@@ -490,7 +490,7 @@ describe('skills lifecycle discovery', () => {
     expect(turn.systemPrompt).toBe('base\n\nSYS\n<available_skills>catalog</available_skills>');
     expect(turn.message.content).toBe('<recall>\n0.8 | core://a\n</recall>\n\n<skill_invocation>x</skill_invocation>');
     expect(apiCalls).toEqual([]);
-    expect(fs.existsSync(path.join(loreHome, 'skill-artifacts'))).toBe(false);
+    expect(fs.existsSync(path.join(loreHome, 'skills'))).toBe(false);
   });
 
   it('does not opt into Skills context without a Skills session', async () => {
@@ -764,10 +764,10 @@ describe('skills CRUD tools', () => {
     expect(result.details.ok).toBe(true);
     expect(result.details.skill_md).toBe('# Get Me\n');
     expect(result.details.skill_dir).toBe(
-      path.resolve(path.join(loreHome, 'skill-artifacts', projectId, 'get-skill')),
+      path.resolve(path.join(loreHome, 'skills', projectId, 'get-skill')),
     );
     expect(result.details.downloaded).toBe(true);
-    expect(result.content[0].text).toContain('Skill work copy ready:');
+    expect(result.content[0].text).toContain('Skill ready:');
     expect(result.content[0].text).toContain('skill_dir:');
     expect(result.content[0].text).toContain('# Get Me');
     expect(fs.existsSync(path.join(result.details.skill_dir, LORE_SKILL_MARKER))).toBe(true);
@@ -881,7 +881,7 @@ describe('skills CRUD tools', () => {
   it('lore_skill_get visibility failure leaves local work copies untouched', async () => {
     const loreHome = makeTempHome();
     const projectId = 'proj-denied';
-    const root = path.join(loreHome, 'skill-artifacts', projectId);
+    const root = path.join(loreHome, 'skills', projectId);
     const existingPath = path.join(root, 'existing-skill', 'outputs', 'note.txt');
     fs.mkdirSync(path.dirname(existingPath), { recursive: true });
     fs.writeFileSync(existingPath, 'existing output\n', 'utf-8');

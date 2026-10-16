@@ -85,7 +85,7 @@ def sanitize_segment(value: str) -> str:
 
 
 def work_copies_root(lore_home: str) -> str:
-    return str(Path(lore_home) / "skill-artifacts")
+    return str(Path(lore_home) / "skills")
 
 
 def project_work_copy_root(lore_home: str, project_id: str) -> str:

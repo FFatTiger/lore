@@ -208,7 +208,7 @@ Pi、OpenClaw 和 Hermes 不注册 `lore_guidance`。它们的会话开始上下
 - `files` 是对象列表。每个对象都有 `path`（必填），以及 `content`（UTF-8 文本）或 `content_base64`（二进制）之一，另外还可以有可选的 `media_type`。新技能的文件必须包含 `SKILL.md`。
 - `name` 只能使用小写字母、数字和连字符。创建后无法修改。
 - `expected_version` 是你最后一次读取到的版本。如果有人先修改了该技能，更新会失败。请用 `lore_skill_list` 读取当前版本，然后重试。
-- `lore_skill_get` 会把本地副本写入 `~/.lore/skill-artifacts/<project-id>/<skill-name>/`。服务器管理的文件是只读的，目录本身保持可写，供你保存输出。额外的文件在更新后会保留。
+- `lore_skill_get` 会把本地副本写入 `~/.lore/skills/<project-id>/<skill-name>/`。服务器管理的文件是只读的，目录中的其他文件都是制品：Lore 不检查、不上传，更新后保留。
 - `lore_skill_status` 会把每个副本报告为 `ready`、`missing`、`outdated`、`tampered`、`unmanaged` 或 `invalid` 之一。
 - `lore_skill_delete` 不会删除本机上的本地副本。
 

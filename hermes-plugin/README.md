@@ -52,7 +52,7 @@ detail = client.get_skill("skill-id")
 
 - Session start lists the skills the agent may use (name, description, `skill_id`); the agent decides when to call `lore_skill_get`. Users can invoke a skill explicitly by typing `$skill-name` in a prompt; skills whose `SKILL.md` sets `disable-model-invocation: true` are hidden from the agent and only run this way. Hermes writes the server context through unchanged; it does **not** auto-download skills or inject local paths.
 - Session start may record project catalog identity (`skill_catalog.project_id`) without downloading.
-- `lore_skill_get(skill_id)` materializes a complete writable work copy under `${LORE_HOME:-~/.lore}/skill-artifacts/<project-id>/<skill-name>/` and returns `SKILL.md` plus absolute `skill_dir`.
+- `lore_skill_get(skill_id)` materializes a complete writable work copy under `${LORE_HOME:-~/.lore}/skills/<project-id>/<skill-name>/` and returns `SKILL.md` plus absolute `skill_dir`.
 - Same server version preserves local edits and extra agent outputs.
 - Server version upgrades overwrite/delete only server-managed files (tracked in `.lore-skill-marker.json` `managed_files`) and preserve local extras.
 - Unmanaged directories, symlinks, and unsafe markers are refused. Failed upgrades roll back via staging.

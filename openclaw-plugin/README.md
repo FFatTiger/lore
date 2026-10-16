@@ -19,7 +19,7 @@ Session start lists the skills the agent may use (name, description, `skill_id`)
 Local work copies live directly under:
 
 ```text
-${LORE_HOME:-~/.lore}/skill-artifacts/<project-id>/<skill-name>/
+${LORE_HOME:-~/.lore}/skills/<project-id>/<skill-name>/
 ```
 
 Server-managed package files are read-only (0444 on POSIX), while the skill directory itself stays writable (0755) so agents can create local outputs, artifacts, and cache files directly inside the same copy. Extra local files never trigger tamper and survive fetches and version upgrades; same-version local outputs are preserved across fetches and upgrades. A version mismatch updates the managed package files while preserving local outputs. There is no separate artifact directory and no `lore_skill_artifact_create` tool.

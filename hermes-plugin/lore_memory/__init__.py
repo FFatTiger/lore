@@ -559,7 +559,7 @@ class LoreMemoryProvider(MemoryProvider):
             {
                 "name": "lore_skill_create",
                 "description": (
-                    "Create a Lore skill on the server. Does not auto-materialize a local mirror; "
+                    "Create a Lore skill on the server. Does not auto-materialize a local copy; "
                     "call lore_skill_get later if needed."
                 ),
                 "parameters": {
@@ -604,7 +604,7 @@ class LoreMemoryProvider(MemoryProvider):
                 "name": "lore_skill_update",
                 "description": (
                     "Update a Lore skill on the server with optimistic concurrency via expected_version. "
-                    "Does not auto-reconcile the local mirror; call lore_skill_get later if the version differs."
+                    "Does not auto-reconcile the local copy; call lore_skill_get later if the version differs."
                 ),
                 "parameters": {
                     "type": "object",
@@ -658,7 +658,7 @@ class LoreMemoryProvider(MemoryProvider):
             },
             {
                 "name": "lore_skill_delete",
-                "description": "Archive/delete a Lore skill on the server. Does not auto-remove the local mirror.",
+                "description": "Archive/delete a Lore skill on the server. Does not auto-remove the local copy.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -903,8 +903,9 @@ class LoreMemoryProvider(MemoryProvider):
             self._skill_project_id = str(result["project_id"])
         skill = result.get("skill") or {}
         lines = [
-            f"Skill read-only mirror ready: {skill.get('name') or skill_id}",
+            f"Skill ready: {skill.get('name') or skill_id}",
             f"skill_dir: {result['skill_dir']}",
+            'Files from Lore in skill_dir are read-only and refreshed by lore_skill_get. Any other file there is a local artifact: never checked or uploaded. Save deliverables for the user where they asked or in the working directory, not in skill_dir.',
             f"server_version: {result.get('server_version') if result.get('server_version') is not None else '?'}",
             f"local_version: {result.get('local_version')}",
             f"downloaded: {result.get('downloaded')}",

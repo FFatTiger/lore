@@ -300,7 +300,7 @@ describe('OpenCode lifecycle adapter', () => {
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).features).toEqual({ skills: true });
     const requestSummary = fetchMock.mock.calls.map(([input]) => new URL(String(input)).pathname);
     expect(requestSummary).toEqual(['/api/lifecycle/event']);
-    expect(existsSync(join(loreHome, 'skill-artifacts', 'project-1', 'demo-skill'))).toBe(false);
+    expect(existsSync(join(loreHome, 'skills', 'project-1', 'demo-skill'))).toBe(false);
 
     // A failing Skills API never blocks startup: system context is still returned.
     fetchMock.mockImplementation(async (input) => {

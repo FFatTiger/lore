@@ -256,8 +256,9 @@ export function registerSkillTools(api: any, pluginCfg: any, skillsSession?: Ski
         });
         if (result.project_id) session.state.projectId = result.project_id;
         const text = [
-          `Skill work copy ready: ${result.skill.name || skillId}`,
+          `Skill ready: ${result.skill.name || skillId}`,
           `skill_dir: ${result.skill_dir}`,
+          'Files from Lore in skill_dir are read-only and refreshed by lore_skill_get. Any other file there is a local artifact: never checked or uploaded. Save deliverables for the user where they asked or in the working directory, not in skill_dir.',
           `server_version: ${result.server_version ?? "?"}`,
           `local_version: ${result.local_version}`,
           `downloaded: ${result.downloaded}`,
@@ -290,7 +291,7 @@ export function registerSkillTools(api: any, pluginCfg: any, skillsSession?: Ski
   api.registerTool({
     name: "lore_skill_create",
     label: "Lore skill create",
-    description: "Create a Lore skill on the server. Does not auto-materialize a local mirror; call lore_skill_get later if needed.",
+    description: "Create a Lore skill on the server. Does not auto-materialize a local copy; call lore_skill_get later if needed.",
     parameters: Type.Object({
       name: Type.String({ description: "Skill name." }),
       enabled: Type.Optional(Type.Boolean({ description: "Whether the skill is enabled (default true)." })),
@@ -323,7 +324,7 @@ export function registerSkillTools(api: any, pluginCfg: any, skillsSession?: Ski
     label: "Lore skill update",
     description:
       "Update a Lore skill on the server with optimistic concurrency via expected_version. "
-      + "Does not auto-reconcile the local mirror; call lore_skill_get later if the version differs.",
+      + "Does not auto-reconcile the local copy; call lore_skill_get later if the version differs.",
     parameters: Type.Object({
       skill_id: Type.String({ description: "Skill id." }),
       expected_version: Type.Integer({ minimum: 1, description: "Expected current integer version (optimistic concurrency)." }),
@@ -365,7 +366,7 @@ export function registerSkillTools(api: any, pluginCfg: any, skillsSession?: Ski
   api.registerTool({
     name: "lore_skill_delete",
     label: "Lore skill delete",
-    description: "Archive/delete a Lore skill on the server. Does not auto-remove the local mirror.",
+    description: "Archive/delete a Lore skill on the server. Does not auto-remove the local copy.",
     parameters: Type.Object({
       skill_id: Type.String({ description: "Skill id." }),
     }),

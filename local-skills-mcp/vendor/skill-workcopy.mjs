@@ -53,7 +53,7 @@ export function resolveLoreHome(env = process.env) {
 }
 
 export function workCopiesRoot(loreHome) {
-  return path.join(loreHome, 'skill-artifacts');
+  return path.join(loreHome, 'skills');
 }
 
 export function projectWorkCopyRoot(loreHome, projectId) {

@@ -305,7 +305,7 @@ describe("skills tools", () => {
     expect(result.details.ok).toBe(true);
     expect(result.details.skill_md).toBe("# Get Me\n");
     expect(result.details.skill_dir).toBe(
-      path.resolve(path.join(loreHome, "skill-artifacts", projectId, "get-skill")),
+      path.resolve(path.join(loreHome, "skills", projectId, "get-skill")),
     );
     expect(result.details.downloaded).toBe(true);
     expect(result.content[0].text).toContain("skill_dir:");
@@ -467,7 +467,7 @@ describe("skills tools", () => {
     expect(result.downloaded).toBe(true);
     expect(result.skill_md).toBe("# Ensure\n");
     expect(result.skill_dir).toBe(
-      path.resolve(path.join(loreHome, "skill-artifacts", projectId, "demo-skill")),
+      path.resolve(path.join(loreHome, "skills", projectId, "demo-skill")),
     );
 
     rmTempHome(loreHome);
@@ -542,7 +542,7 @@ describe("skills lifecycle discovery hooks", () => {
     expect(turn.appendSystemContext).toBe("SYS\n<available_skills>catalog</available_skills>");
     expect(turn.prependContext).toBe("<skill_invocation>x</skill_invocation>");
     expect(fetchMock.mock.calls.every((c) => !String(c[0]).includes("/api/skills"))).toBe(true);
-    expect(fs.existsSync(path.join(loreHome, "skill-artifacts"))).toBe(false);
+    expect(fs.existsSync(path.join(loreHome, "skills"))).toBe(false);
   });
 
   it("session_start records project/catalog identity only and never downloads or reconciles", async () => {
@@ -586,7 +586,7 @@ describe("skills lifecycle discovery hooks", () => {
     expect(skills.state.catalogRevision).toBe("cat-1");
     // Session start never downloads or reconciles: no skill API calls.
     expect(apiCalls.some((u) => u.includes("/api/skills"))).toBe(false);
-    expect(fs.existsSync(path.join(loreHome, "skill-artifacts", projectId))).toBe(false);
+    expect(fs.existsSync(path.join(loreHome, "skills", projectId))).toBe(false);
   });
 });
 
@@ -608,7 +608,7 @@ describe("build artifact packages vendor", () => {
     expect(skillsSrc).toContain("ensureSkillWorkCopy");
   });
 
-  it("materialize via vendor writes under loreHome skill-artifacts tree", () => {
+  it("materialize via vendor writes under loreHome skills tree", () => {
     const loreHome = makeTempHome();
     const detail = skillDetail({ project_id: "p", name: "build-skill", id: "s-build" });
     const { installPath } = materializeSkillWorkCopy({
@@ -616,7 +616,7 @@ describe("build artifact packages vendor", () => {
       projectId: "p",
       detail,
     });
-    expect(installPath.startsWith(path.join(loreHome, "skill-artifacts", "p"))).toBe(true);
+    expect(installPath.startsWith(path.join(loreHome, "skills", "p"))).toBe(true);
     expect(fs.existsSync(path.join(installPath, "SKILL.md"))).toBe(true);
     rmTempHome(loreHome);
   });

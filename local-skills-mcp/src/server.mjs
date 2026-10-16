@@ -76,7 +76,7 @@ export function createLocalSkillsMcpServer(opts = {}) {
           },
           serverInfo: SERVER_INFO,
           instructions: enabled
-            ? 'Local Lore skills MCP. Use lore_skill_list/search/get/create/update/delete/status. Call lore_skill_get with skill_id to fetch a local copy; managed package files are read-only, and the skill directory stays writable for local outputs.'
+            ? 'Local Lore skills MCP. Use lore_skill_list/search/get/create/update/delete/status. Call lore_skill_get with skill_id to place the skill in ~/.lore/skills; files from Lore there are read-only, and any other file is a local artifact that is never checked or uploaded.'
             : 'Lore Skills are disabled because the connected server does not advertise Skills support.',
         }));
         return;

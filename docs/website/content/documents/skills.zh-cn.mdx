@@ -30,7 +30,7 @@ description: Write release notes for checkout-api from merged pull requests. Use
 2. 当任务与某个技能的描述匹配时，Agent 会用 `skill_id` 调用 `lore_skill_get`。
 3. `lore_skill_get` 返回完整的 `SKILL.md`，以及该技能本地目录的绝对路径。
 
-本地副本位于 `~/.lore/skill-artifacts/<project-id>/<skill-name>/`。如果设置了 `LORE_HOME`，Lore 会使用该目录而不是 `~/.lore`。Agent 第一次加载某个技能时，Lore 会下载它；版本变化时，Lore 会刷新副本。会话开始时，Lore 不会下载技能。
+本地副本位于 `~/.lore/skills/<project-id>/<skill-name>/`。如果设置了 `LORE_HOME`，Lore 会使用该目录而不是 `~/.lore`。Agent 第一次加载某个技能时，Lore 会下载它；版本变化时，Lore 会刷新副本。会话开始时，Lore 不会下载技能。
 
 ## 自己调用技能
 
@@ -51,7 +51,9 @@ description: Write release notes for checkout-api from merged pull requests. Use
 Lore 在本地副本中管理两类文件：
 
 - **托管文件**来自服务器。Lore 会把它们设为只读（在 Linux 和 macOS 上为 `0444`）。如果你编辑了其中一个文件，下一次 `lore_skill_get` 会把它恢复。
-- **本地文件**是技能目录中的其他文件，例如 Agent 在那里写入的输出。该目录保持可写。Lore 从不上传本地文件，并且它们在更新后会保留。
+- **制品**是技能目录中的其他所有文件，例如技能运行时写下的缓存和中间文件。该目录保持可写。Lore 从不检查、也从不上传制品，它们在更新后会保留。
+
+交给你的成果（例如图片、文档）由 Agent 保存到你指定的位置或当前工作目录，不放进技能目录。
 
 有新版本到达时，Lore 只更新托管文件。如果某个本地文件与新版本中的托管路径冲突，更新会失败，现有副本保持不变。
 

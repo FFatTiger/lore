@@ -182,7 +182,7 @@ The Skill flow is separate and only exists on servers that advertise Skills (`ca
 
 1. session start lists the skills the agent may use (`<available_skills>` with name, description, and `skill_id`); skills whose `SKILL.md` sets `disable-model-invocation: true` are hidden
 2. the agent decides when a skill is relevant and calls `lore_skill_get(skill_id)`; a user can also invoke any skill explicitly by typing `$skill-name` in a prompt
-3. the runtime downloads the complete package into a local work copy at `${LORE_HOME:-~/.lore}/skill-artifacts/<project-id>/<skill-name>/` when missing, or updates the server-managed package files when the server version differs
+3. the runtime downloads the complete package into a local work copy at `${LORE_HOME:-~/.lore}/skills/<project-id>/<skill-name>/` when missing, or updates the server-managed package files when the server version differs
 4. the tool returns the full `SKILL.md` content and absolute `skill_dir`; server-managed package files are read-only (0444 on POSIX) and the skill directory stays writable (0755) so agents can create local outputs, caches, and artifacts directly inside the same copy
 5. extra local files never trigger tamper and survive getSkill calls and version upgrades; a version mismatch updates only the server-managed package files
 

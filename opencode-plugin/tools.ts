@@ -450,8 +450,9 @@ export function createLoreTools(
         });
         if (ensureResult.project_id) skillState.projectId = ensureResult.project_id;
         const text = [
-          `Skill work copy ready: ${ensureResult.skill.name || skillId}`,
+          `Skill ready: ${ensureResult.skill.name || skillId}`,
           `skill_dir: ${ensureResult.skill_dir}`,
+          'Files from Lore in skill_dir are read-only and refreshed by lore_skill_get. Any other file there is a local artifact: never checked or uploaded. Save deliverables for the user where they asked or in the working directory, not in skill_dir.',
           `server_version: ${ensureResult.server_version ?? '?'}`,
           `local_version: ${ensureResult.local_version}`,
           `downloaded: ${ensureResult.downloaded}`,

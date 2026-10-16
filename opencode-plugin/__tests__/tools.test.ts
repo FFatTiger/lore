@@ -243,12 +243,12 @@ describe('native OpenCode Lore tools', () => {
     const result = await tools.lore_skill_get.execute({ skill_id: 'skill-1' }, context());
     const output = resultOutput(result);
 
-    expect(output).toContain('Skill work copy ready: demo-skill');
+    expect(output).toContain('Skill ready: demo-skill');
     expect(output).toContain('skill_dir:');
     expect(output).toContain(skillMd.trim());
     expect(output).toContain('downloaded: true');
 
-    const skillDir = join(loreHome, 'skill-artifacts', 'project-1', 'demo-skill');
+    const skillDir = join(loreHome, 'skills', 'project-1', 'demo-skill');
     expect(readFileSync(join(skillDir, 'SKILL.md'), 'utf8')).toBe(skillMd);
 
     // Same-version local edits are detected as tampered and restored, never preserved.
@@ -297,7 +297,7 @@ describe('native OpenCode Lore tools', () => {
     const tools = createLoreTools(skillConfig);
     const first = await tools.lore_skill_get.execute({ skill_id: 'skill-1' }, context());
     expect(resultOutput(first)).toContain('downloaded: true');
-    const skillDir = join(loreHome, 'skill-artifacts', 'project-1', 'demo-skill');
+    const skillDir = join(loreHome, 'skills', 'project-1', 'demo-skill');
     expect(readFileSync(join(skillDir, 'SKILL.md'), 'utf8')).toBe(skillMd);
 
     // Installed dir is writable for local outputs; the managed SKILL.md is read-only (POSIX).

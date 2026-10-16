@@ -230,7 +230,7 @@
   },
   {
     "name": "lore_skill_create",
-    "description": "Create a Lore skill on the server. Does not auto-materialize a local mirror; call lore_skill_get later if needed.",
+    "description": "Create a Lore skill on the server. Does not auto-materialize a local copy; call lore_skill_get later if needed.",
     "parameters": [
       {
         "name": "name",
@@ -251,7 +251,7 @@
   },
   {
     "name": "lore_skill_update",
-    "description": "Update a Lore skill on the server with optimistic concurrency via expected_version. Does not auto-reconcile the local mirror; call lore_skill_get later if the version differs.",
+    "description": "Update a Lore skill on the server with optimistic concurrency via expected_version. Does not auto-reconcile the local copy; call lore_skill_get later if the version differs.",
     "parameters": [
       {
         "name": "skill_id",
@@ -282,7 +282,7 @@
   },
   {
     "name": "lore_skill_delete",
-    "description": "Archive/delete a Lore skill on the server. Does not auto-remove the local mirror.",
+    "description": "Archive/delete a Lore skill on the server. Does not auto-remove the local copy.",
     "parameters": [
       {
         "name": "skill_id",

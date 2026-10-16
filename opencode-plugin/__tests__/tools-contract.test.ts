@@ -81,4 +81,12 @@ describe('native OpenCode tool contract parity', () => {
     expect(names).toContain('old_text');
     expect(names).toContain('new_text');
   });
+
+  it('lore_skill_get contract uses the shared cloud-skill description', () => {
+    const skillGet = contracts.find((contract) => contract.name === 'lore_skill_get');
+    expect(skillGet!.description).toBe(
+      'Load a Lore skill (cloud-stored, not part of the host\'s own skill system) by skill_id, including its package files. '
+      + 'Use it when a task matches a Lore skill or another skill\'s instructions name one.',
+    );
+  });
 });

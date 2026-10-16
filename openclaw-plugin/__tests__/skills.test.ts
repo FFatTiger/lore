@@ -129,6 +129,22 @@ describe("skills tools", () => {
     expect(Object.keys(api.tools)).toHaveLength(16);
   });
 
+  it("uses the shared lore_skill_get description", () => {
+    const api = makeMockApi();
+    registerTools(api as any, {
+      baseUrl: "http://host",
+      apiToken: "",
+      timeoutMs: 1000,
+      defaultDomain: "core",
+      recallEnabled: true,
+      skillsEnabled: true,
+    });
+    expect(api.tools.lore_skill_get.description).toBe(
+      "Load a Lore skill (cloud-stored, not part of the host's own skill system) by skill_id, including its package files. "
+      + "Use it when a task matches a Lore skill or another skill's instructions name one.",
+    );
+  });
+
   it("create/update/delete send expected bodies and do not auto-reconcile", async () => {
     const loreHome = makeTempHome();
     const projectId = "proj-tools";

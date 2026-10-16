@@ -560,11 +560,8 @@ describe('skills CRUD tools', () => {
       skillsEnabled: true,
     });
     expect(pi.tools.lore_skill_get.description).toBe(
-      'Fetch a Lore skill into a local work copy. Downloads the complete server package when missing, '
-      + 'updates managed package files when the server version differs, and reuses the local copy when the version matches. '
-      + 'Managed package files are read-only; the skill directory stays writable for local outputs. '
-      + 'Same-version local outputs are preserved across fetches and upgrades. '
-      + 'Returns SKILL.md content and the absolute skill_dir.',
+      'Load a Lore skill (cloud-stored, not part of the host\'s own skill system) by skill_id, including its package files. '
+      + 'Use it when a task matches a Lore skill or another skill\'s instructions name one.',
     );
     expect(pi.tools.lore_skill_status.description).toBe(
       'Report local skill work-copy states (ready/missing/outdated/tampered/unmanaged/invalid). '

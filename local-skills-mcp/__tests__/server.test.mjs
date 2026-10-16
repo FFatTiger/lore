@@ -107,6 +107,11 @@ test('tools/list exposes all lore_skill_* names without artifact create', () => 
   assert.deepEqual(get.inputSchema.required, ['skill_id']);
   assert.deepEqual(update.inputSchema.required, ['skill_id', 'expected_version']);
   assert.deepEqual(remove.inputSchema.required, ['skill_id']);
+  assert.equal(
+    get.description,
+    'Load a Lore skill (cloud-stored, not part of the host\'s own skill system) by skill_id, including its package files. '
+    + 'Use it when a task matches a Lore skill or another skill\'s instructions name one.',
+  );
 });
 
 test('unsupported local MCP exposes no tools and never calls Core', async () => {

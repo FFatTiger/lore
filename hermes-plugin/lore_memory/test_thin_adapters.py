@@ -976,6 +976,12 @@ class LoreProviderThinAdapterTests(unittest.TestCase):
         self.assertNotIn("lore_skill_artifact_create", schemas)
         update = schemas["lore_skill_update"]
         self.assertEqual(schemas["lore_skill_get"]["parameters"]["required"], ["skill_id"])
+        self.assertEqual(
+            schemas["lore_skill_get"]["description"],
+            "Load a Lore skill (cloud-stored, not part of the host's own skill system) by skill_id, "
+            "including its package files. Use it when a task matches a Lore skill or another skill's "
+            "instructions name one.",
+        )
         self.assertEqual(update["parameters"]["required"], ["skill_id", "expected_version"])
         self.assertEqual(schemas["lore_skill_delete"]["parameters"]["required"], ["skill_id"])
         self.assertIn("skill_id", schemas["lore_skill_get"]["parameters"]["properties"])

@@ -120,8 +120,8 @@ test('openclaw install patches config and runs plugin install', async () => {
       ctx({ loreHome, homeDir: home, apiToken: 'lm_x', run }),
     );
     assert.equal(result.status, 'ok');
-    assert.ok(calls.some((c) => c.includes('openclaw plugins install')));
-    assert.ok(calls.some((c) => c.includes('openclaw plugins enable lore')));
+    assert.ok(calls.some((c) => c.includes('openclaw plugins install . --force --dangerously-force-unsafe-install --accept-capabilities')));
+    assert.ok(calls.some((c) => c.includes('openclaw plugins enable lore --accept-capabilities')));
     const data = JSON.parse(await fs.readFile(cfg, 'utf8')) as {
       plugins: { entries: { lore: { config: { baseUrl: string; apiToken: string }; enabled: boolean } } };
     };
@@ -175,6 +175,9 @@ for (const failure of [
     await fs.mkdir(dest, { recursive: true });
     await fs.writeFile(path.join(dest, 'package.json'), '{"name":"@local/lore"}\n');
     const run: ExecFn = async (argv) => {
+      if (argv.includes('--accept-capabilities')) {
+        return { code: 1, stdout: '', stderr: "error: unknown option '--accept-capabilities'" };
+      }
       if (failure.matches(argv)) return { code: 1, stdout: '', stderr: 'failed for lm_x' };
       return { code: 0, stdout: '', stderr: '' };
     };
@@ -189,6 +192,32 @@ for (const failure of [
     });
   });
 }
+
+test('openclaw retries install and enable without --accept-capabilities on older hosts', async () => {
+  const { home, loreHome } = await tempHome();
+  const dest = path.join(loreHome, 'openclaw');
+  await fs.mkdir(dest, { recursive: true });
+  await fs.writeFile(path.join(dest, 'package.json'), '{"name":"@local/lore"}\n');
+  const cfg = path.join(home, '.openclaw', 'openclaw.json');
+  await fs.mkdir(path.dirname(cfg), { recursive: true });
+  await fs.writeFile(cfg, JSON.stringify({ plugins: { entries: {} } }));
+
+  const calls: string[] = [];
+  const run: ExecFn = async (argv) => {
+    calls.push(argv.join(' '));
+    if (argv.includes('--accept-capabilities')) {
+      return { code: 1, stdout: '', stderr: "error: unknown option '--accept-capabilities'" };
+    }
+    return { code: 0, stdout: '', stderr: '' };
+  };
+
+  await withBin(home, 'openclaw', async () => {
+    const result = await openclawInstaller.install(ctx({ loreHome, homeDir: home, run }));
+    assert.equal(result.status, 'ok');
+    assert.ok(calls.includes('openclaw plugins install . --force --dangerously-force-unsafe-install'));
+    assert.ok(calls.includes('openclaw plugins enable lore'));
+  });
+});
 
 test('openclaw clear token removes stale token and preserves other config', async () => {
   const { home, loreHome } = await tempHome();

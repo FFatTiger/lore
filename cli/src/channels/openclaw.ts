@@ -47,6 +47,28 @@ function failure(err: unknown): ChannelResult {
   };
 }
 
+// OpenClaw 2026.8 requires --accept-capabilities for a non-interactive install.
+// Older releases reject the flag, so fall back to the original command.
+function rejectsAcceptCapabilities(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return message.includes('--accept-capabilities') && /unknown option|unknown command|unrecognized/i.test(message);
+}
+
+async function runOpenClaw(
+  run: (argv: string[], opts?: { cwd?: string; env?: NodeJS.ProcessEnv; quiet?: boolean }) => Promise<{ code: number; stdout: string; stderr: string }>,
+  stage: string,
+  argv: string[],
+  opts: { cwd?: string; env?: NodeJS.ProcessEnv; quiet?: boolean },
+  redact: string[],
+): Promise<void> {
+  try {
+    await runChecked(run, stage, [...argv, '--accept-capabilities'], opts, { redact });
+  } catch (err) {
+    if (!rejectsAcceptCapabilities(err)) throw err;
+    await runChecked(run, stage, argv, opts, { redact });
+  }
+}
+
 export const openclawInstaller: ChannelInstaller = {
   id: 'openclaw',
 
@@ -112,19 +134,19 @@ export const openclawInstaller: ChannelInstaller = {
         { cwd: dest, quiet: true, env },
         { redact },
       );
-      await runChecked(
+      await runOpenClaw(
         run,
         'OpenClaw plugin installation',
         ['openclaw', 'plugins', 'install', '.', '--force', '--dangerously-force-unsafe-install'],
         { cwd: dest, quiet: true, env },
-        { redact },
+        redact,
       );
-      await runChecked(
+      await runOpenClaw(
         run,
         'OpenClaw plugin enable',
         ['openclaw', 'plugins', 'enable', 'lore'],
         commandOpts,
-        { redact },
+        redact,
       );
 
       const latest = await readJsonFileStrict<unknown>(cfgPath);

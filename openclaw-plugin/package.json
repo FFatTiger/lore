@@ -6,7 +6,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "esbuild index.ts api.ts tools.ts hooks.ts uri.ts formatters.ts skills.ts --platform=node --format=esm --outdir=dist --target=es2022 && node scripts/copy-vendor.mjs"
+    "build": "esbuild index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --target=es2022 --external:openclaw/* && esbuild api.ts tools.ts hooks.ts uri.ts formatters.ts skills.ts --platform=node --format=esm --outdir=dist --target=es2022 && node scripts/copy-vendor.mjs"
   },
   "openclaw": {
     "extensions": [
@@ -24,12 +24,13 @@
       "pluginSdkVersion": "2026.3.24-beta.2"
     }
   },
-  "dependencies": {
-    "@sinclair/typebox": "^0.34.0"
-  },
   "devDependencies": {
+    "@sinclair/typebox": "^0.34.0",
     "esbuild": "^0.28.0",
     "typescript": "^5.7.0",
     "vitest": "^2.0.0"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.3.24-beta.2"
   }
 }

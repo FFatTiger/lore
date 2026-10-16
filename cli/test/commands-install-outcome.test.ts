@@ -278,6 +278,8 @@ test('non-interactive update defaults to installed and partial channels', async 
   );
   await fs.mkdir(path.join(loreHome, 'hermes', 'lore_memory'), { recursive: true });
   await fs.mkdir(path.join(loreHome, 'pi'), { recursive: true });
+  await fs.writeFile(path.join(loreHome, 'hermes', '.lore-release'), 'v1.3.18\n');
+  await fs.writeFile(path.join(loreHome, 'pi', '.lore-release'), 'v1.3.18\n');
   const fakeBin = path.join(loreHome, 'bin');
   await fs.mkdir(fakeBin, { recursive: true });
   const fakePi = path.join(fakeBin, process.platform === 'win32' ? 'pi.cmd' : 'pi');

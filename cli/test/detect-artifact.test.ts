@@ -50,11 +50,12 @@ test('haveCommand uses the explicitly supplied PATH', async () => {
   assert.equal(await haveCommand('node', { PATH: '' }), false);
 });
 
-test('downloadOrSkip needInstall=2 reuses existing dir', async () => {
+test('downloadOrSkip needInstall=2 reuses existing dir from the same release', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-art-'));
   const dest = path.join(dir, 'pi');
   await fs.mkdir(dest);
   await fs.writeFile(path.join(dest, 'marker'), '1');
+  await fs.writeFile(path.join(dest, '.lore-release'), 'v1.0.0\n');
   const ok = await downloadOrSkip({
     channel: 'pi',
     dest,
@@ -167,6 +168,31 @@ test('downloadOrSkip needInstall=2 missing dir downloads when releaseVersion set
   });
   assert.equal(ok, true);
   assert.equal(downloaded, true);
+});
+
+test('downloadOrSkip needInstall=2 replaces a dir left by an older release', async () => {
+  // installed_version is shared by all channels, so a channel skipped by an
+  // earlier update can be older than the recorded version.
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-stale-'));
+  const dest = path.join(dir, 'opencode');
+  await fs.mkdir(dest);
+  await fs.writeFile(path.join(dest, 'lore-memory.js'), 'old');
+  const run: ExecFn = async (argv) => {
+    if (argv[0] === 'curl') {
+      const zipPath = argv[argv.indexOf('-o') + 1]!;
+      await fs.mkdir(path.dirname(zipPath), { recursive: true });
+      await fs.writeFile(zipPath, 'z');
+      return { code: 0, stdout: '', stderr: '' };
+    }
+    const extracted = argv[argv.indexOf('-d') + 1]!;
+    await fs.mkdir(extracted, { recursive: true });
+    await fs.writeFile(path.join(extracted, 'lore-memory.js'), 'new');
+    return { code: 0, stdout: '', stderr: '' };
+  };
+  const ok = await downloadOrSkip({ channel: 'opencode', dest, releaseVersion: 'v2.0.0', needInstall: 2, run });
+  assert.equal(ok, true);
+  assert.equal(await fs.readFile(path.join(dest, 'lore-memory.js'), 'utf8'), 'new');
+  assert.equal(await fs.readFile(path.join(dest, '.lore-release'), 'utf8'), 'v2.0.0\n');
 });
 
 test('downloadOrSkip fails when curl fails', async () => {

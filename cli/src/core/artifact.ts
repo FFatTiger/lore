@@ -36,13 +36,27 @@ async function isDirectory(p: string): Promise<boolean> {
   }
 }
 
+// Records which release a channel directory came from. installed_version in
+// config.json is shared by every channel, so an update that touched only some
+// channels must not let the others skip their download.
+const RELEASE_MARKER = '.lore-release';
+
+async function directoryRelease(dest: string): Promise<string> {
+  try {
+    return (await fs.readFile(path.join(dest, RELEASE_MARKER), 'utf8')).trim();
+  } catch {
+    return '';
+  }
+}
+
 /**
  * Port of scripts/install.sh download_artifact + download_or_skip.
  *
  * needInstall:
  * - 0 → always download
- * - 2 (and other non-0) → reuse dest if it exists as a directory; else download
- *   when releaseVersion is set, else fail
+ * - 2 (and other non-0) → reuse dest if it exists as a directory from the same
+ *   release (or the release is unknown); else download when releaseVersion is
+ *   set, else fail
  */
 export async function downloadOrSkip(opts: {
   channel: ChannelId;
@@ -68,7 +82,7 @@ export async function downloadOrSkipDetailed(opts: {
   const releaseVersion = opts.releaseVersion?.trim() || '';
 
   if (needInstall !== 0) {
-    if (await isDirectory(dest)) {
+    if (await isDirectory(dest) && (!releaseVersion || (await directoryRelease(dest)) === releaseVersion)) {
       return { ok: true };
     }
     if (!releaseVersion) {
@@ -153,6 +167,7 @@ async function downloadArtifact(opts: {
 
     await fs.rm(opts.dest, { recursive: true, force: true });
     await fs.rename(extracted, opts.dest);
+    await fs.writeFile(path.join(opts.dest, RELEASE_MARKER), `${opts.releaseVersion}\n`);
     await fs.rm(tmpRoot, { recursive: true, force: true });
     return { ok: true, url };
   } catch (err) {

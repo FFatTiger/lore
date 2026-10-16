@@ -53,6 +53,7 @@ async function seedArtifact(loreHome: string): Promise<string> {
   const dest = path.join(loreHome, 'zcode');
   await fs.mkdir(path.join(dest, '.zcode-plugin'), { recursive: true });
   await fs.mkdir(path.join(dest, 'hooks'), { recursive: true });
+  await fs.writeFile(path.join(dest, '.lore-release'), 'v1.3.15\n');
   await fs.writeFile(path.join(dest, 'marketplace.json'), JSON.stringify({ name: 'lore', plugins: [{ name: 'lore', source: './' }] }));
   await fs.writeFile(path.join(dest, '.zcode-plugin', 'plugin.json'), JSON.stringify({ name: 'lore', version: '1.3.23' }));
   return dest;

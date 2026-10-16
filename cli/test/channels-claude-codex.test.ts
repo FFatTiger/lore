@@ -55,6 +55,7 @@ async function seedCodexArtifact(
 ): Promise<string> {
   const market = path.join(loreHome, 'codex', 'plugins', 'lore');
   await fs.mkdir(path.join(market, 'hooks'), { recursive: true });
+  await fs.writeFile(path.join(loreHome, 'codex', '.lore-release'), 'v1.3.15\n');
   await fs.mkdir(path.join(market, 'scripts'), { recursive: true });
   await fs.mkdir(path.join(market, 'local-skills-mcp', 'src'), { recursive: true });
   await fs.writeFile(path.join(market, 'local-skills-mcp', 'src', 'server.mjs'), '#!/usr/bin/env node\n');

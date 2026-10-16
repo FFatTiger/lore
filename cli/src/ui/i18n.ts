@@ -24,6 +24,18 @@ const en: Messages = {
   'setup.url': 'Setup: {baseUrl}/setup',
   'security.insecure_http_token_warning':
     'Security warning: {baseUrl} uses plain HTTP on a non-loopback host. Your API token could be intercepted or changed in transit. Allow this insecure connection for this run only?',
+  'skills.imported': 'imported: {count}',
+  'skills.skipped': 'skipped: {count}',
+  'skills.failed': 'failed: {count}',
+  'skills.would_import': 'would import: {count}',
+  'skills.would_skip': 'would skip: {count}',
+  'skills.already': 'already in Lore',
+  'skills.local_copies':
+    'Local skills with the same names are still active in their hosts. Remove or rename them yourself to avoid two copies.',
+  'skills.symlink_skipped': '{name}: skipped symlink {paths}',
+  'skills.unsupported': 'This Lore server does not support skills.',
+  'skills.no_server': 'No Lore server configured. Run lore install first.',
+  'skills.import_ask': 'Import {count} local skill(s) into Lore now? {skipped} would be skipped.',
 };
 
 const zh: Messages = {
@@ -46,6 +58,17 @@ const zh: Messages = {
   'setup.url': '设置：{baseUrl}/setup',
   'security.insecure_http_token_warning':
     '安全警告：{baseUrl} 在非回环地址上使用明文 HTTP。API Token 可能在传输途中被窃取或篡改。是否仅为本次执行放行此不安全连接？',
+  'skills.imported': '已导入：{count}',
+  'skills.skipped': '已跳过：{count}',
+  'skills.failed': '失败：{count}',
+  'skills.would_import': '将导入：{count}',
+  'skills.would_skip': '将跳过：{count}',
+  'skills.already': 'Lore 中已存在',
+  'skills.local_copies': '同名的本地 skill 仍在各自宿主中生效。请自行删除或改名，避免两份并存。',
+  'skills.symlink_skipped': '{name}：已跳过符号链接 {paths}',
+  'skills.unsupported': '此 Lore 服务不支持 skills。',
+  'skills.no_server': '未配置 Lore 服务。请先运行 lore install。',
+  'skills.import_ask': '现在把 {count} 个本地 skill 导入 Lore 吗？将跳过 {skipped} 个。',
 };
 
 const tables: Record<Lang, Messages> = { en, zh };

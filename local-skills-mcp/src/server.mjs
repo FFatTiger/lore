@@ -18,7 +18,7 @@ import { StdioJsonRpcFramer, encodeMessage } from './stdio.mjs';
 
 const SERVER_INFO = {
   name: 'lore-skills',
-  version: '1.7.2',
+  version: '1.8.0',
 };
 
 const PROTOCOL_VERSION = '2024-11-05';

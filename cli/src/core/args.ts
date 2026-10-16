@@ -1,7 +1,7 @@
 import { ALL_CHANNELS, type ChannelId, type Lang } from './types.js';
 
 export type GlobalArgs = {
-  command: 'install' | 'update' | 'uninstall' | 'status' | 'skills' | 'help';
+  command: 'install' | 'update' | 'uninstall' | 'status' | 'help';
   baseUrl?: string;
   apiToken?: string;
   channels?: ChannelId[];
@@ -24,15 +24,9 @@ export type GlobalArgs = {
   parameterMode: boolean;
   /** No command and no flags were given. */
   bare: boolean;
-  /** Install only: import local skills without asking. */
-  importSkills: boolean;
-  /** Install only: never offer the skills import. */
-  skipSkillsImport: boolean;
-  /** Arguments after `skills` (subcommand, dirs, flags). */
-  rest: string[];
 };
 
-const COMMANDS = new Set(['install', 'update', 'uninstall', 'status', 'skills', 'help', 'connect']);
+const COMMANDS = new Set(['install', 'update', 'uninstall', 'status', 'help', 'connect']);
 
 function requireValue(flag: string, value: string | undefined): string {
   if (value === undefined || value.startsWith('-')) {
@@ -76,9 +70,6 @@ export function parseArgv(argv: string[]): GlobalArgs {
     interactiveDefault: false,
     parameterMode: false,
     bare: argv.length === 0,
-    importSkills: false,
-    skipSkillsImport: false,
-    rest: [],
   };
 
   let i = 0;
@@ -90,13 +81,6 @@ export function parseArgv(argv: string[]): GlobalArgs {
     }
     result.command = cmd === 'connect' ? 'install' : (cmd as GlobalArgs['command']);
     i = 1;
-  }
-
-  if (result.command === 'skills') {
-    result.rest = argv.slice(i);
-    result.parameterMode = true;
-    result.interactiveDefault = false;
-    return result;
   }
 
   while (i < argv.length) {
@@ -153,12 +137,6 @@ export function parseArgv(argv: string[]): GlobalArgs {
       case '--purge':
         result.purge = true;
         break;
-      case '--import-skills':
-        result.importSkills = true;
-        break;
-      case '--skip-skills-import':
-        result.skipSkillsImport = true;
-        break;
       case '--help':
       case '-h':
         result.help = true;
@@ -179,9 +157,6 @@ export function parseArgv(argv: string[]): GlobalArgs {
   }
   if (result.docker && (result.explicitBaseUrl || result.skipDocker)) {
     throw new Error('--docker cannot be combined with --base-url or --skip-docker');
-  }
-  if (result.importSkills && result.skipSkillsImport) {
-    throw new Error('--import-skills and --skip-skills-import cannot be used together');
   }
 
   return result;

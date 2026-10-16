@@ -25,8 +25,5 @@ test('README documents the supported safe install contract', () => {
   assert.match(readme, /loopback/i);
   assert.match(readme, /Hermes[\s\S]*manual/i);
   assert.match(readme, /per-channel.*version marker/i);
-  assert.match(readme, /skills import/);
-  assert.match(readme, /--import-skills/);
-  assert.match(readme, /--skip-skills-import/);
   assert.doesNotMatch(readme, /lm_[A-Za-z0-9_-]{12,}/);
 });

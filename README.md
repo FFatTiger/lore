@@ -93,8 +93,6 @@ Common flags:
 | `--skip-docker` | Configure agents only |
 | `--force` | Reinstall even when the version is unchanged |
 | `--lang en\|zh` | Installer language |
-| `--import-skills` | Import `~/.agents/skills` into Loremem SaaS without asking |
-| `--skip-skills-import` | Never offer the local skills import |
 
 Examples:
 
@@ -115,10 +113,6 @@ npx @loremem/cli install --channels claudecode,pi
 # Update later
 npx @loremem/cli update
 npx @loremem/cli status
-
-# Copy local Agent Skills into Loremem SaaS (read-only)
-npx @loremem/cli skills import
-npx @loremem/cli skills import ./skills --dry-run
 ```
 
 ### 2. Finish first-run setup

@@ -43,7 +43,7 @@ Each skill has three settings:
 | Setting | Options | Effect |
 | --- | --- | --- |
 | Enabled | On or off | When off, agents don't see or load the skill. |
-| Visible to | All agents, or one runtime | A skill limited to one runtime appears only for that runtime. |
+| Visible to | All agents, or the runtimes you pick | A skill limited to some runtimes appears only for those runtimes. |
 | Invocation | Agent and user (default), or User only | **User only** hides the skill from agents. It runs only when a user types `$name`. This is the same as `disable-model-invocation: true` in `SKILL.md`. |
 
 ## Local copies and file permissions
@@ -59,6 +59,44 @@ Lore doesn't set an executable bit on scripts. Run them through their interprete
 
 > [!WARNING]
 > Every agent that loads a skill downloads the full package, including all of its files. Don't put secrets, tokens, or private hostnames in a skill.
+
+## Move your existing skills into Loremem
+
+Loremem doesn't migrate local skills for you. Some skills only work inside one agent: they rely on that agent's own tools, hooks, or extensions, or a plugin reads the skill file while it runs. Moving those breaks them, so deciding what to move takes judgment. Ask your agent to do it, and review its plan before anything is deleted.
+
+Only general skills belong in Loremem: instructions, references, and scripts that any agent can use. Leave agent-specific skills where they are.
+
+Send your agent this prompt:
+
+```text
+Move my local agent skills into Loremem.
+
+1. Find every skill on this machine for each agent I use, for example
+   ~/.agents/skills, ~/.claude/skills, ~/.codex/skills, ~/.pi/agent/skills,
+   ~/.config/opencode/skills and ~/.zcode/skills, plus skills that come
+   with installed plugins or extensions. List them in a table with where
+   each one comes from, and mark duplicates.
+2. Sort them into two groups. General skills are instructions, references
+   or scripts any agent can use. Agent-specific skills depend on one agent's
+   own tools, hooks or extensions, or on code that reads the skill file at
+   runtime; skills the agent ships itself (such as Codex .system) count too.
+   Only general skills move to Loremem.
+3. Call lore_skill_list first and skip names that already exist. Leave out
+   caches, node_modules, .git and other generated files. A skill can have at
+   most 256 files and 5 MiB per file; tell me about any that don't fit.
+   Replace hard-coded paths to an agent's skill folder with paths relative
+   to the skill directory. Never upload keys or tokens; keep them in a local
+   config file outside the skill.
+4. Show me the plan and wait for my confirmation. Then create each general
+   skill with lore_skill_create, back up the local skill folders, and remove
+   only the local copies you uploaded. If a plugin or extension bundles a
+   general skill, keep the plugin; turn off just its skill only if the agent
+   supports that.
+5. Finish with a report: uploaded, skipped and why, removed, and what stays
+   local.
+```
+
+After the migration, restart your agents so new sessions use the Loremem skills.
 
 ## Skill tools
 

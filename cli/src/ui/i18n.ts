@@ -22,6 +22,8 @@ const en: Messages = {
   'docker.saved_external': 'Using saved external server',
   'config.path': 'Config: {path}',
   'setup.url': 'Setup: {baseUrl}/setup',
+  'skills.migrate_hint':
+    'Skills: to move your existing local skills into Loremem, give your agent the migration prompt at https://loremem.com/documents/skills',
   'security.insecure_http_token_warning':
     'Security warning: {baseUrl} uses plain HTTP on a non-loopback host. Your API token could be intercepted or changed in transit. Allow this insecure connection for this run only?',
 };
@@ -44,6 +46,7 @@ const zh: Messages = {
   'docker.saved_external': '使用已保存的外部服务',
   'config.path': '配置：{path}',
   'setup.url': '设置：{baseUrl}/setup',
+  'skills.migrate_hint': 'Skills：想把本地已有的 skill 迁到 Loremem，把 https://loremem.com/zh-cn/documents/skills 里的迁移提示词发给你的 Agent',
   'security.insecure_http_token_warning':
     '安全警告：{baseUrl} 在非回环地址上使用明文 HTTP。API Token 可能在传输途中被窃取或篡改。是否仅为本次执行放行此不安全连接？',
 };

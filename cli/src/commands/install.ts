@@ -303,6 +303,7 @@ async function executeInstallPlan(
     log.info(t(plan.lang, 'config.path', { path: configPath }));
     log.info(t(plan.lang, 'setup.url', { baseUrl: resolvedBase }));
     log.info(t(plan.lang, 'restart.next', { baseUrl: resolvedBase }));
+    if (capabilities.skills) log.info(t(plan.lang, 'skills.migrate_hint'));
     return 0;
   }
 

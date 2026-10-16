@@ -1,0 +1,87 @@
+如果你已经运行了数据库服务、需要使用它自己的备份，或者想让数据库独立于 Compose 服务栈之外，就使用自己的 PostgreSQL。下面的步骤会帮你准备扩展和角色，然后把服务栈指向你的数据库。
+
+## Lore 对数据库的要求
+
+| 能力 | 是否必需 | 原因 |
+| --- | --- | --- |
+| 带 pgvector 的 PostgreSQL | 是 | 记忆视图会存储 embedding 向量。首次启动时会创建 `vector` 扩展。 |
+| 架构权限（创建表、索引和扩展） | 是 | 首次启动会创建架构和扩展。 |
+| `pg_jieba` | 推荐 | 中文全文检索的首选分词器。必须预加载。 |
+| `zhparser` | 可选 | 中文分词的备选方案，在无法创建 `pg_jieba` 时使用。 |
+
+## 安装扩展
+
+1. 按照 pgvector 的安装指南，安装与你的 PostgreSQL 主版本对应的 pgvector。
+2. 安装 `pg_jieba`，用于中文全文检索。再安装 `zhparser` 作为备选。`zhparser` 还需要 SCWS 分词库。
+3. 预加载 `pg_jieba`。在 `postgresql.conf` 中添加下面这一行。如果你已经预加载了其他库，请把 `pg_jieba` 加到这个以逗号分隔的列表中：
+
+   ```text
+   shared_preload_libraries = 'pg_jieba'
+   ```
+
+4. 重启 PostgreSQL。修改预加载列表后，必须重启才会生效。
+5. 确认设置已生效：
+
+   ```sql
+   SHOW shared_preload_libraries;
+   ```
+
+Lore 首次启动时会创建 `vector`，然后依次尝试 `pg_jieba` 和 `zhparser`。如果这两个中文扩展都无法创建，Lore 就使用 PostgreSQL 的 `simple` 文本检索。Lore 仍然可以运行，但中文匹配效果会变弱。
+
+> [!NOTE]
+> Lore 镜像 `fffattiger/pgvector-zhparser:pg16` 已包含 pgvector、`pg_jieba` 和 `zhparser`，并会在新的数据目录中预加载 `pg_jieba`。如果你不自己运行 PostgreSQL，请直接使用这个镜像。
+
+## 创建角色和数据库
+
+```sql
+CREATE ROLE lore WITH LOGIN PASSWORD 'replace-with-a-long-random-password';
+CREATE DATABASE lore OWNER lore;
+```
+
+首次启动时，该角色必须有权创建架构和扩展。首次启动请使用具备该权限的角色，例如你环境中的超级用户。首次启动成功后，你可以把 `DATABASE_URL` 切换到权限更受限、但能够操作 Lore 数据表的角色。
+
+## 设置 `DATABASE_URL`
+
+```env
+DATABASE_URL=postgresql://lore:replace-with-a-long-random-password@db.example.com:5432/lore
+```
+
+- `postgresql://` 和 `postgres://` 两种写法都可以。
+- 对于非本地主机，Lore 默认使用 SSL。只有当数据库没有开启 TLS，并且网络是你信任的网络时，才可以在 URL 中添加 `?sslmode=disable`。
+- 密码中的特殊字符要做 URL 编码。例如，把 `@` 写成 `%40`。
+
+## 用你的数据库运行 Compose 中的 Web 与 Redis 容器
+
+保留 `web` 和 `redis` 服务，并把 `DATABASE_URL` 指向你的数据库。官方 Compose 文件会让 `web` 等待内置的 `postgres` 服务，因此请从下面两个方案中选择一个：
+
+- **保持文件不变。** 内置的 `postgres` 容器仍会启动，但 Lore 不会使用它。请用防火墙拦截其端口（`POSTGRES_PORT`）。
+- **删除数据库服务。** 删除整个 `postgres:` 服务块，并删除 `web` 的 `depends_on` 中对应的条目。修改后，`web` 服务应类似下面这样：
+
+  ```yaml
+  web:
+    depends_on:
+      redis:
+        condition: service_healthy
+  ```
+
+如果你使用外部 Redis，请把 `REDIS_URL` 指向它，并以同样的方式删除 `redis` 服务。
+
+然后启动服务：
+
+```bash
+docker compose up -d
+```
+
+> [!WARNING]
+> 运行 `update` 或 `install --docker` 时，CLI 会替换 `~/.lore/docker` 中的 Compose 文件。如果该目录由 CLI 管理，请在每次更新后重新应用这项修改，或者自己维护 Compose 目录。
+
+## 验证
+
+在 shell 中导出 `DATABASE_URL`，或直接替换为实际的 URL，然后运行：
+
+```bash
+curl -fsS http://127.0.0.1:18901/api/health
+psql "$DATABASE_URL" -c '\dx'
+```
+
+`\dx` 应当列出 `vector`；如果你安装了中文扩展，还应列出 `pg_jieba` 或 `zhparser`。健康检查只能说明服务器正在运行，并不能证明召回能正常工作。因此，请打开 `/setup` 完成设置，再依赖召回功能。

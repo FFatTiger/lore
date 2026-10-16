@@ -1,27 +1,92 @@
-Recall finds memories related to the current task and presents them as candidates.
+Recall finds the memories that could matter for the prompt an agent is working on, and presents the best few as short leads. Knowing when it runs, how it scores and displays candidates, and how to read what it returns tells an agent what to trust and what to skip.
 
-## How recall chooses candidates
+## When recall runs
 
-Recall combines several signals: text search over memory content and generated views, glossary matching, disclosure triggers, priority, and semantic retrieval when embeddings are configured. The exact candidate list depends on settings and available database extensions.
+- **On every prompt.** Lore recalls memories for the text of each prompt. It injects a `<recall>` block when at least one candidate clears the display threshold. If none does, no block is added, and that is normal.
+- **At session start.** Lore runs startup recall using the runtime name and the project's directory and repository names. The results appear after the boot block.
+- **On demand.** An agent can call `lore_search` to search by keyword, by meaning, or both.
 
-## Recall block format
+## Signals and default weights
 
-A recall block in an agent prompt looks like:
+Recall scores each candidate with four signals. Each signal's score is multiplied by its weight, and the results are added together. The bonuses below are added on top.
+
+| Signal | What it matches | Default weight |
+| --- | --- | --- |
+| Exact | Paths, glossary terms, and query terms that appear exactly in the prompt | 0.30 (`recall.weights.w_exact`) |
+| Glossary semantic | Glossary terms whose meaning is close to the prompt | 0.25 (`recall.weights.w_glossary_semantic`) |
+| Dense (semantic) | How close the prompt's meaning is to the memory's gist and question views | 0.30 (`recall.weights.w_dense`) |
+| Lexical | Full-text matches on words. Damped for longer prompts. | 0.03 (`recall.weights.w_lexical`) |
+
+## Bonuses
+
+| Bonus | Default | How it works |
+| --- | --- | --- |
+| Priority | 0.05 at priority `0`, minus 0.01 per level | Priority `5` and higher get no bonus. Settings: `recall.bonus.priority_base`, `recall.bonus.priority_step`. |
+| View match | 0.03 for a gist match, 0.02 for a question match | The higher prior of the matched views counts. Settings: `views.prior.gist`, `views.prior.question`. |
+| Multiple views | 0.015 for each view type beyond the first, up to 0.05 | Applies when more than one view of the same memory matches. Settings: `recall.bonus.multi_view_step`, `recall.bonus.multi_view_cap`. |
+| Recency | Up to 0.04 | Recently updated memories score higher. The bonus halves once per half-life, which is 180 days by default. Priority `0` and `1` always get the full bonus. Settings: `recall.recency.enabled` (on by default), `recall.recency.half_life_days`, `recall.recency.max_bonus`, `recall.recency.priority_exempt`. |
+
+## Display rules
+
+| Rule | Default | Setting |
+| --- | --- | --- |
+| Candidates scoring below this value are withheld | 0.60 | `recall.display.min_display_score` |
+| Maximum number of memories shown per recall | 3 | `recall.display.max_display_items` |
+| Characters of a long prompt used for recall | 200 | `recall.safety.max_query_chars` |
+| Time after which recall is skipped | 2000 ms | `recall.safety.timeout_ms` (see below) |
+
+Three more rules apply:
+
+- Boot nodes never appear in recall results, because the agent already has them.
+- For a prompt longer than the limit, recall uses only its first characters and notes the cut in its output.
+- Recall is time-boxed. Loremem Cloud skips prompt recall after `recall.safety.timeout_ms` and adds a notice. On a self-hosted server that limit applies to the recall API (used by Hermes and API clients), and agent hooks stop waiting after their own timeout: 10 seconds in Claude Code, Codex, and ZCode. Either way, a slow recall never holds up the prompt.
+
+## The recall block
+
+A prompt that produces results gets a block like this:
 
 ```text
-<recall session_id="sess-1" query_id="q1">
-0.74 | preferences://user | concise replies · timezone
-0.68 | project://my_app/deployment | cloudflare pages · build command
+<recall session_id="sess_8f3c" query_id="q_41" phase="prompt">
+0.82 | project://checkout_api/webhooks | refund · idempotency key
+0.71 | project://checkout_api/testing | flaky test · fake clock
+0.64 | preferences://user | test first
 </recall>
 ```
 
-Each line shows a score, a memory URI, and the terms that matched. The score is a relevance signal, not a command — always open the node before relying on it.
+Read each line like this:
 
-## How to use recall
+- **Score** (`0.82`): the relevance score, to two decimal places. It is a hint about relevance, not a verdict.
+- **URI** (`project://checkout_api/webhooks`): the address of the memory. Open it to read the content.
+- **Cue terms** (`refund · idempotency key`): up to three terms that matched the prompt. They show why the memory came up.
 
-1. Read the recall block.
-2. Open the relevant memory nodes with `lore_get_node` (pass the `session_id` and `query_id` so Lore tracks usage).
-3. Ignore weak or unrelated candidates.
-4. Improve memory shape when the same useful memory is missing repeatedly.
+The tag carries two identifiers. `session_id` and `query_id` identify this recall, and you pass them back when you open a node. The `phase` attribute appears on some runtimes and shows which step produced the block.
 
-Do not tune recall thresholds before checking whether the memory has good disclosure, glossary, and priority.
+## Read before you trust
+
+A recall line is a lead, not a fact. Before you rely on a memory:
+
+1. Decide which lines are relevant to the task.
+2. Open each relevant URI with `lore_get_node`.
+3. Pass the exact `session_id` and `query_id` from the `<recall>` tag. The tool requires them when the URI came from a recall block.
+
+```json
+{
+  "uri": "project://checkout_api/webhooks",
+  "session_id": "sess_8f3c",
+  "query_id": "q_41"
+}
+```
+
+MCP-based runtimes may show the tools with a prefix, for example `mcp__plugin_lore_lore__lore_search` in Claude Code.
+
+Opening a node with its identifiers tells Lore that the memory was used, and those records feed the [recall analytics](/documents/recall/analytics). A memory opened without them is not counted as used, so the analytics undercount the memories that helped.
+
+## What agents should do with weak or missing candidates
+
+- **Skip** candidates that do not fit the task. A recall line is a lead, not an instruction.
+- **Do not force** a weak memory into the answer just because it was recalled.
+- **Search explicitly** when recall returns nothing, or misses context that the task clearly needs. Use `lore_search` with specific keywords.
+- **Write back** a durable lesson after the task if a fact changed. See [Writing good memories](/documents/memory/writing-memories).
+
+> [!NOTE]
+> If the same useful memory keeps missing, fix the memory before you change any setting. See [Improve recall quality](/documents/recall/improving-recall).

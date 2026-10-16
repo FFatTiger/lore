@@ -1,0 +1,105 @@
+The Claude Code integration gives Claude Code startup memory at the start of each session, recall before each prompt, and the Lore memory tools. It installs as the `lore@lore` plugin, which connects Claude Code to Lore through hooks and MCP.
+
+## Install
+
+Run this on the machine where you use Claude Code:
+
+```bash
+npx @loremem/cli install --channels claudecode
+```
+
+On Loremem Cloud, pass the server and your project token:
+
+```bash
+npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token --channels claudecode
+```
+
+The installer skips Claude Code when the `claude` command is not on your `PATH`. Restart Claude Code after the install finishes.
+
+## What gets installed
+
+- The plugin files from `lore-claudecode.zip`, in `~/.lore/claudecode/`. The installer registers that folder as a plugin marketplace and installs `lore@lore`.
+- Two hooks. `SessionStart` loads startup memory, and `UserPromptSubmit` adds recall to each prompt. Each hook has a 10-second timeout. The hooks run with `npx tsx`.
+- Two MCP servers. `lore` connects to `<server>/api/mcp?client_type=claudecode` and sends the token from `LORE_API_TOKEN`. `lore-skills` runs locally. Its Skill tools stay hidden unless Skills are enabled.
+- Connection values in the `env` block of `~/.claude/settings.json`: `LORE_BASE_URL`, `LORE_HOME`, `LORE_CLIENT_TYPE` (set to `claudecode`), `LORE_SKILLS_ENABLED` (`1` or `0`), and `LORE_API_TOKEN` when you set a token.
+- Cleanup of earlier installs: the user-scope `lore` and `lore-skills` MCP entries are removed, and the legacy `~/.claude/lore-guidance.md` file and its import line in `~/.claude/CLAUDE.md` are removed.
+
+Claude Code lists Lore's tools with the `mcp__plugin_lore_lore__` prefix, for example `mcp__plugin_lore_lore__lore_search`.
+
+## Verify
+
+1. Run `npx @loremem/cli status`. The `claudecode` line should read `installed`.
+2. Run `claude plugin list`. The output should include `lore@lore`.
+3. Start a new Claude Code session and ask Claude to summarize the rules it loaded at startup. The answer should come from your boot memory.
+4. Ask Claude Code to call `lore_status`. It should return the server's health.
+5. Send a prompt about a project that has memories. The context should include a `<recall>` block.
+
+## Notes
+
+- **Auto-memory.** Claude Code has its own auto-memory. To make Lore the only memory, turn auto-memory off in `~/.claude/settings.json`:
+
+  ```json
+  {
+    "autoMemoryEnabled": false
+  }
+  ```
+
+  You can also set `CLAUDE_CODE_DISABLE_AUTO_MEMORY` to `1` in the same file's `env` block.
+
+- **`CLAUDE.md`.** Lore does not write to `CLAUDE.md`. To move durable rules out of that file, see [Move CLAUDE.md and AGENTS.md into Lore](/documents/migrate-agent-instructions).
+- **`npx` on `PATH`.** The hooks run `npx tsx`, so `npx` must be on the `PATH` that Claude Code uses.
+- **Restart after changes.** Hooks and MCP settings load at process start. Restart Claude Code after you change `~/.claude/settings.json` or the token.
+
+## Manual setup (fallback)
+
+Use these steps only when the installer can't run on your machine. They set up the same plugin and settings without the installer's checks.
+
+1. Download and unzip the plugin:
+
+   ```bash
+   mkdir -p ~/.lore/claudecode
+   curl -fsSL -o lore-claudecode.zip https://github.com/FFatTiger/lore/releases/latest/download/lore-claudecode.zip
+   unzip -qo lore-claudecode.zip -d ~/.lore/claudecode
+   rm lore-claudecode.zip
+   ```
+
+2. Register the marketplace and install the plugin:
+
+   ```bash
+   claude plugin marketplace add ~/.lore/claudecode
+   claude plugin install lore@lore
+   ```
+
+3. Add the server to the `env` block of `~/.claude/settings.json`. Leave out `LORE_API_TOKEN` if your server has no `API_TOKEN`:
+
+   ```json
+   {
+     "env": {
+       "LORE_BASE_URL": "https://api.loremem.com",
+       "LORE_API_TOKEN": "lm_your_token"
+     }
+   }
+   ```
+
+4. Write the same values to `~/.lore/config.json`. The hooks read this file first:
+
+   ```json
+   {
+     "base_url": "https://api.loremem.com",
+     "api_token": "lm_your_token"
+   }
+   ```
+
+5. Restart Claude Code.
+
+Manual setup leaves Skills off. To turn them on, set `LORE_SKILLS_ENABLED` to `1` in the same `env` block, and only on a server that has Skills.
+
+## Uninstall
+
+```bash
+npx @loremem/cli uninstall --channels claudecode -y
+```
+
+This removes the `lore@lore` plugin and the `lore` MCP entry when the `claude` command is available. It also removes the Lore entries from the `env` block of `~/.claude/settings.json` and deletes `~/.lore/claudecode`. Restart Claude Code afterwards.
+
+If Claude Code doesn't load Lore, see [Agent connection issues](/documents/troubleshooting/agents).

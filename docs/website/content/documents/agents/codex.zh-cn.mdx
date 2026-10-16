@@ -1,0 +1,90 @@
+Codex 接入让 Codex 在每次会话开始时获得启动记忆（boot），在每条提示词前获得召回，并通过 MCP 使用 Lore 记忆工具。它会安装一个本地 Codex 插件、开启 Codex 钩子（Hook），并注册 `lore` MCP 服务。
+
+## 安装
+
+在使用 Codex 的机器上运行：
+
+```bash
+npx @loremem/cli install --channels codex
+```
+
+接入 Loremem 云服务时，传入服务器地址和项目令牌：
+
+```bash
+npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token --channels codex
+```
+
+如果 `codex` 命令不在 `PATH` 中，安装程序会跳过 Codex。安装程序把 Codex 文件写入 `CODEX_HOME`，默认为 `~/.codex`。
+
+## 安装内容
+
+- 来自 `lore-codex.zip` 的插件。安装程序会先把它放到 `~/.lore/codex/`，用 `codex plugin marketplace add` 把该目录注册为本地插件市场，并把插件复制到 `$CODEX_HOME/plugins/cache/lore/lore/local/`。
+- 两个随插件提供的钩子。`SessionStart` 在 `startup`、`resume` 和 `clear` 时加载启动记忆，`UserPromptSubmit` 为每条提示词添加召回。每个钩子的超时时间为 10 秒。
+- `lore` MCP 服务，地址为 `<server>/api/mcp?client_type=codex`。它通过 `codex mcp add` 注册，并写入 `config.toml`。
+- `lore-skills` MCP 服务，只在服务器支持技能时添加。没有技能时，安装程序会移除这个条目。
+- 随插件提供的 `lore-memory` 技能。当任务依赖长期上下文时，它会提示 Codex 加载 `lore_guidance` 和 `lore_boot`。
+- 删除 `$CODEX_HOME/hooks.json` 中早期 Lore 安装留下的钩子条目。该文件中的其他钩子保持不变。
+
+安装程序会以 `0600` 权限写入 `config.toml`，并设置以下配置段：
+
+```toml
+[plugins."lore@lore"]
+enabled = true
+
+[features]
+hooks = true
+
+[mcp_servers.lore]
+url = "https://api.loremem.com/api/mcp?client_type=codex"
+http_headers = { Authorization = "Bearer lm_your_token" }
+```
+
+只有设置了令牌时，才会出现 `http_headers` 这一行。令牌保存在这个请求头中，因此请妥善保管该文件。
+
+## 验证
+
+1. 运行 `npx @loremem/cli status`。`codex` 一行应显示 `installed`。
+2. 运行 `codex mcp list`。输出应包含 `lore`；如果服务器支持技能，还应包含 `lore-skills`。
+3. 启动 Codex 并打开 `/plugins`。如果 Lore 仍显示为可安装，请在这里完成安装。
+4. 打开 `/hooks`，如果 Codex 提示，请信任 Lore 的钩子。
+5. 开始一个新会话，让 Codex 调用 `lore_status`。它应返回服务器的健康状态。
+6. 发送一条与已有记忆相关的项目提示。上下文中应包含一个 `<recall>` 块。
+
+## 注意事项
+
+- **信任钩子。** 如果 Codex 提示钩子需要审核，请打开 `/hooks`，并信任 Lore 的钩子。
+- **较早的 Codex 版本。** 旧版 Codex 需要在 `~/.codex/hooks.json` 中设置用户级钩子条目。对于这些版本，请在运行安装程序时设置 `LORE_CODEX_INSTALL_USER_HOOKS=1`：
+
+  ```bash
+  LORE_CODEX_INSTALL_USER_HOOKS=1 npx @loremem/cli install --channels codex
+  ```
+
+  这会把 Lore 的钩子条目添加到 `$CODEX_HOME/hooks.json`，并保留该文件中的其他钩子。
+
+- **修改后重启。** 钩子和 MCP 设置在进程启动时加载。修改 `config.toml`、钩子或令牌后，请重启 Codex。
+
+## 手动安装（备用方案）
+
+这种方法只通过 MCP 添加记忆工具，不安装钩子，因此 Codex 不会获得启动记忆，也不会有召回。需要这两项功能时，请使用安装程序。
+
+```bash
+codex mcp add lore --url "https://api.loremem.com/api/mcp?client_type=codex"
+```
+
+如果服务器需要令牌，请改为在 `~/.codex/config.toml` 中添加服务器配置。二者任选其一，不要同时使用。请将该文件设为仅自己可读（`chmod 600 ~/.codex/config.toml`）。
+
+```toml
+[mcp_servers.lore]
+url = "https://api.loremem.com/api/mcp?client_type=codex"
+http_headers = { Authorization = "Bearer lm_your_token" }
+```
+
+## 卸载
+
+```bash
+npx @loremem/cli uninstall --channels codex -y
+```
+
+这条命令会移除 Lore 插件市场、`lore` 和 `lore-skills` MCP 条目、`config.toml` 中的 Lore 配置段，以及 `hooks.json` 中的 Lore 钩子条目。该文件中的其他钩子保持不变。它还会删除 `~/.lore/codex` 和 Lore 的插件缓存。卸载后请重启 Codex。
+
+如果 Codex 无法加载 Lore，请参见[Agent 接入问题](/documents/troubleshooting/agents)。

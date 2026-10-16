@@ -1,0 +1,85 @@
+Recall analytics show what recall found, what it showed, and what the agent actually used. Use them to find memories that are noisy, memories that never appear when they should, and runtimes that need attention.
+
+## Where to find them
+
+- **Loremem Cloud:** the Overview page shows Recall analytics, the Channel overview, and Recent queries.
+- **Self-hosted:** the Recall page (`/recall`) shows the same analytics, with filters for the number of days and the source (channel).
+
+Both views cover the last 14 days by default.
+
+## The four headline numbers
+
+| Number | What it counts | What to look for |
+| --- | --- | --- |
+| Merged | Candidates ranked across all recall runs in the window | The size of the candidate pool. Shown is always a subset of Merged. |
+| Shown | Candidates injected into prompts | Each query shows no more than your item limit (3 by default). Compare Shown with Queries. |
+| Queries | Recall runs in the window | One for each prompt that recall handled |
+| Used | Shown memories that the agent opened with the query's identifiers | Above zero, and growing with real work. It can never exceed Shown, because only shown memories count as used. |
+
+There is no universal target. A healthy picture usually looks like this: most queries show fewer memories than the item limit, a steady share of what is shown gets used, and separation (described below) is clearly positive. Compare a channel with its own past, and compare channels with each other.
+
+## The channel table
+
+A channel is a runtime, such as Claude Code or Codex. The Channel overview shows one row per channel.
+
+| Column | Meaning |
+| --- | --- |
+| Shown | Memories shown to this runtime in the window |
+| Used | Shown memories that this runtime's agents opened |
+| Memory created, Memory updated, Memory deleted | Changes made through this runtime in the window. A busy runtime that never creates or updates memory may not be saving lessons. |
+| Used p25 | The score below which a quarter of used memories fall |
+| Unused p75 | The score below which three quarters of shown memories that were not used fall |
+| Separation | Used p25 minus Unused p75 |
+
+In plain words: line up the scores of the memories a channel's agents used, from low to high. Used p25 is the score at the first quarter of that list. Do the same for shown memories the agents did not use, and take the score at the third quarter. Separation is the difference between the two.
+
+- A **positive** separation means that even the weaker used memories score clearly above most of the memories the agent ignored. Recall ranks what the agent needed above what it did not.
+- A separation **near zero or negative** means the scores do not tell useful memories from ignored ones. Reduce the noise first. Do not treat it as a reason to lower the threshold.
+
+> [!NOTE]
+> The three score columns are rough until a channel has a meaningful number of used and shown memories. Lore only treats a sample as ready for analysis with at least 3 used and 5 shown candidates. Separation is a relative measure. Compare channels, and watch it over time, rather than aiming for a fixed number.
+
+## Recent queries
+
+The Recent queries table lists the latest recall runs, with the query text, the channel, the duration, how many memories were shown and used, and when the run happened. Select a query's text to open its detail. The table pages through older runs.
+
+## The query detail
+
+The query detail shows the request and its identifiers, and the stages of the recall pipeline. Select a stage to see only the candidates it produced.
+
+| Stage | What it contains |
+| --- | --- |
+| Query | The input and totals for this recall request |
+| Exact | Matches on paths, glossary terms, and query terms |
+| Glossary | Candidates found through glossary semantic similarity |
+| Semantic | Candidates found through memory-view embeddings (gist and question) |
+| Lexical | Candidates found through full-text and text matching |
+| Merged | All stages merged into one ranking |
+| Shown | Ranked candidates that passed display selection |
+
+Each candidate row shows:
+
+| Column | Meaning |
+| --- | --- |
+| Entry | The memory's URI |
+| View | The view that matched, if the match came through a view |
+| Pre | The score from the stage that found the candidate |
+| Final | The score after all stages are merged and bonuses are added. This is the score used for ranking and display. |
+| Rank | The candidate's position in the merged ranking |
+| Displayed | Whether the candidate took a display slot |
+| Status | **Used** (shown and opened), **Shown** (injected but not opened), or **Withheld** (ranked but not injected) |
+| Cues | The terms that matched |
+
+## Act on what you see
+
+| What you see | What it usually means | What to do |
+| --- | --- | --- |
+| Shown is high, Used is low | Recall injects memories the agent ignores. That is noise. | Raise `recall.display.min_display_score`, or lower `recall.display.max_display_items`. Sharpen the disclosures so memories match fewer unrelated prompts. |
+| A needed memory is never shown | Its disclosure and glossary do not match how the work is described | Rewrite the disclosure as one concrete situation. Add the words from the prompt to the glossary. Run the query again. |
+| A needed memory is withheld with a score just under the threshold | It is close to the cutoff | Improve the memory first. Lower the minimum score only if correct memories keep falling just below it. |
+| One channel has many shown memories and none used | Its agents are not opening memories with the identifiers | Check that the runtime passes `session_id` and `query_id` when it opens a node. |
+| Separation is near zero or negative | Scores do not tell used memories from ignored ones | Reduce the noise first, then check again. |
+| Chinese prompts score weakly in Exact and Lexical | Chinese word segmentation is missing | See [Chinese recall](/documents/recall/improving-recall#chinese-recall). |
+
+> [!NOTE]
+> Change one thing at a time, then compare the next few days of analytics with the period before the change.

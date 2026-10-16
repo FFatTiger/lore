@@ -1,0 +1,92 @@
+A short weekly routine keeps memory accurate, so you never need a big cleanup project.
+
+## Weekly routine
+
+1. Save durable decisions as soon as you make them. A decision that stays in a chat is lost when the session ends.
+2. Run three to five realistic recall queries for each active project on the **Recall** page.
+3. Check the recall signals in the next section. Fix a missing or wrong memory before anything else.
+4. Review the Dream changes from the past week. Approve the good ones. For a bad change, edit the node, or on a self-hosted server, roll back the node from its history. Roll back a whole run only when it is the most recent run and every change in it is bad.
+5. Clean up one old or broad memory, as described below.
+6. Check that the newest backup is recent. On a self-hosted server, see the list under **Backup Actions**. On Loremem Cloud, see **Last backup** on the Backup tab.
+
+## Recall signals that mean maintenance is needed
+
+Recall analytics show where memory is failing. On a self-hosted server, open **Recall**. On Loremem Cloud, open **Overview** and check the recall analytics and the channel overview.
+
+| Signal | What it usually means | What to do |
+| --- | --- | --- |
+| A query you expect to hit returns nothing | The memory lacks a glossary term, or its disclosure doesn't match how people ask. | Add the missing term or rewrite the disclosure. Fix the memory shape before you change thresholds or weights. |
+| A memory appears often but is never used | It adds noise to prompts. | Narrow its disclosure, or split it so each part has its own trigger. |
+| **Separation** is low or negative | Used memories score about the same as unused ones. | Review the glossary and disclosure of the memories that appear for many queries. |
+| The same broad node keeps appearing | It covers too much. | Split it. |
+
+Recall analytics use these terms:
+
+- **Merged** counts ranked candidates. **Shown** counts memories injected into prompts. **Used** counts memories the agent opened with the recall IDs.
+- **Separation** is the used p25 score minus the unused shown p75 score. When it is low or negative, the scores of used and unused memories overlap.
+
+## Clean up an old or broad memory
+
+Prefer splitting a broad memory over deleting it. A broad memory usually holds one or two useful facts mixed with stale detail.
+
+1. For a large cleanup, [take a backup](/documents/maintenance/backups) first.
+2. Open the node and read its content, disclosure, glossary, and priority.
+3. Choose one action:
+   - **Update** the content when a fact has changed. The node's history keeps the earlier text.
+   - **Split** a node that covers several concepts. Keep the parent as an abstract node, and move each concept into a child.
+   - **Move** a node that sits in the wrong place in the path tree.
+   - **Delete** a node only when nothing in it is still true.
+4. Check the node's history before you delete or replace content. When a fact changed but the old version still explains a past decision, update the node instead of deleting it.
+5. Run the recall queries that should find the memory, and check that the right nodes appear.
+
+Here is an example of a split. This node mixes two topics, and its disclosure uses OR logic:
+
+```text
+URI:        project://checkout_api/deploy
+Priority:   2
+Disclosure: When working on checkout-api releases or database migrations
+Glossary:   deploy, release, migration
+Content:    Deploy with make release. Roll back by redeploying the previous tag. Migrations must run before the new pods start.
+```
+
+Keep the parent as a general overview, and give each topic its own child:
+
+```text
+URI:        project://checkout_api/deploy/release
+Priority:   2
+Disclosure: When cutting or rolling back a checkout-api release
+Glossary:   make release, release, rollback
+Content:    Release with make release. Roll back by redeploying the previous tag.
+```
+
+```text
+URI:        project://checkout_api/deploy/migrations
+Priority:   2
+Disclosure: When adding or changing a checkout-api database migration
+Glossary:   migration, database migration
+Content:    Migrations must run before the new pods start.
+```
+
+The parent, `project://checkout_api/deploy`, must exist as a real node with its own content, disclosure, and glossary before you add children to it.
+
+## Use node history and rollback
+
+Every create, update, move, and delete is recorded in the node's history, including changes Dream made.
+
+- **Self-hosted**: open the node's history to see each event with its diff. Select **Rollback** on a create or update event to restore the node to its state after that event. Other event types can't be rolled back this way. Use this to undo an older change, such as one from a Dream run that is no longer the most recent.
+- **Loremem Cloud**: the node's history shows each change as a diff. The console doesn't offer per-node rollback, so edit the node to restore earlier text.
+
+## Prepare memory for a new project
+
+Create a project's memory before an agent needs it. A multi-segment path needs a real parent, so create the project root first, with its own content, disclosure, and glossary. Then add the starting set:
+
+| Path | What it holds |
+| --- | --- |
+| `project://my_app/overview` | What the project is and where it lives. |
+| `project://my_app/commands` | Install, dev, test, build, and deploy commands. |
+| `project://my_app/constraints` | Architecture rules, forbidden changes, and product constraints. |
+| `project://my_app/deployment` | Hosting, environment variables, the release process, and rollback notes. |
+
+Give each memory glossary terms for its product names, aliases, and acronyms. Use priority `1` only for facts that every task needs. The priority budget caps the whole memory library at five priority-`0` nodes and fifteen priority-`1` nodes.
+
+After you write the first memories, run a realistic task prompt through recall. If the overview doesn't appear, improve its disclosure and glossary first.

@@ -1,14 +1,34 @@
-## 核心术语
+在这里查找 Lore 的术语。术语按英文字母顺序排列，每一行都链接到详细解释该术语的页面。
 
-| 术语 | 含义 |
-| --- | --- |
-| Boot memory | 从全局和渠道专属路径加载的固定启动上下文 |
-| Recall | 针对当前任务检索候选记忆 |
-| Disclosure | 记忆应该在未来什么场景出现 |
-| Domain | 顶级命名空间，例如 `core`、`preferences` 或 `project` |
-| Memory path | 记忆的稳定 URI |
-| Glossary | 帮助召回找到正确记忆的别名和关键词 |
-| Priority | 与召回评分一起使用的重要性信号 |
-| Dream | 审阅并改善记忆质量的维护工作流 |
-| View | 从记忆内容生成的可搜索表示，例如 gist 或 question |
-| Client type | 运行时标识，例如 `codex`、`claudecode`、`openclaw`、`pi` 或 `hermes` |
+## 术语
+
+| 术语 | 含义 | 详见 |
+| --- | --- | --- |
+| 启动记忆（boot） | 会话开始时 Lore 发送的固定基线，包括全局使用规则和启动节点。 | [Lore 如何工作](/documents/how-lore-works) |
+| 启动节点（boot node） | 启动列表中的记忆：`core://agent`、`core://soul`、`preferences://user` 或 `core://agent/<client_type>`。 | [Lore 如何工作](/documents/how-lore-works) |
+| 客户端类型（client_type） | 运行时的名称，例如 `claudecode`。插件会在每个事件中以 `client_type` 发送它。 | [接入 Agent](/documents/agents) |
+| 线索词（cue terms） | 命中某条被召回记忆的查询词。它们显示在每行召回记录的 URI 之后。 | [召回](/documents/recall) |
+| 触发条件（disclosure） | 一句简短的说明，描述这条记忆应在哪一种具体情境下出现。 | [触发条件与术语](/documents/memory/disclosure-and-glossary) |
+| 域（domain） | URI 中 `://` 之前的部分，例如 `core`、`preferences` 或 `project`。 | [路径与域](/documents/memory/paths) |
+| Dream | 由 View LLM 执行的定时记忆维护。它会找出并修复重复的节点、模糊的触发条件和过时的节点。 | [Dream](/documents/dream) |
+| Dream 日记 | Dream 为每次运行写下的摘要和叙述。 | [Dream](/documents/dream) |
+| 嵌入（embedding） | 表示文本含义的一组数字。Lore 用嵌入做语义召回。 | [召回](/documents/recall) |
+| 故障放行（fail open） | Lore 无法访问或响应缓慢时，插件什么都不返回，Agent 在该步骤中不使用记忆继续工作。 | [Lore 如何工作](/documents/how-lore-works) |
+| 术语（glossary） | 节点上的关键词和别名，帮助召回匹配到它，例如产品名和报错名。 | [触发条件与术语](/documents/memory/disclosure-and-glossary) |
+| 历史（history） | 节点的事件记录：每次创建、更新、移动和删除。 | [记忆模型](/documents/memory) |
+| 生命周期事件（lifecycle event） | 插件在会话或提示词节点发送的消息，例如 `session.start` 或 `prompt.submit`。 | [Lore 如何工作](/documents/how-lore-works) |
+| 记忆节点（memory node） | 一条纯文本记忆，包含路径、内容、优先级、触发条件、术语和视图。 | [记忆模型](/documents/memory) |
+| 记忆路径（memory path，URI） | 节点的稳定地址，格式为 `域://路径`，例如 `project://checkout_api/webhooks`。 | [路径与域](/documents/memory/paths) |
+| 组织（organization） | 在 Loremem 云服务中，组织是项目的容器。首次登录会创建一个个人组织。 | [Loremem 云服务](/documents/cloud) |
+| 优先级（priority） | 整数排名：`0` 为核心身份，`1` 为关键事实，`2` 及以上为一般记忆。 | [优先级](/documents/memory/priority) |
+| 优先级容量（priority budget） | 限制使用优先级 `0`（5 条）和优先级 `1`（15 条）的记忆数量。 | [优先级](/documents/memory/priority) |
+| 项目（project） | 在 Loremem 云服务中，项目是独立的记忆空间，有自己的图谱、分析、Dream、设置、令牌和技能。 | [Loremem 云服务](/documents/cloud) |
+| 先读后信（read before trust） | Agent 依赖召回到的内容之前，先用 `lore_get_node` 打开节点。 | [Lore 如何工作](/documents/how-lore-works) |
+| 召回（recall） | Lore 在每条提示词上查找匹配记忆的过程。结果只是候选，不是事实。 | [召回](/documents/recall) |
+| 召回块（recall block） | Lore 在提示词前注入的 `<recall>` 文本。每行包含分数、URI 和线索词。 | [Lore 如何工作](/documents/how-lore-works) |
+| 技能（skill） | 包含 `SKILL.md` 和可选文件的文件夹。Agent 相关时可以加载它。仅 Loremem 云服务。 | [技能](/documents/skills) |
+| 启动召回（startup recall） | 会话开始时的召回，依据工作目录和仓库名。 | [Lore 如何工作](/documents/how-lore-works) |
+| 令牌（token） | 客户端发送给 Lore 的凭证。Loremem 云服务的令牌形如 `lm_…`；自托管服务器使用 `API_TOKEN`。 | [Loremem 云服务](/documents/cloud) |
+| 视图（view，gist / question） | 为节点生成的摘要，用于语义搜索：内容概要（gist），以及节点能回答的问题（question）。 | [记忆模型](/documents/memory) |
+| View LLM（视图 LLM） | 用于生成视图并运行 Dream 的模型。在首次初始化时设置。 | [首次初始化](/documents/self-hosting/first-run-setup) |
+| 工作副本（work copy） | 技能文件在本地的副本，位于 `~/.lore/skill-artifacts/` 下，供 Agent 读取。 | [技能](/documents/skills) |

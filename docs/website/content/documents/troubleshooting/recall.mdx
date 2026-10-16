@@ -1,0 +1,96 @@
+When a memory exists but doesn't come back, the wrong memory comes back, or recall is slow, fix the memory's shape first. Change weights and thresholds only after you have checked the memory itself.
+
+## Test one prompt on the Recall page
+
+1. Open the Recall page. On a self-hosted server, go to `http://127.0.0.1:18901/recall`. On Loremem Cloud, open the Recall page in the console.
+2. Paste the exact prompt that failed, and run it.
+3. Read the pipeline stages. For each candidate, check its score, whether it passed the display threshold, and which cue terms matched.
+4. Compare the result with the `<recall>` block that the agent received. Each line shows a score, a URI, and the cue terms.
+
+## Nothing is recalled
+
+**Cause:** One of three things is happening:
+
+- The Embedding settings are empty or wrong. Recall resolves the embedding model before it searches, so the request fails and the agent gets no `<recall>` block.
+- No memory matches. The graph is empty, or the memories lack the disclosure and glossary terms that the prompt uses.
+- Every candidate scores below `recall.display.min_display_score`, which is `0.60` by default. Lore writes a `<recall>` block only when at least one item passes.
+
+**Fix:**
+
+1. Open `/setup` or `/settings` and confirm that the Embedding base URL, API key, and model are saved. Run the connection test.
+2. Run the prompt on the Recall page. If the memory is not a candidate, rewrite its disclosure as one concrete situation, and add the words people actually type to its glossary. See [Writing good memories](/documents/memory/writing-memories).
+3. If the memory is a candidate below the threshold, improve its shape first. Lower `recall.display.min_display_score` only when the memory is clearly relevant and its shape is already good.
+
+## The wrong memories come back
+
+**Cause:** A broad node matches many prompts, usually because it covers several topics or has a generic disclosure. Inflated priority makes it worse. Priority adds a ranking bonus, so a memory marked `0` or `1` can outrank a more specific one. Priority never forces a memory to appear, but it does push it up.
+
+**Fix:**
+
+1. Split the broad node into focused children under a real parent. Give each child one disclosure.
+2. Lower the priority of anything that is not core. Priority `0` is capped at 5 nodes across the library, and priority `1` at 15.
+3. Run the prompt again on the Recall page.
+
+## Chinese prompts match poorly
+
+**Cause:** PostgreSQL falls back to the `simple` text search configuration, which does not split Chinese words. Lore tries `pg_jieba` first, then `zhparser`, then `simple`. It keeps the result until the server restarts.
+
+**Check:** Run both queries in the Lore database. An error means that extension is not available.
+
+```sql
+SELECT to_tsvector('jiebacfg', '测试');
+SELECT to_tsvector('zhparser', '测试');
+```
+
+**Fix:**
+
+1. Use the Lore PostgreSQL image, `fffattiger/pgvector-zhparser:pg16`, which includes both.
+2. For your own PostgreSQL server, install `pg_jieba` (preferred) or `zhparser`. For `pg_jieba`, add it to `shared_preload_libraries` and restart PostgreSQL.
+3. Restart the Lore server so that it detects the new configuration.
+4. Put both languages in the glossary, for example `refund` and `退款`.
+
+## Recall is slow or skipped
+
+**Cause:** Lore embeds each query before it searches, so a slow embedding endpoint or a slow database slows every recall. Two time limits also apply:
+
+- A recall request that runs longer than `recall.safety.timeout_ms` (2000 ms by default) is stopped. Lore then returns this notice instead of candidates: `Recall took longer than 2 seconds and was skipped. Use lore_search for detailed related memories.` This limit applies to the recall endpoint that API clients and the Hermes plugin use.
+- Agent hooks stop waiting after their own timeout, which is 10 seconds in Claude Code, Codex, and ZCode. The prompt then continues without a `<recall>` block.
+
+**Fix:**
+
+1. Check that the embedding endpoint answers quickly and that the database is not overloaded.
+2. Reduce the number of broad memories that match many prompts.
+3. Raise `recall.safety.timeout_ms` only when the notice keeps appearing and the embedding endpoint is slow. The allowed range is 500 to 30000 ms.
+
+## The agent ignores recall
+
+**Cause:** A `<recall>` line is a lead, not a fact. The agent has to open the node. Lore counts a memory as **Used** only when the agent calls `lore_get_node` with the `session_id` and `query_id` from the `<recall>` tag.
+
+**Check:** In the recall analytics on the Recall page, compare **Shown** (injected into prompts) with **Used** (opened by the agent) for the runtime. A high Shown count with a low Used count means the agent sees the lines but does not open them.
+
+**Fix:**
+
+1. Make each disclosure specific, so the agent knows when the node matters.
+2. In `/settings`, strengthen the guidance. `lifecycle.guidance.global` holds the usage guidance, and `lifecycle.prompt_recall.preamble` holds the text before each recall block. Tell the agent to open a recalled node before it relies on it.
+3. Confirm that the agent passes `session_id` and `query_id` exactly as they appear in the tag. Without them, Lore cannot attribute the use to the right recall.
+
+## A memory exists but never shows
+
+**Cause:** The memory is not a candidate for the prompt you are testing, or it is a candidate that scores below the threshold.
+
+**Fix:**
+
+1. Run the exact prompt on the Recall page and read the pipeline stages.
+2. If the memory is not a candidate, its disclosure and glossary do not match the prompt. Rewrite the disclosure around one situation, and add the terms people type.
+3. If it is a candidate below the threshold, fix its shape before you change the threshold. Then test again.
+
+## Results are stale after a large edit
+
+**Cause:** Lore builds each node's views, the gist and question summaries used for semantic search, from the node's content. Changing the embedding model invalidates all existing embeddings, so results can lag until the rebuild finishes.
+
+**Fix:**
+
+1. Wait for the rebuild to finish. Changing the embedding model asks for confirmation and then rebuilds all embeddings.
+2. Rebuild one node's views with **Rebuild** on the node's page.
+3. Rebuild the whole index with **Rebuild Index** on the Settings page.
+4. Run the prompt again on the Recall page.

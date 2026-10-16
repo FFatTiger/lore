@@ -1,0 +1,61 @@
+任何支持 Streamable HTTP 的 MCP 客户端，都可以接入 Lore 的记忆工具。客户端会获得记忆工具，但 Lore 不会为它加载启动记忆（boot）或召回，因此需要给 Agent 指令，让它自己调用 `lore_boot` 和 `lore_search`。
+
+## 端点
+
+把客户端指向 `<server>/api/mcp?client_type=mcp`。Lore 通过 Streamable HTTP 提供 MCP 服务。客户端用 POST 发送 JSON-RPC 请求，Lore 以 JSON 响应。Lore 不会签发 MCP 会话 ID。
+
+| 服务器 | 端点 | 请求头 |
+| --- | --- | --- |
+| Loremem 云服务 | `https://api.loremem.com/api/mcp?client_type=mcp` | `Authorization: Bearer lm_your_token` |
+| 本机自托管 | `http://127.0.0.1:18901/api/mcp?client_type=mcp` | 仅当服务器设置了 `API_TOKEN` 时需要 |
+
+请在地址中保留 `client_type=mcp`。Lore 借此在[召回分析](/documents/recall/analytics)中把通用 MCP 客户端的活动单独显示出来。
+
+> [!NOTE]
+> 如果服务器设置了 `API_TOKEN`，每个请求都必须带上 `Authorization: Bearer <token>`。否则，Lore 会返回 `401 Unauthorized`。
+
+## 配置示例
+
+每个客户端的配置格式都不同，因此下面的 JSON 只是示例。请使用你的客户端要求的字段名。
+
+```json
+{
+  "mcpServers": {
+    "lore": {
+      "type": "http",
+      "url": "https://api.loremem.com/api/mcp?client_type=mcp",
+      "headers": {
+        "Authorization": "Bearer lm_your_token"
+      }
+    }
+  }
+}
+```
+
+## 你能获得的功能
+
+- 记忆工具：`lore_guidance`、`lore_status`、`lore_boot`、`lore_get_node`、`lore_search`、`lore_list_domains`、`lore_create_node`、`lore_update_node`、`lore_delete_node` 和 `lore_move_node`。每个工具的输入参数见[工具参考](/documents/reference/tools)。
+- 使用指引。服务器设有使用指引文本时，Lore 会在 `initialize` 响应中以 MCP 服务器指令的形式发送它。把服务器指令传给模型的客户端，会让 Agent 获得这些指引。
+
+## 你不会获得的功能
+
+- **启动记忆。** 客户端不会自行调用 `lore_boot`。`lore_boot` 返回全局启动记忆节点：`core://agent`、`core://soul` 和 `preferences://user`。通用 MCP 客户端没有自己的运行时启动记忆节点。
+- **召回。** 提示中不会添加 `<recall>` 块。
+- **技能。** 该端点不提供 `lore_skill_*` 工具。技能工具只来自运行时接入。
+
+要弥补这些缺口，请把以下指令加入客户端的系统提示：
+
+```text
+每个会话开始时，先调用 lore_boot，并在回答前阅读其结果。
+依赖一条记住的事实之前，先调用 lore_search，再用 lore_get_node 打开最相关的结果。
+```
+
+如果没有这些指令，Agent 只有在你要求时才会读取 Lore。
+
+## 验证
+
+1. 从客户端调用 `lore_status`。它会返回服务器的健康状态。
+2. 调用 `lore_boot`。结果中应包含 `core://agent`、`core://soul` 和 `preferences://user`。
+3. 用你已有记忆中的一个词调用 `lore_search`。结果应列出匹配的节点。
+
+如果客户端无法连接，或者返回 `401 Unauthorized`，请参见[Agent 接入问题](/documents/troubleshooting/agents)。

@@ -1,0 +1,81 @@
+Backups let you recover your memory after a bad import, a risky cleanup, or a Dream run you regret. Lore takes one every night by default.
+
+## Defaults
+
+Lore backs up memory every day at 04:00 and keeps the newest seven backups.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `backup.enabled` | on | Runs the scheduled backup. |
+| `backup.cron` | `0 4 * * *` | Sets the backup time as a 5-field cron expression. It uses the same time zone as Dream. |
+| `backup.retention_count` | `7` | Keeps the newest N backups and deletes older ones. |
+| `backup.local.enabled` | on | Saves backup files on the server. |
+| `backup.webdav.enabled` | off | Uploads each backup to a WebDAV server. |
+| `backup.include_recall_events` | off | Includes recall events, which can be large. Local backups and **Export & Download** leave them out, so this setting applies to WebDAV uploads. |
+
+On a self-hosted server, these are under **Settings → Data backup**, labeled **Scheduled backup**, **Backups to keep**, **Local backup**, **WebDAV backup**, and **Include recall events**. On Loremem Cloud, use **Settings → Backup**. The same options appear as **Run scheduled backups**, **Backup cron**, **Retain local backups**, **Save local backup files**, **Include recall events**, and **Upload to WebDAV**.
+
+## Where self-hosted backups are stored
+
+Each backup is a JSON file named like `lore-backup-2026-10-15-04-00-00.json`. The timestamp is in UTC. Lore writes the files to a `backups` folder inside the snapshot data directory:
+
+- **Docker Compose**: `SNAPSHOT_DATA_DIR` in `.env` sets the host folder. It defaults to `./data/snapshots`, which the container sees as `/app/snapshots`. Backups go to `./data/snapshots/backups/`.
+- **CLI install**: the Compose project lives in `~/.lore/docker`, so backups go to `~/.lore/docker/data/snapshots/backups/`.
+- **Portainer compose file**: the default host folder is `./data/web/snapshots`.
+
+After each backup, Lore deletes the oldest local files beyond `backup.retention_count`. Copy backups off the server if they need to survive a disk failure.
+
+## Back up now
+
+On a self-hosted server, open **Settings → Backup Actions**.
+
+- **Run Backup Now** runs the backup job immediately. It writes a local file if local backups are on, uploads to WebDAV if WebDAV is on, and applies the retention count.
+- **Export & Download** saves a `lore-backup-<timestamp>.json` file to your computer. It leaves out recall events.
+- **Import & Restore** restores from a JSON file you choose. See Restore below.
+- The table lists the 10 most recent local backups. Each row has a **Restore** button.
+
+## Set up WebDAV
+
+1. Create a folder on your WebDAV server for Lore only. Retention deletes older `lore-backup-*.json` files in that folder.
+2. In **Settings → Data backup**, turn on **WebDAV backup**, then enter the **WebDAV URL** (for example, `https://dav.example.com/backups/`), the **WebDAV username**, and the **WebDAV password**.
+3. Select **Run Backup Now**, then check that the new file appears in the folder.
+
+Use an `https://` URL, because Lore sends the username and password with each request. After you save the password, Lore doesn't show it again.
+
+On Loremem Cloud, enter the same values under **Upload to WebDAV**.
+
+## Take an extra backup
+
+The scheduled backup covers normal use. Take an extra backup right before:
+
+- an import, including an import into Loremem Cloud
+- a large cleanup, such as merging, splitting, moving, or deleting many nodes
+- a Dream run you haven't reviewed, or before you turn scheduled Dream on
+- a server move, an upgrade, or a database change
+- switching the embedding model, which rebuilds the memory indexes
+
+On a self-hosted server, select **Run Backup Now**, then select **Export & Download** and keep the file somewhere other than the server.
+
+The Loremem Cloud Backup tab has no button to run a backup. Turn on **Upload to WebDAV** so each scheduled backup lands on storage you control, and make your change after the most recent scheduled backup has run.
+
+## Test a restore
+
+A backup you have never restored is untested. Test a restore before you need one:
+
+1. Start a second Lore server in a separate environment, such as a fresh Docker install on another machine or port. Don't test on your production server.
+2. In **Settings → Backup Actions**, select **Import & Restore**, choose the backup JSON file, and confirm.
+3. In **Settings → Embedding service**, select **Rebuild Index**. A restore doesn't copy memory views or search indexes, so this step rebuilds them.
+4. Open **Memory** and find a few nodes you know. Then run two or three queries on the **Recall** page.
+5. To check a file, run `tail -c 400` on it. The end of the file holds a `stats` object with the row count for each table.
+
+> [!WARNING]
+> Restore replaces all current data on the server, including its settings. Test on a separate server first, and take a fresh backup of the target server before you restore into it.
+
+## Restore
+
+- To restore a backup listed under **Backup Actions**, select **Restore** on its row.
+- To restore a file, select **Import & Restore** and choose a `lore-backup-v1` JSON file. You can use an exported file, or a file copied from the backups folder or from WebDAV.
+
+Confirm the **Restore** dialog. It reads "Confirm restore? This will replace ALL current data." A default backup doesn't include recall events. When a backup has none, a restore leaves your existing recall events in place. Then run **Rebuild Index**, as in the test steps above.
+
+To move a backup into Loremem Cloud, use the import on the **Install** page instead. See [Import a self-hosted backup](/documents/cloud/import-self-hosted-backup). A Cloud import replaces the current project's memory and skips settings, Dream runs, recall analytics, and embeddings.

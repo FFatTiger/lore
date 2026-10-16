@@ -1,0 +1,81 @@
+The Hermes integration installs a Lore memory provider that puts startup memory (boot) into Hermes's system prompt, prefetches recall for each message, and adds the Lore memory tools. The installer downloads the plugin files, and you link them into Hermes yourself.
+
+## Install
+
+Run the installer on the machine where you use Hermes:
+
+```bash
+npx @loremem/cli install --channels hermes
+```
+
+On Loremem Cloud, pass the server and your project token:
+
+```bash
+npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token --channels hermes
+```
+
+Then link the plugin into Hermes:
+
+```bash
+mkdir -p ~/.hermes/skills
+ln -s ~/.lore/hermes/lore_memory ~/.hermes/skills/lore_memory
+```
+
+Restart Hermes after you link the plugin.
+
+> [!NOTE]
+> The installer doesn't need a Hermes command. By default it picks up Hermes only when a `hermes` command is on your `PATH`. Pass `--channels hermes` to install the plugin files either way.
+
+## What gets installed
+
+- The plugin package from `lore-hermes.zip`, in `~/.lore/hermes/lore_memory/`. It contains the memory provider and its manifest.
+- Nothing is linked into Hermes automatically. You create the `~/.hermes/skills/lore_memory` link, as shown above.
+- Nine memory tools: `lore_status`, `lore_boot`, `lore_get_node`, `lore_search`, `lore_list_domains`, `lore_create_node`, `lore_update_node`, `lore_delete_node`, and `lore_move_node`. On a server with Skills, seven `lore_skill_*` tools are added.
+- At session start, the startup context from Lore becomes the boot block in Hermes's system prompt. Before each user message, Hermes prefetches recall for that message.
+- Skill tools appear when the server advertises Skills. The plugin turns them on when the `server_profile` in `~/.lore/config.json` records Skills for the same server URL, or when `LORE_SKILLS_ENABLED` is `1`.
+
+## Verify
+
+1. Run `npx @loremem/cli status`. The `hermes` line should read `installed`.
+2. Run `ls -l ~/.hermes/skills/lore_memory`. It should show a link to `~/.lore/hermes/lore_memory`.
+3. Restart Hermes. Its log should include `Lore memory provider initialized` with your server URL.
+4. Ask Hermes to call `lore_status`. It should return the server's health.
+5. Send a prompt about a project that has memories. Then ask Hermes which memory nodes it was given for that prompt.
+
+## Notes
+
+- **Config location.** Hermes always reads `~/.lore/config.json` from your home folder. Setting `LORE_HOME` doesn't change that path. `LORE_HOME` sets where skill work copies go.
+- **Environment fallbacks.** When the config file doesn't set a value, Hermes reads `LORE_BASE_URL`, `LORE_API_TOKEN`, `LORE_TIMEOUT` (in seconds, default `30`), and `LORE_DEFAULT_DOMAIN` (default `core`).
+- **Restart after changes.** Restart Hermes after you link the plugin or change its settings.
+
+## Manual setup (fallback)
+
+Use these steps only when the installer can't run. They download the same package and create the same link.
+
+```bash
+mkdir -p ~/.lore/hermes ~/.hermes/skills
+curl -fsSL -o lore-hermes.zip https://github.com/FFatTiger/lore/releases/latest/download/lore-hermes.zip
+unzip -qo lore-hermes.zip -d ~/.lore/hermes
+rm lore-hermes.zip
+ln -s ~/.lore/hermes/lore_memory ~/.hermes/skills/lore_memory
+```
+
+Write the server settings to `~/.lore/config.json`, then restart Hermes:
+
+```json
+{
+  "base_url": "https://api.loremem.com",
+  "api_token": "lm_your_token"
+}
+```
+
+## Uninstall
+
+```bash
+npx @loremem/cli uninstall --channels hermes -y
+rm ~/.hermes/skills/lore_memory
+```
+
+The uninstaller deletes `~/.lore/hermes`, but it leaves the link in Hermes. The `rm` command removes that link. It doesn't touch the folder the link pointed to, which the uninstaller has already deleted. Restart Hermes afterwards.
+
+If Hermes doesn't load Lore, see [Agent connection issues](/documents/troubleshooting/agents).

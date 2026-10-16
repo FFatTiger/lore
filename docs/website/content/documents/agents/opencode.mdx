@@ -1,0 +1,89 @@
+The OpenCode integration installs a native OpenCode plugin that gives OpenCode startup memory in its system context, recall before each prompt, and ten native `lore_*` tools, without MCP.
+
+## Install
+
+Run this on the machine where you use OpenCode:
+
+```bash
+npx @loremem/cli install --channels opencode
+```
+
+On Loremem Cloud, pass the server and your project token:
+
+```bash
+npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token --channels opencode
+```
+
+The installer skips OpenCode when the `opencode` command is not on your `PATH`. Restart OpenCode after the install finishes.
+
+## What gets installed
+
+- The plugin file `~/.config/opencode/plugins/lore-memory.js`, from `lore-opencode.zip`. The installer stamps the file with the `@lore-managed-opencode-plugin` marker and replaces the file only when that marker is present. If an unmarked file already sits at that path, the installer keeps it and skips OpenCode.
+- Files in `~/.lore/opencode/`. With Skills, this folder also holds a `.lore-skills-enabled` flag.
+- Ten native tools: `lore_guidance`, `lore_status`, `lore_boot`, `lore_get_node`, `lore_search`, `lore_list_domains`, `lore_create_node`, `lore_update_node`, `lore_delete_node`, and `lore_move_node`. On a server with Skills, the seven `lore_skill_*` tools are added.
+- Startup memory goes into the system context at session start, through the experimental `experimental.chat.system.transform` hook. Recall is added to each prompt through the `chat.message` hook.
+- No MCP entry. The installer doesn't add one.
+- A compatibility edit for oh-my-openagent, when that file exists. See the notes below.
+
+## Verify
+
+1. Run `npx @loremem/cli status`. The `opencode` line should read `installed`.
+2. Restart OpenCode, start a new session, and ask it to call `lore_status`. It should return the server's health.
+3. Ask it to call `lore_boot`. The result should include the node `core://agent/opencode`.
+4. Send a prompt about a project that has memories. Recall should appear in the prompt.
+
+## Notes
+
+- **Boot and recall fail open.** If OpenCode doesn't offer the experimental system hook, the plugin logs one warning, skips startup memory, and keeps the native tools and prompt recall working. If Lore is unreachable or slow, the plugin adds nothing for that event, and OpenCode carries on.
+- **Tool names show the setup.** Native tools use exact names such as `lore_search`. Names such as `lore_lore_search` come from an MCP setup, not from the native plugin.
+- **Duplicate MCP entries are removed.** After OpenCode merges its configuration, the plugin removes Lore MCP entries. These are entries named `lore` or ending in `:lore`, and remote entries that point to a Lore `/api/mcp` address. This keeps Lore from loading twice.
+- **oh-my-openagent compatibility.** Some OpenCode plugins import Claude Code plugins, which would run Lore's Claude Code hooks next to the native plugin. If `oh-my-openagent.json` or `oh-my-openagent.jsonc` (or the legacy `oh-my-opencode` names) exists in `~/.config/opencode/`, and the installer can parse it safely, the installer sets `claude_code.plugins_override["lore@lore"]` to `false`. It keeps the other settings and comments, and it records the previous value in `~/.lore/opencode-compat.json`. The edit needs `python3`, and without it the installer skips the edit. Uninstalling restores the previous value, which also needs `python3`. If the installer can't parse the file safely, it warns and leaves the file alone. It never creates that file or changes Claude Code's files.
+- **Legacy MCP fallback.** Set `LORE_OPENCODE_ALLOW_MCP=1` only when you want an MCP entry for Lore to stay next to the native plugin. Set it both when you run the installer and when you start OpenCode. Running the installer again with this variable restores the compatibility value that Lore changed.
+- **Restart after changes.** Restart OpenCode after you reinstall or change the token.
+
+## Manual setup (fallback)
+
+Manual installation copies the plugin file yourself. It skips the compatibility edit, so if you use oh-my-openagent, set `claude_code.plugins_override["lore@lore"]` to `false` in that file yourself.
+
+1. Download the plugin file:
+
+   ```bash
+   curl -fsSL -o lore-opencode.zip https://github.com/FFatTiger/lore/releases/latest/download/lore-opencode.zip
+   unzip -qo lore-opencode.zip lore-memory.js
+   ```
+
+2. Copy it into place. The command refuses to overwrite a file that Lore didn't create:
+
+   ```bash
+   target="$HOME/.config/opencode/plugins/lore-memory.js"
+   mkdir -p "$(dirname "$target")"
+   if [ -f "$target" ] && ! grep -q '@lore-managed-opencode-plugin' "$target"; then
+     echo "Refusing to overwrite an unmarked plugin: $target" >&2
+     exit 1
+   fi
+   install -m 0644 lore-memory.js "$target"
+   rm -f lore-opencode.zip lore-memory.js
+   ```
+
+3. Write the server settings to `~/.lore/config.json`. The plugin reads `base_url` and `api_token` from this file, and it falls back to `LORE_BASE_URL` and `LORE_API_TOKEN`:
+
+   ```json
+   {
+     "base_url": "https://api.loremem.com",
+     "api_token": "lm_your_token"
+   }
+   ```
+
+   To turn on Skill tools on a server with Skills, also set `LORE_SKILLS_ENABLED=1` in the environment that starts OpenCode.
+
+4. Restart OpenCode.
+
+## Uninstall
+
+```bash
+npx @loremem/cli uninstall --channels opencode -y
+```
+
+This restores the oh-my-openagent setting that Lore changed, which needs `python3`. It removes `lore-memory.js` only when the file has the Lore marker, and it deletes `~/.lore/opencode`. Restart OpenCode afterwards.
+
+If OpenCode doesn't load Lore, see [Agent connection issues](/documents/troubleshooting/agents).

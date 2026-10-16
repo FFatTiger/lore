@@ -1,0 +1,75 @@
+Create skills and manage them on the **Skills** page of the Loremem Cloud console, or let your agents create and update them with the skill tools.
+
+## Create a skill
+
+1. Open **Skills** and select **New skill**.
+2. Enter a **Name**. Use lowercase letters, numbers, and hyphens, up to 64 characters, such as `research-notes`. You can't change the name later.
+3. Enter a **Description**. Agents decide when to load the skill from this text, so say what the skill does and when to use it. The limit is 1,024 characters.
+4. Choose **Visible to**: all agents, or one runtime.
+5. Turn on **User only** if agents should never load the skill on their own.
+6. Select **Create skill**.
+
+The new skill starts with a `SKILL.md` that holds the name and description in its frontmatter, plus a heading and the description as placeholder text. Open `SKILL.md` and replace the body with your instructions.
+
+## Upload a package
+
+Select **Upload package** to import skills from a file:
+
+- A `.skill` file contains one skill, with one `SKILL.md` at its root or in a single top-level folder.
+- A `.zip` file can contain several skills. Each folder that holds a `SKILL.md` becomes one skill.
+
+The name of each imported skill comes from the `name` in its `SKILL.md`, not from the file or folder name. The **Visible to** choice applies to every skill in the upload.
+
+After the upload, each skill shows **Created**, **Already exists**, or **Failed**. Select **Open** to view a skill.
+
+Lore enforces these limits:
+
+| Limit | Value |
+| --- | --- |
+| Upload file | 25 MiB |
+| Files per skill | 256 |
+| Size of one file | 5 MiB |
+| Size of one skill | 10 MiB |
+| Extracted content in one upload | 40 MiB |
+
+## Edit files and versions
+
+Open a skill to edit `SKILL.md` and other files in the browser.
+
+- Select **New file…** to add a text file. Use a relative path such as `references/guide.md`. Paths can't contain empty, `.`, or `..` segments.
+- Select **Delete this file** to remove a file. Select **Restore** to undo the deletion before you save.
+- Binary files can't be edited in the browser. Upload a new package to replace one.
+- Your edits stay as **Unsaved changes** until you select **Save**. Each save creates a new version, such as `v3`. Select **Discard** to drop unsaved changes.
+
+If someone saves a newer version while you are editing, Lore shows **This skill changed elsewhere**. Your edits stay on screen. Select **Save mine on the latest version** to apply them on top of the newest version, or **Discard mine** to load the latest version.
+
+While `SKILL.md` has unsaved changes, you can't change the skill's settings. Save or discard the changes first.
+
+## Settings
+
+Open a skill and select **Settings**.
+
+| Setting | Options | Effect |
+| --- | --- | --- |
+| Enabled | On or off | When off, agents no longer see or load the skill. |
+| Visible to | All agents, or one agent | Limits the skill to one runtime. |
+| Invocation | Agent and user, or User only | **User only** hides the skill from agents. It runs only when a user types `$name`. |
+
+Invocation is stored in `SKILL.md` as `disable-model-invocation: true`. Changing it in the console updates that line in the file, and editing the line changes the console setting. Select **Copy trigger** to copy the `$name` text.
+
+## Archive a skill
+
+Archive a skill when no agent should use it again. Select **Archive skill**, then **Archive…**, then confirm with **Archive for good**.
+
+> [!WARNING]
+> Archiving can't be undone. Agents stop finding and loading the skill, the name can't be reused, and copies already on agent machines stay where they are.
+
+## Let agents create and update skills
+
+Agents with the skill tools can manage skills too:
+
+- `lore_skill_create` takes a `name`, a list of `files` that must include `SKILL.md`, and an optional `enabled` flag, which defaults to `true`. The new skill isn't copied to an agent's machine until an agent calls `lore_skill_get`.
+- `lore_skill_update` takes the `skill_id` and an `expected_version`, which is the version the agent last read. It can also set `enabled`, create or replace files (`upsert_files`), and delete paths (`delete_paths`). If the skill has moved to a newer version, the update fails with a version conflict. The agent should read the latest version with `lore_skill_get`, then try again. The name can't be changed.
+- `lore_skill_delete` archives the skill, with the same effects as **Archive skill**.
+
+For what the tools return and how agents see skills at session start, see [Skills](/documents/skills).

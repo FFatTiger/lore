@@ -1,0 +1,191 @@
+Run your own Lore server with Docker. You get the web console and API, a PostgreSQL database with pgvector, and an optional Redis cache. Use the CLI for the shortest path, or write the Compose setup yourself.
+
+## What you run
+
+The stack has three containers. The web container starts only after the database and Redis report healthy.
+
+| Container | Image | Port | Data (default host path) | Role |
+| --- | --- | --- | --- | --- |
+| `web` (`lore-web`) | `fffattiger/lore:latest` | `18901` (`WEB_PORT`) | `./data/snapshots` (`SNAPSHOT_DATA_DIR`) | Web console, API, and MCP endpoint. Backups and pending review changesets are stored here. |
+| `postgres` (`lore-postgres`) | `fffattiger/pgvector-zhparser:pg16` | `55439` on the host (`POSTGRES_PORT`) | `./data/postgres` (`POSTGRES_DATA_DIR`) | Memory graph, history, and settings |
+| `redis` (`lore-redis`) | `redis:7-alpine` | Not published | `./data/redis` (`REDIS_DATA_DIR`) | Shared cache. Without Redis, Lore uses an in-process cache. |
+
+Relative data paths resolve from the directory that holds `docker-compose.yml`. The CLI uses absolute paths under `~/.lore/docker/data` instead.
+
+## Requirements
+
+- Node.js 20 or newer, for `npx`.
+- macOS or Linux. Windows isn't supported natively.
+- Docker with Compose: the `docker compose` plugin, or the standalone `docker-compose` command.
+- Bash, `curl`, and `unzip`.
+- Free host ports `18901` and `55439`, or other ports set in `WEB_PORT` and `POSTGRES_PORT`.
+- The CLI for each runtime you connect, such as `claude` or `codex`. See the [CLI reference](/documents/reference/cli) for the list.
+
+## Install with the CLI
+
+The CLI starts the stack, waits for it to become healthy, and connects the runtimes it finds on this machine.
+
+### Interactive install
+
+Run the installer and answer its questions:
+
+```bash
+npx @loremem/cli
+```
+
+1. Pick a language. This question is skipped when you set `--lang` or `LORE_INSTALL_LANG`.
+2. Answer **Where is your Lore server?**
+   - **Deploy the server on this machine with Docker** runs the local stack.
+   - **Connect to an existing server (client only)** asks for the server URL and token.
+   - **Connect Loremem SaaS** asks for a token only. See [Loremem Cloud](/documents/cloud).
+3. Pick a **Release channel**: `stable` (the default), `pre`, or `dev`.
+4. Select runtimes under **Select channels (install)**. Runtimes whose CLI is on your `PATH` are preselected.
+5. Confirm **Proceed?**
+
+If Lore is already installed, the installer asks **What do you want to do?** instead. The options are **Update selected plugins**, **Reconfigure connection**, **Manage plugins only**, **Uninstall plugins**, and **Status only / exit**.
+
+### Non-interactive install
+
+Add `-y` to run from flags without prompts:
+
+```bash
+npx @loremem/cli install -y --docker
+```
+
+With `-y`, unset options take defaults: the `stable` channel, and the runtimes detected on this machine. The server must come from `--docker`, `--base-url`, or a saved configuration.
+
+### What the CLI does
+
+1. Checks that Docker and Docker Compose are available.
+2. Downloads `docker-compose.yml` to `~/.lore/docker/`. An existing file is kept as a timestamped copy first.
+3. Creates `~/.lore/docker/.env` if it doesn't exist. The new file gets a generated PostgreSQL password, `TZ=Asia/Shanghai`, and file mode `0600`. An existing `.env` stays as it is.
+4. Runs `docker compose up -d`, then waits up to 3 minutes for `http://127.0.0.1:18901/api/health`.
+5. Writes `~/.lore/config.json` with the server URL, the token, and the install state.
+6. Installs each selected runtime. A runtime whose CLI isn't installed is reported as skipped, not failed.
+7. Prints the setup page address, `http://127.0.0.1:18901/setup`.
+
+## Install manually with Docker Compose
+
+Write the Compose directory yourself when you want to own the `.env` file and the stack. The CLI then connects your runtimes and leaves Docker alone.
+
+1. Create a directory and download the Compose file:
+
+   ```bash
+   mkdir -p ~/lore-server && cd ~/lore-server
+   curl -fsSL https://raw.githubusercontent.com/FFatTiger/lore/main/docker-compose.yml -o docker-compose.yml
+   ```
+
+2. Create `.env` in the same directory. Use this example, replace the password, and keep `DATABASE_URL` in sync with `POSTGRES_PASSWORD`:
+
+   ```env
+   # Timezone for the containers. Dream and backup schedules use it.
+   TZ=Asia/Shanghai
+
+   # Bundled PostgreSQL
+   POSTGRES_DB=lore
+   POSTGRES_USER=lore
+   POSTGRES_PASSWORD=replace-with-a-long-random-password
+   POSTGRES_PORT=55439
+   POSTGRES_DATA_DIR=./data/postgres
+   DATABASE_URL=postgresql://lore:replace-with-a-long-random-password@postgres:5432/lore
+
+   # Lore web server
+   WEB_PORT=18901
+   # Empty means no authentication. Set a token to require one.
+   API_TOKEN=
+   LORE_DB_POOL_SIZE=10
+
+   # Cache
+   REDIS_URL=redis://redis:6379/0
+   REDIS_DATA_DIR=./data/redis
+   CACHE_KEY_PREFIX=lore
+   CACHE_LOCAL_MAX_ITEMS=2000
+
+   # Backups and pending review changesets
+   SNAPSHOT_DATA_DIR=./data/snapshots
+
+   # Images
+   LORE_POSTGRES_IMAGE=fffattiger/pgvector-zhparser:pg16
+   LORE_REDIS_IMAGE=redis:7-alpine
+   LORE_FRONTEND_IMAGE=fffattiger/lore:latest
+   ```
+
+3. Start the stack:
+
+   ```bash
+   docker compose up -d
+   ```
+
+4. Check the containers, then the health endpoint:
+
+   ```bash
+   docker compose ps
+   curl -fsS http://127.0.0.1:18901/api/health
+   ```
+
+5. Connect this machine's runtimes. `--skip-docker` keeps the CLI from managing Docker, so `update` won't pull images for this stack:
+
+   ```bash
+   npx @loremem/cli install --base-url http://127.0.0.1:18901 --skip-docker
+   ```
+
+   On a terminal, this opens the installer with those answers filled in. Add `-y` to run without prompts.
+
+> [!WARNING]
+> Compose falls back to `change-me` when `POSTGRES_PASSWORD` is unset. Set your own password before the first start.
+
+## Protect the server with `API_TOKEN`
+
+Set `API_TOKEN` whenever anything you don't fully trust can reach the server. After you set it, the web console, MCP clients, and plugins send `Authorization: Bearer <API_TOKEN>`.
+
+1. Generate a long random value, for example with `openssl rand -hex 32`, and add it to `.env`:
+
+   ```env
+   API_TOKEN=lm_your_token
+   ```
+
+2. Apply the change from the Compose directory:
+
+   ```bash
+   docker compose up -d
+   ```
+
+3. Give the token to the CLI. Use `-y` so the flag applies directly. For a manual Compose stack:
+
+   ```bash
+   npx @loremem/cli install -y --base-url http://127.0.0.1:18901 --api-token lm_your_token --skip-docker
+   ```
+
+   For a stack the CLI installed in `~/.lore/docker`:
+
+   ```bash
+   npx @loremem/cli install -y --skip-docker --api-token lm_your_token
+   ```
+
+4. Restart the agent runtimes. They read the new token when they start.
+
+> [!WARNING]
+> `install --docker` clears the saved token and ignores `--api-token`. Don't run it again after you set `API_TOKEN`.
+
+### Plain HTTP and tokens
+
+The CLI sends a token only over HTTPS, or over plain HTTP to `localhost`, `127.0.0.1`, or `::1`. For any other host, the CLI refuses to send the token over plain HTTP. To allow it for one run, add `--allow-insecure-http`. The flag isn't saved, and `-y` doesn't imply it.
+
+> [!WARNING]
+> Plain HTTP sends your token and your memories unencrypted. Use HTTPS for any server that other machines reach.
+
+## Reach the server from other machines
+
+- Docker publishes the web port on all network interfaces. Other machines reach the server at `http://<host>:18901`, for example `http://192.168.1.10:18901`.
+- Put the server behind HTTPS. Run a reverse proxy that terminates TLS and forwards to `127.0.0.1:18901`. Then connect clients to the `https://` address:
+
+  ```bash
+  npx @loremem/cli install -y --base-url https://lore.example.com --api-token lm_your_token
+  ```
+
+- Keep `API_TOKEN` set whenever the web port is reachable.
+- The stock file also publishes PostgreSQL on `POSTGRES_PORT` (default `55439`) on all interfaces. Other machines don't need that port. Block it with a firewall rule. A firewall rule survives CLI updates. An edit to the Compose file in `~/.lore/docker` doesn't, because `update` replaces that file.
+
+## Next step
+
+Open `http://127.0.0.1:18901/setup` and finish the four steps in [First-run setup](/documents/self-hosting/first-run-setup). Then read [Server configuration](/documents/self-hosting/configuration) for every environment variable, and [Update and uninstall](/documents/self-hosting/update-and-uninstall) before your first upgrade.

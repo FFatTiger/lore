@@ -1,0 +1,70 @@
+Move memory from a self-hosted Lore server into a Loremem Cloud project in three steps: get a backup file from your server, import it on the **Install** page, and point your agents at Loremem Cloud.
+
+> [!WARNING]
+> The import replaces the current project's memory. Import into an empty project unless you are sure you want to replace what is there.
+
+## Before you start
+
+- Choose the Loremem Cloud project to import into, and make sure it holds nothing you need to keep.
+- Take a fresh backup of your self-hosted server, and keep a copy of the file. Keep the self-hosted server running until your agents work with Loremem Cloud.
+
+## 1. Export a backup from your self-hosted server
+
+Use either method:
+
+- In the self-hosted console, open **Settings → Backup Actions** and select **Export & Download**. The browser saves a `lore-backup-<timestamp>.json` file. Recall events are left out, which is fine because a Cloud import doesn't bring recall analytics over.
+- Or copy a file from the `backups` folder inside your snapshot data directory. With the default Docker Compose setup, that is `./data/snapshots/backups/`. With a CLI install, it is `~/.lore/docker/data/snapshots/backups/`.
+
+Check that the file is a `lore-backup-v1` export. Its first bytes name the format:
+
+```bash
+head -c 120 lore-backup-2026-10-15-04-00-00.json
+```
+
+The output starts with `{"format":"lore-backup-v1"`. The import form rejects files in other formats.
+
+## 2. Import the file in Loremem Cloud
+
+1. Sign in at `https://app.loremem.com` and select the target project with the project switcher.
+2. Open **Install**. The **Open-source backup import** card sits below the token section.
+3. Click the upload area, or drag the JSON file onto it. The card shows the file name and size.
+4. Read the **Destructive import** warning, then select **I understand this will replace current project memory.**
+5. Select **Import backup**.
+
+When the import finishes, the card reports how many nodes, memory rows, and paths it imported. It also reports the result of the index rebuild, with the number of views and glossary embeddings it updated.
+
+## What is imported and what is skipped
+
+| Imported | Skipped |
+| --- | --- |
+| Memory nodes, paths, and content | Settings, including Lifecycle guidance and Policy |
+| Glossary terms | Dream runs |
+| Memory events (history) | Recall analytics |
+| Priority and disclosure on each node | Generated embeddings. Views and glossary embeddings are rebuilt during the import. |
+
+## After the import
+
+1. Open **Memory** and check a few nodes you know. If you use boot memories, check those too.
+2. Open **Recall** and run two or three realistic queries.
+3. Open **Settings** and review what the import skipped, especially **Lifecycle** (the guidance text), **Policy**, **Dream**, and **Backup**.
+
+If the import reports that the memory was imported but the index rebuild failed, the memory is in the project, but recall may be incomplete. If recall still misses memories you know, don't rely on the project yet, and keep your self-hosted server running until recall works.
+
+## Reconnect your agents
+
+Your agents keep using the self-hosted server until you reconnect them. Tokens from your self-hosted server don't work on Loremem Cloud, so create a Loremem Cloud token first.
+
+1. On **Install**, enter a **Token note**, such as `laptop`, and select **Create token**. Copy the install command.
+2. On each machine, run the command with the new token:
+
+   ```bash
+   npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token
+   ```
+
+   The CLI saves the new server address and token in `~/.lore/config.json`.
+
+3. Restart each agent runtime. Hooks and MCP settings load only at startup.
+4. Verify the connection. Run `npx @loremem/cli status`, then send a prompt in an agent. On the **Overview** page of the console, the recent queries table should show the new query.
+
+> [!NOTE]
+> Passing `--api-token` puts the token in your shell history. Handle the token as a secret.

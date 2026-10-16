@@ -1,27 +1,92 @@
-Recall 会找到与当前任务相关的记忆，并把它们作为候选展示。
+召回会找出可能与 Agent 当前提示词相关的记忆，并把最相关的几条以简短线索的形式呈现。弄清召回何时运行、如何打分和展示，以及如何读懂返回的内容，就能判断哪些线索可信、哪些应当跳过。
 
-## 召回如何选择候选
+## 召回何时运行
 
-Recall 会组合多种信号：记忆内容和生成视图的文本搜索、术语匹配、披露触发条件、优先级，以及配置了 embedding 时的语义检索。具体候选列表取决于设置和可用数据库扩展。
+- **每条提示词都会召回。** Lore 会针对每条提示词的文本召回记忆。只要有候选超过展示阈值，就注入一个 `<recall>` 块。没有候选达标时不添加任何块，这属于正常情况。
+- **会话开始时。** Lore 会用运行时名称、项目目录名和代码仓库名进行启动召回。结果出现在启动记忆（boot）块之后。
+- **按需调用。** Agent 可以调用 `lore_search`，按关键词、语义或两者结合进行搜索。
 
-## 召回块格式
+## 信号与默认权重
 
-Agent prompt 中的召回块如下所示：
+召回用四种信号为每个候选打分。每种信号的得分乘以它的权重，然后相加；下面的加分项再叠加在结果之上。
+
+| 信号 | 匹配内容 | 默认权重 |
+| --- | --- | --- |
+| 精确匹配 | 提示词中原样出现的路径、术语和查询词 | 0.30（`recall.weights.w_exact`） |
+| 术语语义 | 含义与提示词接近的术语 | 0.25（`recall.weights.w_glossary_semantic`） |
+| 语义向量（dense） | 提示词的含义与记忆的 gist 和 question 视图有多接近 | 0.30（`recall.weights.w_dense`） |
+| 词法（lexical） | 全文检索的词匹配。提示词较长时，其贡献会被削弱。 | 0.03（`recall.weights.w_lexical`） |
+
+## 加分项
+
+| 加分 | 默认值 | 规则 |
+| --- | --- | --- |
+| 优先级 | 优先级 `0` 为 0.05，每升一级减 0.01 | 优先级 `5` 及以上没有加分。配置项：`recall.bonus.priority_base`、`recall.bonus.priority_step`。 |
+| 视图命中 | gist 命中为 0.03，question 命中为 0.02 | 取命中视图中较高的先验值。配置项：`views.prior.gist`、`views.prior.question`。 |
+| 多视图命中 | 每多一种视图类型加 0.015，上限 0.05 | 同一条记忆的多个视图同时命中时生效。配置项：`recall.bonus.multi_view_step`、`recall.bonus.multi_view_cap`。 |
+| 时间加分 | 最高 0.04 | 最近更新的记忆得分更高，加分每经过一个半衰期减半，默认半衰期为 180 天。优先级 `0` 和 `1` 始终获得满额加分。配置项：`recall.recency.enabled`（默认开启）、`recall.recency.half_life_days`、`recall.recency.max_bonus`、`recall.recency.priority_exempt`。 |
+
+## 展示规则
+
+| 规则 | 默认值 | 配置项 |
+| --- | --- | --- |
+| 得分低于此值的候选会被扣留，不展示 | 0.60 | `recall.display.min_display_score` |
+| 每次召回最多展示的记忆条数 | 3 | `recall.display.max_display_items` |
+| 参与召回的长提示词字符数 | 200 | `recall.safety.max_query_chars` |
+| 超过此时间即跳过召回 | 2000 ms | `recall.safety.timeout_ms`（见下文） |
+
+另外还有三条规则：
+
+- 启动记忆节点永远不会出现在召回结果中，因为 Agent 已经拿到了它们。
+- 提示词超过长度上限时，召回只使用前面的字符，并在输出中注明已截断。
+- 召回有时间上限。Loremem 云服务中，提问召回超过 `recall.safety.timeout_ms` 就会跳过并给出提示。自托管服务器上，这个上限作用于召回 API（Hermes 和 API 客户端使用），Agent 钩子则按各自的超时停止等待：Claude Code、Codex 和 ZCode 为 10 秒。无论哪种情况，慢召回都不会拖住提问。
+
+## 召回块
+
+产生结果的提示词会得到一个这样的块：
 
 ```text
-<recall session_id="sess-1" query_id="q1">
-0.74 | preferences://user | 简洁回复 · 时区
-0.68 | project://my_app/deployment | cloudflare pages · 构建命令
+<recall session_id="sess_8f3c" query_id="q_41" phase="prompt">
+0.82 | project://checkout_api/webhooks | refund · idempotency key
+0.71 | project://checkout_api/testing | flaky test · fake clock
+0.64 | preferences://user | test first
 </recall>
 ```
 
-每行展示分数、记忆 URI 和匹配的术语。分数是相关性信号而非命令——始终先打开节点再依赖它。
+每一行的读法如下：
 
-## 如何使用召回
+- **分数**（`0.82`）：相关性分数，保留两位小数。它只是相关性的提示，不是结论。
+- **URI**（`project://checkout_api/webhooks`）：记忆的地址。打开它才能读到内容。
+- **匹配词**（`refund · idempotency key`）：与提示词匹配的术语，最多三个。它们说明这条记忆为什么被召回。
 
-1. 阅读召回块。
-2. 用 `lore_get_node` 打开相关记忆节点（传入 `session_id` 和 `query_id`，让 Lore 追踪使用情况）。
-3. 忽略弱相关或无关候选。
-4. 当同一条有用记忆反复缺失时，改善记忆结构。
+标签中还带有两个标识。`session_id` 和 `query_id` 标识这次召回，打开节点时要原样传回。`phase` 属性只在部分运行时中出现，表示生成该块的步骤。
 
-在检查记忆是否有好的 disclosure、glossary 和 priority 之前，不要先调召回阈值。
+## 信任之前先阅读
+
+召回的每一行都是线索，不是事实。在依赖一条记忆之前：
+
+1. 判断哪些行与当前任务相关。
+2. 用 `lore_get_node` 打开每条相关的 URI。
+3. 传入 `<recall>` 标签中原样的 `session_id` 和 `query_id`。URI 来自召回块时，工具要求必须传入这两个值。
+
+```json
+{
+  "uri": "project://checkout_api/webhooks",
+  "session_id": "sess_8f3c",
+  "query_id": "q_41"
+}
+```
+
+基于 MCP 的运行时可能会给工具名加上前缀，例如在 Claude Code 中是 `mcp__plugin_lore_lore__lore_search`。
+
+带着标识符打开节点，会告诉 Lore 这条记忆被使用了，这些记录会进入[召回分析](/documents/recall/analytics)。不带标识符打开的记忆不会被计为已使用，因此分析会低估真正有帮助的记忆。
+
+## 面对弱相关或缺失的候选时
+
+- **跳过**与任务不符的候选。召回的每一行只是线索，不是指令。
+- **不要硬塞**弱相关的记忆进答案，只因为它被召回了。
+- **主动搜索**：召回没有结果，或明显漏掉了任务需要的上下文时，用 `lore_search` 配合具体的关键词搜索。
+- **写回经验**：任务结束后，如果某个事实发生了变化，写下一条持久的经验。参见[写好一条记忆](/documents/memory/writing-memories)。
+
+> [!NOTE]
+> 如果同一条有用的记忆反复漏掉，先修改记忆本身，再调整任何设置。参见[提升召回质量](/documents/recall/improving-recall)。

@@ -1,0 +1,140 @@
+Look up every `npx @loremem/cli` command, flag, and environment variable, plus the files the CLI writes. For a walkthrough, start with [Install with Docker](/documents/self-hosting).
+
+## Usage
+
+```bash
+npx @loremem/cli [install|update|uninstall|status] [options]
+```
+
+Running `npx @loremem/cli` with no arguments starts the interactive installer, which is the same as `install`.
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `install` (alias `connect`) | Connect this machine to a server, deploy a server with Docker, and install runtime integrations. This is the default command. |
+| `update` | Update the installed integrations. For a Docker-managed server, also pull the new image and restart the stack. |
+| `uninstall` | Remove runtime integrations. Add `--purge` to also remove config and local Docker data. |
+| `status` | Show the saved connection, the detected runtimes, and each integration's state. |
+
+## Flags
+
+| Flag | Applies to | Effect |
+| --- | --- | --- |
+| `--base-url URL` | `install`, `update` | Connect to an existing server or Loremem Cloud. Client only: Docker isn't touched. Can't be combined with `--docker`. |
+| `--docker` | `install` | Deploy a Lore server on this machine with Docker Compose. Clears the saved token. Can't be combined with `--base-url` or `--skip-docker`. |
+| `--api-token TOKEN` | `install`, `update` | Token for the server, saved to `config.json`. It can end up in your shell history. |
+| `--channels LIST` | `install`, `update`, `uninstall` | Comma-separated runtime IDs (see [Runtime IDs](#runtime-ids)). Defaults: detected runtimes for `install`, installed or partial integrations for `update`, and all seven runtimes for `uninstall`. |
+| `--skip-docker` | `install`, `update` | Keep the saved server and leave Docker alone. |
+| `--force` | `install`, `update` | Reinstall even when the release version hasn't changed. |
+| `--pre` | `install`, `update` | Use the newest prerelease. Images use the `pre-latest` tag. Can't be combined with `--dev`. |
+| `--dev` | `install`, `update` | Use the dev build. Images use the `dev-latest` tag. |
+| `--lang en\|zh` | All | Language for prompts and messages. Overrides `LORE_INSTALL_LANG`. |
+| `--allow-insecure-http` | `install`, `update` | Allow a token over plain HTTP to a non-loopback host, for this run only. Never saved. `-y` doesn't imply it. |
+| `--purge` | `uninstall` | Also remove `~/.lore/config.json` and `~/.lore/docker`. Stop the stack first. See [Update and uninstall](/documents/self-hosting/update-and-uninstall). |
+| `-y`, `--yes` | `install`, `uninstall` | Skip prompts. For `install`, unset options take defaults, and the server must come from `--base-url`, `--docker`, or a saved config. |
+| `-h`, `--help` | All | Print usage and exit. |
+
+`--docker` clears any saved token, and it ignores `--api-token`. Passing `--api-token` may leave the token in your shell history, so use your normal secret handling.
+
+## Environment variables
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `LORE_HOME` | `~/.lore` | Directory for `config.json`, runtime files, and the `docker/` stack directory. |
+| `LORE_INSTALL_LANG` | `en` | `zh` selects Chinese. Any other value selects English. Setting it also skips the language question. |
+| `LORE_SAAS_BASE_URL` | `https://api.loremem.com` | Loremem Cloud API base used by **Connect Loremem SaaS**. Set it only to point the CLI at a different Cloud API. |
+| `LORE_CODEX_INSTALL_USER_HOOKS` | Unset | Set to `1` to also write Lore's legacy hook entries into `~/.codex/hooks.json`. Use it only for older Codex builds that need user-level hooks. |
+| `LORE_OPENCODE_ALLOW_MCP` | Unset | Set to `1` or `true` to keep Lore's generic `/api/mcp` MCP entries next to the OpenCode plugin. By default the plugin removes its own duplicate entries. The plugin reads it when OpenCode starts. |
+| `LORE_SKILLS_ENABLED` | Set by the installer | `1` or `0`. The installer sets it from the server's Skills capability. `0` turns Skills off in the plugins. Skills stay off unless the server advertises them. |
+
+## Files
+
+`~/.lore/config.json` is written with file mode `0600`. Its fields:
+
+| Field | Meaning |
+| --- | --- |
+| `base_url` | Server origin, without a trailing slash |
+| `api_token` | Server token. Absent when none is set. |
+| `installed_version` | Release the integrations were installed from. Written only after every selected runtime succeeds. |
+| `docker_managed` | `true` when the CLI manages the local Docker stack. `false` when you manage it. |
+| `server_profile` | The server's base URL, edition, and capabilities (such as Skills), recorded by `install` and `update` |
+
+A saved token is reused only while the server URL stays the same. Changing the URL without `--api-token` clears the token.
+
+Other files:
+
+- `~/.lore/docker/`: the Compose file and `.env` for a local stack the CLI manages.
+- `~/.lore/<runtime>/`: the files for each runtime, for example `~/.lore/hermes/lore_memory`.
+
+## Runtime IDs
+
+| ID | Runtime | Host CLI the installer uses |
+| --- | --- | --- |
+| `claudecode` | Claude Code | `claude` |
+| `codex` | Codex | `codex` |
+| `pi` | Pi | `pi` |
+| `openclaw` | OpenClaw | `openclaw` |
+| `hermes` | Hermes | None |
+| `opencode` | OpenCode | `opencode` |
+| `zcode` | ZCode | `zcode` |
+
+- A runtime whose host CLI isn't installed is reported as skipped. It isn't reported as configured.
+- Hermes doesn't need its CLI to install. It's selected by default only when a `hermes` command is on your `PATH`; otherwise pass `--channels hermes`. Link the files yourself:
+
+  ```bash
+  ln -s ~/.lore/hermes/lore_memory ~/.hermes/skills/lore_memory
+  ```
+
+## Interactive and non-interactive use
+
+| Command | On a terminal | With `-y`, or without a terminal |
+| --- | --- | --- |
+| `install` | Opens the installer, with flags preselecting its answers | Runs from flags. With no flags and no terminal, it fails with exit code `2`. |
+| `update` | Runs from flags and asks nothing | Same |
+| `uninstall` | Asks `Uninstall these channels? [y/N]` | Doesn't ask |
+| `status` | Prints the status | Same |
+
+## Insecure HTTP
+
+- The CLI sends a token over HTTPS. Over plain HTTP, it sends a token only to loopback hosts: `localhost`, `127.0.0.1`, and `::1`.
+- For any other host over plain HTTP, the CLI refuses to send the token unless you pass `--allow-insecure-http` for that run.
+- The flag is never saved, and `-y` doesn't imply it. The interactive installer asks a separate yes-or-no question instead, and the default answer is No.
+- Without a token, this rule doesn't apply.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success. For `install`, skipped runtimes don't fail the run when at least one runtime installs. |
+| `1` | Failure. Examples: a runtime failed; for `update`, the release couldn't be resolved or a selected runtime was skipped; the Docker stack didn't pass its health check within 3 minutes; or you declined the uninstall. |
+| `2` | Usage error. Examples: an unknown flag, a missing server with `-y`, no detected runtimes with `-y`, or no flags without a terminal. |
+| `130` | You cancelled an interactive prompt, for example with Ctrl+C. |
+
+## Examples
+
+```bash
+# Interactive installer
+npx @loremem/cli
+
+# Deploy a local server with Docker, without prompts
+npx @loremem/cli install -y --docker
+
+# Connect this machine to Loremem Cloud
+npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token
+
+# Connect to a LAN server over plain HTTP, for this run only
+npx @loremem/cli install -y --base-url http://192.168.1.10:18901 --api-token lm_your_token --allow-insecure-http
+
+# Update Claude Code and Codex from the prerelease channel
+npx @loremem/cli update --pre --channels claudecode,codex
+
+# Enable the legacy Codex user hooks while connecting Codex
+LORE_CODEX_INSTALL_USER_HOOKS=1 npx @loremem/cli install -y --base-url https://api.loremem.com --api-token lm_your_token --channels codex
+
+# Remove two runtimes without a prompt
+npx @loremem/cli uninstall --channels claudecode,pi -y
+
+# Remove everything, including config and local Docker data
+npx @loremem/cli uninstall --purge -y
+```

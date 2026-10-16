@@ -1,0 +1,67 @@
+获取最常见问题的简短直接回答。每个回答都链接到包含详细说明的页面。
+
+## 关于 Lore 与你的数据
+
+### Lore 是向量数据库吗？
+
+不是。Lore 把记忆保存为纯文本节点组成的图谱，每个节点都有路径、优先级、触发条件和术语。它的 PostgreSQL 存储用 pgvector 支持其中一种召回信号，即记忆视图的语义相似度。召回还会结合路径和术语的精确匹配以及全文检索，然后对候选结果排序。详见[召回如何工作](/documents/recall)。
+
+### Lore 会读取或上传我的代码吗？
+
+不会。Lore 从不读取你的源代码文件。插件发送的内容包括提示词文本、会话 ID，以及会话开始时的工作目录名和 Git 仓库名。Agent 仍会像没有 Lore 时一样读取代码，并把需要的代码发送给它自己的模型服务商。详见 [Lore 如何工作](/documents/how-lore-works)。
+
+### 自托管时，哪些内容会离开我的机器？
+
+Lore 的服务器、数据库和缓存都留在你的机器上。请求只会发往你配置的端点：嵌入接口、View LLM 接口（用于生成记忆视图和运行 Dream），以及你开启备份上传后的 WebDAV 地址。安装程序和更新时，还会下载发布文件和容器镜像。你的 Agent 仍会把提示词发送给它自己的模型服务商。如果想让 Lore 的流量也留在本地，请把嵌入和 View LLM 设置指向你自己运行的模型。
+
+### 每次对话都应该变成记忆吗？
+
+不应该。只保存下个月仍然有用的长期事实：规则、决策、命令、约束和稳定的偏好。一次性任务、猜测和未经验证的内容不要保存。绝对不要保存密钥。详见[写好一条记忆](/documents/memory/writing-memories)。
+
+### Lore 宕机了会怎样？
+
+Agent 仍然可以继续工作。插件是故障放行的：如果 Lore 无法访问或响应缓慢，插件就什么都不返回，Agent 在该步骤中不使用记忆继续工作。召回本身也有时间上限：太慢时会直接跳过，提问照常进行。
+
+## Agent 与记忆
+
+### 多个 Agent 能共享同一份记忆吗？
+
+可以。把所有 Agent 接入同一个服务器。如果使用 Loremem 云服务，请使用同一个项目的令牌。每个插件都会发送自己的 `client_type`，因此 Lore 会加载对应运行时的启动节点，并按运行时统计召回和使用情况。共享规则只保存一份，放在 `core://agent`。
+
+### 还需要 CLAUDE.md 或 AGENTS.md 吗？
+
+共享规则不需要再放在这些文件里。把长期有效的规则迁入 Lore，如果需要，再保留一段简短的启动引导即可。Lore 不会写入 `CLAUDE.md`。只通过普通 MCP 接入的客户端不会自动加载启动记忆，因此需要一行文字告诉它们调用 `lore_boot`。详见[把 CLAUDE.md 和 AGENTS.md 迁入 Lore](/documents/migrate-agent-instructions)。
+
+### 中文支持得好吗？
+
+PostgreSQL 提供中文分词解析器时，效果会更好。Lore 优先使用 `pg_jieba`，没有时使用 `zhparser`。Lore 的 PostgreSQL 镜像两者都包含。两者都没有时，PostgreSQL 会使用 `simple` 配置，中文关键词匹配会较弱。语义召回的效果取决于你选择的嵌入模型。如果你使用自己的 PostgreSQL，请参见[使用自己的 PostgreSQL](/documents/self-hosting/postgresql)。
+
+## 安装与部署
+
+### 需要 Docker 吗？
+
+只有自托管时才需要。Docker 服务栈包含 Lore 服务器、带 pgvector 的 PostgreSQL 和 Redis，其中 Redis 是可选的。如果使用 Loremem 云服务，或者连接已有的服务器，就不需要 Docker。
+
+### 安装程序支持哪些平台？
+
+支持 macOS 和 Linux，不支持原生 Windows。安装程序还需要 Bash、`curl` 和 `unzip`。如果要在本机自托管服务器，还需要 Docker 和 Docker Compose。
+
+### 如何从自托管迁移到 Loremem 云服务？
+
+1. 在自托管服务器上创建一份备份：打开 **设置**，使用 **备份操作**；或者使用快照目录（默认 `./data/snapshots`）中最近一次的夜间备份。
+2. 在 Loremem 云服务中打开 **安装** 页，选择 **开源版备份导入**。上传 `lore-backup-v1` JSON 文件，然后点击 **导入备份**。导入会替换当前项目的记忆。设置、Dream 运行记录、召回分析和嵌入向量会被跳过，Lore 会重建索引。
+3. 在同一页面创建项目令牌，然后用安装命令重新接入每个 Agent：`npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token`。
+
+### 如何卸载 Lore？
+
+运行 `npx @loremem/cli uninstall`，从 Agent 运行时中移除 Lore。如果还要删除 `~/.lore` 中的配置，以及自托管服务器的 Docker 数据，请运行 `npx @loremem/cli uninstall --purge -y`。清除会删除 `~/.lore/docker`，其中包括自托管的 PostgreSQL 数据和快照，所以请先[创建备份](/documents/maintenance/backups)。卸载程序不会停止 Docker 服务栈，因此清除之前，请先在 `~/.lore/docker` 目录中运行 `docker compose down`。
+
+## 费用与技能
+
+### 费用是多少？
+
+自托管免费。Lore 以 MIT 许可证开源。你需要为运行服务器的机器，以及你接入的托管模型 API 付费。Loremem 云服务提供免费套餐，使用 GitHub 或 Google 登录即可开始。
+
+### 技能从哪里来？
+
+技能是 Loremem 云服务的功能。你可以在控制台点击 **新建技能**，或用 **上传技能包** 上传 `.skill` 或 `.zip` 文件。拥有 Lore 技能工具的 Agent 也可以用 `lore_skill_create` 创建技能。开源服务器没有技能功能。详见[技能](/documents/skills)。

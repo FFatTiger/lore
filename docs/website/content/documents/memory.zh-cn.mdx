@@ -1,0 +1,91 @@
+Lore 中的每条记忆都是一个纯文本节点，包含地址、触发条件、优先级和历史记录。每个字段各司其职。弄清每个字段的用途和由谁设置，就能写出既容易找到、又便于安全修改的记忆。每次会话开始时加载的启动记忆（boot）节点，也是这套体系的一部分。
+
+## 节点的组成部分
+
+| 字段 | 用途 | 由谁设置 |
+| --- | --- | --- |
+| URI（路径） | `域://路径` 形式的稳定地址，描述的是概念而不是事件。参见[路径与域](/documents/memory/paths)。 | 创建节点时由你或 Agent 设置，之后可用 `lore_move_node` 修改。 |
+| 内容（Content） | 以纯文本记录的持久事实、规则、决策或工作流。 | 你或 Agent，用 `lore_update_node` 修改。 |
+| 优先级（Priority） | 重要程度：`0` 为核心身份，`1` 为关键事实，`2+` 为一般内容。会带来少量排序加分。参见[优先级](/documents/memory/priority)。 | 你或 Agent。`0` 和 `1` 受全库容量上限约束。 |
+| 触发条件（Disclosure） | 记忆应在哪种未来情境下出现。参见[触发条件与术语](/documents/memory/disclosure-and-glossary)。 | 你或 Agent。缺失或包含 OR 逻辑时，系统会给出提醒。 |
+| 术语（Glossary） | 人们实际会输入的关键词和别名：名称、缩写、中英文写法、错误名称。 | 你或 Agent，用 `glossary_add` 和 `glossary_remove` 修改。 |
+| 视图（View） | 自动生成的 **gist**（简短摘要）和 **question**（记忆能够回答的问题），用于语义召回。 | 由 View LLM 生成，无需手写。 |
+| 历史（History） | 每次创建、更新、移动、删除和术语变更的记录，包括当时的内容。 | 自动记录。 |
+
+## 带注释的示例
+
+```text
+URI:        project://checkout_api/webhooks
+Priority:   1
+Disclosure: When changing refund or payment webhooks in checkout-api
+Glossary:   refund webhook, idempotency key, stripe
+Content:    Refund webhooks are idempotent by event.id. Tests must replay the same event twice and assert a single refund row.
+```
+
+| 行 | 这样写的原因 |
+| --- | --- |
+| `URI` | 同时点明项目和概念。路径中没有日期，使用小写 snake_case。 |
+| `Priority: 1` | 项目的关键事实。优先级 `0` 只留给核心身份。 |
+| `Disclosure` | 一个未来的情境：任务涉及退款或支付 webhook。它没有概括内容。 |
+| `Glossary` | 想找到这条记忆时人们会输入的词：概念、术语和服务商名称。 |
+| `Content` | 事实，加上由事实推出的规则，具体到 Agent 可以直接照做。 |
+
+## 域
+
+| 域 | 用途 | 示例 |
+| --- | --- | --- |
+| `core://` | Agent 通用规则、人设和运行时专属规则 | `core://agent`、`core://agent/codex` |
+| `preferences://` | 稳定的用户偏好和背景 | `preferences://user` |
+| `project://` | 单个项目的事实、决策、命令和约束 | `project://checkout_api/webhooks` |
+
+运行 `lore_list_domains` 可以查看服务器上已有的域。
+
+## 固定的启动记忆节点
+
+每次会话开始时，Lore 会注入启动记忆（boot）节点，作为本次会话的基线。这些节点的地址是固定的：任何人都无法删除或移动它们，Dream 也不会修改它们。你可以随时编辑它们的内容。
+
+| 节点 | 角色 | 应包含的内容 |
+| --- | --- | --- |
+| `core://agent` | 所有运行时通用的工作规则 | 协作边界、执行风格、安全检查、编码流程和验证方式。只适用于某一个运行时的内容不要写在这里。 |
+| `core://soul` | 风格与人设 | 语气、自我定位，以及 Agent 在对话中应有的表现。跨会话保持稳定。 |
+| `preferences://user` | 稳定的用户背景 | 持久的偏好、协作习惯，以及很少变化的背景。不要写你还没有确认的细节。 |
+| `core://agent/<client_type>` | 单个运行时的规则 | 只写该运行时的差异：它的 hook、工具和特殊行为。假设 `core://agent` 已经覆盖通用规则。 |
+
+运行时节点使用以下 `client_type`：`claudecode`、`codex`、`opencode`、`pi`、`openclaw`、`hermes` 和 `zcode`。每个运行时只加载自己的节点。
+
+启动记忆块还会列出最近写入的五条记忆的路径、优先级和触发条件，但不包含它们的内容。召回也不会返回启动记忆节点，因为 Agent 已经拿到了它们。
+
+> [!NOTE]
+> 通过通用 MCP 客户端（`mcp`）接入的 Agent 不会自动加载启动记忆，需要自己调用 `lore_boot`。
+
+## 生成的视图
+
+Lore 为每条记忆生成两个视图：一个 gist（摘要），以及一组记忆能够回答的问题（question）。这些视图由 View LLM 撰写，Lore 再把它们转换为向量。这样，提示词即使不使用记忆中的原词，也能通过语义匹配到它。
+
+内容、触发条件或术语变化后，视图会重新生成；更换嵌入模型配置时，所有视图都会重建。没有配置 View LLM 时，Lore 会根据内容开头、触发条件和术语生成较简单的规则视图。
+
+> [!TIP]
+> 视图的质量取决于它所依据的记忆。写清楚内容和触发条件，是提升召回质量最直接的办法。
+
+## 历史与回滚
+
+每个节点都有历史记录。在 Loremem 云服务中，从记忆编辑器打开历史；在自托管服务中，访问 `/memory/history`。每条记录会显示变更内容，以及变更来源：通过 MCP 的 Agent、控制台，或 Dream。Agent 写入时，记录还会标明运行时。
+
+要撤销一次变更：
+
+1. 打开节点的历史记录。
+2. 选择要回到的创建或更新事件。
+3. 回滚到该事件。
+
+回滚会恢复该事件时的内容、优先级、触发条件和术语。回滚本身会作为一次新的更新记录下来，因此历史中保留了回滚的记录。只有创建和更新事件可以回滚；移动和删除事件仍会显示在历史中，但无法在这里回滚。
+
+Dream 的变更同样记录在这份历史中。若要撤销整次 Dream 运行，请到 Dream 页面操作，且只能回滚最近一次运行。参见 [Dream](/documents/dream)。
+
+## 各部分如何协同工作
+
+- **路径让记忆可以浏览。** 沿着 `project://checkout_api/` 这样的路径逐层查看，能在打开任何节点之前看清已有内容。
+- **触发条件与术语让记忆可以被找到。** 触发条件说明记忆在什么时候有用，术语说明哪些词会把它带出来。
+- **优先级用于打破平局。** 两条记忆得分接近时，更重要的那条排在前面。优先级不会强制把记忆放进召回结果。
+- **历史让修改变得安全。** 每次变更都有记录，内容的修改还可以回滚，因此 Agent 可以写入记忆，而无需你逐条审查。
+
+接下来可以阅读[路径与域](/documents/memory/paths)、[写好一条记忆](/documents/memory/writing-memories)，以及[召回如何工作](/documents/recall)。

@@ -1,0 +1,72 @@
+The Pi integration installs a Lore extension for Pi. Pi gets startup memory in its system prompt, a recall message before each prompt, and the Lore memory tools.
+
+## Install
+
+Run this on the machine where you use Pi:
+
+```bash
+npx @loremem/cli install --channels pi
+```
+
+On Loremem Cloud, pass the server and your project token:
+
+```bash
+npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token --channels pi
+```
+
+The installer skips Pi when the `pi` command is not on your `PATH`. After the install, run `/reload` in Pi, or restart Pi.
+
+## What gets installed
+
+- The extension files from `lore-pi.zip`, in `~/.lore/pi/`.
+- A link at `~/.pi/agent/extensions/lore` that points to `~/.lore/pi/`. Pi loads extensions from `~/.pi/agent/extensions/`.
+- Nine memory tools: `lore_status`, `lore_boot`, `lore_get_node`, `lore_search`, `lore_list_domains`, `lore_create_node`, `lore_update_node`, `lore_delete_node`, and `lore_move_node`. On a server with Skills, seven `lore_skill_*` tools are added.
+- At session start, the startup context is appended to Pi's system prompt. Pi rebuilds that prompt on every turn, so the extension appends the context again on each turn.
+- A recall message before each prompt. The message is hidden from the chat view.
+- A health check at session start, on by default. If Pi can show notifications, it displays `Lore connected: <server URL>`.
+
+## Verify
+
+1. Run `npx @loremem/cli status`. The `pi` line should read `installed`.
+2. Run `ls -l ~/.pi/agent/extensions/lore`. It should show a link to `~/.lore/pi`.
+3. In Pi, run `/reload`. Pi should show `Lore connected: <server URL>`.
+4. Ask Pi to call `lore_status`. It should return the server's health.
+5. Send a prompt about a project that has memories. Then ask Pi which memory nodes it was given for that prompt.
+
+## Notes
+
+- **Reload after changes.** Run `/reload` in Pi, or restart Pi, after you install or change the configuration.
+- **Existing folder.** If `~/.pi/agent/extensions/lore` is a real folder instead of a link, the installer stops and leaves the folder alone. Move the folder aside, then run the install again.
+- **Server settings.** Pi reads the server URL and token from `~/.lore/config.json`. If you set `LORE_HOME`, Pi reads that folder's `config.json` instead. `LORE_BASE_URL` and `LORE_API_TOKEN` are fallbacks.
+- **Skill list.** Pi's own `/skill` list may not show a skill that Lore has just downloaded until you run `/reload`. `lore_skill_get` returns the skill's folder and `SKILL.md` right away.
+
+## Manual setup (fallback)
+
+Use these steps only when the installer can't run. They set up the same link and files.
+
+```bash
+mkdir -p ~/.lore/pi ~/.pi/agent/extensions
+curl -fsSL -o lore-pi.zip https://github.com/FFatTiger/lore/releases/latest/download/lore-pi.zip
+unzip -qo lore-pi.zip -d ~/.lore/pi
+rm lore-pi.zip
+ln -s ~/.lore/pi ~/.pi/agent/extensions/lore
+```
+
+The `ln` command fails if `~/.pi/agent/extensions/lore` already exists. Remove the old entry first. Then write the server settings to `~/.lore/config.json`, and run `/reload` in Pi:
+
+```json
+{
+  "base_url": "https://api.loremem.com",
+  "api_token": "lm_your_token"
+}
+```
+
+## Uninstall
+
+```bash
+npx @loremem/cli uninstall --channels pi -y
+```
+
+This removes the link at `~/.pi/agent/extensions/lore` and deletes `~/.lore/pi`. A real folder at that path is left alone. Run `/reload` in Pi afterwards.
+
+If Pi doesn't load Lore, see [Agent connection issues](/documents/troubleshooting/agents).

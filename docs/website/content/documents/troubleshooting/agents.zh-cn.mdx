@@ -1,0 +1,110 @@
+Agent 没有启动记忆（boot）、没有召回、没有 Lore 工具，或者 Lore 出现了两次，通常是本地集成出了问题。先检查服务器和令牌：插件采用失败放行策略，连接出错时看起来和 Lore 被关掉一模一样。
+
+> [!NOTE]
+> 插件会失败放行。如果 Lore 无法连接、响应缓慢或拒绝令牌，插件就不返回任何内容，Agent 继续正常工作。调试运行时之前，请先检查[服务器健康状况和令牌](/documents/troubleshooting)。
+
+## 逐个检查运行时
+
+按你的运行时执行对应的检查。每次修改之后，都要重启该运行时。
+
+| 运行时 | 检查项 | 修改后 |
+| --- | --- | --- |
+| Claude Code | `claude plugin list` 中包含 `lore@lore`。在会话中，`/mcp` 显示 `lore` 已连接。 | 重启 Claude Code。 |
+| Codex | `codex mcp list` 列出 `lore`。打开 `/hooks`，信任 Lore 的 Hook。`/plugins` 不再把 Lore 列为可安装项。`~/.codex/config.toml` 的 `[features]` 下设置了 `hooks = true`。 | 重启 Codex。 |
+| OpenCode | `~/.config/opencode/plugins/lore-memory.js` 存在，并且包含 `@lore-managed-opencode-plugin`。原生工具使用精确的 `lore_*` 名称。 | 重启 OpenCode。 |
+| Pi | `~/.pi/agent/extensions/lore` 存在。 | 在 Pi 中运行 `/reload`，或重启 Pi。 |
+| OpenClaw | `~/.openclaw/openclaw.json` 中有 `plugins.entries.lore` 条目，且插件已启用。 | 重启 OpenClaw。 |
+| Hermes | `~/.hermes/skills/lore_memory` 是指向 `~/.lore/hermes/lore_memory` 的符号链接。 | 重启 Hermes。 |
+| ZCode | `zcode plugins list` 中包含 `lore@lore`，并且已运行 `zcode plugins enable lore@lore`。 | 重启 ZCode。 |
+| 其他 MCP 客户端 | 客户端以 `Authorization: Bearer` 请求头连接 `<服务器>/api/mcp?client_type=mcp`。系统不会自动加载启动记忆或召回，需要你自己调用 `lore_boot`。 | 重启客户端。 |
+
+## 会话开始时没有启动记忆
+
+**原因：** 会话开始时的 Hook 没有运行，或返回了空内容。常见原因包括服务器或令牌有问题、插件被禁用、运行时没有重启，或运行时的启动节点为空。
+
+**修复：**
+
+1. 让 Agent 调用 `lore_boot`。如果返回了启动记忆，说明服务器和令牌正常，问题出在 Hook。如果调用失败，请先修复连接。
+2. 对照上表检查你的运行时，然后重启它。
+3. 如果是 ZCode，且节点 `core://agent/zcode` 为空，请为它添加内容。
+4. 如果是 OpenCode，启动记忆需要实验性的 `experimental.chat.system.transform` Hook。如果你的 OpenCode 版本没有提供该 Hook，插件会输出一条警告，跳过启动记忆，但原生工具和提示词召回仍然可用。警告以 `Lore OpenCode system context is unavailable` 开头。请更新 OpenCode 并重启。
+
+## 没有出现 `<recall>` 块
+
+**原因：** 只有至少一条记忆通过展示阈值时，Lore 才会写入 `<recall>` 块。提示词 Hook 没有运行，或召回失败（例如未配置嵌入模型），也不会出现该块。
+
+**修复：**
+
+1. 让 Agent 用提示词中的关键词调用 `lore_search`。如果搜索能找到记忆，说明 Hook 路径正常，问题出在召回。参见[召回问题](/documents/troubleshooting/recall)。
+2. 如果搜索也找不到，检查服务器健康状况和令牌，然后对照上表检查你的运行时。
+3. 用真实的问题测试。召回需要提示词才能搜索。
+
+## 找不到 Lore 工具
+
+**原因：** 运行时没有连接到 Lore 的 MCP 服务，或者插件没有注册它的工具。
+
+**修复：**
+
+- **Claude Code 和 ZCode：** 记忆工具显示为 `mcp__plugin_lore_lore__<tool>`。在 Claude Code 中，用 `/mcp` 检查 `lore` 是否已连接。
+- **Codex：** `codex mcp list` 必须列出 `lore`。在支持 Skills 的服务器上，还会列出 `lore-skills`。
+- **OpenCode：** 原生工具名称必须与 `lore_guidance` 到 `lore_move_node` 完全一致。如果出现 `lore_lore_search` 这样的名称，说明注册的是 MCP 条目，而不是原生插件。参见下一节。
+- **技能工具**（`lore_skill_*`）只有在服务器声明支持 Skills 时才会出现。开源服务器没有该功能，Loremem 云服务有。
+
+## Lore 出现两次
+
+**原因：** 有不止一个集成在加载 Lore。常见来源包括旧的用户级 MCP 条目、重复的 Hook，或导入 Claude Code 插件的兼容层。
+
+**修复：**
+
+- **Claude Code：** 早期的安装可能留下了用户范围的 `lore` 或 `lore-skills` MCP 条目。删除它们，然后重新安装。如果命令提示找不到该服务，可以跳过。
+
+  ```bash
+  claude mcp remove --scope user lore
+  claude mcp remove --scope user lore-skills
+  ```
+
+- **Codex：** 运行 `npx @loremem/cli install --channels codex`。安装程序会删除 `~/.codex/hooks.json` 中过时的 Lore 条目，并保留无关的 Hook。只有旧版 Codex 需要用户级 Hook 时，才设置 `LORE_CODEX_INSTALL_USER_HOOKS=1`。
+- **OpenCode：** 如果同时看到 `lore` 和 `lore:lore`，或者控制台记录到一次提示词对应两种客户端类型，说明另一个插件正在导入 Claude Code 的 Lore Hook。运行 `npx @loremem/cli install --channels opencode --force`。当安装程序能安全解析 `oh-my-openagent.json[c]`（或旧版 `oh-my-opencode.json[c]`）时，会把其中的 `claude_code.plugins_override["lore@lore"]` 设为 `false`。如果它跳过了该文件，请手动设置这个值，保留其他设置，然后重启 OpenCode。除非你确实需要在原生插件之外保留旧版 MCP 回退，否则不要设置 `LORE_OPENCODE_ALLOW_MCP=1`。
+- **OpenCode，未标记的文件：** 如果安装程序提示 `lore-memory.js` 不由 Lore 管理，并保留了它，请把该文件移走，然后重新安装。
+
+## 更新后行为没有变化
+
+**原因：** 运行时仍在使用旧的 Hook、工具或插件文件。Hook 和 MCP 配置在进程启动时加载。
+
+**修复：**
+
+1. 重启运行时。在 Pi 中运行 `/reload` 或重启。
+2. 更新集成：
+
+   ```bash
+   npx @loremem/cli update
+   ```
+
+   `update` 只更新状态为 `installed` 或 `partial` 的集成。如果某个集成无法更新，它会报错，而不会假装成功。使用 `--channels` 可以指定运行时。
+
+3. 即使版本没有变化，也要重新安装某个运行时：
+
+   ```bash
+   npx @loremem/cli install --channels claudecode --force
+   ```
+
+Claude Code 自带自动记忆（auto-memory）。如果想让 Lore 成为唯一的记忆系统，请在 `~/.claude/settings.json` 中设置 `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` 或 `"autoMemoryEnabled": false`。Lore 不会写入 `CLAUDE.md`。如果 `~/.claude/CLAUDE.md` 仍然导入了 `@~/.claude/lore-guidance.md`，请删除那一行。
+
+## 所有 Lore 调用都失败
+
+**原因：** 服务器未运行、基础 URL 或令牌有误，或者 `~/.lore/config.json` 格式错误。插件会对 Agent 隐藏错误，因此每次调用看起来都是空的。
+
+**修复：**
+
+1. 按[故障排查](/documents/troubleshooting)页面中的检查项，检查服务器和令牌。
+2. 运行 `npx @loremem/cli status`，确认 `base_url` 是你期望的服务器。
+3. 用正确的服务器和令牌重新安装：
+
+   ```bash
+   npx @loremem/cli install --base-url http://127.0.0.1:18901 --api-token lm_your_token
+   ```
+
+   Claude Code 从 `~/.claude/settings.json` 的 `env` 中读取 `LORE_BASE_URL` 和 `LORE_API_TOKEN`，安装程序会更新这两个值。
+
+> [!WARNING]
+> `--base-url` 会把服务器标记为非 Docker 管理。如果服务器是 CLI 通过 Docker 运行的，只需要更换令牌，请改用 `npx @loremem/cli install -y --skip-docker --api-token lm_your_token`。

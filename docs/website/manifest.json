@@ -6,262 +6,262 @@
     "en",
     "zh-cn"
   ],
-  "source": "Lore public documentation for LoreHub.",
+  "source": "Lore public documentation for loremem.com.",
   "parents": [
     {
-      "category": "Concepts",
-      "description": "Understand the model Lore uses for long-term memory: durable paths, disclosure triggers, recall, and Dream maintenance.",
+      "category": "Get started",
       "path": "introduction",
-      "navTitle": "Concepts",
-      "title": "Concepts",
+      "title": "What is Lore",
+      "description": "Lore gives your AI agents one shared long-term memory: a stable baseline at session start and the right memories before every reply.",
       "children": [
         {
-          "path": "introduction/what-lore-is-for",
-          "title": "What Lore is for",
-          "description": "Learn which facts, preferences, decisions, and rules should become durable memory."
+          "path": "quickstart",
+          "title": "Quickstart",
+          "description": "Connect your first agent to Loremem Cloud or a self-hosted server and confirm recall works."
         },
         {
-          "path": "introduction/how-lore-works",
+          "path": "how-lore-works",
           "title": "How Lore works",
-          "description": "Understand the loop: boot context, recall, reading memories, writing durable changes, and review."
+          "description": "The lifecycle behind every session: boot, recall, read, write, and maintenance."
         },
         {
-          "path": "introduction/when-to-use-it",
-          "title": "When to use it",
-          "description": "Decide which information is worth saving and which short-lived notes can stay out of memory."
+          "path": "console",
+          "title": "The web console",
+          "description": "What each console page is for: Memory, Recall, Dream, Skills, and Settings."
         },
         {
-          "path": "memory-system",
-          "title": "Memory model",
-          "description": "Learn the core memory shape: paths, domains, priority, disclosure, glossary terms, and generated views."
-        },
-        {
-          "path": "memory-system/memory-paths",
-          "title": "Memory paths",
-          "description": "Use stable memory paths and domains to keep memory easy to browse, link, and move."
-        },
-        {
-          "path": "memory-system/disclosure-triggers",
-          "title": "Disclosure triggers",
-          "description": "Write concrete triggers so Lore knows when a memory should appear."
-        },
-        {
-          "path": "memory-system/priority-levels",
-          "title": "Priority levels",
-          "description": "Use priority levels to mark importance without making recall noisy."
-        },
-        {
-          "path": "memory-system/glossary-terms",
-          "title": "Glossary terms",
-          "description": "Add product names, aliases, and acronyms that help recall find the right memory."
-        },
-        {
-          "path": "recall",
-          "title": "Recall",
-          "description": "Understand how Lore retrieves task-relevant memory candidates and why agents should open nodes before relying on them."
-        },
-        {
-          "path": "dream",
-          "title": "Dream",
-          "description": "Understand Dream as a review workflow for cleaning up and improving memory quality."
-        }
-      ]
-    },
-    {
-      "category": "Install",
-      "description": "Install Lore, choose the right database shape, complete setup, and verify that the server is ready before connecting agents.",
-      "path": "installation",
-      "navTitle": "Install",
-      "title": "Install Lore",
-      "children": [
-        {
-          "path": "installation/install-lore",
-          "title": "Quick install",
-          "description": "Use the installer to start Lore with Docker or connect clients to an existing Lore server."
-        },
-        {
-          "path": "installation/manual-configuration",
-          "title": "Manual configuration",
-          "description": "Configure the Lore server and agent integrations by hand when you do not use the installer script."
-        },
-        {
-          "path": "installation/use-your-own-postgresql",
-          "title": "Use your own PostgreSQL",
-          "description": "Run Lore against an existing PostgreSQL instance with pgvector and optional Chinese full-text search extensions."
-        },
-        {
-          "path": "installation/first-run-setup",
-          "title": "First-run setup",
-          "description": "Open /setup, configure model endpoints, bootstrap memory, and restart connected runtimes."
-        },
-        {
-          "path": "configuration/essential-settings",
-          "title": "Essential settings",
-          "description": "Set server auth, embedding, View LLM, Redis cache, and backup defaults used by daily operation."
-        },
-        {
-          "path": "installation/verify-the-install",
-          "title": "Verify the install",
-          "description": "Check health, migrations, Web Console access, recall, and agent connection after setup."
-        },
-        {
-          "path": "installation/move-agent-instructions-to-lore",
-          "title": "Move local agent docs into Lore",
-          "description": "Move duplicated CLAUDE.md and AGENTS.md knowledge into shared, project-specific, and channel-specific Lore memories."
+          "path": "migrate-agent-instructions",
+          "navTitle": "Migrate agent instructions",
+          "title": "Move CLAUDE.md and AGENTS.md into Lore",
+          "description": "Replace rules duplicated across local agent files with shared memories that every agent reads."
         }
       ]
     },
     {
       "category": "Connect agents",
-      "description": "Connect Codex, Claude Code, Pi, OpenClaw, Hermes, or any MCP client to the same Lore memory graph.",
-      "path": "runtime-integrations",
-      "navTitle": "Connect agents",
+      "path": "agents",
+      "navTitle": "Overview",
       "title": "Connect agents",
+      "description": "Install Lore into the agent runtimes you use with one CLI, and see what each integration provides.",
       "children": [
         {
-          "path": "runtime-integrations/choose-runtimes",
-          "title": "Choose runtimes",
-          "description": "Pick the agent runtimes that should share the same Lore memory graph."
+          "path": "agents/claude-code",
+          "title": "Claude Code",
+          "description": "Boot context, per-prompt recall, memory tools, and Skills in Claude Code through the Lore plugin."
         },
         {
-          "path": "runtime-integrations/connect-an-agent",
-          "title": "Connect an agent",
-          "description": "Use the installer with selected channels, server URL, and API token."
+          "path": "agents/codex",
+          "title": "Codex",
+          "description": "Connect Codex with the Lore plugin, lifecycle hooks, and the memory MCP server."
         },
         {
-          "path": "runtime-integrations/what-agents-receive",
-          "title": "What agents receive",
-          "description": "Understand boot memory, recall candidates, MCP tools, and usage tracking."
+          "path": "agents/opencode",
+          "title": "OpenCode",
+          "description": "Use the native Lore plugin for OpenCode: exact lore_* tools, boot, and prompt recall without MCP."
+        },
+        {
+          "path": "agents/pi",
+          "title": "Pi",
+          "description": "Install the Lore extension for Pi to get boot context, recall, and memory tools."
+        },
+        {
+          "path": "agents/openclaw",
+          "title": "OpenClaw",
+          "description": "Install and configure the Lore plugin for OpenClaw."
+        },
+        {
+          "path": "agents/hermes",
+          "title": "Hermes",
+          "description": "Add Lore to Hermes Agent as a memory provider."
+        },
+        {
+          "path": "agents/zcode",
+          "title": "ZCode",
+          "description": "Connect ZCode with the Lore plugin: lifecycle hooks plus a local MCP bridge."
+        },
+        {
+          "path": "agents/mcp",
+          "title": "Other MCP clients",
+          "description": "Connect any MCP-capable client to Lore's memory tools over Streamable HTTP."
         }
       ]
     },
     {
-      "category": "Use Lore",
-      "description": "Use the Web Console and daily playbooks to write, inspect, tune, back up, and clean up memory.",
-      "path": "web-ui",
-      "navTitle": "Use Lore",
-      "title": "Use Lore",
+      "category": "Memory",
+      "path": "memory",
+      "title": "Memory model",
+      "description": "What a memory node is made of: path, content, priority, trigger, glossary, views, and history.",
       "children": [
         {
-          "path": "web-ui/main-pages",
-          "title": "Web Console",
-          "description": "Learn what each main page in the Lore Web Console is used for."
+          "path": "memory/paths",
+          "title": "Paths and domains",
+          "description": "Name memories with stable paths so agents and people refer to the same address."
         },
         {
-          "path": "web-ui/recommended-routine",
-          "title": "Recommended routine",
-          "description": "Follow a simple routine for memory review, recall checks, Dream, and backups."
+          "path": "memory/disclosure-and-glossary",
+          "title": "Disclosure and glossary",
+          "description": "Tell Lore when a memory should surface, and which words should find it."
         },
         {
-          "path": "operating-playbooks/write-a-durable-memory",
-          "title": "Write a durable memory",
-          "description": "Save one useful memory with path, priority, disclosure, glossary, and content."
+          "path": "memory/priority",
+          "title": "Priority",
+          "description": "Mark what matters most without drowning recall in important-looking memories."
         },
         {
-          "path": "recall/use-recall-in-chat",
-          "title": "Use recall in chat",
-          "description": "Read the recall block as memory pointers and open useful memories before relying on them."
-        },
+          "path": "memory/writing-memories",
+          "title": "Writing good memories",
+          "description": "Decide what deserves a memory and write it so the right agent finds it at the right time."
+        }
+      ]
+    },
+    {
+      "category": "Recall",
+      "path": "recall",
+      "title": "How recall works",
+      "description": "How Lore picks a few candidate memories for each prompt, and how agents should use them.",
+      "children": [
         {
-          "path": "recall/read-recall-results",
-          "title": "Read recall results",
-          "description": "Interpret scores, candidates, query details, and usage state in the Recall UI."
-        },
-        {
-          "path": "recall/improve-recall-quality",
+          "path": "recall/improving-recall",
           "title": "Improve recall quality",
-          "description": "Tune glossary terms, disclosure triggers, priority, generated views, and memory shape."
+          "description": "Fix memory shape first, then tune thresholds and weights with real prompts."
         },
         {
-          "path": "configuration/recall-settings",
-          "title": "Recall settings",
-          "description": "Tune display threshold, item count, match weights, query limits, and timeout."
+          "path": "recall/analytics",
+          "title": "Recall analytics",
+          "description": "Read what was recalled, shown, and actually used, per agent and per query."
+        }
+      ]
+    },
+    {
+      "category": "Dream and maintenance",
+      "path": "dream",
+      "title": "Dream",
+      "description": "Scheduled memory maintenance that merges duplicates, sharpens triggers, and keeps a reviewable diary.",
+      "children": [
+        {
+          "path": "maintenance/backups",
+          "title": "Backups and restore",
+          "description": "Daily backups by default, local or on WebDAV, and how to use them safely."
         },
         {
-          "path": "dream/run-dream-safely",
-          "title": "Run Dream safely",
-          "description": "Run Dream manually, review output, and keep maintenance controlled."
+          "path": "maintenance/routine",
+          "title": "Maintenance routine",
+          "description": "A light weekly routine, cleanup patterns, and node history for keeping memory useful."
+        }
+      ]
+    },
+    {
+      "category": "Skills",
+      "path": "skills",
+      "navTitle": "Overview",
+      "title": "Skills",
+      "description": "Versioned skills that every connected agent can discover at session start and load on demand.",
+      "children": [
+        {
+          "path": "skills/managing-skills",
+          "title": "Create and manage skills",
+          "description": "Create, upload, edit, scope, and archive skills in the Loremem Cloud console."
+        }
+      ]
+    },
+    {
+      "category": "Loremem Cloud",
+      "path": "cloud",
+      "navTitle": "Overview",
+      "title": "Loremem Cloud",
+      "description": "The hosted Lore service: accounts, organizations, projects, tokens, and preconfigured models.",
+      "children": [
+        {
+          "path": "cloud/import-self-hosted-backup",
+          "title": "Import a self-hosted backup",
+          "description": "Move the memory from a self-hosted Lore server into a Loremem Cloud project."
+        }
+      ]
+    },
+    {
+      "category": "Self-hosting",
+      "path": "self-hosting",
+      "title": "Install with Docker",
+      "description": "Run the open-source Lore server on your own machine with Docker Compose.",
+      "children": [
+        {
+          "path": "self-hosting/first-run-setup",
+          "title": "First-run setup",
+          "description": "Configure embeddings, the View LLM, and boot memories in /setup."
         },
         {
-          "path": "dream/review-changes",
-          "title": "Review Dream changes",
-          "description": "Evaluate Dream suggestions by scope, trigger quality, glossary terms, safety, and traceability."
+          "path": "self-hosting/configuration",
+          "title": "Server configuration",
+          "description": "Environment variables, authentication, cache, storage, and where runtime settings live."
         },
         {
-          "path": "configuration/dream-and-backup",
-          "title": "Dream and backup settings",
-          "description": "Choose safe Dream and backup defaults before heavier memory maintenance."
+          "path": "self-hosting/postgresql",
+          "title": "Use your own PostgreSQL",
+          "description": "Run Lore against an existing PostgreSQL with pgvector and Chinese full-text search."
         },
         {
-          "path": "operating-playbooks/check-recall-quality",
-          "title": "Check recall quality",
-          "description": "Run realistic queries and inspect why memories appear or stay hidden."
-        },
-        {
-          "path": "operating-playbooks/back-up-memory",
-          "title": "Back up memory",
-          "description": "Create and verify a backup before heavier maintenance, migration, or broad memory cleanup."
-        },
-        {
-          "path": "operating-playbooks/clean-up-old-memory",
-          "title": "Clean up old memory",
-          "description": "Split, move, delete, and review memories that have become stale or broad."
-        },
-        {
-          "path": "operating-playbooks/prepare-a-new-project",
-          "title": "Prepare a new project",
-          "description": "Create a project memory branch with overview, commands, constraints, and glossary terms."
+          "path": "self-hosting/update-and-uninstall",
+          "title": "Update and uninstall",
+          "description": "Upgrade the server and integrations, check status, and remove Lore cleanly."
         }
       ]
     },
     {
       "category": "Troubleshooting",
-      "description": "Fix common setup, recall, Dream, login, and agent-connection issues.",
       "path": "troubleshooting",
+      "navTitle": "Start here",
       "title": "Troubleshooting",
+      "description": "Find the failing boundary first: server, models, auth, integration, or memory shape.",
       "children": [
         {
-          "path": "troubleshooting/setup-issues",
-          "title": "Setup issues",
-          "description": "Check server address, setup status, health, migrations, and auth problems."
+          "path": "troubleshooting/setup",
+          "navTitle": "Install and setup",
+          "title": "Install and setup issues",
+          "description": "Fix installer, Docker, database, authentication, and /setup problems."
         },
         {
-          "path": "troubleshooting/recall-issues",
+          "path": "troubleshooting/agents",
+          "navTitle": "Agent connections",
+          "title": "Agent connection issues",
+          "description": "Fix missing boot context, missing recall, missing tools, and duplicate hooks."
+        },
+        {
+          "path": "troubleshooting/recall",
+          "navTitle": "Recall",
           "title": "Recall issues",
-          "description": "Fix missing memories, noisy results, slow recall, and confusing query output."
+          "description": "Fix empty, noisy, slow, or ignored recall."
+        }
+      ]
+    },
+    {
+      "category": "Reference",
+      "path": "reference/cli",
+      "navTitle": "CLI",
+      "title": "CLI reference",
+      "description": "Commands, flags, environment variables, and the config file of @loremem/cli.",
+      "children": [
+        {
+          "path": "reference/tools",
+          "navTitle": "Agent tools",
+          "title": "Agent tools reference",
+          "description": "Every memory and skill tool agents can call, with parameters."
         },
         {
-          "path": "troubleshooting/agent-issues",
-          "title": "Agent issues",
-          "description": "Fix boot context, recall hooks, MCP tools, and stale agent memory."
-        },
-        {
-          "path": "reference/common-questions",
-          "title": "Common questions",
-          "description": "Short answers for everyday Lore usage decisions."
-        },
-        {
-          "path": "reference/memory-writing-tips",
-          "title": "Memory writing tips",
-          "description": "Use a practical checklist and example for durable memory shape."
+          "path": "reference/settings",
+          "navTitle": "Settings",
+          "title": "Settings reference",
+          "description": "Runtime settings for recall, models, lifecycle text, write policy, Dream, and backups, with defaults."
         },
         {
           "path": "reference/glossary",
           "title": "Glossary",
-          "description": "Understand the core terms used across Lore docs."
+          "description": "The terms used across Lore and these docs."
+        },
+        {
+          "path": "reference/faq",
+          "title": "FAQ",
+          "description": "Short answers to common questions about Lore and Loremem Cloud."
         }
-      ]
-    }
-  ],
-  "navSections": [
-    {
-      "title": "Docs",
-      "paths": [
-        "introduction",
-        "installation",
-        "runtime-integrations",
-        "web-ui",
-        "troubleshooting"
       ]
     }
   ]

@@ -1,0 +1,140 @@
+查阅 `npx @loremem/cli` 的每个命令、参数和环境变量，以及 CLI 写入的文件。想看完整的操作流程，请从[用 Docker 部署](/documents/self-hosting)开始。
+
+## 用法
+
+```bash
+npx @loremem/cli [install|update|uninstall|status] [options]
+```
+
+不带任何参数运行 `npx @loremem/cli`，会启动交互式安装器，效果与 `install` 相同。
+
+## 命令
+
+| 命令 | 作用 |
+| --- | --- |
+| `install`（别名 `connect`） | 把这台机器接入服务器，用 Docker 部署服务器，并安装运行时集成。这是默认命令。 |
+| `update` | 更新已安装的集成。对于由 Docker 管理的服务器，还会拉取新镜像并重启服务栈。 |
+| `uninstall` | 移除运行时集成。加上 `--purge` 还会删除配置和本地 Docker 数据。 |
+| `status` | 显示已保存的连接、检测到的运行时，以及每个集成的状态。 |
+
+## 参数
+
+| 参数 | 适用命令 | 作用 |
+| --- | --- | --- |
+| `--base-url URL` | `install`、`update` | 接入已有服务器或 Loremem 云服务。仅作为客户端，不会触碰 Docker。不能与 `--docker` 同时使用。 |
+| `--docker` | `install` | 用 Docker Compose 在本机部署 Lore 服务器。会清除已保存的令牌。不能与 `--base-url` 或 `--skip-docker` 同时使用。 |
+| `--api-token TOKEN` | `install`、`update` | 服务器令牌，保存到 `config.json`。它可能会留在 shell 历史记录中。 |
+| `--channels LIST` | `install`、`update`、`uninstall` | 以逗号分隔的运行时 ID（参见[运行时 ID](#运行时-id)）。默认值：`install` 为检测到的运行时；`update` 为已安装或部分安装的集成；`uninstall` 为全部七个运行时。 |
+| `--skip-docker` | `install`、`update` | 保留已保存的服务器，不管理 Docker。 |
+| `--force` | `install`、`update` | 即使发布版本没有变化，也重新安装。 |
+| `--pre` | `install`、`update` | 使用最新的预发布版。镜像使用 `pre-latest` 标签。不能与 `--dev` 同时使用。 |
+| `--dev` | `install`、`update` | 使用开发版。镜像使用 `dev-latest` 标签。 |
+| `--lang en\|zh` | 全部 | 提示和消息的语言。优先于 `LORE_INSTALL_LANG`。 |
+| `--allow-insecure-http` | `install`、`update` | 仅本次运行允许通过明文 HTTP 向非回环主机发送令牌。该参数不会被保存。`-y` 不会隐含它。 |
+| `--purge` | `uninstall` | 同时删除 `~/.lore/config.json` 和 `~/.lore/docker`。请先停止服务栈。参见[更新与卸载](/documents/self-hosting/update-and-uninstall)。 |
+| `-y`、`--yes` | `install`、`uninstall` | 跳过提示。对于 `install`，未设置的选项采用默认值，服务端必须来自 `--base-url`、`--docker` 或已保存的配置。 |
+| `-h`、`--help` | 全部 | 打印用法并退出。 |
+
+`--docker` 会清除任何已保存的令牌，并忽略 `--api-token`。传入 `--api-token` 可能会让令牌留在你的 shell 历史记录中，请按照你平时的密钥管理方式处理。
+
+## 环境变量
+
+| 变量 | 默认值 | 作用 |
+| --- | --- | --- |
+| `LORE_HOME` | `~/.lore` | 保存 `config.json`、运行时文件和 `docker/` 服务栈目录的位置。 |
+| `LORE_INSTALL_LANG` | `en` | `zh` 选择中文，其他任何值都选择英文。设置后会跳过语言选择问题。 |
+| `LORE_SAAS_BASE_URL` | `https://api.loremem.com` | 「连接 Loremem SaaS」使用的 Loremem 云服务 API 地址。只有需要让 CLI 指向其他云服务 API 时才设置。 |
+| `LORE_CODEX_INSTALL_USER_HOOKS` | 未设置 | 设为 `1` 时，还会把 Lore 的旧版钩子条目写入 `~/.codex/hooks.json`。仅用于需要用户级钩子的旧版 Codex。 |
+| `LORE_OPENCODE_ALLOW_MCP` | 未设置 | 设为 `1` 或 `true` 时，会在 OpenCode 插件旁保留 Lore 通用的 `/api/mcp` MCP 条目。默认情况下，插件会移除它自己的重复条目。插件在 OpenCode 启动时读取该变量。 |
+| `LORE_SKILLS_ENABLED` | 由安装器设置 | `1` 或 `0`。安装器根据服务器是否具备技能能力来设置它。`0` 会在插件中关闭技能。除非服务器声明支持技能，否则技能默认关闭。 |
+
+## 文件
+
+`~/.lore/config.json` 以文件权限 `0600` 写入。它包含以下字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `base_url` | 服务器地址（来源），末尾没有斜杠 |
+| `api_token` | 服务器令牌。未设置时不存在该字段。 |
+| `installed_version` | 集成安装所用的发布版本。只有当所有选中的运行时都成功后才会写入。 |
+| `docker_managed` | `true` 表示 CLI 管理本地 Docker 服务栈，`false` 表示由你自己管理。 |
+| `server_profile` | `install` 和 `update` 记录的服务器基础地址、版本类型和能力（例如技能） |
+
+只有当服务器地址保持不变时，才会复用已保存的令牌。如果改了服务器地址，但没有传入 `--api-token`，令牌会被清除。
+
+其他文件：
+
+- `~/.lore/docker/`：CLI 管理的本地服务栈所使用的 Compose 文件和 `.env`。
+- `~/.lore/<运行时>/`：每个运行时的文件，例如 `~/.lore/hermes/lore_memory`。
+
+## 运行时 ID
+
+| ID | 运行时 | 安装器使用的宿主 CLI |
+| --- | --- | --- |
+| `claudecode` | Claude Code | `claude` |
+| `codex` | Codex | `codex` |
+| `pi` | Pi | `pi` |
+| `openclaw` | OpenClaw | `openclaw` |
+| `hermes` | Hermes | 无 |
+| `opencode` | OpenCode | `opencode` |
+| `zcode` | ZCode | `zcode` |
+
+- 宿主 CLI 未安装的运行时会被标记为跳过，而不是标记为已配置。
+- Hermes 安装时不需要它的 CLI。只有当 `PATH` 中存在 `hermes` 命令时，它才会被默认选中；否则请传入 `--channels hermes`。安装后请自行链接文件：
+
+  ```bash
+  ln -s ~/.lore/hermes/lore_memory ~/.hermes/skills/lore_memory
+  ```
+
+## 交互式与非交互式使用
+
+| 命令 | 在终端中 | 使用 `-y`，或不在终端中 |
+| --- | --- | --- |
+| `install` | 打开安装器，参数会预先填入答案 | 按参数直接运行。如果既没有参数又没有终端，会以退出码 `2` 失败。 |
+| `update` | 按参数运行，不提问 | 相同 |
+| `uninstall` | 询问 `Uninstall these channels? [y/N]` | 不询问 |
+| `status` | 打印状态 | 相同 |
+
+## 明文 HTTP
+
+- CLI 只会通过 HTTPS 发送令牌。使用明文 HTTP 时，只向回环主机发送令牌：`localhost`、`127.0.0.1` 和 `::1`。
+- 对于其他主机，如果使用明文 HTTP，CLI 会拒绝发送令牌，除非你为本次运行传入 `--allow-insecure-http`。
+- 该参数不会被保存，`-y` 也不会隐含它。交互式安装器会改为提出一个单独的是非问题，默认选项为否。
+- 没有令牌时，不适用这条规则。
+
+## 退出码
+
+| 退出码 | 含义 |
+| --- | --- |
+| `0` | 成功。对于 `install`，只要至少有一个运行时安装成功，被跳过的运行时不会导致本次运行失败。 |
+| `1` | 失败。例如：某个运行时失败；对于 `update`，发布版本无法解析，或选中的运行时被跳过；Docker 服务栈在 3 分钟内未通过健康检查；或你拒绝了卸载。 |
+| `2` | 用法错误。例如：未知参数、使用 `-y` 时缺少服务器、使用 `-y` 时未检测到运行时，或者既没有参数又没有终端。 |
+| `130` | 你取消了交互式提示，例如按下了 Ctrl+C。 |
+
+## 示例
+
+```bash
+# 交互式安装器
+npx @loremem/cli
+
+# 不提示，直接用 Docker 部署本地服务器
+npx @loremem/cli install -y --docker
+
+# 把这台机器接入 Loremem 云服务
+npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token
+
+# 仅本次运行，通过明文 HTTP 接入局域网服务器
+npx @loremem/cli install -y --base-url http://192.168.1.10:18901 --api-token lm_your_token --allow-insecure-http
+
+# 从预发布渠道更新 Claude Code 和 Codex
+npx @loremem/cli update --pre --channels claudecode,codex
+
+# 接入 Codex 时启用旧版用户级钩子
+LORE_CODEX_INSTALL_USER_HOOKS=1 npx @loremem/cli install -y --base-url https://api.loremem.com --api-token lm_your_token --channels codex
+
+# 不提示，移除两个运行时
+npx @loremem/cli uninstall --channels claudecode,pi -y
+
+# 全部移除，包括配置和本地 Docker 数据
+npx @loremem/cli uninstall --purge -y
+```

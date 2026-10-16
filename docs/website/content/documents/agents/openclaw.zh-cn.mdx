@@ -1,0 +1,99 @@
+OpenClaw 接入会为 OpenClaw 安装 Lore 插件。OpenClaw 会在每个会话的第一条提示时把启动记忆（boot）加入系统上下文，为每条提示词添加召回，并获得 Lore 记忆工具。
+
+## 安装
+
+在使用 OpenClaw 的机器上运行：
+
+```bash
+npx @loremem/cli install --channels openclaw
+```
+
+接入 Loremem 云服务时，传入服务器地址和项目令牌：
+
+```bash
+npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token --channels openclaw
+```
+
+如果 `openclaw` 命令不在 `PATH` 中，安装程序会跳过 OpenClaw。安装程序还需要 `npm` 和可访问 npm 仓库的网络，因为它要安装并构建插件。安装完成后，请重启 OpenClaw。
+
+## 安装内容
+
+- 来自 `lore-openclaw.zip` 的插件文件，位于 `~/.lore/openclaw/`。安装程序会在该目录中运行 `npm install` 和 `npm run build`。
+- 构建好的插件，通过 `openclaw plugins install . --force --dangerously-force-unsafe-install` 安装，并通过 `openclaw plugins enable lore` 启用。这些参数由安装程序自行传入。
+- `~/.openclaw/openclaw.json` 中 `plugins.entries.lore` 下的一个条目。如果未设置 `enabled`，安装程序会将其设为 `true`。安装程序还会把 `baseUrl` 和 `skillsEnabled` 写入 `config`；设置了令牌时，还会写入 `apiToken`。
+- 九个记忆工具：`lore_status`、`lore_boot`、`lore_get_node`、`lore_search`、`lore_list_domains`、`lore_create_node`、`lore_update_node`、`lore_delete_node` 和 `lore_move_node`。在支持技能的服务器上，还会增加七个 `lore_skill_*` 工具。
+- 钩子。会话开始时，Lore 准备启动上下文，插件会在该会话的第一条提示时把它加入系统上下文。每条提示词都会获得召回。网关启动时，插件会执行一次健康检查。
+
+## 插件设置
+
+以下设置位于 `plugins.entries.lore.config` 下：
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "lore": {
+        "enabled": true,
+        "config": {
+          "baseUrl": "https://api.loremem.com",
+          "apiToken": "lm_your_token",
+          "skillsEnabled": true
+        }
+      }
+    }
+  }
+}
+```
+
+| 字段 | 默认值 | 作用 |
+| --- | --- | --- |
+| `baseUrl` | `~/.lore/config.json` 中的 `base_url`，其次是 `LORE_BASE_URL`，再其次是 `http://127.0.0.1:18901` | 服务器地址。由安装程序写入。 |
+| `apiToken` | `~/.lore/config.json` 中的 `api_token`，其次是 `LORE_API_TOKEN` | 服务器令牌。设置了令牌时由安装程序写入。 |
+| `timeoutMs` | `30000` | 请求超时时间，单位为毫秒，范围 1000 到 120000。 |
+| `defaultDomain` | `core` | 记忆工具调用未指定域时使用的域。 |
+| `loreHome` | `LORE_HOME`，其次是 `~/.lore` | 技能工作副本所在的目录。 |
+| `skillsEnabled` | `false` | 开启技能工具。安装程序会根据服务器的能力设置该值。 |
+| `injectPromptGuidance` | `true` | 设为 `false` 时，会话开始时不加入启动上下文。 |
+| `startupHealthcheck` | `true` | 设为 `false` 时，网关启动时不执行健康检查。 |
+| `recallEnabled` | `true` | 设为 `false` 时，关闭对提示的召回。 |
+
+## 验证
+
+1. 运行 `npx @loremem/cli status`。`openclaw` 一行应显示 `installed`。
+2. 打开 `~/.openclaw/openclaw.json`，确认 `plugins.entries.lore` 中有 `"enabled": true`。
+3. 重启 OpenClaw。健康检查开启时，网关日志中会出现 `lore: startup health check ok (<服务器地址>)`。
+4. 开始一个新会话，让 OpenClaw 调用 `lore_status`。它应返回服务器的健康状态。
+5. 发送一条与已有记忆相关的项目提示。该提示应获得召回。
+
+## 注意事项
+
+- **安装程序写入的值优先。** 插件先读取自身设置中的 `baseUrl` 和 `apiToken`，然后才读取 `~/.lore/config.json`。安装程序会把这两个值都写入插件条目，因此之后修改 `~/.lore/config.json` 不会影响 OpenClaw。更换服务器或令牌后，请用新值重新运行安装，或直接修改 `plugins.entries.lore.config`。
+- **修改后重启。** 修改插件条目后，请重启 OpenClaw。
+
+## 手动安装（备用方案）
+
+只有当安装程序无法运行时，才使用以下步骤。它们运行的命令与安装程序相同。
+
+```bash
+mkdir -p ~/.lore/openclaw
+curl -fsSL -o lore-openclaw.zip https://github.com/FFatTiger/lore/releases/latest/download/lore-openclaw.zip
+unzip -qo lore-openclaw.zip -d ~/.lore/openclaw
+rm lore-openclaw.zip
+cd ~/.lore/openclaw
+npm install --silent
+npm run build
+openclaw plugins install . --force --dangerously-force-unsafe-install
+openclaw plugins enable lore
+```
+
+然后把上面的 `plugins.entries.lore` 配置块加入 `~/.openclaw/openclaw.json`，并重启 OpenClaw。
+
+## 卸载
+
+```bash
+npx @loremem/cli uninstall --channels openclaw -y
+```
+
+如果 `openclaw` 在你的 `PATH` 中，这条命令会停用并卸载该插件。它还会从 `~/.openclaw/openclaw.json` 中移除 `plugins.entries.lore`，并删除 `~/.lore/openclaw`。卸载后请重启 OpenClaw。
+
+如果 OpenClaw 无法加载 Lore，请参见[Agent 接入问题](/documents/troubleshooting/agents)。

@@ -1,0 +1,213 @@
+下面每一条对应一种安装器、服务器或 `/setup` 的故障，依次给出症状、原因和修复方法。请在包含 `docker-compose.yml` 的目录中运行 Compose 命令。由 CLI 管理的安装，该目录是 `~/.lore/docker`。
+
+## 安装器与 Docker
+
+### CLI 提示某个运行时被跳过
+
+**症状：** 安装过程输出类似 `claude CLI not found` 的内容，并把该运行时标记为 `skipped`（已跳过）。如果所有选中的运行时都被跳过，安装会以 `Install failed` 结束。
+
+**原因：** CLI 通过在 `PATH` 中查找运行时的命令来识别运行时。找不到命令时，CLI 会跳过该运行时，而不会把它记为已配置。
+
+**修复：**
+
+1. 在运行安装程序的同一个 Shell 中，检查命令能否解析：
+
+   ```bash
+   command -v claude
+   ```
+
+2. 如果没有输出，请安装该运行时，或把它的目录加入 `PATH`，然后打开新的 Shell。
+3. 针对该运行时重新安装：
+
+   ```bash
+   npx @loremem/cli install --channels claudecode
+   ```
+
+Hermes 不需要运行时 CLI。安装程序只下载它的文件，连接需要你手动完成。参见 [Agent 接入问题](/documents/troubleshooting/agents)。
+
+### 未检测到 Docker
+
+**症状：** `npx @loremem/cli install --docker` 停止，并输出 `Docker is not available` 或 `Docker Compose is not available`。
+
+**原因：** CLI 要求 `docker version` 执行成功，并且 `docker compose version` 或 `docker-compose version` 至少有一个执行成功。第一条错误表示 Docker 未安装、守护进程没有运行，或当前用户无法访问它。第二条错误表示缺少 Compose。
+
+**修复：**
+
+1. 运行 `docker version`。它必须同时输出客户端和服务器信息，且没有错误。如果没有，请启动 Docker 守护进程。
+2. 运行 `docker compose version`。如果失败，请安装 Compose 插件。
+3. 重新安装：
+
+   ```bash
+   npx @loremem/cli install --docker
+   ```
+
+### Docker Compose 失败或健康检查超时
+
+**症状：** 安装程序输出 `docker compose up failed`，或 `Lore Docker health check timed out for http://127.0.0.1:18901`。安装程序最多等待三分钟，等待 `/api/health` 返回成功。
+
+**原因：** 容器启动失败，或 `web` 已启动，但一直不健康。数据库无法连接也会导致健康检查失败，因此超时通常指向 PostgreSQL。
+
+**修复：**
+
+1. 检查容器状态：
+
+   ```bash
+   cd ~/.lore/docker
+   docker compose ps
+   ```
+
+2. 查看未运行或不健康的服务的日志：
+
+   ```bash
+   docker compose logs web
+   docker compose logs postgres
+   ```
+
+3. 修复日志中的错误，然后重新运行 `docker compose up -d`。
+
+## 服务器与数据库
+
+### 服务器无法启动
+
+**症状：** `web` 服务退出或不断重启，或者 `/api/health` 始终没有响应。
+
+**原因：** 常见原因包括 `DATABASE_URL` 有误、端口已被其他程序占用，或 PostgreSQL 容器不健康。
+
+**修复：**
+
+1. 按上面的方式查看 `web` 和 `postgres` 的日志。
+2. 在 Docker 内部，`DATABASE_URL` 指向 `postgres` 服务的 `5432` 端口。`POSTGRES_PORT`（默认 `55439`）只是你的机器连接数据库时使用的宿主机端口。
+3. 如果 `18901` 端口被占用，请在 `.env` 中把 `WEB_PORT` 设为空闲端口，并在基础 URL 中使用该端口。
+4. 修改 `.env` 后，重新运行 `docker compose up -d`，让容器读取新的值。
+
+### 迁移失败，出现 `vector` 或 `pg_jieba` 错误
+
+**症状：** `web` 日志中出现 `[migrations] failed`，后面跟着数据库错误。启动会停在失败的迁移处。
+
+**原因：** 数据库中缺少 `vector` 扩展（pgvector），或者数据库角色无法创建 schema 和扩展。缺少 `pg_jieba` 或 `zhparser` 不会阻止迁移，只会削弱中文搜索的效果。
+
+**修复：**
+
+1. 使用 Lore 的 PostgreSQL 镜像 `fffattiger/pgvector-zhparser:pg16`。它包含 pgvector、zhparser 和 pg_jieba，Docker 安装默认使用该镜像。
+2. 如果使用自己的 PostgreSQL 服务器，请安装 pgvector。首次启动时使用可以创建 schema 和扩展的角色，之后再切换到受限角色。
+3. 检查 Lore 数据库中已有的扩展：
+
+   ```sql
+   SELECT extname FROM pg_extension WHERE extname IN ('vector', 'pg_jieba', 'zhparser');
+   ```
+
+4. 要使用 `pg_jieba`，请把它加入 `shared_preload_libraries`，然后重启 PostgreSQL。
+
+### `/api/health` 失败
+
+**症状：** `curl -fsS http://127.0.0.1:18901/api/health` 提示连接被拒绝，或返回 `503` 等 HTTP 错误。
+
+**原因：** 连接被拒绝表示 `web` 没有运行，或者你使用的地址中的端口与 `WEB_PORT` 不一致。返回 `503` 且 `"status":"degraded"`，表示 `web` 无法连接数据库。
+
+**修复：**
+
+1. 运行 `docker compose ps`，确认 `web` 和 `postgres` 都在运行。
+2. 遇到连接被拒绝，对比地址中的端口与 `.env` 中的 `WEB_PORT`。
+3. 遇到 `503`，用 `curl -sS http://127.0.0.1:18901/api/health` 读取响应正文，然后检查 `DATABASE_URL` 和 `postgres` 的日志。
+
+## 令牌与认证
+
+### 请求返回 `401 Unauthorized`
+
+**症状：** Web 控制台、API 或 Agent 收到 `{"detail":"Unauthorized"}`，或者 MCP 返回包含 `Unauthorized` 的 JSON-RPC 错误。
+
+**原因：** 服务器设置了 `API_TOKEN`，而请求没有带令牌、带了错误的令牌，或者令牌放在了 Lore 不读取的位置。Lore 只从 `Authorization: Bearer <token>` 请求头中读取令牌。
+
+**修复：**
+
+1. 对比服务器 `.env` 中的 `API_TOKEN` 与客户端中的令牌。不要粘贴任何一个值。`npx @loremem/cli status` 只显示是否保存了令牌（`api_token: set` 或 `absent`），无法证明令牌是否正确。
+2. 把正确的令牌写入客户端。`--skip-docker` 会保留已保存的服务器及其 Docker 管理设置：
+
+   ```bash
+   npx @loremem/cli install -y --skip-docker --api-token lm_your_token
+   ```
+
+3. 重启 Agent。每个运行时保存令牌的位置不同：Claude Code 保存在 `~/.claude/settings.json` 的 `env` 中；Codex 保存在 `~/.codex/config.toml` 中 `[mcp_servers.lore]` 下的 `Authorization` 请求头中；OpenClaw 保存在 `~/.openclaw/openclaw.json` 的插件配置中；其他运行时读取 `~/.lore/config.json`。
+
+### CLI 拒绝通过明文 HTTP 传输令牌
+
+**症状：** 安装停止，并输出 `API tokens require HTTPS for non-loopback Lore servers (pass --allow-insecure-http to explicitly accept the risk for this run)`。
+
+**原因：** 基础 URL 使用 `http://`，且主机不是 `localhost`、`127.0.0.1` 或 `::1`。CLI 只允许在回环地址上通过明文 HTTP 发送令牌。
+
+**修复：**
+
+- 使用 HTTPS。把服务器放在带 TLS 的反向代理后面，并使用 `https://` 地址。
+- 在你信任的网络中，只为本次运行接受风险：
+
+  ```bash
+  npx @loremem/cli install --base-url http://192.168.1.10:18901 --api-token lm_your_token --allow-insecure-http
+  ```
+
+> [!WARNING]
+> 网络路径上的任何人都可能读取或篡改通过明文 HTTP 发送的令牌。`--allow-insecure-http` 的许可不会被保存，`-y` 也不代表同意该风险。
+
+### Loremem 云服务拒绝你的令牌
+
+**症状：** 访问 `https://api.loremem.com` 的请求失效，或者安装停止并输出 `Loremem SaaS requires an API token`。
+
+**原因：** 令牌已被吊销，或者安装时没有令牌。令牌只会在创建时显示一次。
+
+**修复：**
+
+1. 在控制台中打开令牌页面，确认该令牌是否仍然存在。如果已被吊销，请在安装页面创建新的项目令牌。令牌和安装命令出现时，请立即复制。
+2. 使用新令牌运行安装：
+
+   ```bash
+   npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token
+   ```
+
+## 版本、模型与配置
+
+### 安装程序无法解析发布版本
+
+**症状：** 安装输出 `Could not resolve GitHub release tag`，或下载时出现 `curl` 或 `unzip` 错误。
+
+**原因：** CLI 会从 GitHub 读取最新的发布标签。请求受到速率限制，或网络路径被阻断，会导致第一种错误。下载依赖 `curl` 和 `unzip`，因此第二种错误表示其中之一缺失，或传输失败。
+
+**修复：**
+
+1. 如果 GitHub 对请求进行了限流，请等待几分钟后重新安装。
+2. 确认你的机器可以访问 `github.com`。
+3. 如果缺少 `curl` 或 `unzip`，请先安装。
+
+### `/setup` 无法保存模型设置
+
+**症状：** 嵌入模型或视图 LLM 步骤提示 `Fill every field on this page before continuing`，并列出空白字段；或者连接测试失败。
+
+**原因：** 每个模型步骤都需要基础 URL、API 密钥和模型名称。嵌入模型会请求 `<基础 URL>/embeddings`。如果你的服务商把 OpenAI 兼容接口放在 `/v1` 下，基础 URL 就要包含 `/v1`，例如 `http://127.0.0.1:8090/v1`。不要自己再加上 `/embeddings`。
+
+**修复：**
+
+1. 填写该步骤的三个字段：基础 URL、API 密钥和模型名称。
+2. 对该步骤运行连接测试，测试结果会指出失败的原因。`HTTP 401` 通常表示密钥有误，`HTTP 404` 通常表示基础 URL 或路径有误，`response missing embedding vector` 表示该端点不兼容 OpenAI 格式。
+3. 再次保存。修改嵌入模型后保存，会重建所有嵌入，保存操作会等待重建完成。
+
+### CLI 拒绝 `~/.lore/config.json`
+
+**症状：** CLI 停止，并输出 `Invalid JSON in`，后面是文件的完整路径和解析器的错误信息；或者输出 `Lore config in ... must be a JSON object`。
+
+**原因：** 共享配置文件不是合法的 JSON，或者其顶层值不是对象。CLI 拒绝覆盖格式错误的文件，因此在你修复或移走该文件之前，错误会一直出现。
+
+**修复：**
+
+1. 先备份文件，再修正语法。注意检查多余的逗号或缺失的引号。合法的文件结构如下：
+
+   ```json
+   {
+     "base_url": "http://127.0.0.1:18901",
+     "api_token": "lm_your_token"
+   }
+   ```
+
+2. 如果无法修复，把文件移走，然后用之前相同的参数重新连接。已有的服务器使用 `--base-url`，由 CLI 管理的服务器使用 `--docker`。
+
+   ```bash
+   mv ~/.lore/config.json ~/.lore/config.json.bak
+   npx @loremem/cli install --base-url http://127.0.0.1:18901 --api-token lm_your_token
+   ```

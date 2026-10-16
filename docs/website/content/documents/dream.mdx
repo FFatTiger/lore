@@ -1,23 +1,118 @@
-Dream is Lore's memory maintenance workflow.
+Dream is Lore's scheduled memory maintenance. Every night it reviews the memory graph, applies a few careful fixes, and writes a diary entry that you can review and roll back.
 
-Use Dream to review memory quality, find stale or duplicated notes, inspect recall patterns, and prepare suggested improvements. Treat it as a review assistant, not an unchecked writer.
+## What a run does
 
-## How Dream works
+A run starts by collecting the boot memories (the baseline that agents load at session start), the last day of recall and memory activity, and the two most recent completed diary entries. An agent then works through five phases with the memory tools:
 
-Dream reads the memory graph and recall history, then identifies maintenance opportunities: stale nodes, duplicate content, vague disclosure triggers, noisy recall patterns, and missing glossary terms. It presents these as suggested edits you can review and accept individually.
+1. **Diagnose** reads recall queries and the memory tree. It makes no changes.
+2. **Plan** lists candidate changes and the candidates it skipped, with reasons. It makes no changes.
+3. **Preflight** checks each proposed write with the same validation that normal memory writes get.
+4. **Apply** makes the writes. A run is capped at two write operations (create, update, delete, or move). Loremem Cloud allows one move on top of that.
+5. **Audit** records what changed and why. Lore then writes a diary entry with a summary and a narrative.
 
-## What Dream is good for
+Dream looks for these problems:
 
-| Task | Result |
+- duplicate or near-duplicate memories to merge
+- memories that cover more than one concept, or have grown too long, to split
+- memories in the wrong place in the path tree to move
+- disclosure triggers that are vague, use OR logic ("A or B"), or are too narrow or too broad
+- missing glossary terms
+- stale or overly broad nodes
+- recall queries that returned the wrong memories, or nothing useful
+- durable facts in the day's recall queries that deserve their own node
+
+Dream reads recall queries from the past day. It doesn't read full conversations.
+
+Dream applies its changes itself. The priority and disclosure checks that apply to your writes also apply to Dream's writes. Each change is recorded in the node's history and listed in the diary entry with its review mark.
+
+## Schedule and settings
+
+Dream is on by default and runs every day at 03:00. It needs an LLM: a View LLM on a self-hosted server, or the runtime LLM profile on Loremem Cloud. On a self-hosted server, a run without a View LLM skips the agent loop, so it makes no changes.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `dream.enabled` | on | Runs Dream on the schedule. Turn it off to pause scheduled runs. |
+| `dream.cron` | `0 3 * * *` | Sets the start time as a 5-field cron expression: minute, hour, day of month, month, day of week. |
+| `dream.auto_approve_changes` | off | Marks new changes as approved when they are made. When it is off, every change starts as pending review. |
+
+On a self-hosted server, these are under **Settings → Dream schedule**, labeled **Scheduled dreaming**, **Dream cron**, and **Auto-approve Dream changes**. On Loremem Cloud, use **Settings → Dream**.
+
+A few details to know:
+
+- On a self-hosted server, the cron expression runs in the server's time zone. Docker Compose reads `TZ` from `.env` and defaults to `Asia/Shanghai` if you don't set it, so set `TZ` to your own zone.
+- On a self-hosted server, Lore checks the schedule once a minute. If the server isn't running at the scheduled minute, that day's run doesn't happen. An invalid cron expression never runs.
+- Loremem Cloud runs schedules on the service clock.
+
+## Run Dream manually
+
+Run Dream by hand while you tune Lore, or after you import a batch of memories.
+
+1. Open **Dream** and select **Run Dream Now**. On Loremem Cloud, select **Run Dream**.
+2. Wait for the run to finish. Its status changes from **Running** to **Completed** or **Error**.
+3. Read the diary entry, then review the changes.
+
+A self-hosted server doesn't start a second run while one is still running.
+
+## Review changes
+
+Each change in a run has a review mark:
+
+| Mark | Meaning |
 | --- | --- |
-| Find stale or duplicated memories | cleaner memory graph |
-| Notice broad or vague disclosures | better future recall |
-| Review noisy recall patterns | fewer irrelevant candidates |
-| Suggest memory edits | clearer content, paths, glossary, and triggers |
-| Create a diary | traceable maintenance history |
+| Pending review | The default. Dream made the change, and you haven't reviewed it. |
+| Approved | You accepted the change. Auto-approve sets this mark for you. |
+| Dismissed | You reviewed the change and didn't endorse it. Loremem Cloud labels the button **Mark read** and the mark **Read**. |
 
-Dream is safest when backups are configured and human review is enabled for important memory changes. Run it manually while you are still tuning Lore. Schedule it only after backup, restore, and review habits are stable.
+Select **Approve** or **Dismiss** to set a change's mark. Review marks only record your decision. Approving or dismissing a change doesn't undo it. The memory keeps the change until you roll it back or edit it.
 
-## What Dream should not do
+To correct a change on a self-hosted server, select **Edit** to open the node and fix it by hand. On Loremem Cloud, open the node from the **Memory** page.
 
-Do not use Dream as a way to mass-rewrite memory without review. Reject changes that make a memory broader, more confident, or less traceable than the source material supports.
+## Judge a change
+
+Check each change against this list before you approve it. Reject or rewrite any change that fails a check.
+
+| Check | Accept when |
+| --- | --- |
+| Scope | The change fixes one clear problem. A change that mixes topics should be split or rewritten by hand. |
+| Trigger quality | The disclosure describes one concrete situation and says when the memory should appear. It doesn't use OR logic. |
+| Glossary | The terms are words people actually type: product names, aliases, and error names. |
+| Priority | Importance isn't inflated. Priority `0` and `1` are for core identity and key facts only. |
+| No invented facts | The content says only what the source material supports. |
+| Traceable | You can explain how the change helps future recall, and the diary's audit lists the evidence behind it. |
+
+This memory fails the trigger check. Its disclosure names two situations, so the memory can surface when either one comes up:
+
+```text
+URI:        project://checkout_api/webhooks
+Priority:   1
+Disclosure: When changing refund webhooks or payment webhooks in checkout-api
+Glossary:   refund webhook, payment webhook, idempotency key
+Content:    Refund webhooks are idempotent by event.id. Tests must replay the same event twice and assert a single refund row.
+```
+
+Split it into one memory for refund webhooks and one for payment webhooks.
+
+## Undo a run
+
+Rollback reverses the changes from the most recent run.
+
+- Only the most recent run can be rolled back. Older runs can't be rolled back as a whole.
+- Rollback reverses every change in that run, including changes you approved.
+- Each affected node returns to its state before the run. Any edits you made to those nodes after the run are overwritten, so check them first.
+- On a self-hosted server, open the latest run on **Dream**, select **Rollback**, and confirm. On Loremem Cloud, open the latest run and select **Rollback latest**.
+
+To undo one change instead, roll back the node from its history:
+
+- On a self-hosted server, open the node's history, select **Rollback** on the create or update event you want, and confirm. Only create and update events can be rolled back this way.
+- On Loremem Cloud, the node's history shows each change as a diff. Edit the node to restore the earlier text.
+
+## Use Dream safely
+
+> [!WARNING]
+> Dream can create, update, move, and delete memories. Back up before you approve a batch of changes or leave scheduled runs on.
+
+1. Verify a backup before you turn on scheduled runs. Test a restore in a separate environment first. See [Backups and restore](/documents/maintenance/backups).
+2. Run Dream by hand a few times, and review every change, before you rely on the schedule.
+3. Pause scheduled Dream while you import many memories, or while your embedding or LLM endpoints are unstable.
+4. Keep auto-approve off until you trust the changes Dream makes.
+5. After each run, try two or three realistic recall queries to confirm that the memories you care about still surface.

@@ -1,0 +1,87 @@
+Use your own PostgreSQL when you already run a database service, need its backups, or want the database outside the Compose stack. Follow the steps below to prepare the extensions and roles, then point the stack at your database.
+
+## What Lore needs from the database
+
+| Capability | Required | Why |
+| --- | --- | --- |
+| PostgreSQL with pgvector | Yes | Memory views store embedding vectors. The first start creates the `vector` extension. |
+| Schema privileges (create tables, indexes, and extensions) | Yes | The first start creates the schema and the extensions. |
+| `pg_jieba` | Recommended | Preferred tokenizer for Chinese full-text search. It must be preloaded. |
+| `zhparser` | Optional | Fallback Chinese tokenizer, used when `pg_jieba` can't be created. |
+
+## Install the extensions
+
+1. Install pgvector for your PostgreSQL major version, following the pgvector installation guide.
+2. Install `pg_jieba` for Chinese full-text search. Install `zhparser` as a fallback. `zhparser` also needs the SCWS segmentation library.
+3. Preload `pg_jieba`. In `postgresql.conf`, add this line. If you already preload other libraries, add `pg_jieba` to that comma-separated list instead:
+
+   ```text
+   shared_preload_libraries = 'pg_jieba'
+   ```
+
+4. Restart PostgreSQL. A change to the preload list takes effect only after a restart.
+5. Confirm the setting:
+
+   ```sql
+   SHOW shared_preload_libraries;
+   ```
+
+On its first start, Lore creates `vector`, then tries `pg_jieba`, then `zhparser`. If neither Chinese extension can be created, Lore uses PostgreSQL's `simple` text search. Lore still runs, but Chinese matching is weaker.
+
+> [!NOTE]
+> The Lore image `fffattiger/pgvector-zhparser:pg16` includes pgvector, `pg_jieba`, and `zhparser`. It preloads `pg_jieba` in new data directories. Use it unless you run your own PostgreSQL.
+
+## Create a role and a database
+
+```sql
+CREATE ROLE lore WITH LOGIN PASSWORD 'replace-with-a-long-random-password';
+CREATE DATABASE lore OWNER lore;
+```
+
+On the first start, the role must be able to create the schema and the extensions. Use a role with that permission for the first start, for example a superuser in your environment. After the first start succeeds, you can switch `DATABASE_URL` to a more restricted role that can work with the Lore tables.
+
+## Set `DATABASE_URL`
+
+```env
+DATABASE_URL=postgresql://lore:replace-with-a-long-random-password@db.example.com:5432/lore
+```
+
+- `postgresql://` and `postgres://` both work.
+- For hosts that aren't local, Lore uses SSL by default. Add `?sslmode=disable` to the URL only when the database has no TLS and the network is one you trust.
+- URL-encode special characters in the password. For example, write `@` as `%40`.
+
+## Run the Compose web and Redis containers against your database
+
+Keep the `web` and `redis` services, and point `DATABASE_URL` at your database. The stock file makes `web` wait for the bundled `postgres` service, so choose one of these options:
+
+- **Keep the file as it is.** The bundled `postgres` container still starts and Lore doesn't use it. Firewall its port (`POSTGRES_PORT`).
+- **Remove the database service.** Delete the whole `postgres:` service block, and delete its entry under `web` in `depends_on`. The `web` service then looks like this:
+
+  ```yaml
+  web:
+    depends_on:
+      redis:
+        condition: service_healthy
+  ```
+
+If you run an external Redis, set `REDIS_URL` to it and remove the `redis` service the same way.
+
+Then start the stack:
+
+```bash
+docker compose up -d
+```
+
+> [!WARNING]
+> The CLI replaces the Compose file in `~/.lore/docker` when you run `update` or `install --docker`. If the CLI manages that directory, re-apply the edit after each update, or keep your own Compose directory.
+
+## Verify
+
+Export `DATABASE_URL` in your shell, or substitute the URL, then run:
+
+```bash
+curl -fsS http://127.0.0.1:18901/api/health
+psql "$DATABASE_URL" -c '\dx'
+```
+
+`\dx` should list `vector`, plus `pg_jieba` or `zhparser` if you installed them. The health check confirms that the server is running. It doesn't prove that recall works, so open `/setup` and finish it before you rely on recall.

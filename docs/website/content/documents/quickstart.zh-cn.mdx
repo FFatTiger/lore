@@ -1,0 +1,105 @@
+用一个 Agent 连接 Lore 服务器，并保存第一条记忆。想最快开始，就选 Loremem 云服务；想把数据留在自己的机器上，就用 Docker 在本机运行服务器。
+
+## 方式 A：Loremem 云服务
+
+你需要 Node.js 20 或更高版本，以及想要接入的 Agent 运行时。
+
+1. 打开 `https://app.loremem.com/login`，使用 GitHub 或 Google 登录。首次登录会自动创建一个个人组织和一个默认项目。
+2. 用控制台顶部的项目切换器选择项目，然后打开 **安装** 页。
+3. 输入 **令牌备注**，说明这个令牌用在哪里，例如 `laptop`，然后点击 **创建令牌**。
+4. 点击 **复制命令**。命令中包含你的令牌。令牌和命令只显示一次，所以关闭对话框前请先复制。
+5. 在终端中运行这条命令：
+
+   ```bash
+   npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_token
+   ```
+
+   安装程序会使用命令中的服务器地址和令牌，并接入本机检测到的运行时。未安装的运行时会显示为跳过。如果想自己选择运行时，加上 `--channels`，例如 `--channels claudecode,codex`。
+
+6. 重启每个 Agent 运行时。Hook 和 MCP 配置会在运行时启动时加载。
+
+> [!TIP]
+> `--api-token` 会把令牌留在 shell 历史记录中。请用密码管理器保存令牌，并且不要把它粘贴到共享日志里。
+
+## 方式 B：自托管
+
+你需要以下环境。Lore 安装程序支持 macOS 和 Linux。
+
+- Node.js 20 或更高版本，用于运行 `npx @loremem/cli`。
+- Docker 和 Docker Compose。
+- 兼容 OpenAI 的嵌入接口（服务地址、API 密钥和模型）。
+- 供 View LLM 使用的聊天模型。Lore 支持 OpenAI 兼容的 Chat、OpenAI Responses 和 Anthropic Messages。
+
+1. 运行安装程序：
+
+   ```bash
+   npx @loremem/cli
+   ```
+
+   在终端中选择 **在本机用 Docker 部署服务端**。如果想非交互式运行，请改用下面的命令：
+
+   ```bash
+   npx @loremem/cli install -y --docker
+   ```
+
+   安装程序会把 `docker-compose.yml` 下载到 `~/.lore/docker`，在旁边写入一份带随机数据库密码的 `.env`，启动服务栈，等待其通过健康检查，写入 `~/.lore/config.json`，并接入检测到的运行时。
+
+2. 打开 `http://127.0.0.1:18901/setup`，完成四个设置步骤：
+
+   1. **嵌入（Embedding）**：兼容 OpenAI 的 `/v1/embeddings` 接口的服务地址、API 密钥和模型。
+   2. **View LLM**：提供方、服务地址、API 密钥和模型。Lore 用它生成记忆视图，也用它运行 Dream。
+   3. **全局启动记忆（boot）**：`core://agent`、`core://soul` 和 `preferences://user`。点击 **跳过** 会为空的启动节点保存默认文本，并继续下一步。
+   4. **渠道 Agent 记忆**：为每个接入的运行时保存一个 `core://agent/<runtime>` 节点。
+
+   设置保存在数据库中，而不是 `.env` 里。之后可以在 `/settings` 修改。
+
+3. 重启每个 Agent 运行时。
+
+> [!WARNING]
+> Docker 服务栈会在所有网络接口上发布 18901 端口，而且 `API_TOKEN` 默认为空。任何能访问该端口的人都可以读取和修改你的记忆。如果在共享网络中使用，请在 `~/.lore/docker/.env` 中设置 `API_TOKEN`，在 `~/.lore/docker` 目录下运行 `docker compose up -d`，然后运行 `npx @loremem/cli install -y --skip-docker --api-token your_api_token`，让 Agent 带上令牌。
+
+## 验证是否生效
+
+按顺序检查以下四项。前两项确认记忆能被保存和召回，后两项确认控制台能看到相关活动。
+
+1. **启动记忆。** 在项目中开启一个新会话，让 Agent 说明它收到的启动记忆。它应该能说出你设置过的启动节点，例如 `core://agent` 和 `preferences://user`。
+2. **写入。** 让 Agent 保存一条真实的项目事实（下一节有示例）。然后打开 **记忆** 页（Loremem 云服务中），或者打开 `/memory`（自托管），找到这条新节点。新建的记忆图谱能召回的内容很少，所以先从一条你会反复用到的事实开始。
+3. **召回。** 发送一条包含相同关键词的提示词，例如“checkout_api 里应该怎么测试退款 webhook？”。然后让 Agent 引用它为这条提示词收到的 `<recall>` 块。如果新记忆出现在某一行，说明召回正常。
+4. **控制台中的活动。** 在 Loremem 云服务中打开 **概览**，查看查询数、展示数、采用数，以及最近的查询。自托管则打开 **分析** 页（`/recall/drilldown`）。每条提示词之后，查询数都会增加。
+
+> [!TIP]
+> 如果没有出现召回行，请打开 **召回** 页，运行同样的查询，查看候选记忆和分数。[召回问题](/documents/troubleshooting/recall) 列出了常见原因。
+
+## 写第一条记忆
+
+让 Agent 保存一条长期有效的事实，例如：
+
+```text
+请把下面的事实保存为 checkout_api 项目的长期记忆。先创建父节点 project://checkout_api，再创建 project://checkout_api/webhooks：优先级为 1，触发条件是修改退款或支付 webhook 时，术语包括 refund webhook、idempotency key 和 stripe。内容：退款 webhook 以 event.id 保证幂等，测试必须对同一事件重放两次，并断言只有一条退款记录。
+```
+
+保存后的记忆结构如下：
+
+```text
+URI:        project://checkout_api/webhooks
+Priority:   1
+Disclosure: When changing refund or payment webhooks in checkout-api
+Glossary:   refund webhook, idempotency key, stripe
+Content:    Refund webhooks are idempotent by event.id. Tests must replay the same event twice and assert a single refund row.
+```
+
+- `URI` 是节点的稳定地址。路径段使用 snake_case，路径中不要包含日期。子路径需要先有父节点，所以 `project://checkout_api` 必须存在，并且有自己的内容、触发条件和术语。
+- `Priority 1` 表示关键事实。Lore 最多允许 15 个节点使用优先级 1。
+- `Disclosure` 描述一种具体情境，说明这条记忆应在什么时候出现。避免使用“或”：触发条件检查会对“A 或 B”这类写法给出提醒，请把它拆成两条记忆。
+- `Glossary` 列出人们真正会输入的词，包括产品名和报错名。
+- `Content` 是事实本身，使用纯文本。
+
+各字段的详细写法见[写好一条记忆](/documents/memory/writing-memories)。
+
+## 下一步
+
+- [把 CLAUDE.md 和 AGENTS.md 迁入 Lore](/documents/migrate-agent-instructions)：把共享规则从本地文件迁出。
+- [接入 Agent](/documents/agents)：接入本机上的其他运行时。
+- [Lore 如何工作](/documents/how-lore-works)：每个 Agent 会收到和记录什么。
+- [Web 控制台](/documents/console)：在浏览器中检查和修正记忆。
+- [服务器配置](/documents/self-hosting/configuration)：修改自托管服务器的设置。

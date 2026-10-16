@@ -1,0 +1,113 @@
+路径是记忆的地址。好的路径能让 Agent 在打开记忆之前就知道它讲的是什么。选对域、遵守命名规则、按正确的顺序建立路径树，能让记忆随项目增长依然容易浏览。移动或重命名节点也是安全的，历史记录会保留旧地址。
+
+## URI 结构
+
+| 部分 | 示例 | 规则 |
+| --- | --- | --- |
+| 域 | `project` | 按约定使用 `core`、`preferences` 或 `project` 之一。 |
+| 路径 | `checkout_api/webhooks/refund_idempotency` | 用 `/` 分隔的多个段，每一段都要符合下面的命名规则。 |
+
+调用工具时请使用完整 URI，例如 `project://checkout_api/webhooks`。裸路径会解析到默认域，但完整 URI 不会产生歧义。
+
+## 选择域
+
+按顺序判断，命中第一条即可：
+
+1. 这是给所有 Agent 的规则，还是只给某一个运行时的规则？使用 `core://`。
+2. 这是关于你这个用户、跨项目通用的内容吗？使用 `preferences://`。
+3. 这是关于某个代码库、产品或团队的内容吗？使用 `project://<项目名>/`。
+
+## 命名规则
+
+1. **为概念命名，而不是为事件命名。** `project://checkout_api/webhooks` 可以用好几年；`project://checkout_api/webhook_fix_march` 则不行。
+2. **使用小写 snake_case。** 只用小写字母、数字和单个下划线。路径段中的连字符、空格、大写字母和非 ASCII 字符会被 Lore 拒绝。
+3. **普通路径中不放日期。** 日期写在内容里。归档、日记、发布和事故类节点是例外，因为事件本身就是概念。
+4. **名称要具体。** `deployment` 和 `refund_idempotency` 有明确含义，`misc` 和 `notes` 没有。
+5. **一个概念只用一个名称。** 概念已经有节点时，应更新该节点，而不是用另一个名字再建一个。
+
+> [!WARNING]
+> 项目名也是路径段，要写成 `checkout_api`，不要写成 `checkout-api`。把带连字符的写法放进术语，这样输入这种写法的人也能找到这条记忆。
+
+| 路径 | 判断 | 原因 |
+| --- | --- | --- |
+| `project://checkout_api/webhooks` | 好 | 一个概念，小写，具体 |
+| `project://checkout_api/webhooks/refund_idempotency` | 好 | 挂在真实父节点下，只讲一件事 |
+| `preferences://user` | 好 | 简短稳定，它本身是一个启动记忆（boot）节点 |
+| `core://agent/codex` | 好 | 符合 `core://agent/<client_type>` 的约定 |
+| `project://notes` | 弱 | 会堆积互不相关的事实 |
+| `project://misc` | 弱 | Agent 无法猜到里面有什么 |
+| `project://fix_march_14` | 弱 | 路径里有日期，描述的是事件 |
+| `project://checkout-api/webhooks` | 会被拒绝 | 路径段中有连字符 |
+
+## 路径树
+
+包含多个段的路径位于上一级路径之下。`project://checkout_api/webhooks` 是 `project://checkout_api` 的子节点。
+
+创建子节点之前，父节点必须已经作为真实节点存在。父节点需要有内容（说明子节点为什么归在一起）、触发条件和术语。Lore 不会替你创建缺失的父节点：在不存在的父路径下创建节点会失败，并返回 `Parent path not found`。
+
+创建分支的步骤：
+
+1. 创建父节点。写明它的子节点覆盖哪些内容，并设置触发条件、术语和优先级。
+2. 用完整 URI 在父节点下创建每个子节点。
+
+用 `lore_create_node` 创建父节点：
+
+```json
+{
+  "uri": "project://checkout_api",
+  "content": "Parent node for checkout_api. Children cover webhooks, testing, and deployment.",
+  "priority": 2,
+  "disclosure": "When starting any task in checkout-api",
+  "glossary": ["checkout api", "checkout-api"]
+}
+```
+
+然后创建子节点：
+
+```json
+{
+  "uri": "project://checkout_api/webhooks",
+  "content": "Refund webhooks are idempotent by event.id. Tests must replay the same event twice and assert a single refund row.",
+  "priority": 1,
+  "disclosure": "When changing refund or payment webhooks in checkout-api",
+  "glossary": ["refund webhook", "idempotency key", "stripe"]
+}
+```
+
+## 移动与重命名
+
+`lore_move_node` 用于修改节点的地址。重命名就是把最后一段改成新名称，也就是一次移动。
+
+```json
+{
+  "old_uri": "project://checkout_api/webhook_notes",
+  "new_uri": "project://checkout_api/webhooks/refund_idempotency"
+}
+```
+
+移动节点前请确认以下几点：
+
+- 目标路径不能已经存在，否则 Lore 会返回错误。
+- 新的父节点必须已经作为真实的父节点存在，并且有内容。移动不会替你创建父节点。
+- 子节点会随节点一起移动。移动 `project://checkout_api/webhooks` 会一并移动它下面的所有节点。
+- 固定的启动记忆节点不能移动或删除。
+
+移动会以事件类型为 `move` 的形式记入历史，并保留旧地址和新地址。
+
+## 运行时专属节点
+
+每个运行时都有一个 `core://agent/<client_type>` 节点，用来存放只适用于该运行时的规则。插件会在会话开始时将它与共享节点一起加载。
+
+| 运行时 | 节点 |
+| --- | --- |
+| Claude Code | `core://agent/claudecode` |
+| Codex | `core://agent/codex` |
+| OpenCode | `core://agent/opencode` |
+| Pi | `core://agent/pi` |
+| OpenClaw | `core://agent/openclaw` |
+| Hermes | `core://agent/hermes` |
+| ZCode | `core://agent/zcode` |
+
+使用 ZCode 时，如果 `core://agent/zcode` 为空，请在 Lore 中创建它。
+
+运行时节点只写该运行时的差异。通用规则放在 `core://agent` 中，只需在一处维护。

@@ -1,0 +1,53 @@
+Find your way around the web console: what each page is for, and when to use it instead of your agent. Self-hosted and Loremem Cloud share most pages, and the tables note the differences.
+
+## Self-hosted console
+
+Open the console at `http://127.0.0.1:18901`. The top bar has **Memory**, **Recall**, **Analytics**, **Dream**, and **Settings**. First-run setup lives at `/setup`.
+
+| Page | Path | What you do there |
+| --- | --- | --- |
+| Memory | `/memory` | Browse domains and nodes. Edit content, path, priority, disclosure, and glossary. Open a node's history at `/memory/history` to see its events, and roll the node back to an earlier event. |
+| Recall | `/recall` | Run a query. See the pipeline stages, the candidates, and their scores. |
+| Analytics | `/recall/drilldown` | See queries, shown and used counts, and the breakdown per runtime. Open a query for its detail. |
+| Dream | `/dream` | Run Dream, read the diary, approve or dismiss each change, and roll back a run. |
+| Settings | `/settings` | Change General (lifecycle and prompts), Recall, Model services, and Maintenance (policy, Dream, and backups). Run manual backup and restore under **Backup Actions**. |
+| Setup | `/setup` | Finish first-run setup: embedding, View LLM, boot memories, and channel agent memories. |
+
+## Loremem Cloud console
+
+Open the console at `https://app.loremem.com`. The project and organization switchers sit at the top. Memory, recall, Dream, settings, tokens, and skills all belong to the selected project.
+
+| Page | What you do there |
+| --- | --- |
+| Overview | See the project's recall analytics: Merged, Shown, Queries, and Used. Check the channel overview and the recent queries. The Overview also has a card that links to **Install** and **Test Recall**. |
+| Install | Create a project token and copy the install command. Import a self-hosted backup under **Open-source backup import**. |
+| Tokens | See every token with its prefix, last four characters, status, and last use. Revoke a token. |
+| Memory | Browse, edit, and move nodes, and create child nodes. Open a node's history to see each change and its diff. |
+| Recall | Run a query in the recall workbench. Open a query to see each pipeline stage and its candidates. |
+| Dream | Run Dream, read the diary, approve or mark read each change, and roll back the latest run. |
+| Skills | Create skills, or upload `.skill` and `.zip` packages. Edit files, set **Enabled**, **Visible to**, and **Invocation**, or archive a skill. |
+| Settings | Change project behavior in six tabs: **Preferences** (recall behavior), **Lifecycle** (guidance and preambles), **Policy** (priority budget and disclosure check), **Dream** (schedule), **Models** (embedding and runtime LLM profiles), and **Backup**. |
+
+Super admins also see **Users** and **Diagnostics**, plus the **System** and **Profiles** settings tabs.
+
+## Recall analytics terms
+
+| Term | Meaning |
+| --- | --- |
+| Merged | Ranked candidates that the recall pipeline produced. |
+| Shown | Memories injected into prompts. |
+| Queries | Recall runs. |
+| Used | Memories the agent opened with the recall IDs. |
+| Separation | How well scores separate used memories from unused ones. |
+
+## When to use the console
+
+- **To see what an agent knows.** Open the node the agent cited, or search for a term in Memory.
+- **To debug recall.** Run the same query in Recall, and compare the candidates and scores with what the agent received.
+- **To review Dream.** Read the diary after each run, then approve or mark read each change.
+- **To change behavior for every agent.** Edit guidance, boot nodes, and recall settings in one place.
+- **To connect an agent.** Create a token and copy the install command on the **Install** page. See the [quickstart](/documents/quickstart).
+
+## Daily rule
+
+When an agent uses stale context, fix the memory: correct its content, tighten its disclosure, or add the glossary term the agent should have matched. Then run the query in Recall to confirm the node surfaces. Don't copy the rule back into `CLAUDE.md` or `AGENTS.md`. That brings back the drift you are trying to remove.

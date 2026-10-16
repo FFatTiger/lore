@@ -4,6 +4,7 @@ import unittest
 import hashlib
 import json
 import os
+import re
 import shutil
 import stat
 import tempfile
@@ -33,6 +34,15 @@ from lore_memory.formatters import format_boot_view
 
 
 RECALL_GET_NODE_DESCRIPTION = "Open a memory node. REQUIRED when opening a URI from a <recall>: copy the exact session_id and query_id from that <recall> tag."
+
+
+def _plugin_manifest_version() -> str:
+    manifest = Path(__file__).resolve().parent / "plugin.yaml"
+    for line in manifest.read_text(encoding="utf-8").splitlines():
+        match = re.match(r"^version:\s*(.+?)\s*$", line)
+        if match:
+            return match.group(1).strip().strip("'\"")
+    return ""
 RECALL_SESSION_ID_DESCRIPTION = "REQUIRED when the URI came from <recall>: copy the exact session_id from that <recall> tag."
 RECALL_QUERY_ID_DESCRIPTION = "REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag."
 
@@ -196,7 +206,14 @@ class LoreClientThinAdapterTests(unittest.TestCase):
 
         self.assertEqual(requests[0][0], ("POST", "/lifecycle/event"))
         self.assertEqual(requests[0][1]["data"]["protocol_version"], "lore.lifecycle.v1")
-        self.assertEqual(requests[0][1]["data"]["runtime"], {"runtime_id": "hermes", "runtime_family": "hermes"})
+        self.assertEqual(
+            requests[0][1]["data"]["runtime"],
+            {
+                "runtime_id": "hermes",
+                "runtime_family": "hermes",
+                "plugin_version": _plugin_manifest_version(),
+            },
+        )
         self.assertEqual(requests[0][1]["data"]["event"]["name"], "session.start")
         self.assertEqual(requests[0][1]["data"]["normalized"]["session_id"], "sess-1")
         self.assertEqual(requests[0][1]["data"]["project"], {"dir_name": "lore", "repo_name": "lore"})

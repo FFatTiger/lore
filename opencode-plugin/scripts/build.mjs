@@ -13,5 +13,10 @@ await build({
   target: 'node20',
   sourcemap: false,
   legalComments: 'none',
-  banner: { js: `/* @lore-managed-opencode-plugin version=${pkg.version} */` },
+  banner: {
+    js: [
+      `/* @lore-managed-opencode-plugin version=${pkg.version} */`,
+      `globalThis.__LORE_PLUGIN_VERSION__ = ${JSON.stringify(pkg.version)};`,
+    ].join('\n'),
+  },
 });

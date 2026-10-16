@@ -1,6 +1,6 @@
 import type { Hooks } from '@opencode-ai/plugin';
 import type { Event, Part, Session, UserMessage } from '@opencode-ai/sdk';
-import { chmodSync, existsSync, lstatSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -9,6 +9,10 @@ import {
   createOpenCodeLifecycleAdapter,
   LORE_RECALL_MARKER,
 } from '../lifecycle.js';
+
+const pluginVersion = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+).version as string;
 
 type ChatMessageHook = NonNullable<Hooks['chat.message']>;
 type ChatMessageInput = Parameters<ChatMessageHook>[0];
@@ -230,7 +234,7 @@ describe('OpenCode lifecycle adapter', () => {
     expect(url).toBe('https://api.example.test/api/lifecycle/event?client_type=opencode');
     expect(JSON.parse(String(init.body))).toEqual({
       protocol_version: 'lore.lifecycle.v1',
-      runtime: { runtime_id: 'opencode', runtime_family: 'opencode' },
+      runtime: { runtime_id: 'opencode', runtime_family: 'opencode', plugin_version: pluginVersion },
       event: { name: 'session.start', native_name: 'session.created' },
       features: { skills: true },
       normalized: { session_id: 'ses-1' },
@@ -403,7 +407,7 @@ describe('OpenCode lifecycle adapter', () => {
     expect(url).toContain('/api/lifecycle/event?client_type=opencode');
     expect(JSON.parse(String(init.body))).toEqual({
       protocol_version: 'lore.lifecycle.v1',
-      runtime: { runtime_id: 'opencode', runtime_family: 'opencode' },
+      runtime: { runtime_id: 'opencode', runtime_family: 'opencode', plugin_version: pluginVersion },
       event: { name: 'prompt.submit', native_name: 'chat.message' },
       features: { skills: true },
       normalized: { session_id: 'ses-1', prompt: 'Remember the runtime contract' },

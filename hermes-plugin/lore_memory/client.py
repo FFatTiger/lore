@@ -4,12 +4,28 @@ Lore API Client - HTTP client for Lore memory system
 
 import os
 import json
+import re
 import urllib.request
 import urllib.error
 import ssl
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional, Dict, List
 from urllib.parse import urlencode, urlparse, parse_qsl, urlunparse
+
+
+@lru_cache(maxsize=1)
+def plugin_manifest_version() -> str:
+    """Version from the adjacent plugin.yaml manifest, or empty when unavailable."""
+    try:
+        manifest = Path(__file__).resolve().parent / "plugin.yaml"
+        for line in manifest.read_text(encoding="utf-8").splitlines():
+            match = re.match(r"^version:\s*(.+?)\s*$", line)
+            if match:
+                return match.group(1).strip().strip("'\"")
+    except Exception:
+        pass
+    return ""
 
 
 class LoreError(Exception):
@@ -255,9 +271,13 @@ class LoreClient:
             normalized["session_id"] = session_id
         if prompt:
             normalized["prompt"] = prompt
+        runtime = {"runtime_id": self.CLIENT_TYPE, "runtime_family": self.CLIENT_TYPE}
+        plugin_version = plugin_manifest_version()
+        if plugin_version:
+            runtime["plugin_version"] = plugin_version
         data = {
             "protocol_version": "lore.lifecycle.v1",
-            "runtime": {"runtime_id": self.CLIENT_TYPE, "runtime_family": self.CLIENT_TYPE},
+            "runtime": runtime,
             "event": {"name": event_name, "native_name": event_name},
             "normalized": normalized,
         }

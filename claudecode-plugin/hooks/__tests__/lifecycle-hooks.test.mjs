@@ -9,6 +9,9 @@ import { test } from 'node:test';
 const hooksDir = path.resolve(import.meta.dirname, '..');
 const recallHook = path.join(hooksDir, 'recall-inject.ts');
 const rulesHook = path.join(hooksDir, 'rules-inject.ts');
+const pluginVersion = JSON.parse(
+  readFileSync(path.join(hooksDir, '..', '.claude-plugin', 'plugin.json'), 'utf8'),
+).version;
 const isolatedHome = mkdtempSync(path.join(tmpdir(), 'lore-claude-hook-home-'));
 
 function runHook(scriptPath, input, env = {}) {
@@ -291,6 +294,26 @@ test('Skills stay off unless the configured server advertises them', async () =>
     assert.deepEqual(server.requests.map((body) => body.features), [{ skills: true }, undefined, undefined]);
   } finally {
     rmSync(home, { recursive: true, force: true });
+    await server.close();
+  }
+});
+
+test('lifecycle runtime reports the plugin manifest version', async () => {
+  const server = await withServer();
+  try {
+    await runHook(rulesHook, { session_id: 's1', hook_event_name: 'SessionStart' }, {
+      LORE_BASE_URL: server.baseUrl,
+    });
+    await runHook(recallHook, { prompt: 'hello', session_id: 's1' }, {
+      LORE_BASE_URL: server.baseUrl,
+    });
+    assert.equal(server.requests.length, 2);
+    for (const body of server.requests) {
+      assert.equal(body.runtime.runtime_id, 'claudecode');
+      assert.equal(body.runtime.runtime_family, 'claudecode');
+      assert.equal(body.runtime.plugin_version, pluginVersion);
+    }
+  } finally {
     await server.close();
   }
 });

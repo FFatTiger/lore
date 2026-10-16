@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import {
@@ -7,6 +7,10 @@ import {
   extractMessageText,
   registerHooks,
 } from '../hooks';
+
+const pluginVersion = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+).version as string;
 
 beforeEach(() => {
   vi.unstubAllGlobals();
@@ -242,6 +246,7 @@ describe('Pi extension hooks', () => {
 
     let bodies = (fetch as any).mock.calls.map((call: any[]) => JSON.parse(String(call[1]?.body || '{}')));
     expect(bodies.map((body: any) => body.event.name)).toEqual(['session.start']);
+    const sessionStartBody = bodies[0];
 
     (fetch as any).mockClear();
     const first = await pi.events.before_agent_start({ prompt: 'what now?', systemPrompt: 'base system' }, ctx);
@@ -259,6 +264,16 @@ describe('Pi extension hooks', () => {
     expect(second.message.content).toContain('<recall');
     bodies = (fetch as any).mock.calls.map((call: any[]) => JSON.parse(String(call[1]?.body || '{}')));
     expect(bodies.map((body: any) => body.event.name)).toEqual(['prompt.submit']);
+
+    // Every lifecycle request reports the extension's own package version.
+    const runtimeBodies = [sessionStartBody, ...bodies];
+    for (const body of runtimeBodies) {
+      expect(body.runtime).toEqual({
+        runtime_id: 'pi',
+        runtime_family: 'pi',
+        plugin_version: pluginVersion,
+      });
+    }
   });
 
   it('waits for a pending startup request before the first turn', async () => {

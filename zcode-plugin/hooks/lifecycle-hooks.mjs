@@ -4,7 +4,9 @@
  */
 
 import * as path from 'node:path';
+import * as fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { loadLoreConfig, pickString } from '../shared/lore-config.mjs';
 
 const RUNTIME_FAMILY = 'zcode';
@@ -35,6 +37,27 @@ function resolveSessionId(input) {
 
 function resolveEventName(input) {
   return pickString(input.hook_event_name) || pickString(input.hookEventName);
+}
+
+function resolvePluginVersion() {
+  const manifestPath = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    '..',
+    '.zcode-plugin',
+    'plugin.json',
+  );
+  try {
+    return pickString(JSON.parse(fs.readFileSync(manifestPath, 'utf8'))?.version);
+  } catch {
+    return '';
+  }
+}
+
+function lifecycleRuntime() {
+  const runtime = { runtime_id: RUNTIME_FAMILY, runtime_family: RUNTIME_FAMILY };
+  const pluginVersion = resolvePluginVersion();
+  if (pluginVersion) runtime.plugin_version = pluginVersion;
+  return runtime;
 }
 
 function buildNativeInputSnapshot(input) {
@@ -125,7 +148,7 @@ async function main() {
     if (sessionId) normalized.session_id = sessionId;
     const lifecycle = await postLifecycle({
       protocol_version: 'lore.lifecycle.v1',
-      runtime: { runtime_id: RUNTIME_FAMILY, runtime_family: RUNTIME_FAMILY },
+      runtime: lifecycleRuntime(),
       event: { name: 'prompt.submit', native_name: 'UserPromptSubmit' },
       ...skillsFeature(),
       normalized,
@@ -139,7 +162,7 @@ async function main() {
 
   const lifecycle = await postLifecycle({
     protocol_version: 'lore.lifecycle.v1',
-    runtime: { runtime_id: RUNTIME_FAMILY, runtime_family: RUNTIME_FAMILY },
+    runtime: lifecycleRuntime(),
     event: { name: 'session.start', native_name: 'SessionStart' },
     ...skillsFeature(),
     normalized: sessionId ? { session_id: sessionId } : {},

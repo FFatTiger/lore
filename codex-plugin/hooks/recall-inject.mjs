@@ -5,6 +5,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { fileURLToPath } from 'node:url';
 
 const LORE_CONFIG_FILE = path.join(os.homedir(), '.lore', 'config.json');
 const DEFAULT_BASE_URL = 'http://127.0.0.1:18901';
@@ -77,6 +78,26 @@ function loadConfig() {
   };
 }
 
+function resolvePluginVersion() {
+  const hookDir = path.dirname(fileURLToPath(import.meta.url));
+  // Repo/marketplace layout keeps the manifest under .codex-plugin; the legacy
+  // user-level hooks layout gets a plugin.json copy next to the hooks dir.
+  for (const manifestPath of [path.join(hookDir, '..', '.codex-plugin', 'plugin.json'), path.join(hookDir, '..', 'plugin.json')]) {
+    try {
+      const version = pickString(JSON.parse(fs.readFileSync(manifestPath, 'utf8'))?.version);
+      if (version) return version;
+    } catch {}
+  }
+  return '';
+}
+
+function lifecycleRuntime() {
+  const runtime = { runtime_id: RUNTIME_FAMILY, runtime_family: RUNTIME_FAMILY };
+  const pluginVersion = resolvePluginVersion();
+  if (pluginVersion) runtime.plugin_version = pluginVersion;
+  return runtime;
+}
+
 async function readStdin() {
   const chunks = [];
   for await (const chunk of process.stdin) chunks.push(chunk);
@@ -125,7 +146,7 @@ async function main() {
   try {
     const lifecycle = await postLifecycle({
       protocol_version: 'lore.lifecycle.v1',
-      runtime: { runtime_id: RUNTIME_FAMILY, runtime_family: RUNTIME_FAMILY },
+      runtime: lifecycleRuntime(),
       event: { name: 'prompt.submit', native_name: 'UserPromptSubmit' },
       normalized,
       // Lore renders `$skill-name` invocations only for clients that expose Skills tools.

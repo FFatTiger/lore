@@ -9,6 +9,9 @@ import { test } from 'node:test';
 const hooksDir = path.resolve(import.meta.dirname, '..');
 const pluginRoot = path.resolve(hooksDir, '..');
 const hookScript = path.join(hooksDir, 'lifecycle-hooks.mjs');
+const pluginVersion = JSON.parse(
+  readFileSync(path.join(pluginRoot, '.zcode-plugin', 'plugin.json'), 'utf8'),
+).version;
 const isolatedHome = mkdtempSync(path.join(tmpdir(), 'lore-zcode-hook-home-'));
 
 function runHook(input, env = {}) {
@@ -342,6 +345,26 @@ test('Skills stay off unless the configured server advertises them', async () =>
     assert.deepEqual(server.requests.map((body) => body.features), [{ skills: true }, undefined, undefined]);
   } finally {
     rmSync(loreHome, { recursive: true, force: true });
+    await server.close();
+  }
+});
+
+test('lifecycle runtime reports the plugin manifest version', async () => {
+  const server = await withServer();
+  try {
+    await runHook({ hook_event_name: 'SessionStart', session_id: 's1' }, {
+      LORE_BASE_URL: server.baseUrl,
+    });
+    await runHook({ hook_event_name: 'UserPromptSubmit', prompt: 'hello', session_id: 's1' }, {
+      LORE_BASE_URL: server.baseUrl,
+    });
+    assert.equal(server.requests.length, 2);
+    for (const body of server.requests) {
+      assert.equal(body.runtime.runtime_id, 'zcode');
+      assert.equal(body.runtime.runtime_family, 'zcode');
+      assert.equal(body.runtime.plugin_version, pluginVersion);
+    }
+  } finally {
     await server.close();
   }
 });

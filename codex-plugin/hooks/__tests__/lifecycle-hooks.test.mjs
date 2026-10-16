@@ -11,6 +11,9 @@ const scriptsDir = path.resolve(import.meta.dirname, '../../scripts');
 const recallHook = path.join(hooksDir, 'recall-inject.mjs');
 const rulesHook = path.join(hooksDir, 'rules-inject.mjs');
 const installHooksScript = path.join(scriptsDir, 'install-hooks.sh');
+const pluginVersion = JSON.parse(
+  readFileSync(path.join(hooksDir, '..', '.codex-plugin', 'plugin.json'), 'utf8'),
+).version;
 const isolatedHome = mkdtempSync(path.join(tmpdir(), 'lore-codex-hook-home-'));
 
 function runHook(scriptPath, input, env = {}) {
@@ -200,6 +203,10 @@ test('legacy install-hooks.sh SessionStart matcher matches bundled startup|resum
     const hooks = JSON.parse(readFileSync(path.join(codexHome, 'hooks.json'), 'utf8'));
     assert.equal(hooks.hooks.SessionStart[0].matcher, 'startup|resume|clear');
     assert.equal(hooks.hooks.UserPromptSubmit[0].matcher, '');
+    // The user-level hooks directory must carry the manifest copy the hooks read
+    // runtime.plugin_version from at runtime.
+    const installedManifest = JSON.parse(readFileSync(path.join(codexHome, 'hooks/lore/plugin.json'), 'utf8'));
+    assert.equal(installedManifest.version, pluginVersion);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -251,6 +258,26 @@ test('Skills stay off unless the configured server advertises them', async () =>
     assert.deepEqual(server.requests.map((body) => body.features), [{ skills: true }, undefined, undefined]);
   } finally {
     rmSync(home, { recursive: true, force: true });
+    await server.close();
+  }
+});
+
+test('lifecycle runtime reports the plugin manifest version', async () => {
+  const server = await withServer();
+  try {
+    await runHook(rulesHook, { session_id: 's1', hook_event_name: 'SessionStart' }, {
+      LORE_CODEX_HOOK_BASE_URL: server.baseUrl,
+    });
+    await runHook(recallHook, { prompt: 'hello', session_id: 's1' }, {
+      LORE_CODEX_HOOK_BASE_URL: server.baseUrl,
+    });
+    assert.equal(server.requests.length, 2);
+    for (const body of server.requests) {
+      assert.equal(body.runtime.runtime_id, 'codex');
+      assert.equal(body.runtime.runtime_family, 'codex');
+      assert.equal(body.runtime.plugin_version, pluginVersion);
+    }
+  } finally {
     await server.close();
   }
 });

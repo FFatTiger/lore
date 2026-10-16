@@ -11,6 +11,8 @@ cp "$PLUGIN_ROOT/hooks/rules-inject.ts" "$HOOK_ROOT/hooks/rules-inject.ts"
 cp "$PLUGIN_ROOT/hooks/recall-inject.ts" "$HOOK_ROOT/hooks/recall-inject.ts"
 cp "$PLUGIN_ROOT/hooks/rules-inject.mjs" "$HOOK_ROOT/hooks/rules-inject.mjs"
 cp "$PLUGIN_ROOT/hooks/recall-inject.mjs" "$HOOK_ROOT/hooks/recall-inject.mjs"
+# The hooks read runtime.plugin_version from ../plugin.json in this layout.
+cp "$PLUGIN_ROOT/.codex-plugin/plugin.json" "$HOOK_ROOT/plugin.json"
 rm -f "$HOOK_ROOT/rules/lore-guidance.md"
 rmdir "$HOOK_ROOT/rules" 2>/dev/null || true
 

@@ -1,5 +1,6 @@
 import { execSync } from 'node:child_process';
 import { basename } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { fetchJson, hasRecallConfig } from './api';
 import { createSkillsSession, type SkillsSession } from './skills';
 
@@ -46,6 +47,22 @@ export function detectProjectInfo(cwd?: string): ProjectInfo {
 
 // ---- Lifecycle helpers ----
 
+function pluginVersion(): string | undefined {
+  try {
+    const version = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))?.version;
+    return typeof version === 'string' && version.trim() ? version.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function lifecycleRuntime(): Record<string, string> {
+  const runtime: Record<string, string> = { runtime_id: 'pi', runtime_family: 'pi' };
+  const version = pluginVersion();
+  if (version) runtime.plugin_version = version;
+  return runtime;
+}
+
 async function fetchLifecycleEvent(pluginCfg: any, body: Record<string, unknown>) {
   return fetchJson(pluginCfg, '/lifecycle/event', {
     method: 'POST',
@@ -56,7 +73,7 @@ async function fetchLifecycleEvent(pluginCfg: any, body: Record<string, unknown>
 async function fetchStartupLifecycle(pluginCfg: any, sessionId: string | undefined, cwd: string | undefined, skills: boolean) {
   return fetchLifecycleEvent(pluginCfg, {
     protocol_version: 'lore.lifecycle.v1',
-    runtime: { runtime_id: 'pi', runtime_family: 'pi' },
+    runtime: lifecycleRuntime(),
     event: { name: 'session.start', native_name: 'session_start' },
     // Lore appends the Skills catalog only for clients that expose Skills tools.
     ...(skills ? { features: { skills: true } } : {}),
@@ -70,7 +87,7 @@ async function fetchPromptLifecycle(pluginCfg: any, prompt: string, sessionId: s
   // remain available when Memory recall injection is disabled.
   return fetchLifecycleEvent(pluginCfg, {
     protocol_version: 'lore.lifecycle.v1',
-    runtime: { runtime_id: 'pi', runtime_family: 'pi' },
+    runtime: lifecycleRuntime(),
     event: { name: 'prompt.submit', native_name: 'before_agent_start' },
     features: { memory_recall: hasRecallConfig(pluginCfg), ...(skills ? { skills: true } : {}) },
     normalized: { session_id: sessionId, prompt },

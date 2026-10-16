@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
+import { readFileSync } from 'node:fs';
 import type { Hooks } from '@opencode-ai/plugin';
 import type { Part } from '@opencode-ai/sdk';
 import { LoreApiError, loreFetchJson } from './api.js';
@@ -21,6 +22,27 @@ export type ChatMessageOutput = Parameters<ChatMessageHook>[1];
 
 function nonEmpty(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+// The release bundle is a single lore-memory.js with no adjacent package.json,
+// so scripts/build.mjs injects the version as globalThis.__LORE_PLUGIN_VERSION__
+// at build time; source mode falls back to the adjacent package.json.
+function pluginVersion(): string | undefined {
+  const injected = (globalThis as Record<string, unknown>).__LORE_PLUGIN_VERSION__;
+  if (typeof injected === 'string' && injected.trim()) return injected.trim();
+  try {
+    const version = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))?.version;
+    return typeof version === 'string' && version.trim() ? version.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function lifecycleRuntime(): Record<string, string> {
+  const runtime: Record<string, string> = { runtime_id: 'opencode', runtime_family: 'opencode' };
+  const version = pluginVersion();
+  if (version) runtime.plugin_version = version;
+  return runtime;
 }
 
 function validPartIdentity(part: Part, sessionID: string, messageID: string): boolean {
@@ -170,7 +192,7 @@ export function createOpenCodeLifecycleAdapter(args: {
   function startupBody(sessionID: string) {
     return {
       protocol_version: 'lore.lifecycle.v1',
-      runtime: { runtime_id: 'opencode', runtime_family: 'opencode' },
+      runtime: lifecycleRuntime(),
       event: { name: 'session.start', native_name: 'session.created' },
       // Lore appends the Skills catalog only for clients that expose Skills tools.
       ...(config.skillsEnabled ? { features: { skills: true } } : {}),
@@ -183,7 +205,7 @@ export function createOpenCodeLifecycleAdapter(args: {
   function promptBody(prompt: ClassifiedPrompt) {
     return {
       protocol_version: 'lore.lifecycle.v1',
-      runtime: { runtime_id: 'opencode', runtime_family: 'opencode' },
+      runtime: lifecycleRuntime(),
       event: { name: 'prompt.submit', native_name: 'chat.message' },
       // Lore renders `$skill-name` invocations only for clients that expose Skills tools.
       ...(config.skillsEnabled ? { features: { skills: true } } : {}),

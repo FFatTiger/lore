@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
 import { basename } from "node:path";
+import { readFileSync } from "node:fs";
 import { fetchJson, hasRecallConfig } from "./api";
 import { createSkillsSession, type SkillsSession } from "./skills";
 
@@ -51,6 +52,25 @@ function detectProjectInfo(): ProjectInfo {
 
 // ---- Lifecycle helpers ----
 
+function pluginVersion(): string | undefined {
+  // Source layout keeps package.json next to hooks.ts; the built dist bundle
+  // resolves it one level up.
+  for (const manifestUrl of [new URL("./package.json", import.meta.url), new URL("../package.json", import.meta.url)]) {
+    try {
+      const version = JSON.parse(readFileSync(manifestUrl, "utf8"))?.version;
+      if (typeof version === "string" && version.trim()) return version.trim();
+    } catch {}
+  }
+  return undefined;
+}
+
+function lifecycleRuntime(): Record<string, string> {
+  const runtime: Record<string, string> = { runtime_id: "openclaw", runtime_family: "openclaw" };
+  const version = pluginVersion();
+  if (version) runtime.plugin_version = version;
+  return runtime;
+}
+
 async function fetchLifecycleEvent(pluginCfg: any, body: Record<string, unknown>) {
   return fetchJson(pluginCfg, "/lifecycle/event", {
     method: "POST",
@@ -61,7 +81,7 @@ async function fetchLifecycleEvent(pluginCfg: any, body: Record<string, unknown>
 async function fetchStartupLifecycle(pluginCfg: any, sessionId: string, skills: boolean) {
   return fetchLifecycleEvent(pluginCfg, {
     protocol_version: "lore.lifecycle.v1",
-    runtime: { runtime_id: "openclaw", runtime_family: "openclaw" },
+    runtime: lifecycleRuntime(),
     event: { name: "session.start", native_name: "session_start" },
     // Lore appends the Skills catalog only for clients that expose Skills tools.
     ...(skills ? { features: { skills: true } } : {}),
@@ -75,7 +95,7 @@ async function fetchPromptLifecycle(pluginCfg: any, prompt: string, sessionId: s
   // remain available when Memory recall injection is disabled.
   return fetchLifecycleEvent(pluginCfg, {
     protocol_version: "lore.lifecycle.v1",
-    runtime: { runtime_id: "openclaw", runtime_family: "openclaw" },
+    runtime: lifecycleRuntime(),
     event: { name: "prompt.submit", native_name: "before_prompt_build" },
     features: { memory_recall: hasRecallConfig(pluginCfg), ...(skills ? { skills: true } : {}) },
     normalized: { session_id: sessionId, prompt },

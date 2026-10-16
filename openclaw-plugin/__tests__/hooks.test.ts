@@ -1,9 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   extractMessageText,
   extractAssistantText,
   registerHooks,
 } from '../hooks';
+
+const pluginVersion = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+).version as string;
 
 beforeEach(() => {
   vi.unstubAllGlobals();
@@ -197,6 +202,8 @@ describe('registerHooks', () => {
 
     registerHooks(api as any, { startupHealthcheck: false, injectPromptGuidance: true, recallEnabled: true, baseUrl: 'http://localhost' });
     await api.events.session_start.handler({ sessionId: 'sess-1', sessionKey: 'agent:main' }, { sessionId: 'sess-1', sessionKey: 'agent:main' });
+    const startupBodies = (fetch as any).mock.calls.map((call: any[]) => JSON.parse(String(call[1]?.body || '{}')));
+    expect(startupBodies.map((body: any) => body.event.name)).toEqual(['session.start']);
 
     (fetch as any).mockClear();
     const first = await api.events.before_prompt_build.handler(
@@ -219,6 +226,15 @@ describe('registerHooks', () => {
     expect(second.prependContext).toContain('core://project');
     bodies = (fetch as any).mock.calls.map((call: any[]) => JSON.parse(String(call[1]?.body || '{}')));
     expect(bodies.map((body: any) => body.event.name)).toEqual(['prompt.submit']);
+
+    // Every lifecycle request reports the plugin's own package version.
+    for (const body of [startupBodies[0], ...bodies]) {
+      expect(body.runtime).toEqual({
+        runtime_id: 'openclaw',
+        runtime_family: 'openclaw',
+        plugin_version: pluginVersion,
+      });
+    }
   });
 
   it('still runs prompt.submit for Skills invocations when recall is disabled', async () => {

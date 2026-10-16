@@ -6,6 +6,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { execSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const LORE_CONFIG_FILE = path.join(os.homedir(), ".lore", "config.json");
 const DEFAULT_BASE_URL = "http://127.0.0.1:18901";
@@ -68,6 +69,25 @@ function resolveSkillsEnabled(config: LoreConfig, baseUrl: string): boolean {
     return config.server_profile?.capabilities?.skills === true;
   }
   return process.env.LORE_SKILLS_ENABLED === "1";
+}
+
+function resolvePluginVersion(): string | undefined {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".claude-plugin", "plugin.json"),
+      "utf-8",
+    ));
+    return pickString(manifest?.version) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function lifecycleRuntime(): Record<string, string> {
+  const runtime: Record<string, string> = { runtime_id: RUNTIME_FAMILY, runtime_family: RUNTIME_FAMILY };
+  const pluginVersion = resolvePluginVersion();
+  if (pluginVersion) runtime.plugin_version = pluginVersion;
+  return runtime;
 }
 
 function loadConfig() {
@@ -145,7 +165,7 @@ async function main() {
   const { skillsEnabled } = loadConfig();
   const lifecycle = await postLifecycle({
     protocol_version: "lore.lifecycle.v1",
-    runtime: { runtime_id: RUNTIME_FAMILY, runtime_family: RUNTIME_FAMILY },
+    runtime: lifecycleRuntime(),
     event: { name: "session.start", native_name: "SessionStart" },
     normalized: sessionId ? { session_id: sessionId } : {},
     project: detectProjectInfo(),

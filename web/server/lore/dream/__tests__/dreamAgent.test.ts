@@ -1641,12 +1641,20 @@ describe('runDreamAgentLoop', () => {
       (event.payload?.summary as Record<string, unknown> | undefined)?.stopped === true
     ))).toBe(false);
     expect(events.filter((event) => event.type === 'phase_output_invalid').map((event) => event.payload?.phase)).toEqual(['plan']);
+    const turnsByPhase = events
+      .filter((event) => event.type === 'llm_turn_started')
+      .reduce<Record<string, number>>((counts, event) => {
+        const phase = String(event.payload?.phase || '');
+        counts[phase] = (counts[phase] || 0) + 1;
+        return counts;
+      }, {});
+    expect(turnsByPhase).toEqual({ diagnose: 7, plan: 5, preflight: 5, apply: 12, audit: 4 });
   });
 
   it('passes the written diagnosis into the plan phase instead of the fallback string', async () => {
     mockGenerateTextWithTools.mockReset();
     mockGetNodePayload.mockResolvedValue({ node: { uri: 'core://a' }, children: [], breadcrumbs: [] } as any);
-    for (let i = 0; i < 4; i += 1) {
+    for (let i = 0; i < 6; i += 1) {
       mockGenerateTextWithTools.mockResolvedValueOnce(makeToolResponse([
         { id: `call-${i}`, function: { name: 'get_node', arguments: '{"uri":"core://a"}' } },
       ]));
@@ -1663,23 +1671,23 @@ describe('runDreamAgentLoop', () => {
       onEvent: async (type, payload) => events.push({ type, payload }),
     });
 
-    expect((mockGenerateTextWithTools.mock.calls[4][2] as Array<{ name: string }>).map((tool) => tool.name)).toContain('hygiene_audit');
-    expect(mockGenerateTextWithTools.mock.calls[4][4]).toEqual({ toolChoice: 'none' });
-    const planMessages = mockGenerateTextWithTools.mock.calls[5][1] as Array<{ content?: unknown }>;
+    expect((mockGenerateTextWithTools.mock.calls[6][2] as Array<{ name: string }>).map((tool) => tool.name)).toContain('hygiene_audit');
+    expect(mockGenerateTextWithTools.mock.calls[6][4]).toEqual({ toolChoice: 'none' });
+    const planMessages = mockGenerateTextWithTools.mock.calls[7][1] as Array<{ content?: unknown }>;
     const planPrompt = planMessages.map((message) => String(message.content || '')).join('\n');
     expect(planPrompt).toContain('REAL DIAGNOSIS: legacy domains need relocation');
     expect(planPrompt).not.toContain('stopped after reaching the turn limit');
     expect(events.find((event) => event.type === 'phase_output_invalid')).toBeUndefined();
   });
 
-  it('stops the apply phase after nine tool turns and writes its output on the tenth', async () => {
+  it('stops the apply phase after eleven tool turns and writes its output on the twelfth', async () => {
     mockGenerateTextWithTools.mockReset();
     mockGetNodePayload.mockResolvedValue({ node: { uri: 'core://a' }, children: [], breadcrumbs: [] } as any);
     mockGenerateTextWithTools
       .mockResolvedValueOnce(makeTextResponse('{"diagnosis":"done"}'))
       .mockResolvedValueOnce(makeTextResponse('{"structure_candidates":[],"merge_candidates":[],"glossary_candidates":[],"skip_reasons":[]}'))
       .mockResolvedValueOnce(makeTextResponse('{"preflight":"none"}'));
-    for (let i = 0; i < 9; i += 1) {
+    for (let i = 0; i < 11; i += 1) {
       mockGenerateTextWithTools.mockResolvedValueOnce(makeToolResponse([
         { id: `call-${i}`, function: { name: 'get_node', arguments: '{"uri":"core://a"}' } },
       ]));
@@ -1693,10 +1701,10 @@ describe('runDreamAgentLoop', () => {
       onEvent: async (type, payload) => events.push({ type, payload }),
     });
 
-    expect(mockGenerateTextWithTools).toHaveBeenCalledTimes(14);
-    expect(result.toolCalls).toHaveLength(9);
-    expect((mockGenerateTextWithTools.mock.calls[12][2] as Array<{ name: string }>).map((tool) => tool.name)).toContain('update_node');
-    expect(mockGenerateTextWithTools.mock.calls[12][4]).toEqual({ toolChoice: 'none' });
+    expect(mockGenerateTextWithTools).toHaveBeenCalledTimes(16);
+    expect(result.toolCalls).toHaveLength(11);
+    expect((mockGenerateTextWithTools.mock.calls[14][2] as Array<{ name: string }>).map((tool) => tool.name)).toContain('update_node');
+    expect(mockGenerateTextWithTools.mock.calls[14][4]).toEqual({ toolChoice: 'none' });
     expect(events.find((event) => (
       event.type === 'phase_completed'
       && event.payload?.phase === 'apply'

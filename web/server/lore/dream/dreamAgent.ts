@@ -647,13 +647,13 @@ export async function runDreamAgentLoop(
     'diagnose',
     'Read-only diagnosis',
     promptConfig.dreamPhaseDiagnose,
-    5,
+    7,
   );
   phaseOutputs.plan = await runPhase(
     'plan',
     'Structured candidate plan',
     renderPromptTemplate(promptConfig.dreamPhasePlan, { diagnosis: phaseOutputs.diagnose }),
-    3,
+    5,
   );
   if (extractJsonObject(phaseOutputs.plan) === null) {
     await onEvent?.('phase_output_invalid', {
@@ -668,7 +668,7 @@ export async function runDreamAgentLoop(
     'preflight',
     'Preflight validation',
     renderPromptTemplate(promptConfig.dreamPhasePreflight, { plan_json: planJson }),
-    3,
+    5,
   );
   phaseOutputs.apply = await runPhase(
     'apply',
@@ -677,7 +677,7 @@ export async function runDreamAgentLoop(
       plan_json: planJson,
       preflight: phaseOutputs.preflight,
     }),
-    10,
+    12,
   );
   phaseOutputs.audit = await runPhase(
     'audit',
@@ -688,7 +688,7 @@ export async function runDreamAgentLoop(
       preflight: phaseOutputs.preflight,
       apply: phaseOutputs.apply,
     }),
-    2,
+    4,
   );
 
   const audit = auditBackedByToolWrites(parseDreamAuditJson(phaseOutputs.audit), plan, toolCalls);

@@ -12,6 +12,14 @@ import {
 import { dispatchDreamTool } from './dreamToolDispatch';
 import { processDreamToolCalls } from './dreamLoopToolCalls';
 import type { DreamToolEventContext } from './dreamToolPolicy';
+import {
+  DREAM_CONTENT_WRITE_CAP,
+  DREAM_HYGIENE_WRITE_CAP,
+  dreamHygieneCapBlockedResult,
+  dreamWriteCapBlockedResult,
+  isDreamHygieneWrite,
+  isDreamWriteTool,
+} from './dreamWriteBudget';
 
 export { parseUri };
 
@@ -26,6 +34,8 @@ export interface ToolCallLogEntry {
   args: Record<string, unknown>;
   result_preview: string;
   result_size_chars?: number;
+  blocked?: boolean;
+  success?: boolean;
 }
 
 export interface DreamAgentResult {
@@ -67,6 +77,9 @@ const DREAM_PHASE_TOOLS: Record<DreamPhase, string[]> = {
     'inspect_views',
     'refresh_or_inspect_views',
     'inspect_memory_node_for_dream',
+    'structural_audit',
+    'hygiene_audit',
+    'replay_recall',
   ],
   plan: [
     'get_recall_metadata',
@@ -79,9 +92,11 @@ const DREAM_PHASE_TOOLS: Record<DreamPhase, string[]> = {
     'inspect_views',
     'refresh_or_inspect_views',
     'inspect_memory_node_for_dream',
+    'structural_audit',
+    'hygiene_audit',
   ],
   preflight: ['validate_memory_change'],
-  apply: ['get_node', 'inspect_memory_node_for_dream', 'validate_memory_change', 'create_node', 'update_node', 'delete_node', 'move_node'],
+  apply: ['get_node', 'inspect_memory_node_for_dream', 'validate_memory_change', 'replay_recall', 'create_node', 'update_node', 'delete_node', 'move_node'],
   audit: ['get_node', 'get_node_write_history', 'get_memory_event_summary'],
 };
 
@@ -108,6 +123,9 @@ export interface DreamInitialContext {
   recallReview: Record<string, unknown>;
   recallStats: Record<string, unknown>;
   writeActivity: Record<string, unknown>;
+  pathQuality: Record<string, unknown>;
+  structuralAudit: Record<string, unknown>;
+  hygieneAudit: Record<string, unknown>;
   recentDiaries: RecentDiary[];
 }
 
@@ -165,6 +183,9 @@ export function buildDreamTools(): ToolDefinition[] {
     { name: 'inspect_views', description: 'Inspect generated memory views for one node/path, including gist/question content, metadata, and freshness', parameters: { type: 'object', properties: { uri: { type: 'string' }, limit: { type: 'integer' } }, required: ['uri'] } },
     { name: 'refresh_or_inspect_views', description: 'Inspect view content and freshness for one node. Current implementation is inspect-only and never rebuilds views.', parameters: { type: 'object', properties: { uri: { type: 'string' }, limit: { type: 'integer' } }, required: ['uri'] } },
     { name: 'inspect_memory_node_for_dream', description: 'Return compact node content, disclosure, priority, glossary, views, parent, siblings, children, write history, and size metrics for Dream maintenance decisions.', parameters: { type: 'object', properties: { uri: { type: 'string' }, siblings_limit: { type: 'integer' }, children_limit: { type: 'integer' }, views_limit: { type: 'integer' }, history_limit: { type: 'integer' } }, required: ['uri'] } },
+    { name: 'structural_audit', description: 'Return a paginated structural audit of the memory tree: date-suffixed paths, project concepts misplaced under core://projects, malformed domains, and nodes with empty content. Pass category=date_suffix|core_projects|malformed_domains|empty_content with limit/offset; omit category for compact counts per category.', parameters: { type: 'object', properties: { category: { type: 'string' }, limit: { type: 'integer' }, offset: { type: 'integer' } } } },
+    { name: 'hygiene_audit', description: 'Return a paginated memory hygiene audit: oversized nodes (>4000 chars), glossary bloat (>30 keywords), identifier-like glossary keywords, keywords shared by 8+ nodes, placeholder parents (<200 chars with children), and nodes in legacy domains. Pass category=oversized|glossary_bloat|identifier_keywords|shared_keywords|placeholder_parents|legacy_domains with limit/offset; omit category for compact counts per category.', parameters: { type: 'object', properties: { category: { type: 'string' }, limit: { type: 'integer' }, offset: { type: 'integer' } } } },
+    { name: 'replay_recall', description: 'Replay up to 10 historical recall queries (by query_id) or raw query strings through the normal recall path and return the currently displayed items (uri, score) per query. Read-only: never writes recall logs, events, or usage. Use before and after merges, and to collect evidence before adding a keyword; hygiene-only operations (glossary trims, moves out of legacy domains) do not need replay.', parameters: { type: 'object', properties: { query_ids: { type: 'array', items: { type: 'string' }, description: 'Historical recall query_ids to replay; at most 10 queries total across query_ids and queries.' }, queries: { type: 'array', items: { type: 'string' }, description: 'Raw query strings to replay; at most 10 queries total across query_ids and queries.' } } } },
     { name: 'validate_memory_change', description: 'Dry-run a proposed memory change and return warnings before Dream writes. This does not mutate memory.', parameters: { type: 'object', properties: { action: { type: 'string' }, uri: { type: 'string' }, new_uri: { type: 'string' }, content: { type: 'string' }, disclosure: { type: 'string' }, priority: { type: 'integer' }, glossary: { type: 'array', items: { type: 'string' } } }, required: ['action'] } },
     { name: 'create_node', description: 'Create a new memory node; glossary keywords are written with the node create event.', parameters: { type: 'object', properties: { uri: { type: 'string' }, content: { type: 'string' }, priority: { type: 'integer' }, disclosure: { type: 'string' }, glossary: { type: 'array', items: { type: 'string' }, description: 'Initial glossary keywords for retrieval.' } }, required: ['content', 'priority'] } },
     { name: 'update_node', description: 'Update an existing memory node. Omitted content, metadata, and glossary mutation fields stay unchanged.', parameters: { type: 'object', properties: { uri: { type: 'string' }, content: { type: 'string', description: 'New content; omit to leave unchanged.' }, priority: { type: 'integer', description: 'New priority; omit to leave unchanged.' }, disclosure: { type: 'string', description: 'New disclosure; omit to leave unchanged.' }, glossary_add: { type: 'array', items: { type: 'string' }, description: 'Keywords to add in this same node update event.' }, glossary_remove: { type: 'array', items: { type: 'string' }, description: 'Keywords to remove in this same node update event.' } }, required: ['uri'] } },
@@ -225,13 +246,26 @@ function remapGuidanceToolNames(content: string): string {
 export async function loadDreamGuidance(): Promise<string> {
   try {
     const text = (await loadLifecycleTextConfig()).guidance;
-    return remapGuidanceToolNames(text);
+    return remapGuidanceToolNames(text) || DEFAULT_DREAM_GUIDANCE;
   } catch {
-    return '';
+    return DEFAULT_DREAM_GUIDANCE;
   }
 }
 
 export const loadGuidanceFile = loadDreamGuidance;
+
+/** Fallback memory-write rules used when no server guidance is configured. */
+export const DEFAULT_DREAM_GUIDANCE = [
+  '长期记忆自带背景：写出结论、原因和成立条件。',
+  'disclosure 是召回门槛：用一个核心场景说明未来什么时候想起它。',
+  'Priority 0/1 是稀缺层级；除非是稳定核心规则，否则不要上调。',
+  '成熟记忆网络的节点数趋于稳定甚至下降；优先归位结构、提炼、合并，而不是横向扩张。',
+  'glossary 关键词是召回入口，不是标签堆：每个关键词都会进入精确匹配、BM25 和 glossary 语义通道。只修剪超过 30 个关键词节点中的重复、近义和泛化词；标识符类关键词服务精确匹配，保留不删，也永不主动新增。',
+  'path 是概念身份在语义树中的位置；父节点是抽象，承载下层共同语境、边界和索引词。',
+  '日期是事件属性：放入正文时间线、历史段落或明确归档概念；普通 path 用可复用概念命名。',
+  '修改前必须收集证据；合并节点前后用 replay_recall 回放受影响查询；纯卫生操作（legacy 归位、glossary 修剪）不需要 replay；新增关键词必须有 replay 证据。',
+  '证据不足时输出 no_change。',
+].join('\n');
 
 function buildRecallMetadata(recallReview: Record<string, unknown>): Record<string, unknown> {
   const queries = Array.isArray(recallReview.queries) ? recallReview.queries : [];
@@ -271,9 +305,9 @@ function asArrayField(value: unknown): unknown[] {
 export function parseDreamPlanJson(text: string): Record<string, unknown> {
   const parsed = extractJsonObject(text) || {};
   return {
-    tree_maintenance_candidates: asArrayField(parsed.tree_maintenance_candidates),
-    daily_memory_extraction_candidates: asArrayField(parsed.daily_memory_extraction_candidates),
-    recall_repair_candidates: asArrayField(parsed.recall_repair_candidates),
+    structure_candidates: asArrayField(parsed.structure_candidates),
+    merge_candidates: asArrayField(parsed.merge_candidates),
+    glossary_candidates: asArrayField(parsed.glossary_candidates),
     skip_reasons: asArrayField(parsed.skip_reasons),
   };
 }
@@ -289,8 +323,6 @@ export function parseDreamAuditJson(text: string): Record<string, unknown> {
     confidence: typeof parsed.confidence === 'string' ? parsed.confidence : '',
   };
 }
-
-const DREAM_WRITE_TOOLS = new Set(['create_node', 'update_node', 'delete_node', 'move_node']);
 
 interface DreamWriteChange {
   tool: string;
@@ -335,7 +367,9 @@ function toolChangedUri(entry: ToolCallLogEntry, result: Record<string, unknown>
 }
 
 function isSuccessfulWriteToolCall(entry: ToolCallLogEntry, result: Record<string, unknown> | null): boolean {
-  if (!DREAM_WRITE_TOOLS.has(entry.tool)) return false;
+  if (!isDreamWriteTool(entry.tool)) return false;
+  if (entry.blocked === true) return false;
+  if (entry.success === true) return true;
   if (result) {
     if (result.blocked === true || result.error) return false;
     return result.success === true || isString(result.operation) || isString(result.uri);
@@ -372,9 +406,9 @@ function planSectionMentionsUri(plan: Record<string, unknown>, key: string, uri:
 
 function inferPrimaryFocusFromWrites(plan: Record<string, unknown>, writes: DreamWriteChange[]): string {
   const sections: Array<[string, string]> = [
-    ['tree_maintenance_candidates', 'tree_maintenance'],
-    ['daily_memory_extraction_candidates', 'daily_extraction'],
-    ['recall_repair_candidates', 'recall_repair'],
+    ['structure_candidates', 'tree_maintenance'],
+    ['merge_candidates', 'merge'],
+    ['glossary_candidates', 'recall_noise_hygiene'],
   ];
   for (const write of writes) {
     const matched = sections.find(([key]) => planSectionMentionsUri(plan, key, write.uri));
@@ -382,14 +416,6 @@ function inferPrimaryFocusFromWrites(plan: Record<string, unknown>, writes: Drea
   }
   const firstNonEmpty = sections.find(([key]) => asArrayField(plan[key]).length > 0);
   return firstNonEmpty?.[1] || 'tree_maintenance';
-}
-
-function auditNodeUri(value: unknown): string {
-  if (isString(value)) return value;
-  if (value && typeof value === 'object' && isString((value as Record<string, unknown>).uri)) {
-    return (value as Record<string, unknown>).uri as string;
-  }
-  return '';
 }
 
 function auditEvidenceKey(value: unknown): string {
@@ -406,19 +432,19 @@ function auditBackedByToolWrites(
   toolCalls: ToolCallLogEntry[],
 ): Record<string, unknown> {
   const writes = collectSuccessfulWriteChanges(toolCalls);
-  if (writes.length === 0) return audit;
-
-  const changedNodes = asArrayField(audit.changed_nodes).map((node) => (
-    isString(node) ? { uri: node } : node
-  ));
-  const changedNodeUris = new Set(changedNodes.flatMap((node) => {
-    const uri = auditNodeUri(node);
-    return isString(uri) ? [uri] : [];
+  const changedNodes = writes.map((write) => ({
+    uri: write.uri,
+    action: write.operation,
+    tool: write.tool,
+    result: 'success',
   }));
-  for (const write of writes) {
-    if (changedNodeUris.has(write.uri)) continue;
-    changedNodes.push({ uri: write.uri, action: write.operation, result: 'success' });
-    changedNodeUris.add(write.uri);
+
+  if (writes.length === 0) {
+    return {
+      ...audit,
+      primary_focus: 'no_change',
+      changed_nodes: [],
+    };
   }
 
   const evidence = asArrayField(audit.evidence).map((item) => (
@@ -503,6 +529,9 @@ export function buildDreamSystemPrompt(
       : '以上是系统的固定规则层，不要作为日常写入目标。',
     recall_metadata_json: JSON.stringify(recallMetadata, null, 2),
     write_activity_json: JSON.stringify(buildWriteDigest(initialContext.writeActivity), null, 2),
+    path_quality_json: JSON.stringify(initialContext.pathQuality || {}, null, 2),
+    structural_audit_json: JSON.stringify(initialContext.structuralAudit || {}, null, 2),
+    hygiene_audit_json: JSON.stringify(initialContext.hygieneAudit || {}, null, 2),
     recent_diaries_json: JSON.stringify(initialContext.recentDiaries, null, 2),
     boot_baseline_json: JSON.stringify(initialContext.bootBaseline, null, 2),
     guidance: initialContext.guidance || '(guidance unavailable)',
@@ -532,10 +561,9 @@ export async function runDreamAgentLoop(
   ];
   const toolCalls: ToolCallLogEntry[] = [];
   let turns = 0;
-  let applyWrites = 0;
+  let contentWrites = 0;
+  let hygieneWrites = 0;
   const phaseOutputs: Partial<Record<DreamPhase, string>> = {};
-
-  const isWriteTool = (name: string) => ['create_node', 'update_node', 'delete_node', 'move_node'].includes(name);
 
   async function runPhase(phase: DreamPhase, label: string, prompt: string, maxTurns: number): Promise<string> {
     const phaseStartToolCalls = toolCalls.length;
@@ -568,18 +596,20 @@ export async function runDreamAgentLoop(
         toolCalls,
         onEvent,
         executeTool: async (name, args) => {
-          if (phase === 'apply' && isWriteTool(name)) {
-            if (applyWrites >= 2) {
-              return {
-                error: 'Dream apply write cap reached',
-                code: 'dream_write_cap',
-                blocked: true,
-                detail: 'Dream apply phase allows at most 2 write operations.',
-              };
+          if (phase === 'apply' && isDreamWriteTool(name)) {
+            const hygieneOperation = isDreamHygieneWrite(name, args);
+            if (hygieneOperation && hygieneWrites >= DREAM_HYGIENE_WRITE_CAP) {
+              return dreamHygieneCapBlockedResult(DREAM_HYGIENE_WRITE_CAP);
+            }
+            if (!hygieneOperation && contentWrites >= DREAM_CONTENT_WRITE_CAP) {
+              return dreamWriteCapBlockedResult(DREAM_CONTENT_WRITE_CAP);
             }
             const result = await executeDreamTool(name, args, eventContext);
             const record = result && typeof result === 'object' ? result as Record<string, unknown> : null;
-            if (!record?.blocked && !record?.error) applyWrites += 1;
+            if (!record?.blocked && !record?.error) {
+              if (hygieneOperation) hygieneWrites += 1;
+              else contentWrites += 1;
+            }
             return result;
           }
           return executeDreamTool(name, args, eventContext);
@@ -599,7 +629,7 @@ export async function runDreamAgentLoop(
     'diagnose',
     'Read-only diagnosis',
     promptConfig.dreamPhaseDiagnose,
-    4,
+    5,
   );
   phaseOutputs.plan = await runPhase(
     'plan',
@@ -622,7 +652,7 @@ export async function runDreamAgentLoop(
       plan_json: planJson,
       preflight: phaseOutputs.preflight,
     }),
-    4,
+    10,
   );
   phaseOutputs.audit = await runPhase(
     'audit',

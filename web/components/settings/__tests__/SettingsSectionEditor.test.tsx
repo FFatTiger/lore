@@ -57,6 +57,13 @@ const textSchema: FieldSchema = {
   section: 'lifecycle',
 };
 
+const stringListSchema: FieldSchema = {
+  key: 'dream.exclude_session_patterns',
+  label: 'Excluded Dream sessions',
+  type: 'string_list',
+  section: 'dream',
+};
+
 const secretSchema: FieldSchema = {
   key: 'llm.api_key',
   label: 'API key',
@@ -177,5 +184,24 @@ describe('SettingsSectionEditor fields', () => {
 
     expect(html).toContain('data-app-text-area="true"');
     expect(html).toContain('# Lore 使用规则');
+  });
+
+  it('renders string list fields as one value per line', () => {
+    const html = renderToStaticMarkup(
+      <FieldRow
+        schema={stringListSchema}
+        value={['^bot-', 'e2e']}
+        source="default"
+        dirty={false}
+        secretConfigured={false}
+        onChange={() => undefined}
+        onReset={() => undefined}
+        saving={false}
+      />,
+    );
+
+    expect(html).toContain('data-app-text-area="true"');
+    expect(html).toContain('^bot-');
+    expect(html).toContain('e2e');
   });
 });

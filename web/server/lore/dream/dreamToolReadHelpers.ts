@@ -1,5 +1,6 @@
 import { getNodePayload } from '../memory/browse';
 import { parseUri } from '../core/utils';
+import { hasDateTimePathSuffix, isAllowedDateArchivedPath, lastPathSegment } from '../memory/pathRules';
 import { listMemoryViewsByNode } from '../view/memoryViewQueries';
 import { getNodeWriteHistory } from '../memory/writeEvents';
 import { getProtectedBootOperation } from './dreamToolBootGuard';
@@ -306,17 +307,27 @@ export function validateMemoryChange(args: Record<string, unknown>): Record<stri
   );
   const multiScenePattern = /\s或\s|\sOR\s|\/|、|,|，/i;
   const warnings: string[] = [];
+  const errors: string[] = [];
   if ((action === 'create' || action === 'create_node' || content) && !disclosure) warnings.push('disclosure is missing');
   if (disclosure && multiScenePattern.test(disclosure)) warnings.push('disclosure appears to describe multiple scenes');
   if ((action === 'create' || action === 'create_node') && (priority === undefined || priority === null || priority === '')) warnings.push('priority is missing for create');
   const parsed = uri ? parseUri(uri) : { domain: '', path: '' };
+  const parsedNew = typeof args.new_uri === 'string' ? parseUri(args.new_uri) : { domain: '', path: '' };
   if ((action === 'create' || action === 'create_node') && parsed.path.split('/').filter(Boolean).length <= 1) warnings.push('create target has little parent context and may create a horizontal island');
+  const targetPath = action === 'move' || action === 'move_node' ? parsedNew.path : parsed.path;
+  if (targetPath && hasDateTimePathSuffix(targetPath) && !isAllowedDateArchivedPath(targetPath)) {
+    errors.push('path 是概念身份，日期是事件属性。把发生时间写进正文时间线或明确的 diary/log/release/archive/incident 概念；普通项目和工作记忆用稳定概念命名。');
+  }
+  if ((action === 'create' || action === 'create_node') && lastPathSegment(parsed.path) === '1') {
+    errors.push('Dream create_node must use an explicit stable semantic path; numeric root paths like core://1 are not allowed.');
+  }
   if (protectedOp) warnings.push(protectedOp.reason || `protected path: ${protectedOp.blocked_uri}`);
 
   return {
     action,
     uri,
-    blocked: Boolean(protectedOp),
+    blocked: Boolean(protectedOp) || errors.length > 0,
+    errors,
     warnings,
     checks: {
       has_disclosure: Boolean(disclosure),
@@ -324,6 +335,7 @@ export function validateMemoryChange(args: Record<string, unknown>): Record<stri
       has_priority: priority !== undefined && priority !== null && priority !== '',
       protected_path: Boolean(protectedOp),
       create_has_parent_path: parsed.path.split('/').filter(Boolean).length > 1,
+      stable_target_path: !(targetPath && hasDateTimePathSuffix(targetPath) && !isAllowedDateArchivedPath(targetPath)),
       content_chars: content.length,
     },
   };

@@ -10,7 +10,7 @@ export type SettingSource = 'db' | 'default';
 export interface FieldSchema {
   key: string;
   label: string;
-  type: 'number' | 'integer' | 'string' | 'text' | 'enum' | 'boolean';
+  type: 'number' | 'integer' | 'string' | 'text' | 'enum' | 'boolean' | 'string_list';
   description?: string;
   min?: number;
   max?: number;
@@ -153,6 +153,26 @@ function TextInput({ value, onChange, disabled }: TextInputProps): React.JSX.Ele
   );
 }
 
+interface StringListInputProps {
+  value: unknown;
+  onChange: (v: string[]) => void;
+  disabled: boolean;
+}
+
+function StringListInput({ value, onChange, disabled }: StringListInputProps): React.JSX.Element {
+  const items = Array.isArray(value) ? value.map((item) => String(item)) : [];
+  return (
+    <AppTextArea
+      value={items.join('\n')}
+      disabled={disabled}
+      autoComplete="off"
+      onChange={(e: ChangeEvent<HTMLTextAreaElement>) => onChange(e.target.value.split('\n'))}
+      className="min-h-24 font-mono text-[12px] leading-relaxed"
+      resize
+    />
+  );
+}
+
 interface EnumInputProps {
   value: unknown;
   onChange: (v: string) => void;
@@ -227,12 +247,13 @@ export function FieldRow({
 }: FieldRowProps): React.JSX.Element {
   const { t, lang } = useT();
   const description = localizedDescription(schema, lang);
-  const isWide = schema.type === 'string' || schema.type === 'text';
+  const isWide = schema.type === 'string' || schema.type === 'text' || schema.type === 'string_list';
   const renderInput = () => {
     if (schema.type === 'number' || schema.type === 'integer') return <NumberInput value={value} onChange={onChange as (v: number | '') => void} schema={schema} disabled={saving} controlClassName={controlClassName} controlStyle={controlStyle} />;
     if (schema.type === 'enum') return <EnumInput value={value} onChange={onChange as (v: string) => void} schema={schema} disabled={saving} controlClassName={controlClassName} controlStyle={controlStyle} />;
     if (schema.type === 'boolean') return <BooleanInput value={value} onChange={onChange as (v: boolean) => void} disabled={saving} />;
     if (schema.type === 'text') return <TextInput value={value} onChange={onChange as (v: string) => void} disabled={saving} />;
+    if (schema.type === 'string_list') return <StringListInput value={value} onChange={onChange as (v: string[]) => void} disabled={saving} />;
     return <StringInput value={value} onChange={onChange as (v: string) => void} disabled={saving} secret={schema.secret} secretConfigured={secretConfigured} controlClassName={controlClassName} controlStyle={controlStyle} />;
   };
 

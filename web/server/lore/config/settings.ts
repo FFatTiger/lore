@@ -17,6 +17,7 @@ import {
   SECTIONS,
   SCHEMA_BY_KEY,
   type SettingDef,
+  type SettingValue,
 } from './settingsSchema';
 
 // Re-export schema for callers that import from './settings'
@@ -53,7 +54,7 @@ async function getCachedValues(): Promise<Map<string, unknown>> {
 // Resolution
 // ---------------------------------------------------------------------------
 
-export function coerce(value: unknown, schema: SettingDef): string | number | boolean | null {
+export function coerce(value: unknown, schema: SettingDef): SettingValue | null {
   if (value === null || value === undefined) return null;
   if (schema.type === 'number') {
     const n = Number(value);
@@ -68,11 +69,18 @@ export function coerce(value: unknown, schema: SettingDef): string | number | bo
     return schema.options?.includes(s) ? s : null;
   }
   if (schema.type === 'string' || schema.type === 'text') return String(value);
+  if (schema.type === 'string_list') {
+    const items = Array.isArray(value) ? value : String(value).split(/\r?\n/);
+    return items.flatMap((item) => {
+      const text = String(item ?? '').trim();
+      return text ? [text] : [];
+    });
+  }
   if (schema.type === 'boolean') {
     if (typeof value === 'boolean') return value;
     return String(value).toLowerCase() === 'true';
   }
-  return value as string | number | boolean;
+  return value as SettingValue;
 }
 
 function unwrapStoredValue(raw: unknown): unknown {
@@ -82,11 +90,11 @@ function unwrapStoredValue(raw: unknown): unknown {
   return raw;
 }
 
-export function resolveFromDefault(schema: SettingDef): string | number | boolean {
+export function resolveFromDefault(schema: SettingDef): SettingValue {
   return schema.default;
 }
 
-export function resolveValue(key: string, dbValues: Map<string, unknown>): string | number | boolean | undefined {
+export function resolveValue(key: string, dbValues: Map<string, unknown>): SettingValue | undefined {
   const schema = SCHEMA_BY_KEY.get(key);
   if (!schema) return undefined;
   if (dbValues.has(key)) {
@@ -104,35 +112,35 @@ function isSecretConfiguredValue(value: unknown): boolean {
 // Public API
 // ---------------------------------------------------------------------------
 
-export async function getSetting(key: string): Promise<string | number | boolean | undefined> {
+export async function getSetting(key: string): Promise<SettingValue | undefined> {
   const values = await getCachedValues();
   return resolveValue(key, values);
 }
 
-export async function getSettings(keys: string[]): Promise<Record<string, string | number | boolean | undefined>> {
+export async function getSettings(keys: string[]): Promise<Record<string, SettingValue | undefined>> {
   const values = await getCachedValues();
-  const out: Record<string, string | number | boolean | undefined> = {};
+  const out: Record<string, SettingValue | undefined> = {};
   for (const key of keys) out[key] = resolveValue(key, values);
   return out;
 }
 
-export async function getAllSettings(): Promise<Record<string, string | number | boolean | undefined>> {
+export async function getAllSettings(): Promise<Record<string, SettingValue | undefined>> {
   const values = await getCachedValues();
-  const out: Record<string, string | number | boolean | undefined> = {};
+  const out: Record<string, SettingValue | undefined> = {};
   for (const schema of SETTINGS_SCHEMA) out[schema.key] = resolveValue(schema.key, values);
   return out;
 }
 
 /** Returns `{ values, defaults, sources, secret_configured }` for introspection/UI. */
 export async function getSettingsSnapshot(): Promise<{
-  values: Record<string, string | number | boolean | undefined>;
-  defaults: Record<string, string | number | boolean>;
+  values: Record<string, SettingValue | undefined>;
+  defaults: Record<string, SettingValue>;
   sources: Record<string, 'db' | 'default'>;
   secret_configured: Record<string, boolean>;
 }> {
   const dbValues = await getCachedValues();
-  const values: Record<string, string | number | boolean | undefined> = {};
-  const defaults: Record<string, string | number | boolean> = {};
+  const values: Record<string, SettingValue | undefined> = {};
+  const defaults: Record<string, SettingValue> = {};
   const sources: Record<string, 'db' | 'default'> = {};
   const secret_configured: Record<string, boolean> = {};
   for (const schema of SETTINGS_SCHEMA) {
@@ -150,7 +158,7 @@ export async function getSettingsSnapshot(): Promise<{
   return { values, defaults, sources, secret_configured };
 }
 
-export function validatePatchEntry(key: string, value: unknown): string | number | boolean {
+export function validatePatchEntry(key: string, value: unknown): SettingValue {
   const schema = SCHEMA_BY_KEY.get(key);
   if (!schema) throw Object.assign(new Error(`Unknown setting key: ${key}`), { status: 400 });
   const coerced = coerce(value, schema);
@@ -164,6 +172,15 @@ export function validatePatchEntry(key: string, value: unknown): string | number
     }
     if (schema.max !== undefined && (coerced as number) > schema.max) {
       throw Object.assign(new Error(`${key} must be <= ${schema.max}`), { status: 400 });
+    }
+  }
+  if (schema.type === 'string_list' && key === 'dream.exclude_session_patterns') {
+    for (const pattern of coerced as string[]) {
+      try {
+        new RegExp(pattern);
+      } catch {
+        throw Object.assign(new Error(`${key} contains an invalid regular expression: ${pattern}`), { status: 400 });
+      }
     }
   }
   return coerced;

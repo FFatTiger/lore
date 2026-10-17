@@ -44,12 +44,27 @@ vi.mock('../dreamWorkflow', () => ({
   listDreamWorkflowEvents: vi.fn(),
 }));
 
+vi.mock('../../memory/structuralAudit', () => ({
+  getPathQualitySummary: vi.fn(),
+  getStructuralAudit: vi.fn(),
+}));
+vi.mock('../../memory/hygieneAudit', () => ({
+  getHygieneAudit: vi.fn(),
+}));
+vi.mock('../dreamSessionFilter', () => ({
+  loadDreamSessionFilter: vi.fn(async () => ({ patterns: [] })),
+  collectExcludedDreamQueryIds: vi.fn(async () => new Set()),
+  filterDreamRecallReview: vi.fn((review: Record<string, unknown>) => review),
+}));
+
 import { sql } from '../../../db';
 import { getSettings, updateSettings } from '../../config/settings';
 import { bootView } from '../../memory/boot';
 import { deleteNodeByPath, updateNodeByPath, createNode, moveNode } from '../../memory/write';
 import { addGlossaryKeyword, removeGlossaryKeyword } from '../../search/glossary';
 import { appendDreamWorkflowEvent, listDreamWorkflowEvents } from '../dreamWorkflow';
+import { getPathQualitySummary, getStructuralAudit } from '../../memory/structuralAudit';
+import { getHygieneAudit } from '../../memory/hygieneAudit';
 import { loadLlmConfig, rewriteDreamNarrative, runDreamAgentLoop } from '../dreamAgent';
 import { ensureRecallIndex } from '../../recall/recall';
 import {
@@ -322,6 +337,25 @@ describe('rollbackDream', () => {
     );
   });
 
+  it('reverses glossary_remove by adding the keyword back', async () => {
+    mockSql
+      .mockResolvedValueOnce(makeResult([{ id: 1, status: 'completed', started_at: '2024-01-01', completed_at: '2024-01-02' }]))
+      .mockResolvedValueOnce(makeResult([{
+        id: 15, event_type: 'glossary_remove', node_uri: 'core://test', node_uuid: 'uuid1',
+        domain: 'core', path: 'test', before_snapshot: { keyword: 'generic' }, after_snapshot: null, details: {},
+      }]))
+      .mockResolvedValueOnce(makeResult());
+
+    mockAddGlossaryKeyword.mockResolvedValue({ success: true } as any);
+
+    const result = await rollbackDream(1);
+    expect(result.events_reversed).toBe(1);
+    expect(mockAddGlossaryKeyword).toHaveBeenCalledWith(
+      { keyword: 'generic', node_uuid: 'uuid1' },
+      { source: 'dream:rollback' },
+    );
+  });
+
   it('reverses move events by moving the node back', async () => {
     mockSql
       .mockResolvedValueOnce(makeResult([{ id: 1, status: 'completed', started_at: '2024-01-01', completed_at: '2024-01-02' }]))
@@ -358,6 +392,9 @@ describe('runDream', () => {
     mockRewriteDreamNarrative.mockResolvedValue('poetic done');
     mockRunDreamAgentLoop.mockResolvedValue({ narrative: 'done', toolCalls: [], turns: 1 } as any);
     mockAppendDreamWorkflowEvent.mockResolvedValue({ id: 1, diary_id: 1, event_type: 'event', payload: {}, created_at: '2024-01-01T00:00:00Z' } as any);
+    vi.mocked(getPathQualitySummary).mockResolvedValue({ date_suffix_path_count: 1, recent_bad_creates: 0, top_nodes: [{ uri: 'project://lore/dream_2026_05_07', created_at: '2026-05-07T00:00:00.000Z', reason: 'ordinary_date_suffix' }] } as any);
+    vi.mocked(getStructuralAudit).mockResolvedValue({ counts: { date_suffix: 1, core_projects: 0, malformed_domains: 0, empty_content: 0 }, total: 1, limit: 8, offset: 0, has_more: false } as any);
+    vi.mocked(getHygieneAudit).mockResolvedValue({ counts: { oversized: 0, glossary_bloat: 2, identifier_keywords: 1, shared_keywords: 0, placeholder_parents: 3, legacy_domains: 4 }, total: 10, limit: 5, offset: 0, has_more: false } as any);
     mockBootView.mockResolvedValue({
       core_memories: [
         { uri: 'core://agent', content: 'agent boot', boot_role: 'agent', boot_role_label: 'workflow constraints', boot_purpose: 'Working rules' },
@@ -432,6 +469,9 @@ describe('runDream', () => {
         recallStats,
         writeActivity: writeStats,
         recentDiaries: expect.any(Array),
+        pathQuality: expect.objectContaining({ date_suffix_path_count: 1 }),
+        structuralAudit: expect.objectContaining({ counts: expect.objectContaining({ date_suffix: 1 }) }),
+        hygieneAudit: expect.objectContaining({ counts: expect.objectContaining({ legacy_domains: 4 }) }),
         bootBaseline: [
           expect.objectContaining({ uri: 'core://agent', content: 'agent boot' }),
           expect.objectContaining({ uri: 'core://soul', content: 'soul boot' }),
@@ -443,6 +483,8 @@ describe('runDream', () => {
       }),
     );
     expect(vi.mocked(recallAnalytics.getDreamRecallReview)).toHaveBeenCalledWith({ days: 1, limit: 100 });
+    const memoryChangeQuery = mockSql.mock.calls.find((call) => String(call[0]).includes('GROUP BY event_type'));
+    expect(memoryChangeQuery?.[1]).toEqual([1, 'dream:1']);
 
     const updateCall = mockSql.mock.calls.find((call) => String(call[0]).includes('UPDATE dream_diary SET status = \'completed\''));
     expect(updateCall).toBeTruthy();
@@ -501,6 +543,34 @@ describe('runDream', () => {
         moved: 2,
       },
     });
+  });
+
+  it('keeps excluded sessions out of the recall metadata Dream sees', async () => {
+    mockSql
+      .mockResolvedValueOnce(makeResult([{ id: 9 }]))
+      .mockResolvedValueOnce(makeResult([]))
+      .mockResolvedValueOnce(makeResult([]))
+      .mockResolvedValueOnce(makeResult());
+    mockGetSettings.mockResolvedValue({});
+    const recallAnalytics = await import('../../recall/recallAnalytics');
+    const writeEvents = await import('../../memory/writeEvents');
+    const sessionFilter = await import('../dreamSessionFilter');
+    vi.mocked(recallAnalytics.getRecallStats).mockResolvedValue({ summary: {}, recent_queries: { items: [{ query_id: 'q1' }, { query_id: 'q2' }] } } as any);
+    vi.mocked(recallAnalytics.getDreamRecallReview).mockResolvedValue({ summary: {}, queries: [{ query_id: 'q1' }, { query_id: 'q2' }] } as any);
+    vi.mocked(writeEvents.getWriteEventStats).mockResolvedValue({ summary: {}, hot_nodes: [], recent_events: [] } as any);
+    vi.mocked(sessionFilter.loadDreamSessionFilter).mockResolvedValue({ patterns: [/bot/] } as any);
+    vi.mocked(sessionFilter.collectExcludedDreamQueryIds).mockResolvedValue(new Set(['q2']));
+    vi.mocked(sessionFilter.filterDreamRecallReview).mockImplementation((review: Record<string, unknown>) => ({
+      ...review,
+      ...(Array.isArray(review.queries) ? { queries: (review.queries as Array<{ query_id: string }>).filter((item) => item.query_id !== 'q2') } : {}),
+    }));
+
+    await runDream();
+
+    expect(sessionFilter.loadDreamSessionFilter).toHaveBeenCalled();
+    expect(sessionFilter.collectExcludedDreamQueryIds).toHaveBeenCalled();
+    const agentContext = mockRunDreamAgentLoop.mock.calls[0][1];
+    expect((agentContext.recallReview.queries as Array<{ query_id: string }>).map((item) => item.query_id)).toEqual(['q1']);
   });
 
   it('keeps dream completed when poetic rewrite fails and records fallback', async () => {

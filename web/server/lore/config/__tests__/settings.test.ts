@@ -115,6 +115,7 @@ describe('coerce', () => {
   const strSchema: SettingDef = { key: 'x', section: 's', label: 'l', type: 'string', default: '' };
   const textSchema: SettingDef = { key: 'x', section: 's', label: 'l', type: 'text', default: '' };
   const boolSchema: SettingDef = { key: 'x', section: 's', label: 'l', type: 'boolean', default: false };
+  const listSchema: SettingDef = { key: 'x', section: 's', label: 'l', type: 'string_list', default: [] };
 
   it('returns null for nullish values', () => {
     expect(coerce(null, numSchema)).toBeNull();
@@ -155,6 +156,11 @@ describe('coerce', () => {
     expect(coerce('true', boolSchema)).toBe(true);
     expect(coerce('false', boolSchema)).toBe(false);
     expect(coerce('anything', boolSchema)).toBe(false);
+  });
+
+  it('coerces string lists from arrays and newline text', () => {
+    expect(coerce(['a', ' b ', ''], listSchema)).toEqual(['a', 'b']);
+    expect(coerce('a\nb\n\n c ', listSchema)).toEqual(['a', 'b', 'c']);
   });
 });
 
@@ -322,6 +328,14 @@ describe('validatePatchEntry', () => {
 
   it('rejects blank secret values', () => {
     expect(() => validatePatchEntry('embedding.api_key', '')).toThrow('Use reset to clear secret setting');
+  });
+
+  it('accepts valid session exclusion patterns', () => {
+    expect(validatePatchEntry('dream.exclude_session_patterns', ['^bot-', 'e2e'])).toEqual(['^bot-', 'e2e']);
+  });
+
+  it('rejects invalid session exclusion regexes', () => {
+    expect(() => validatePatchEntry('dream.exclude_session_patterns', ['(['])).toThrow('invalid regular expression');
   });
 });
 

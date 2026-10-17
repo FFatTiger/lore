@@ -248,6 +248,10 @@ export const SETTINGS_EN: Record<string, EnglishCopy> = {
     label: 'Auto-approve Dream changes',
     description: 'When on, memory changes from Dream are marked approved automatically; when off they stay pending review.',
   },
+  'dream.exclude_session_patterns': {
+    label: 'Excluded Dream sessions',
+    description: 'Regex list. Sessions whose recall query text matches any pattern are kept out of the recall metadata Dream sees. One regex per line; leave empty to exclude nothing.',
+  },
   'backup.enabled': {
     label: 'Scheduled backup',
     description: 'When on, the database is backed up daily at the scheduled time',

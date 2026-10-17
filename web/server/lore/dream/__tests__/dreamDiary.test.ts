@@ -4,14 +4,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Mocks
 // ---------------------------------------------------------------------------
 
-vi.mock('../../../db', () => ({ sql: vi.fn() }));
+vi.mock('../../../db', () => ({ sql: vi.fn(), getPool: vi.fn() }));
 vi.mock('../../config/settings', () => ({
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
 }));
 vi.mock('../../recall/recall', () => ({ ensureRecallIndex: vi.fn() }));
 vi.mock('../../recall/recallAnalytics', () => ({ getRecallStats: vi.fn(), getDreamRecallReview: vi.fn() }));
-vi.mock('../../memory/writeEvents', () => ({ getWriteEventStats: vi.fn() }));
+vi.mock('../../memory/writeEvents', () => ({ getWriteEventStats: vi.fn(), logMemoryEvent: vi.fn() }));
 vi.mock('../../memory/boot', () => ({ bootView: vi.fn() }));
 vi.mock('../../memory/write', () => ({
   createNode: vi.fn(),
@@ -19,9 +19,21 @@ vi.mock('../../memory/write', () => ({
   deleteNodeByPath: vi.fn(),
   moveNode: vi.fn(),
 }));
-vi.mock('../../search/glossary', () => ({
-  addGlossaryKeyword: vi.fn(),
-  removeGlossaryKeyword: vi.fn(),
+vi.mock('../../search/glossary', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../search/glossary')>();
+  return {
+    ...actual,
+    addGlossaryKeyword: vi.fn(),
+    removeGlossaryKeyword: vi.fn(),
+  };
+});
+vi.mock('../../view/viewCrud', () => ({
+  upsertGeneratedMemoryViewsForPath: vi.fn(),
+  deleteGeneratedMemoryViewsByPrefix: vi.fn(),
+}));
+vi.mock('../../search/glossarySemantic', () => ({
+  upsertGeneratedGlossaryEmbeddingsForPath: vi.fn(),
+  deleteGeneratedGlossaryEmbeddingsByPrefix: vi.fn(),
 }));
 vi.mock('../dreamAgent', () => ({
   loadLlmConfig: vi.fn(),
@@ -57,11 +69,12 @@ vi.mock('../dreamSessionFilter', () => ({
   filterDreamRecallReview: vi.fn((review: Record<string, unknown>) => review),
 }));
 
-import { sql } from '../../../db';
+import { sql, getPool } from '../../../db';
 import { getSettings, updateSettings } from '../../config/settings';
 import { bootView } from '../../memory/boot';
 import { deleteNodeByPath, updateNodeByPath, createNode, moveNode } from '../../memory/write';
 import { addGlossaryKeyword, removeGlossaryKeyword } from '../../search/glossary';
+import { logMemoryEvent } from '../../memory/writeEvents';
 import { appendDreamWorkflowEvent, listDreamWorkflowEvents } from '../dreamWorkflow';
 import { getPathQualitySummary, getStructuralAudit } from '../../memory/structuralAudit';
 import { getHygieneAudit } from '../../memory/hygieneAudit';
@@ -78,6 +91,8 @@ import {
 } from '../dreamDiary';
 
 const mockSql = vi.mocked(sql);
+const mockGetPool = vi.mocked(getPool);
+const mockLogMemoryEvent = vi.mocked(logMemoryEvent);
 const mockGetSettings = vi.mocked(getSettings);
 const mockUpdateSettings = vi.mocked(updateSettings);
 const mockBootView = vi.mocked(bootView);
@@ -354,6 +369,117 @@ describe('rollbackDream', () => {
       { keyword: 'generic', node_uuid: 'uuid1' },
       { source: 'dream:rollback' },
     );
+  });
+
+  it('restores glossary keywords trimmed by a real update_node event', async () => {
+    mockSql.mockReset();
+    mockUpdateNodeByPath.mockReset();
+    mockAddGlossaryKeyword.mockReset();
+    mockRemoveGlossaryKeyword.mockReset();
+    mockLogMemoryEvent.mockReset();
+    mockGetPool.mockReset();
+
+    // Build the event through the real write path so its shape matches what
+    // update_node emits in production.
+    const actualWrite = await vi.importActual<typeof import('../../memory/write')>('../../memory/write');
+    let glossarySelects = 0;
+    const client = {
+      query: vi.fn((query: string) => {
+        if (query.includes('SELECT p.domain, p.path, e.id AS edge_id')) {
+          return Promise.resolve({
+            rows: [{
+              domain: 'project',
+              path: 'lore/dream',
+              edge_id: 7,
+              parent_uuid: 'parent-1',
+              child_uuid: 'node-1',
+              priority: 2,
+              disclosure: 'when editing dream',
+            }],
+          });
+        }
+        if (query.includes('FROM memories') && query.includes('deprecated = FALSE')) {
+          return Promise.resolve({ rows: [{ id: 1, content: 'dream body' }] });
+        }
+        if (query.includes('SELECT keyword') && query.includes('FROM glossary_keywords')) {
+          glossarySelects += 1;
+          return Promise.resolve({
+            rows: glossarySelects === 1
+              ? [{ keyword: 'keep' }, { keyword: 'shadcn/ui' }, { keyword: 'drop_me' }]
+              : [{ keyword: 'keep' }, { keyword: 'drop_me' }],
+          });
+        }
+        if (query.includes('DELETE FROM glossary_keywords')) {
+          return Promise.resolve({ rows: [{ keyword: 'shadcn/ui' }], rowCount: 1 });
+        }
+        return Promise.resolve({ rows: [], rowCount: 0 });
+      }),
+      release: vi.fn(),
+    };
+    mockGetPool.mockReturnValue({ connect: vi.fn().mockResolvedValue(client) } as any);
+
+    await actualWrite.updateNodeByPath(
+      { domain: 'project', path: 'lore/dream', glossaryRemove: ['shadcn/ui'] },
+      { source: 'dream:auto', session_id: 'dream:9' },
+    );
+
+    const logged = mockLogMemoryEvent.mock.calls[0][0] as Record<string, unknown>;
+    expect(logged.event_type).toBe('update');
+    expect(logged.details).toMatchObject({ glossary_removed: ['shadcn/ui'] });
+    expect(logged.before_snapshot).toMatchObject({ glossary_keywords: ['keep', 'shadcn/ui', 'drop_me'] });
+
+    mockSql
+      .mockResolvedValueOnce(makeResult([{ id: 9, status: 'completed', started_at: '2024-01-01', completed_at: '2024-01-02' }]))
+      .mockResolvedValueOnce(makeResult([{
+        id: 42,
+        event_type: logged.event_type,
+        node_uri: logged.node_uri,
+        node_uuid: logged.node_uuid,
+        domain: logged.domain,
+        path: logged.path,
+        before_snapshot: logged.before_snapshot,
+        after_snapshot: logged.after_snapshot,
+        details: logged.details,
+      }]))
+      .mockResolvedValueOnce(makeResult());
+    mockUpdateNodeByPath.mockResolvedValue({ success: true } as any);
+    mockAddGlossaryKeyword.mockResolvedValue({ success: true } as any);
+    mockRemoveGlossaryKeyword.mockResolvedValue({ success: true } as any);
+
+    const result = await rollbackDream(9);
+
+    expect(result.events_reversed).toBe(1);
+    expect(mockUpdateNodeByPath).toHaveBeenCalledWith(
+      expect.objectContaining({ domain: 'project', path: 'lore/dream', content: 'dream body' }),
+      { source: 'dream:rollback' },
+    );
+    expect(mockAddGlossaryKeyword).toHaveBeenCalledWith(
+      { keyword: 'shadcn/ui', node_uuid: 'node-1' },
+      { source: 'dream:rollback' },
+    );
+    expect(mockRemoveGlossaryKeyword).not.toHaveBeenCalled();
+  });
+
+  it('counts only events that were actually reversed', async () => {
+    mockSql
+      .mockResolvedValueOnce(makeResult([{ id: 1, status: 'completed', started_at: '2024-01-01', completed_at: '2024-01-02' }]))
+      .mockResolvedValueOnce(makeResult([
+        {
+          id: 20, event_type: 'unexpected', node_uri: 'core://x', node_uuid: 'uuid1',
+          domain: 'core', path: 'x', before_snapshot: {}, after_snapshot: {}, details: {},
+        },
+        {
+          id: 21, event_type: 'move', node_uri: 'core://renamed', node_uuid: 'uuid1',
+          domain: 'core', path: 'renamed', before_snapshot: { uri: 'core://original' }, after_snapshot: { uri: 'core://renamed' }, details: {},
+        },
+      ]))
+      .mockResolvedValueOnce(makeResult());
+    mockMoveNode.mockResolvedValue({ success: true } as any);
+
+    const result = await rollbackDream(1);
+
+    expect(result.events_total).toBe(2);
+    expect(result.events_reversed).toBe(1);
   });
 
   it('reverses move events by moving the node back', async () => {

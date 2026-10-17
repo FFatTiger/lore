@@ -568,6 +568,14 @@ export async function reviewDreamChange({
 
 const ROLLBACK_EVENT_CONTEXT = { source: 'dream:rollback' };
 
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const text = String(item ?? '').trim();
+    return text ? [text] : [];
+  });
+}
+
 export async function rollbackDream(id: number | string): Promise<{
   id: number;
   status: string;
@@ -610,25 +618,44 @@ export async function rollbackDream(id: number | string): Promise<{
     try {
       const before = (evt.before_snapshot as Record<string, unknown>) || {};
       const after = (evt.after_snapshot as Record<string, unknown>) || {};
+      const details = (evt.details as Record<string, unknown>) || {};
       const domain = (evt.domain as string) || 'core';
       const evtPath = (evt.path as string) || '';
+      let reversed = false;
 
       switch (evt.event_type) {
         case 'create':
           // Reverse: delete the created node
-          if (domain && evtPath) await deleteNodeByPath({ domain, path: evtPath }, ROLLBACK_EVENT_CONTEXT);
-          break;
-        case 'update':
-          // Reverse: restore before_snapshot
           if (domain && evtPath) {
+            await deleteNodeByPath({ domain, path: evtPath }, ROLLBACK_EVENT_CONTEXT);
+            reversed = true;
+          }
+          break;
+        case 'update': {
+          // Reverse: restore before_snapshot, including glossary changes that
+          // update_node records on the same event.
+          if (domain && evtPath && (before.content !== undefined || before.priority !== undefined || before.disclosure !== undefined)) {
             await updateNodeByPath({
               domain, path: evtPath,
               content: before.content as string | undefined,
               priority: before.priority as number | undefined,
               disclosure: before.disclosure as string | undefined,
             }, ROLLBACK_EVENT_CONTEXT);
+            reversed = true;
+          }
+          const nodeUuid = evt.node_uuid as string | null;
+          for (const keyword of stringList(details.glossary_removed)) {
+            if (!nodeUuid) break;
+            await addGlossaryKeyword({ keyword, node_uuid: nodeUuid }, ROLLBACK_EVENT_CONTEXT);
+            reversed = true;
+          }
+          for (const keyword of stringList(details.glossary_added)) {
+            if (!nodeUuid) break;
+            await removeGlossaryKeyword({ keyword, node_uuid: nodeUuid }, ROLLBACK_EVENT_CONTEXT);
+            reversed = true;
           }
           break;
+        }
         case 'delete':
           // Reverse: recreate with before_snapshot
           if (before.content !== undefined && domain && evtPath) {
@@ -640,6 +667,7 @@ export async function rollbackDream(id: number | string): Promise<{
               priority: (before.priority as number) ?? 2, title,
               disclosure: (before.disclosure as string) || null,
             }, ROLLBACK_EVENT_CONTEXT);
+            reversed = true;
           }
           break;
         case 'move':
@@ -648,6 +676,7 @@ export async function rollbackDream(id: number | string): Promise<{
               old_uri: after.uri as string,
               new_uri: before.uri as string,
             }, ROLLBACK_EVENT_CONTEXT);
+            reversed = true;
           }
           break;
         case 'alias':
@@ -655,24 +684,27 @@ export async function rollbackDream(id: number | string): Promise<{
           if (after.new_uri) {
             const parsed = parseUri(after.new_uri as string);
             await deleteNodeByPath({ domain: parsed.domain, path: parsed.path }, ROLLBACK_EVENT_CONTEXT);
+            reversed = true;
           }
           break;
         case 'glossary_add':
           // Reverse: remove the keyword
           if (after.keyword && evt.node_uuid) {
             await removeGlossaryKeyword({ keyword: after.keyword as string, node_uuid: evt.node_uuid as string }, ROLLBACK_EVENT_CONTEXT);
+            reversed = true;
           }
           break;
         case 'glossary_remove':
           // Reverse: add the keyword back
           if (before.keyword && evt.node_uuid) {
             await addGlossaryKeyword({ keyword: before.keyword as string, node_uuid: evt.node_uuid as string }, ROLLBACK_EVENT_CONTEXT);
+            reversed = true;
           }
           break;
         default:
           console.log(`[dream:rollback] skipping unknown event_type: ${evt.event_type}`);
       }
-      rolled++;
+      if (reversed) rolled++;
     } catch (err: unknown) {
       console.error(`[dream:rollback] failed to reverse event #${evt.id} (${evt.event_type} ${evt.node_uri}):`, (err as Error).message);
     }

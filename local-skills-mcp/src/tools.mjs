@@ -141,6 +141,36 @@ export const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'lore_skill_import',
+    description:
+      'Import skills from a public GitHub repository (owner/repo, a GitHub URL, a tree URL to one skill, or a pasted npx skills add command) into Lore. '
+      + 'Run with dry_run first to see what will be imported. Never overwrites existing skills.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        source: {
+          type: 'string',
+          description: 'GitHub source: owner/repo, a GitHub URL, a tree URL, or a pasted npx skills add command.',
+        },
+        skills: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Skill names to import; omit or pass * to import all found.',
+        },
+        visibility_client_types: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Client types that can use the imported skills (same meaning as on create); omit for the server default.',
+        },
+        dry_run: {
+          type: 'boolean',
+          description: 'Only list candidate skills without importing.',
+        },
+      },
+      required: ['source'],
+    },
+  },
+  {
     name: 'lore_skill_status',
     description:
       'Report local skill work-copy states (ready/missing/outdated/tampered/unmanaged/invalid). '
@@ -184,6 +214,43 @@ export function skillsEnabled(config) {
   if (config?.skillsEnabled === true) return true;
   if (config?.skillsEnabled === false) return false;
   return config?.env?.LORE_SKILLS_ENABLED === '1';
+}
+
+export function formatSkillImportText(data) {
+  const repo = String(data?.repo || '');
+  const ref = String(data?.ref || '');
+  const repoLabel = repo ? (ref ? `${repo}@${ref}` : repo) : 'unknown repo';
+  const pathLabel = data?.path ? ` (path: ${data.path})` : '';
+  if (!Array.isArray(data?.results)) {
+    const candidates = Array.isArray(data?.candidates) ? data.candidates : [];
+    const lines = candidates.map((c) => {
+      const parts = [`- ${c?.name ?? '?'}`];
+      if (c?.error) parts.push(`error: ${c.error}`);
+      else if (c?.exists) parts.push('already exists');
+      else parts.push(c?.selected === false ? 'not selected' : 'will import');
+      if (c?.path) parts.push(String(c.path));
+      if (Number.isFinite(c?.file_count)) parts.push(`${c.file_count} files`);
+      if (Number.isFinite(c?.total_size)) parts.push(`${c.total_size} bytes`);
+      return parts.join(' — ');
+    });
+    return [
+      `Dry run from ${repoLabel}${pathLabel}: ${candidates.length} candidate skill(s)`,
+      ...(lines.length ? lines : ['(no skills found)']),
+    ].join('\n');
+  }
+  const results = Array.isArray(data?.results) ? data.results : [];
+  const counts = new Map();
+  for (const r of results) {
+    const status = String(r?.status || 'unknown');
+    counts.set(status, (counts.get(status) || 0) + 1);
+  }
+  const summary = [...counts.entries()].map(([status, n]) => `${n} ${status}`).join(', ');
+  const lines = results.map((r) => {
+    const id = r?.skill_id ? ` (skill_id: ${r.skill_id})` : '';
+    const err = r?.status === 'failed' && r?.error ? ` — ${r.error}` : '';
+    return `- ${r?.name ?? '?'}: ${r?.status ?? '?'}${id}${err}`;
+  });
+  return [`Import from ${repoLabel}${pathLabel}: ${summary || 'no results'}`, ...lines].join('\n');
 }
 
 export async function callTool(config, name, args = {}, state = createToolState()) {
@@ -281,6 +348,23 @@ export async function callTool(config, name, args = {}, state = createToolState(
         if (data?.project_id) state.projectId = String(data.project_id);
         if (data?.catalog_revision !== undefined) state.catalogRevision = String(data.catalog_revision);
         return textContent(`Deleted skill ${skillId}`);
+      }
+      case 'lore_skill_import': {
+        const source = String(args?.source || '').trim();
+        if (!source) throw new Error('source is required');
+        const body = { source };
+        if (Array.isArray(args?.skills)) {
+          body.skills = args.skills.map((s) => String(s || '').trim()).filter(Boolean);
+        }
+        if (Array.isArray(args?.visibility_client_types)) {
+          body.visibility_client_types = args.visibility_client_types.map((s) => String(s || '').trim()).filter(Boolean);
+        }
+        if (args?.dry_run === true) body.dry_run = true;
+        const data = await fetchSkillsJson(config, '/import', {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+        return textContent(`${formatSkillImportText(data)}\n\n${JSON.stringify(data, null, 2)}`);
       }
       case 'lore_skill_status': {
         if (!state.projectId) {

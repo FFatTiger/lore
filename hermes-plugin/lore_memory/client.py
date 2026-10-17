@@ -363,6 +363,25 @@ class LoreClient:
     def delete_skill(self, skill_id: str) -> Dict:
         """Archive/delete a Lore skill on the server."""
         return self._request("DELETE", f"/skills/{skill_id}") or {}
+
+    def import_skills(
+        self,
+        source: str,
+        skills: Optional[List[str]] = None,
+        visibility_client_types: Optional[List[str]] = None,
+        dry_run: bool = False,
+    ) -> Dict:
+        """Import skills from a public GitHub repository into Lore."""
+        if not str(source or "").strip():
+            raise LoreError("source is required")
+        data: Dict[str, Any] = {"source": str(source).strip()}
+        if skills is not None:
+            data["skills"] = [str(item) for item in skills]
+        if visibility_client_types is not None:
+            data["visibility_client_types"] = [str(item) for item in visibility_client_types]
+        if dry_run:
+            data["dry_run"] = True
+        return self._request("POST", "/skills/import", data=data) or {}
     
     # ---- URI Helpers ----
     

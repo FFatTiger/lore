@@ -52,6 +52,7 @@ describe('Pi extension tools', () => {
       'lore_skill_create',
       'lore_skill_update',
       'lore_skill_delete',
+      'lore_skill_import',
       'lore_skill_status',
     ]);
     expect(pi.tools.lore_search.promptSnippet).toContain('Search Lore');

@@ -292,6 +292,32 @@
     ]
   },
   {
+    "name": "lore_skill_import",
+    "description": "Import skills from a public GitHub repository (owner/repo, a GitHub URL, a tree URL to one skill, or a pasted npx skills add command) into Lore. Run with dry_run first to see what will be imported. Never overwrites existing skills.",
+    "parameters": [
+      {
+        "name": "source",
+        "description": "GitHub source: owner/repo, a GitHub URL, a tree URL, or a pasted npx skills add command.",
+        "required": true
+      },
+      {
+        "name": "skills",
+        "description": "Skill names to import; omit or pass * to import all found.",
+        "required": false
+      },
+      {
+        "name": "visibility_client_types",
+        "description": "Client types that can use the imported skills (same meaning as on create); omit for the server default.",
+        "required": false
+      },
+      {
+        "name": "dry_run",
+        "description": "Only list candidate skills without importing.",
+        "required": false
+      }
+    ]
+  },
+  {
     "name": "lore_skill_status",
     "description": "Report local skill work-copy states (ready/missing/outdated/tampered/unmanaged/invalid). Read-only: never mutates or reconciles copies.",
     "parameters": []

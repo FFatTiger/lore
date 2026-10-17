@@ -37,6 +37,7 @@ const SKILL_TOOL_NAMES = [
   'lore_skill_create',
   'lore_skill_update',
   'lore_skill_delete',
+  'lore_skill_import',
   'lore_skill_status',
 ] as const;
 
@@ -104,6 +105,43 @@ function skillFileSchema() {
     content_base64: tool.schema.string().optional().describe('Base64 file content for binary files.'),
     media_type: tool.schema.string().optional().describe('Optional media type.'),
   });
+}
+
+function formatSkillImportText(data: Record<string, any>): string {
+  const repo = String(data?.repo || '');
+  const ref = String(data?.ref || '');
+  const repoLabel = repo ? (ref ? `${repo}@${ref}` : repo) : 'unknown repo';
+  const pathLabel = data?.path ? ` (path: ${data.path})` : '';
+  if (!Array.isArray(data?.results)) {
+    const candidates = Array.isArray(data?.candidates) ? data.candidates : [];
+    const lines = candidates.map((c: any) => {
+      const parts = [`- ${c?.name ?? '?'}`];
+      if (c?.error) parts.push(`error: ${c.error}`);
+      else if (c?.exists) parts.push('already exists');
+      else parts.push(c?.selected === false ? 'not selected' : 'will import');
+      if (c?.path) parts.push(String(c.path));
+      if (Number.isFinite(c?.file_count)) parts.push(`${c.file_count} files`);
+      if (Number.isFinite(c?.total_size)) parts.push(`${c.total_size} bytes`);
+      return parts.join(' — ');
+    });
+    return [
+      `Dry run from ${repoLabel}${pathLabel}: ${candidates.length} candidate skill(s)`,
+      ...(lines.length ? lines : ['(no skills found)']),
+    ].join('\n');
+  }
+  const results = Array.isArray(data?.results) ? data.results : [];
+  const counts = new Map<string, number>();
+  for (const r of results) {
+    const status = String(r?.status || 'unknown');
+    counts.set(status, (counts.get(status) || 0) + 1);
+  }
+  const summary = [...counts.entries()].map(([status, n]) => `${n} ${status}`).join(', ');
+  const lines = results.map((r: any) => {
+    const id = r?.skill_id ? ` (skill_id: ${r.skill_id})` : '';
+    const err = r?.status === 'failed' && r?.error ? ` — ${r.error}` : '';
+    return `- ${r?.name ?? '?'}: ${r?.status ?? '?'}${id}${err}`;
+  });
+  return [`Import from ${repoLabel}${pathLabel}: ${summary || 'no results'}`, ...lines].join('\n');
 }
 
 async function listSkillsApi(
@@ -556,6 +594,39 @@ export function createLoreTools(
         if (data?.project_id) skillState.projectId = String(data.project_id);
         if (data?.catalog_revision !== undefined) skillState.catalogRevision = String(data.catalog_revision);
         return result(context, 'Lore skill delete', `Deleted skill ${skillId}`, { result: data });
+      },
+    }),
+
+    lore_skill_import: tool({
+      description: contract('lore_skill_import').description,
+      args: {
+        source: tool.schema.string().describe(parameterDescription('lore_skill_import', 'source')),
+        skills: tool.schema.array(tool.schema.string()).optional().describe(parameterDescription('lore_skill_import', 'skills')),
+        visibility_client_types: tool.schema.array(tool.schema.string()).optional()
+          .describe(parameterDescription('lore_skill_import', 'visibility_client_types')),
+        dry_run: tool.schema.boolean().optional().describe(parameterDescription('lore_skill_import', 'dry_run')),
+      },
+      async execute(args, context) {
+        const source = args.source.trim();
+        if (!source) throw new Error('source is required');
+        const body: Record<string, unknown> = { source };
+        if (args.skills !== undefined) {
+          body.skills = args.skills.map((name) => name.trim()).filter(Boolean);
+        }
+        if (args.visibility_client_types !== undefined) {
+          body.visibility_client_types = args.visibility_client_types.map((type) => type.trim()).filter(Boolean);
+        }
+        if (args.dry_run === true) body.dry_run = true;
+        const data = await request<Record<string, any>>(config, context, '/skills/import', {
+          method: 'POST',
+          body,
+        });
+        return result(
+          context,
+          'Lore skill import',
+          `${formatSkillImportText(data)}\n\n${JSON.stringify(data, null, 2)}`,
+          { result: data },
+        );
       },
     }),
 

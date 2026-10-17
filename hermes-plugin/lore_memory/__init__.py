@@ -73,6 +73,52 @@ class _PrefetchFlight:
 # LoreMemoryProvider
 # ---------------------------------------------------------------------------
 
+def _format_skill_import(data: Any) -> str:
+    """Render an import dry-run candidate list or per-skill result summary."""
+    payload = data if isinstance(data, dict) else {}
+    repo = str(payload.get("repo") or "")
+    ref = str(payload.get("ref") or "")
+    repo_label = f"{repo}@{ref}" if repo and ref else (repo or "unknown repo")
+    path = payload.get("path")
+    path_label = f" (path: {path})" if path else ""
+    if not isinstance(payload.get("results"), list):
+        candidates = payload.get("candidates") if isinstance(payload.get("candidates"), list) else []
+        lines = []
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            parts = [f"- {candidate.get('name') or '?'}"]
+            error = candidate.get("error")
+            if error:
+                parts.append(f"error: {error}")
+            elif candidate.get("exists"):
+                parts.append("already exists")
+            else:
+                parts.append("not selected" if candidate.get("selected") is False else "will import")
+            if candidate.get("path"):
+                parts.append(str(candidate["path"]))
+            if isinstance(candidate.get("file_count"), int):
+                parts.append(f"{candidate['file_count']} files")
+            if isinstance(candidate.get("total_size"), int):
+                parts.append(f"{candidate['total_size']} bytes")
+            lines.append(" — ".join(parts))
+        header = f"Dry run from {repo_label}{path_label}: {len(candidates)} candidate skill(s)"
+        return "\n".join([header] + (lines or ["(no skills found)"]))
+    results = payload.get("results") or []
+    counts: Dict[str, int] = {}
+    for result in results:
+        item = result if isinstance(result, dict) else {}
+        status = str(item.get("status") or "unknown")
+        counts[status] = counts.get(status, 0) + 1
+    summary = ", ".join(f"{count} {status}" for status, count in counts.items())
+    lines = []
+    for result in results:
+        item = result if isinstance(result, dict) else {}
+        skill_id = f" (skill_id: {item['skill_id']})" if item.get("skill_id") else ""
+        error = f" — {item['error']}" if item.get("status") == "failed" and item.get("error") else ""
+        lines.append(f"- {item.get('name') or '?'}: {item.get('status') or '?'}{skill_id}{error}")
+    return "\n".join([f"Import from {repo_label}{path_label}: {summary or 'no results'}"] + lines)
+
 class LoreMemoryProvider(MemoryProvider):
     """Lore long-term memory provider for Hermes Agent."""
 
@@ -668,6 +714,38 @@ class LoreMemoryProvider(MemoryProvider):
                 },
             },
             {
+                "name": "lore_skill_import",
+                "description": (
+                    "Import skills from a public GitHub repository (owner/repo, a GitHub URL, a tree URL to one skill, "
+                    "or a pasted npx skills add command) into Lore. Run with dry_run first to see what will be imported. "
+                    "Never overwrites existing skills."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "source": {
+                            "type": "string",
+                            "description": "GitHub source: owner/repo, a GitHub URL, a tree URL, or a pasted npx skills add command.",
+                        },
+                        "skills": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Skill names to import; omit or pass * to import all found.",
+                        },
+                        "visibility_client_types": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Client types that can use the imported skills (same meaning as on create); omit for the server default.",
+                        },
+                        "dry_run": {
+                            "type": "boolean",
+                            "description": "Only list candidate skills without importing.",
+                        },
+                    },
+                    "required": ["source"],
+                },
+            },
+            {
                 "name": "lore_skill_status",
                 "description": (
                     "Report local skill work-copy states (ready/missing/outdated/tampered/unmanaged/invalid). "
@@ -971,6 +1049,20 @@ class LoreMemoryProvider(MemoryProvider):
         if data.get("catalog_revision") is not None:
             self._skill_catalog_revision = str(data.get("catalog_revision") or "")
         return f"Deleted skill {skill_id}"
+
+    def _tool_lore_skill_import(self, args: Dict) -> str:
+        source = str(args.get("source") or "").strip()
+        if not source:
+            raise LoreError("source is required")
+        skills = args.get("skills") if isinstance(args.get("skills"), list) else None
+        visibility = args.get("visibility_client_types") if isinstance(args.get("visibility_client_types"), list) else None
+        data = self._client.import_skills(
+            source,
+            skills=[str(item) for item in skills] if skills is not None else None,
+            visibility_client_types=[str(item) for item in visibility] if visibility is not None else None,
+            dry_run=args.get("dry_run") is True,
+        )
+        return _format_skill_import(data) + "\n\n" + json.dumps(data, indent=2, ensure_ascii=False)
 
     def _tool_lore_skill_status(self, args: Dict) -> str:
         project_id = self._skill_project_id

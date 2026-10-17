@@ -201,6 +201,7 @@ Skills tools appear only when the connected server advertises Skills. Loremem Cl
 | `lore_skill_create` | Create a skill from files. | Required: `name`, `files`. Optional: `enabled` (default `true`) |
 | `lore_skill_update` | Change files or the enabled state. Uses optimistic concurrency. | Required: `skill_id`, `expected_version`. Optional: `enabled`, `upsert_files`, `delete_paths` |
 | `lore_skill_delete` | Archive the skill on the server. | Required: `skill_id` |
+| `lore_skill_import` | Import skills from a public GitHub repository. | Required: `source`. Optional: `skills`, `visibility_client_types`, `dry_run` |
 | `lore_skill_status` | Report the state of local copies. Read-only. | None |
 
 Notes:
@@ -211,6 +212,7 @@ Notes:
 - `lore_skill_get` writes the local copy to `~/.lore/skills/<project-id>/<skill-name>/`. Server-managed files are read-only. Any other file in the directory is an artifact: Lore never checks or uploads it, and it survives updates.
 - `lore_skill_status` reports each copy as `ready`, `missing`, `outdated`, `tampered`, `unmanaged`, or `invalid`.
 - `lore_skill_delete` does not remove local copies from the machine.
+- `lore_skill_import` never overwrites existing skills: a skill with the same name is reported as `exists` and left alone. Run it with `dry_run` first to list what would be imported.
 
 Create a skill:
 
@@ -232,5 +234,15 @@ Update a skill's files. Use the `skill_id` that `lore_skill_list` returns:
   "upsert_files": [
     { "path": "checklists/rollback.md", "content": "# Rollback\n\n1. Pause the deploy.\n" }
   ]
+}
+```
+
+Import skills from a public GitHub repository. Ask the agent to run it with `dry_run` first, then without it:
+
+```json
+{
+  "source": "vercel-labs/agent-skills",
+  "skills": ["frontend-design"],
+  "dry_run": true
 }
 ```

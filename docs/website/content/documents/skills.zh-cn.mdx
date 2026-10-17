@@ -62,6 +62,12 @@ Lore 不会为脚本设置可执行权限，因此请通过解释器运行脚本
 > [!WARNING]
 > 每个加载技能的 Agent 都会下载完整的技能包，包括所有文件。不要在技能中放入密钥、令牌或私有主机名。
 
+## 从 GitHub 导入
+
+你也可以直接从公开的 GitHub 仓库导入技能，而不必手写。Loremem 控制台的技能页为此提供了导入对话框；在 Agent 里则使用 `lore_skill_import`。两者都只在 Loremem 上可用——开源服务器没有技能功能。
+
+来源可以是 `owner/repo`、GitHub 仓库 URL、指向某个技能的 tree URL（`https://github.com/owner/repo/tree/<ref>/<path>`），或者直接粘贴一条 `npx skills add …` 命令。先用控制台对话框的预览，或给工具传 `dry_run: true`，列出将要导入的技能以及哪些已经存在。导入从不覆盖：同名技能会报告为 `exists` 并保持不变。
+
 ## 把已有的技能迁到 Loremem
 
 Loremem 不会替你自动迁移本地技能。有些技能只能在某一个 Agent 里用：它们依赖这个 Agent 自己的工具、钩子或扩展，或者有插件在运行时读取技能文件。这类技能一迁就坏，所以哪些该迁要靠判断。请让你的 Agent 来做，并在它删除任何东西之前先看它的计划。
@@ -105,6 +111,7 @@ Loremem 不会替你自动迁移本地技能。有些技能只能在某一个 Ag
 | `lore_skill_create` | 用名称和文件列表创建技能。 |
 | `lore_skill_update` | 更新技能。需要 `expected_version`。 |
 | `lore_skill_delete` | 归档技能。 |
+| `lore_skill_import` | 从公开的 GitHub 仓库导入技能。支持 `dry_run`。 |
 | `lore_skill_status` | 报告每个本地副本是就绪、缺失、过期、被篡改、未托管还是无效。该工具只读。 |
 
 有关控制台以及创建、更新和归档的操作，请参见 [创建与管理技能](/documents/skills/managing-skills)。

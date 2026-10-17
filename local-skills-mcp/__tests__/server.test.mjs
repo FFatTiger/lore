@@ -95,6 +95,7 @@ test('tools/list exposes all lore_skill_* names without artifact create', () => 
     'lore_skill_create',
     'lore_skill_delete',
     'lore_skill_get',
+    'lore_skill_import',
     'lore_skill_list',
     'lore_skill_search',
     'lore_skill_status',
@@ -104,9 +105,22 @@ test('tools/list exposes all lore_skill_* names without artifact create', () => 
   const get = TOOL_DEFINITIONS.find((tool) => tool.name === 'lore_skill_get');
   const update = TOOL_DEFINITIONS.find((tool) => tool.name === 'lore_skill_update');
   const remove = TOOL_DEFINITIONS.find((tool) => tool.name === 'lore_skill_delete');
+  const importTool = TOOL_DEFINITIONS.find((tool) => tool.name === 'lore_skill_import');
   assert.deepEqual(get.inputSchema.required, ['skill_id']);
   assert.deepEqual(update.inputSchema.required, ['skill_id', 'expected_version']);
   assert.deepEqual(remove.inputSchema.required, ['skill_id']);
+  assert.deepEqual(importTool.inputSchema.required, ['source']);
+  assert.deepEqual(Object.keys(importTool.inputSchema.properties).sort(), [
+    'dry_run',
+    'skills',
+    'source',
+    'visibility_client_types',
+  ]);
+  assert.equal(
+    importTool.description,
+    'Import skills from a public GitHub repository (owner/repo, a GitHub URL, a tree URL to one skill, or a pasted npx skills add command) into Lore. '
+    + 'Run with dry_run first to see what will be imported. Never overwrites existing skills.',
+  );
   assert.equal(
     get.description,
     'Load a Lore skill (cloud-stored, not part of the host\'s own skill system) by skill_id, including its package files. '
@@ -163,7 +177,7 @@ test('stdio process handshake works with Codex/Claude NDJSON transport', async (
   });
   const messages = stdout.trim().split(/\r?\n/).map((line) => JSON.parse(line));
   assert.equal(messages[0].result.serverInfo.name, 'lore-skills');
-  assert.equal(messages[1].result.tools.length, 7);
+  assert.equal(messages[1].result.tools.length, 8);
 });
 
 test('stdio initialize + tools/list with Content-Length framing', async () => {
@@ -209,7 +223,7 @@ test('stdio initialize + tools/list with Content-Length framing', async () => {
 
   assert.equal(messages.length, 2);
   assert.equal(messages[0].result.serverInfo.name, 'lore-skills');
-  assert.equal(messages[1].result.tools.length, 7);
+  assert.equal(messages[1].result.tools.length, 8);
   assert.ok(messages[1].result.tools.every((t) => t.name.startsWith('lore_skill_')));
 });
 
@@ -353,6 +367,124 @@ test('lore_skill_get restores tampered managed files (downloaded=true) while ext
     assert.match(second.content[0].text, /downloaded: true/);
     assert.equal(readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8'), '# Demo Skill\n\nDo the thing.\n');
     assert.equal(readFileSync(path.join(skillDir, 'local-output.txt'), 'utf8'), 'agent output v2\n');
+  } finally {
+    await fake.close();
+  }
+});
+
+test('lore_skill_import dry run and import post to /api/skills/import and summarize the response', async () => {
+  const loreHome = tempDir();
+  const imports = [];
+  let call = 0;
+  const fake = await withFakeSkillsServer(({ req, url, body }) => {
+    if (url.pathname === '/api/skills/import' && req.method === 'POST') {
+      call += 1;
+      imports.push(body);
+      if (call === 1) {
+        return {
+          repo: 'vercel-labs/agent-skills',
+          ref: 'main',
+          commit: 'a'.repeat(40),
+          path: '',
+          candidates: [
+            { name: 'frontend-design', description: 'Design', path: 'skills/frontend-design', file_count: 3, total_size: 4211, exists: false, selected: true, error: null },
+            { name: 'legacy', description: 'Old', path: 'skills/legacy', file_count: 2, total_size: 900, exists: true, selected: true, error: null },
+          ],
+        };
+      }
+      return {
+        repo: 'vercel-labs/agent-skills',
+        ref: 'main',
+        commit: 'a'.repeat(40),
+        path: '',
+        candidates: [
+          { name: 'frontend-design', description: 'Design', path: 'skills/frontend-design', file_count: 3, total_size: 4211, exists: false, selected: true, error: null },
+        ],
+        results: [
+          { name: 'frontend-design', status: 'created', skill_id: 'skill-new-1', error: null },
+          { name: 'legacy', status: 'exists', skill_id: 'skill-old', error: null },
+        ],
+      };
+    }
+    return { status: 404, json: { error: 'not found' } };
+  });
+
+  try {
+    const config = {
+      loreHome,
+      baseUrl: fake.baseUrl,
+      apiToken: 'secret-token',
+      clientType: 'codex',
+      timeoutMs: 5000,
+      skillsEnabled: true,
+    };
+    const state = createToolState();
+    const dry = await callTool(config, 'lore_skill_import', {
+      source: 'npx skills add vercel-labs/agent-skills --skill frontend-design legacy',
+      dry_run: true,
+    }, state);
+    assert.equal(dry.isError, undefined);
+    const dryText = dry.content[0].text;
+    assert.match(dryText, /Dry run from vercel-labs\/agent-skills@main: 2 candidate skill\(s\)/);
+    assert.match(dryText, /- frontend-design — will import — skills\/frontend-design — 3 files — 4211 bytes/);
+    assert.match(dryText, /- legacy — already exists — skills\/legacy/);
+    assert.match(dryText, /"candidates": \[/);
+
+    const run = await callTool(config, 'lore_skill_import', {
+      source: 'vercel-labs/agent-skills',
+      skills: ['frontend-design'],
+    }, state);
+    assert.equal(run.isError, undefined);
+    const runText = run.content[0].text;
+    assert.match(runText, /Import from vercel-labs\/agent-skills@main: 1 created, 1 exists/);
+    assert.match(runText, /- frontend-design: created \(skill_id: skill-new-1\)/);
+    assert.match(runText, /- legacy: exists/);
+    assert.match(runText, /"results": \[/);
+
+    assert.equal(fake.requests.length, 2);
+    for (const req of fake.requests) {
+      assert.equal(req.method, 'POST');
+      assert.equal(req.path, '/api/skills/import');
+      assert.equal(req.query.client_type, 'codex');
+      assert.equal(req.headers.authorization, 'Bearer secret-token');
+    }
+    assert.deepEqual(imports[0], {
+      source: 'npx skills add vercel-labs/agent-skills --skill frontend-design legacy',
+      dry_run: true,
+    });
+    assert.deepEqual(imports[1], {
+      source: 'vercel-labs/agent-skills',
+      skills: ['frontend-design'],
+    });
+  } finally {
+    await fake.close();
+  }
+});
+
+test('lore_skill_import requires a source and surfaces API errors', async () => {
+  const loreHome = tempDir();
+  const config = {
+    loreHome,
+    baseUrl: 'http://127.0.0.1:9',
+    apiToken: '',
+    clientType: 'claudecode',
+    timeoutMs: 1000,
+    skillsEnabled: true,
+  };
+  const missing = await callTool(config, 'lore_skill_import', {}, createToolState());
+  assert.equal(missing.isError, true);
+  assert.match(missing.content[0].text, /source is required/);
+
+  const fake = await withFakeSkillsServer(() => ({
+    status: 400,
+    json: { detail: 'Only public GitHub repositories are supported for now.' },
+  }));
+  try {
+    const bad = await callTool({ ...config, baseUrl: fake.baseUrl, timeoutMs: 5000 }, 'lore_skill_import', {
+      source: 'https://gitlab.com/foo/bar',
+    }, createToolState());
+    assert.equal(bad.isError, true);
+    assert.match(bad.content[0].text, /Only public GitHub repositories are supported/);
   } finally {
     await fake.close();
   }

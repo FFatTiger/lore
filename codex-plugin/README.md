@@ -18,7 +18,7 @@ JSON
 The installer stages the official Codex marketplace layout, registers the marketplace, enables `lore@lore`, enables Codex lifecycle hooks, and configures two MCP servers:
 
 - `lore` — remote HTTP MCP for memory tools
-- `lore-skills` — local stdio MCP (`local-skills-mcp`) for all `lore_skill_*` tools (list/search/get/create/update/delete/status)
+- `lore-skills` — local stdio MCP (`local-skills-mcp`) for all `lore_skill_*` tools (list/search/get/create/update/delete/import/status)
 
 Lore hooks are bundled in the plugin manifest (`hooks/hooks.json`) rather than installed as user-level `~/.codex/hooks.json` entries.
 

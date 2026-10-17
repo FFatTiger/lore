@@ -8,6 +8,7 @@ Client-local MCP adapter that owns **all** `lore_skill_*` tools for Codex and Cl
 - `lore_skill_create`
 - `lore_skill_update` (requires positive integer `expected_version`)
 - `lore_skill_delete`
+- `lore_skill_import` (imports skills from a public GitHub repo; supports owner/repo, GitHub/tree URLs, and pasted `npx skills add` commands; never overwrites existing skills)
 - `lore_skill_status` (local read-only; can list existing copies without contacting Core)
 
 Remote Core MCP (`lore`) continues to serve memory tools only for these client types; skills are not duplicated.

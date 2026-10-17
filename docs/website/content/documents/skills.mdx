@@ -62,6 +62,12 @@ Lore doesn't set an executable bit on scripts. Run them through their interprete
 > [!WARNING]
 > Every agent that loads a skill downloads the full package, including all of its files. Don't put secrets, tokens, or private hostnames in a skill.
 
+## Import from GitHub
+
+You can import skills straight from a public GitHub repository instead of writing them by hand. In the Loremem console, the Skills page has an import dialog for this; in an agent, ask for `lore_skill_import`. Both work only on Loremem — the open-source server has no skills.
+
+The source can be `owner/repo`, a GitHub repository URL, a tree URL that points at one skill (`https://github.com/owner/repo/tree/<ref>/<path>`), or a pasted `npx skills add …` command. Use the Console dialog's dry run, or pass `dry_run: true` to the tool, to list the skills that would be imported and which of them already exist. Importing never overwrites: a skill whose name already exists is reported as `exists` and left untouched.
+
 ## Move your existing skills into Loremem
 
 Loremem doesn't migrate local skills for you. Some skills only work inside one agent: they rely on that agent's own tools, hooks, or extensions, or a plugin reads the skill file while it runs. Moving those breaks them, so deciding what to move takes judgment. Ask your agent to do it, and review its plan before anything is deleted.
@@ -110,6 +116,7 @@ After the migration, restart your agents so new sessions use the Loremem skills.
 | `lore_skill_create` | Create a skill from a name and a list of files. |
 | `lore_skill_update` | Update a skill. Requires `expected_version`. |
 | `lore_skill_delete` | Archive a skill. |
+| `lore_skill_import` | Import skills from a public GitHub repository. Supports `dry_run`. |
 | `lore_skill_status` | Report whether each local copy is ready, missing, outdated, tampered, unmanaged, or invalid. It is read-only. |
 
 For the console and the create, update, and archive flows, see [Create and manage skills](/documents/skills/managing-skills).

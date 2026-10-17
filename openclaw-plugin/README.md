@@ -11,6 +11,7 @@ lore_skill_get
 lore_skill_create
 lore_skill_update
 lore_skill_delete
+lore_skill_import
 lore_skill_status
 ```
 

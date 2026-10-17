@@ -94,6 +94,47 @@ export async function deleteSkillApi(pluginCfg: any, skillId: string): Promise<a
   return fetchJson(pluginCfg, `/skills/${encodeURIComponent(skillId)}`, { method: "DELETE" });
 }
 
+export async function importSkillApi(pluginCfg: any, body: Record<string, unknown>): Promise<any> {
+  return fetchJson(pluginCfg, "/skills/import", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function formatSkillImportText(data: any): string {
+  const repo = String(data?.repo || "");
+  const ref = String(data?.ref || "");
+  const repoLabel = repo ? (ref ? `${repo}@${ref}` : repo) : "unknown repo";
+  const pathLabel = data?.path ? ` (path: ${data.path})` : "";
+  if (!Array.isArray(data?.results)) {
+    const candidates = Array.isArray(data?.candidates) ? data.candidates : [];
+    const lines = candidates.map((c: any) => {
+      const parts = [`- ${c?.name ?? "?"}`];
+      if (c?.error) parts.push(`error: ${c.error}`);
+      else if (c?.exists) parts.push("already exists");
+      else parts.push(c?.selected === false ? "not selected" : "will import");
+      if (c?.path) parts.push(String(c.path));
+      if (Number.isFinite(c?.file_count)) parts.push(`${c.file_count} files`);
+      if (Number.isFinite(c?.total_size)) parts.push(`${c.total_size} bytes`);
+      return parts.join(" — ");
+    });
+    return [
+      `Dry run from ${repoLabel}${pathLabel}: ${candidates.length} candidate skill(s)`,
+      ...(lines.length ? lines : ["(no skills found)"]),
+    ].join("\n");
+  }
+  const results = Array.isArray(data?.results) ? data.results : [];
+  const counts = new Map<string, number>();
+  for (const r of results) {
+    const status = String(r?.status || "unknown");
+    counts.set(status, (counts.get(status) || 0) + 1);
+  }
+  const summary = [...counts.entries()].map(([status, n]) => `${n} ${status}`).join(", ");
+  const lines = results.map((r: any) => {
+    const id = r?.skill_id ? ` (skill_id: ${r.skill_id})` : "";
+    const err = r?.status === "failed" && r?.error ? ` — ${r.error}` : "";
+    return `- ${r?.name ?? "?"}: ${r?.status ?? "?"}${id}${err}`;
+  });
+  return [`Import from ${repoLabel}${pathLabel}: ${summary || "no results"}`, ...lines].join("\n");
+}
+
 export async function ensureSkillWorkCopy(opts: {
   pluginCfg: any;
   loreHome?: string;
@@ -380,6 +421,39 @@ export function registerSkillTools(api: any, pluginCfg: any, skillsSession?: Ski
         return textResult(`Deleted skill ${skillId}`, { ok: true, result: data });
       } catch (error: any) {
         return textResult(`Lore skill delete failed: ${error.message}`, { ok: false, error: error.message });
+      }
+    },
+  });
+
+  api.registerTool({
+    name: "lore_skill_import",
+    label: "Lore skill import",
+    description:
+      "Import skills from a public GitHub repository (owner/repo, a GitHub URL, a tree URL to one skill, or a pasted npx skills add command) into Lore. "
+      + "Run with dry_run first to see what will be imported. Never overwrites existing skills.",
+    parameters: Type.Object({
+      source: Type.String({ description: "GitHub source: owner/repo, a GitHub URL, a tree URL, or a pasted npx skills add command." }),
+      skills: Type.Optional(Type.Array(Type.String({ description: "Skill name to import." }), { description: "Skill names to import; omit or pass * to import all found." })),
+      visibility_client_types: Type.Optional(Type.Array(Type.String({ description: "Client type allowed to use the imported skills." }), { description: "Client types that can use the imported skills (same meaning as on create); omit for the server default." })),
+      dry_run: Type.Optional(Type.Boolean({ description: "Only list candidate skills without importing." })),
+    }),
+    async execute(_id: any, params: any = {}) {
+      const source = String(params?.source || "").trim();
+      const body: Record<string, unknown> = {};
+      if (Array.isArray(params?.skills)) {
+        body.skills = params.skills.map((s: unknown) => String(s || "").trim()).filter(Boolean);
+      }
+      if (Array.isArray(params?.visibility_client_types)) {
+        body.visibility_client_types = params.visibility_client_types.map((s: unknown) => String(s || "").trim()).filter(Boolean);
+      }
+      if (params?.dry_run === true) body.dry_run = true;
+      try {
+        if (!source) throw new Error("source is required");
+        body.source = source;
+        const data = await importSkillApi(pluginCfg, body);
+        return textResult(`${formatSkillImportText(data)}\n\n${JSON.stringify(data, null, 2)}`, { ok: true, result: data });
+      } catch (error: any) {
+        return textResult(`Lore skill import failed: ${error.message}`, { ok: false, error: error.message, source });
       }
     },
   });

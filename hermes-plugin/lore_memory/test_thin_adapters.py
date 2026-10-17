@@ -986,6 +986,7 @@ class LoreProviderThinAdapterTests(unittest.TestCase):
             "lore_skill_create",
             "lore_skill_update",
             "lore_skill_delete",
+            "lore_skill_import",
             "lore_skill_status",
         ):
             self.assertIn(name, schemas)
@@ -998,6 +999,17 @@ class LoreProviderThinAdapterTests(unittest.TestCase):
             "Load a Lore skill (cloud-stored, not part of the host's own skill system) by skill_id, "
             "including its package files. Use it when a task matches a Lore skill or another skill's "
             "instructions name one.",
+        )
+        self.assertEqual(schemas["lore_skill_import"]["parameters"]["required"], ["source"])
+        self.assertEqual(
+            schemas["lore_skill_import"]["description"],
+            "Import skills from a public GitHub repository (owner/repo, a GitHub URL, a tree URL to one skill, "
+            "or a pasted npx skills add command) into Lore. Run with dry_run first to see what will be imported. "
+            "Never overwrites existing skills.",
+        )
+        self.assertEqual(
+            sorted(schemas["lore_skill_import"]["parameters"]["properties"].keys()),
+            ["dry_run", "skills", "source", "visibility_client_types"],
         )
         self.assertEqual(update["parameters"]["required"], ["skill_id", "expected_version"])
         self.assertEqual(schemas["lore_skill_delete"]["parameters"]["required"], ["skill_id"])
@@ -1070,6 +1082,54 @@ class SkillClientApiTests(unittest.TestCase):
         self.assertEqual(requests[4]["method"], "PATCH")
         self.assertEqual(requests[4]["data"]["expected_version"], 1)
         self.assertEqual(requests[5]["method"], "DELETE")
+
+    def test_import_skills_posts_to_import_endpoint(self):
+        client = LoreClient(base_url="http://example.com")
+        requests = []
+
+        def capture(method, path, params=None, data=None, timeout=None):
+            requests.append({"method": method, "path": path, "params": params, "data": data})
+            return {
+                "repo": "vercel-labs/agent-skills",
+                "ref": "main",
+                "commit": "e" * 40,
+                "path": "",
+                "candidates": [],
+                "results": [{"name": "frontend-design", "status": "created", "skill_id": "skill-import-1", "error": None}],
+            }
+
+        client._request = capture
+        result = client.import_skills(
+            "npx skills add vercel-labs/agent-skills --skill frontend-design",
+            skills=["frontend-design", "legacy"],
+            visibility_client_types=["hermes"],
+            dry_run=True,
+        )
+        self.assertEqual(requests, [
+            {
+                "method": "POST",
+                "path": "/skills/import",
+                "params": None,
+                "data": {
+                    "source": "npx skills add vercel-labs/agent-skills --skill frontend-design",
+                    "skills": ["frontend-design", "legacy"],
+                    "visibility_client_types": ["hermes"],
+                    "dry_run": True,
+                },
+            },
+        ])
+        self.assertEqual(result["repo"], "vercel-labs/agent-skills")
+
+        plain = client.import_skills("vercel-labs/agent-skills")
+        self.assertEqual(requests[1]["data"], {"source": "vercel-labs/agent-skills"})
+        self.assertEqual(plain["results"][0]["status"], "created")
+
+    def test_import_skills_requires_source(self):
+        client = LoreClient(base_url="http://example.com")
+        client._request = lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not call"))
+        with self.assertRaises(LoreError) as ctx:
+            client.import_skills("   ")
+        self.assertIn("source is required", str(ctx.exception))
 
     def test_update_skill_requires_positive_integer_expected_version(self):
         client = LoreClient(base_url="http://example.com")
@@ -1718,6 +1778,7 @@ class SkillWorkCopyTests(unittest.TestCase):
                 self.project_id = project_id
                 self.detail_payload = detail_payload
                 self.update_bodies = []
+                self.import_calls = []
 
             def list_skills(self, include_disabled=True):
                 return {
@@ -1743,6 +1804,39 @@ class SkillWorkCopyTests(unittest.TestCase):
 
             def search_skills(self, query, limit=None):
                 return {"candidates": [{"skill_id": "skill-1", "name": "demo-skill", "version": 1}]}
+
+            def import_skills(self, source, skills=None, visibility_client_types=None, dry_run=False):
+                self.import_calls.append({
+                    "source": source,
+                    "skills": skills,
+                    "visibility_client_types": visibility_client_types,
+                    "dry_run": dry_run,
+                })
+                if dry_run:
+                    return {
+                        "repo": "vercel-labs/agent-skills",
+                        "ref": "main",
+                        "commit": "f" * 40,
+                        "path": "",
+                        "candidates": [
+                            {"name": "frontend-design", "description": "Design", "path": "skills/frontend-design",
+                             "file_count": 3, "total_size": 4211, "exists": False, "selected": True, "error": None},
+                            {"name": "demo-skill", "description": "Demo", "path": "skills/demo-skill",
+                             "file_count": 1, "total_size": 90, "exists": True, "selected": True, "error": None},
+                        ],
+                    }
+                return {
+                    "repo": "vercel-labs/agent-skills",
+                    "ref": "main",
+                    "commit": "f" * 40,
+                    "path": "",
+                    "candidates": [],
+                    "results": [
+                        {"name": "frontend-design", "status": "created", "skill_id": "skill-import-1", "error": None},
+                        {"name": "demo-skill", "status": "exists", "skill_id": "skill-1", "error": None},
+                        {"name": "broken", "status": "failed", "skill_id": None, "error": "bad SKILL.md frontmatter"},
+                    ],
+                }
 
         old_home = os.environ.get("LORE_HOME")
         os.environ["LORE_HOME"] = self.lore_home
@@ -1780,6 +1874,29 @@ class SkillWorkCopyTests(unittest.TestCase):
             self.assertIn("skill_id: skill-1", ok)
             self.assertIn("version: 2", ok)
             self.assertEqual(client.update_bodies[-1]["expected_version"], 1)
+
+            dry = provider._tool_lore_skill_import({
+                "source": "npx skills add vercel-labs/agent-skills --skill frontend-design",
+                "dry_run": True,
+            })
+            self.assertIn("Dry run from vercel-labs/agent-skills@main: 2 candidate skill(s)", dry)
+            self.assertIn("- frontend-design — will import — skills/frontend-design — 3 files — 4211 bytes", dry)
+            self.assertIn("- demo-skill — already exists — skills/demo-skill", dry)
+            self.assertIn('"candidates"', dry)
+
+            imported = provider._tool_lore_skill_import({
+                "source": "vercel-labs/agent-skills",
+                "skills": ["frontend-design"],
+                "visibility_client_types": ["hermes"],
+            })
+            self.assertIn("Import from vercel-labs/agent-skills@main: 1 created, 1 exists, 1 failed", imported)
+            self.assertIn("- frontend-design: created (skill_id: skill-import-1)", imported)
+            self.assertIn("- broken: failed — bad SKILL.md frontmatter", imported)
+            self.assertEqual(client.import_calls[0]["dry_run"], True)
+            self.assertEqual(client.import_calls[1]["skills"], ["frontend-design"])
+
+            missing = provider.handle_tool_call("lore_skill_import", {})
+            self.assertIn("source is required", missing)
 
             status = provider._tool_lore_skill_status({})
             self.assertIn("demo-skill", status)

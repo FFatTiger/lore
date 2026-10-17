@@ -88,6 +88,7 @@ describe('native OpenCode Lore tools', () => {
       'lore_skill_create',
       'lore_skill_update',
       'lore_skill_delete',
+      'lore_skill_import',
       'lore_skill_status',
     ]);
   });
@@ -362,6 +363,85 @@ describe('native OpenCode Lore tools', () => {
     expect(resultOutput(ok)).toContain('Updated skill demo-skill');
     expect(resultOutput(ok)).toContain('skill_id: skill-1');
     expect(resultOutput(ok)).toContain('version: 2');
+  });
+
+  it('lore_skill_import posts to the import endpoint and summarizes candidates and results', async () => {
+    const calls: Array<{ url: URL; init: RequestInit }> = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init = {}) => {
+      const url = new URL(String(input));
+      calls.push({ url, init });
+      if (url.pathname === '/api/skills/import') {
+        const body = JSON.parse(String(init.body ?? '{}'));
+        if (body.dry_run === true) {
+          return jsonResponse({
+            repo: 'vercel-labs/agent-skills',
+            ref: 'main',
+            commit: 'd'.repeat(40),
+            path: '',
+            candidates: [
+              { name: 'frontend-design', description: 'Design', path: 'skills/frontend-design', file_count: 3, total_size: 4211, exists: false, selected: true, error: null },
+              { name: 'legacy', description: 'Old', path: 'skills/legacy', file_count: 2, total_size: 900, exists: true, selected: true, error: null },
+            ],
+          });
+        }
+        return jsonResponse({
+          repo: 'vercel-labs/agent-skills',
+          ref: 'main',
+          commit: 'd'.repeat(40),
+          path: '',
+          candidates: [],
+          results: [
+            { name: 'frontend-design', status: 'created', skill_id: 'skill-import-1', error: null },
+            { name: 'legacy', status: 'exists', skill_id: 'skill-old', error: null },
+            { name: 'broken', status: 'failed', skill_id: null, error: 'bad SKILL.md frontmatter' },
+          ],
+        });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+
+    const tools = createLoreTools(config);
+    const dry = await tools.lore_skill_import.execute({
+      source: 'npx skills add vercel-labs/agent-skills --skill frontend-design',
+      dry_run: true,
+    }, context());
+    const dryOutput = resultOutput(dry);
+    expect(dryOutput).toContain('Dry run from vercel-labs/agent-skills@main: 2 candidate skill(s)');
+    expect(dryOutput).toContain('- frontend-design — will import — skills/frontend-design — 3 files — 4211 bytes');
+    expect(dryOutput).toContain('- legacy — already exists — skills/legacy');
+    expect(dryOutput).toContain('"candidates"');
+
+    const run = await tools.lore_skill_import.execute({
+      source: 'vercel-labs/agent-skills',
+      skills: ['frontend-design'],
+      visibility_client_types: ['opencode'],
+    }, context());
+    const runOutput = resultOutput(run);
+    expect(runOutput).toContain('Import from vercel-labs/agent-skills@main: 1 created, 1 exists, 1 failed');
+    expect(runOutput).toContain('- frontend-design: created (skill_id: skill-import-1)');
+    expect(runOutput).toContain('- broken: failed — bad SKILL.md frontmatter');
+    expect((run as any).metadata.result.repo).toBe('vercel-labs/agent-skills');
+
+    expect(calls).toHaveLength(2);
+    expect(calls.map(({ url, init }) => `${init.method} ${url.pathname}${url.search}`)).toEqual([
+      'POST /api/skills/import?client_type=opencode',
+      'POST /api/skills/import?client_type=opencode',
+    ]);
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({
+      source: 'npx skills add vercel-labs/agent-skills --skill frontend-design',
+      dry_run: true,
+    });
+    expect(JSON.parse(String(calls[1].init.body))).toEqual({
+      source: 'vercel-labs/agent-skills',
+      skills: ['frontend-design'],
+      visibility_client_types: ['opencode'],
+    });
+  });
+
+  it('lore_skill_import requires a source', async () => {
+    const tools = createLoreTools(config);
+    await expect(tools.lore_skill_import.execute({ source: '  ' }, context()))
+      .rejects.toThrow(/source is required/);
   });
 
   it('keeps node output when best-effort adoption marking fails and falls back to ToolContext sessionID', async () => {

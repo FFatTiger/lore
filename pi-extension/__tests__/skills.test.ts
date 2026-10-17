@@ -539,6 +539,7 @@ describe('skills CRUD tools', () => {
       'lore_skill_create',
       'lore_skill_update',
       'lore_skill_delete',
+      'lore_skill_import',
       'lore_skill_status',
     ];
     for (const name of skillTools) {
@@ -547,10 +548,10 @@ describe('skills CRUD tools', () => {
       expect(pi.tools[name].promptGuidelines).toBeUndefined();
     }
     expect(pi.tools.lore_skill_artifact_create).toBeUndefined();
-    expect(Object.keys(pi.tools)).toHaveLength(16);
+    expect(Object.keys(pi.tools)).toHaveLength(17);
   });
 
-  it('uses the exact work-copy descriptions', () => {
+  it('uses the exact import and work-copy descriptions', () => {
     const pi = makeMockPi();
     registerTools(pi as any, {
       baseUrl: 'http://host',
@@ -563,6 +564,10 @@ describe('skills CRUD tools', () => {
     expect(pi.tools.lore_skill_get.description).toBe(
       'Load a Lore skill (cloud-stored, not part of the host\'s own skill system) by skill_id, including its package files. '
       + 'Use it when a task matches a Lore skill or another skill\'s instructions name one.',
+    );
+    expect(pi.tools.lore_skill_import.description).toBe(
+      'Import skills from a public GitHub repository (owner/repo, a GitHub URL, a tree URL to one skill, or a pasted npx skills add command) into Lore. '
+      + 'Run with dry_run first to see what will be imported. Never overwrites existing skills.',
     );
     expect(pi.tools.lore_skill_status.description).toBe(
       'Report local skill work-copy states (ready/missing/outdated/tampered/unmanaged/invalid). '
@@ -711,6 +716,111 @@ describe('skills CRUD tools', () => {
     expect(negative.details.error).toMatch(/positive integer/);
 
     rmTempHome(pluginCfg.loreHome);
+    vi.unstubAllGlobals();
+  });
+
+  it('lore_skill_import posts to the import endpoint and summarizes candidates and results', async () => {
+    const loreHome = makeTempHome();
+    const pi = makeMockPi();
+    const pluginCfg = {
+      baseUrl: 'http://host',
+      apiToken: '',
+      timeoutMs: 1000,
+      loreHome,
+      defaultDomain: 'core',
+      recallEnabled: true,
+    };
+    registerSkillTools(pi as any, pluginCfg, createSkillsSession(pluginCfg));
+
+    const calls: Array<{ url: string; method?: string; body?: any }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: any = {}) => {
+      const u = String(url);
+      const method = init.method || 'GET';
+      const body = init.body ? JSON.parse(String(init.body)) : undefined;
+      calls.push({ url: u, method, body });
+      if (method === 'POST' && u.includes('/api/skills/import')) {
+        if (body?.dry_run === true) {
+          return {
+            ok: true,
+            status: 200,
+            statusText: 'OK',
+            text: async () => JSON.stringify({
+              repo: 'vercel-labs/agent-skills',
+              ref: 'main',
+              commit: 'b'.repeat(40),
+              path: 'skills/frontend-design',
+              candidates: [
+                { name: 'frontend-design', description: 'Design', path: 'skills/frontend-design', file_count: 3, total_size: 4211, exists: false, selected: true, error: null },
+                { name: 'legacy', description: 'Old', path: 'skills/legacy', file_count: 2, total_size: 900, exists: true, selected: true, error: null },
+                { name: 'other', description: 'Other', path: 'skills/other', file_count: 1, total_size: 10, exists: false, selected: false, error: null },
+              ],
+            }),
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          text: async () => JSON.stringify({
+            repo: 'vercel-labs/agent-skills',
+            ref: 'main',
+            commit: 'b'.repeat(40),
+            path: 'skills/frontend-design',
+            candidates: [],
+            results: [
+              { name: 'frontend-design', status: 'created', skill_id: 'skill-import-1', error: null },
+              { name: 'legacy', status: 'exists', skill_id: 'skill-old', error: null },
+              { name: 'broken', status: 'failed', skill_id: null, error: 'bad SKILL.md frontmatter' },
+              { name: 'other', status: 'skipped', skill_id: null, error: null },
+            ],
+          }),
+        };
+      }
+      return { ok: false, status: 404, statusText: 'NO', text: async () => `missing ${u}` };
+    }));
+
+    const dry = await pi.tools.lore_skill_import.execute('t1', {
+      source: 'https://github.com/vercel-labs/agent-skills/tree/main/skills/frontend-design',
+      dry_run: true,
+    });
+    expect(dry.details.ok).toBe(true);
+    expect(dry.content[0].text).toContain('Dry run from vercel-labs/agent-skills@main (path: skills/frontend-design): 3 candidate skill(s)');
+    expect(dry.content[0].text).toContain('- frontend-design — will import — skills/frontend-design — 3 files — 4211 bytes');
+    expect(dry.content[0].text).toContain('- legacy — already exists — skills/legacy');
+    expect(dry.content[0].text).toContain('- other — not selected');
+    expect(dry.content[0].text).toContain('"candidates"');
+
+    const run = await pi.tools.lore_skill_import.execute('t2', {
+      source: 'npx skills add vercel-labs/agent-skills --skill frontend-design -y',
+      skills: ['legacy'],
+      visibility_client_types: ['pi'],
+    });
+    expect(run.details.ok).toBe(true);
+    expect(run.content[0].text).toContain('Import from vercel-labs/agent-skills@main (path: skills/frontend-design): 1 created, 1 exists, 1 failed, 1 skipped');
+    expect(run.content[0].text).toContain('- frontend-design: created (skill_id: skill-import-1)');
+    expect(run.content[0].text).toContain('- broken: failed — bad SKILL.md frontmatter');
+    expect(run.details.result.repo).toBe('vercel-labs/agent-skills');
+
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      expect(call.method).toBe('POST');
+      expect(call.url).toContain('/api/skills/import?client_type=pi');
+    }
+    expect(calls[0].body).toEqual({
+      source: 'https://github.com/vercel-labs/agent-skills/tree/main/skills/frontend-design',
+      dry_run: true,
+    });
+    expect(calls[1].body).toEqual({
+      source: 'npx skills add vercel-labs/agent-skills --skill frontend-design -y',
+      skills: ['legacy'],
+      visibility_client_types: ['pi'],
+    });
+
+    const missing = await pi.tools.lore_skill_import.execute('t3', {});
+    expect(missing.details.ok).toBe(false);
+    expect(missing.details.error).toMatch(/source is required/);
+
+    rmTempHome(loreHome);
     vi.unstubAllGlobals();
   });
 

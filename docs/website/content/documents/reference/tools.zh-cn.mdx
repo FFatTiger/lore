@@ -201,6 +201,7 @@ Pi、OpenClaw 和 Hermes 不注册 `lore_guidance`。它们的会话开始上下
 | `lore_skill_create` | 用文件创建技能。 | 必填：`name`、`files`。可选：`enabled`（默认 `true`） |
 | `lore_skill_update` | 修改文件或启用状态。使用乐观并发控制。 | 必填：`skill_id`、`expected_version`。可选：`enabled`、`upsert_files`、`delete_paths` |
 | `lore_skill_delete` | 在服务器上归档技能。 | 必填：`skill_id` |
+| `lore_skill_import` | 从公开的 GitHub 仓库导入技能。 | 必填：`source`。可选：`skills`、`visibility_client_types`、`dry_run` |
 | `lore_skill_status` | 报告本地副本的状态。只读。 | 无 |
 
 说明：
@@ -211,6 +212,7 @@ Pi、OpenClaw 和 Hermes 不注册 `lore_guidance`。它们的会话开始上下
 - `lore_skill_get` 会把本地副本写入 `~/.lore/skills/<project-id>/<skill-name>/`。服务器管理的文件是只读的，目录中的其他文件都是制品：Lore 不检查、不上传，更新后保留。
 - `lore_skill_status` 会把每个副本报告为 `ready`、`missing`、`outdated`、`tampered`、`unmanaged` 或 `invalid` 之一。
 - `lore_skill_delete` 不会删除本机上的本地副本。
+- `lore_skill_import` 从不覆盖已有技能：同名技能会报告为 `exists` 并保持不变。先带 `dry_run` 运行可以预览将要导入的内容。
 
 创建技能：
 
@@ -232,5 +234,15 @@ Pi、OpenClaw 和 Hermes 不注册 `lore_guidance`。它们的会话开始上下
   "upsert_files": [
     { "path": "checklists/rollback.md", "content": "# Rollback\n\n1. Pause the deploy.\n" }
   ]
+}
+```
+
+从公开的 GitHub 仓库导入技能。先让 Agent 带 `dry_run` 运行，再去掉它执行导入：
+
+```json
+{
+  "source": "vercel-labs/agent-skills",
+  "skills": ["frontend-design"],
+  "dry_run": true
 }
 ```

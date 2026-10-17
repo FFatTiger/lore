@@ -104,7 +104,7 @@ Environment variables remain as fallback compatibility:
 
 ### Skill tools
 
-- `lore_skill_list` / `lore_skill_search` / `lore_skill_get` / `lore_skill_create` / `lore_skill_update` / `lore_skill_delete` / `lore_skill_status`
+- `lore_skill_list` / `lore_skill_search` / `lore_skill_get` / `lore_skill_create` / `lore_skill_update` / `lore_skill_delete` / `lore_skill_import` (public GitHub repo import; supports `dry_run`) / `lore_skill_status`
 
 ## Project Structure
 

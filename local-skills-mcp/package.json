@@ -1,6 +1,6 @@
 {
   "name": "@local/lore-skills-mcp",
-  "version": "1.8.3",
+  "version": "1.9.0",
   "description": "Client-local stdio MCP adapter for Lore skills (Codex / Claude Code)",
   "type": "module",
   "private": true,

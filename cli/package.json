@@ -1,6 +1,6 @@
 {
   "name": "@loremem/cli",
-  "version": "1.8.3",
+  "version": "1.9.0",
   "description": "Interactive installer and manager for Lore agent runtime integrations",
   "type": "module",
   "bin": {

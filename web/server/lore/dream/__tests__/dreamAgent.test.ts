@@ -1604,19 +1604,83 @@ describe('runDreamAgentLoop', () => {
     expect(JSON.parse(result.narrative).changed_nodes).toHaveLength(13);
   });
 
-  it('stops the apply phase after ten turns of tool calls', async () => {
+  it('reserves the last turn of every phase for the written phase output', async () => {
+    mockGenerateTextWithTools.mockReset();
+    mockGetNodePayload.mockResolvedValue({ node: { uri: 'core://a' }, children: [], breadcrumbs: [] } as any);
+    mockGenerateTextWithTools.mockImplementation(async (_config, _messages, tools) => {
+      if (tools.length > 0) {
+        return makeToolResponse([{
+          id: `call-${mockGenerateTextWithTools.mock.calls.length}`,
+          function: { name: 'get_node', arguments: '{"uri":"core://a"}' },
+        }]);
+      }
+      return makeTextResponse(`phase output ${mockGenerateTextWithTools.mock.calls.length}`);
+    });
+
+    const events: Array<{ type: string; payload?: Record<string, unknown> }> = [];
+    await runDreamAgentLoop(config(), makeInitialContext(), {
+      onEvent: async (type, payload) => events.push({ type, payload }),
+    });
+
+    const finalCalls = mockGenerateTextWithTools.mock.calls.filter((call) => (call[2] as unknown[]).length === 0);
+    expect(finalCalls).toHaveLength(5);
+    const phaseCompleted = events.filter((event) => event.type === 'phase_completed');
+    expect(phaseCompleted.map((event) => event.payload?.phase)).toEqual([
+      'diagnose',
+      'plan',
+      'preflight',
+      'apply',
+      'audit',
+    ]);
+    expect(phaseCompleted.some((event) => (
+      (event.payload?.summary as Record<string, unknown> | undefined)?.stopped === true
+    ))).toBe(false);
+    expect(events.filter((event) => event.type === 'phase_output_invalid').map((event) => event.payload?.phase)).toEqual(['plan']);
+  });
+
+  it('passes the written diagnosis into the plan phase instead of the fallback string', async () => {
+    mockGenerateTextWithTools.mockReset();
+    mockGetNodePayload.mockResolvedValue({ node: { uri: 'core://a' }, children: [], breadcrumbs: [] } as any);
+    for (let i = 0; i < 4; i += 1) {
+      mockGenerateTextWithTools.mockResolvedValueOnce(makeToolResponse([
+        { id: `call-${i}`, function: { name: 'get_node', arguments: '{"uri":"core://a"}' } },
+      ]));
+    }
+    mockGenerateTextWithTools
+      .mockResolvedValueOnce(makeTextResponse('REAL DIAGNOSIS: legacy domains need relocation'))
+      .mockResolvedValueOnce(makeTextResponse('{"structure_candidates":[],"merge_candidates":[],"glossary_candidates":[],"skip_reasons":["nothing actionable"]}'))
+      .mockResolvedValueOnce(makeTextResponse('{"preflight":"none"}'))
+      .mockResolvedValueOnce(makeTextResponse('{"applied":[]}'))
+      .mockResolvedValueOnce(makeTextResponse('{"primary_focus":"no_change","changed_nodes":[],"evidence":[],"why_not_more_changes":"","expected_effect":"","confidence":"medium"}'));
+
+    const events: Array<{ type: string; payload?: Record<string, unknown> }> = [];
+    await runDreamAgentLoop(config(), makeInitialContext(), {
+      onEvent: async (type, payload) => events.push({ type, payload }),
+    });
+
+    expect(mockGenerateTextWithTools.mock.calls[4][2]).toEqual([]);
+    const planMessages = mockGenerateTextWithTools.mock.calls[5][1] as Array<{ content?: unknown }>;
+    const planPrompt = planMessages.map((message) => String(message.content || '')).join('\n');
+    expect(planPrompt).toContain('REAL DIAGNOSIS: legacy domains need relocation');
+    expect(planPrompt).not.toContain('stopped after reaching the turn limit');
+    expect(events.find((event) => event.type === 'phase_output_invalid')).toBeUndefined();
+  });
+
+  it('stops the apply phase after nine tool turns and writes its output on the tenth', async () => {
     mockGenerateTextWithTools.mockReset();
     mockGetNodePayload.mockResolvedValue({ node: { uri: 'core://a' }, children: [], breadcrumbs: [] } as any);
     mockGenerateTextWithTools
       .mockResolvedValueOnce(makeTextResponse('{"diagnosis":"done"}'))
       .mockResolvedValueOnce(makeTextResponse('{"structure_candidates":[],"merge_candidates":[],"glossary_candidates":[],"skip_reasons":[]}'))
       .mockResolvedValueOnce(makeTextResponse('{"preflight":"none"}'));
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < 9; i += 1) {
       mockGenerateTextWithTools.mockResolvedValueOnce(makeToolResponse([
         { id: `call-${i}`, function: { name: 'get_node', arguments: '{"uri":"core://a"}' } },
       ]));
     }
-    mockGenerateTextWithTools.mockResolvedValueOnce(makeTextResponse('{"primary_focus":"no_change","changed_nodes":[],"evidence":[],"why_not_more_changes":"","expected_effect":"","confidence":"medium"}'));
+    mockGenerateTextWithTools
+      .mockResolvedValueOnce(makeTextResponse('Apply finished with no writes.'))
+      .mockResolvedValueOnce(makeTextResponse('{"primary_focus":"no_change","changed_nodes":[],"evidence":[],"why_not_more_changes":"","expected_effect":"","confidence":"medium"}'));
 
     const events: Array<{ type: string; payload?: Record<string, unknown> }> = [];
     const result = await runDreamAgentLoop(config(), makeInitialContext(), {
@@ -1624,11 +1688,12 @@ describe('runDreamAgentLoop', () => {
     });
 
     expect(mockGenerateTextWithTools).toHaveBeenCalledTimes(14);
-    expect(result.toolCalls).toHaveLength(10);
+    expect(result.toolCalls).toHaveLength(9);
+    expect(mockGenerateTextWithTools.mock.calls[12][2]).toEqual([]);
     expect(events.find((event) => (
       event.type === 'phase_completed'
       && event.payload?.phase === 'apply'
       && (event.payload?.summary as Record<string, unknown>)?.stopped === true
-    ))).toBeTruthy();
+    ))).toBeUndefined();
   });
 });

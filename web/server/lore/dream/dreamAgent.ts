@@ -135,6 +135,8 @@ export interface DreamInitialContext {
 
 export const DREAM_EVENT_CONTEXT = { source: 'dream:auto' } as const satisfies DreamToolEventContext;
 
+const DREAM_FINAL_TURN_PROMPT = 'This phase has used its tool budget. Do not call any more tools. Write the phase output now, using the evidence already collected.';
+
 function buildDreamEventContext(base: DreamToolEventContext | undefined): DreamToolEventContext {
   return {
     ...DREAM_EVENT_CONTEXT,
@@ -567,14 +569,23 @@ export async function runDreamAgentLoop(
 
   async function runPhase(phase: DreamPhase, label: string, prompt: string, maxTurns: number): Promise<string> {
     const phaseStartToolCalls = toolCalls.length;
+    const stopFallback = `Dream ${phase} phase stopped after reaching the turn limit.`;
     await onEvent?.('phase_started', { phase, label });
     messages.push({ role: 'user', content: prompt });
     for (let phaseTurn = 0; phaseTurn < maxTurns; phaseTurn += 1) {
+      // The last turn is reserved for the phase's written output. Tools are
+      // omitted so the model cannot spend the whole budget on more reads and
+      // leave the next phase without its input.
+      const finalTurn = phaseTurn === maxTurns - 1;
       turns += 1;
       await onEvent?.('llm_turn_started', { turn: turns, phase });
-      const response = await chatWithTools(config, messages, buildDreamToolsForPhase(phase));
+      if (finalTurn) {
+        messages.push({ role: 'user', content: DREAM_FINAL_TURN_PROMPT });
+        await onEvent?.('phase_output_requested', { phase, turn: turns });
+      }
+      const response = await chatWithTools(config, messages, finalTurn ? [] : buildDreamToolsForPhase(phase));
       const content = String(response.content || '');
-      const rawToolCalls = Array.isArray(response.tool_calls) ? response.tool_calls : [];
+      const rawToolCalls = finalTurn || !Array.isArray(response.tool_calls) ? [] : response.tool_calls;
 
       if (rawToolCalls.length === 0) {
         if (content.trim()) {
@@ -585,7 +596,7 @@ export async function runDreamAgentLoop(
           label,
           summary: { turns: phaseTurn + 1, tool_calls: toolCalls.length - phaseStartToolCalls },
         });
-        return content.trim();
+        return content.trim() || (finalTurn ? stopFallback : '');
       }
 
       await processDreamToolCalls({
@@ -637,6 +648,13 @@ export async function runDreamAgentLoop(
     renderPromptTemplate(promptConfig.dreamPhasePlan, { diagnosis: phaseOutputs.diagnose }),
     3,
   );
+  if (extractJsonObject(phaseOutputs.plan) === null) {
+    await onEvent?.('phase_output_invalid', {
+      phase: 'plan',
+      reason: phaseOutputs.plan.trim() ? 'no_json_object' : 'empty_output',
+      preview: phaseOutputs.plan.trim().slice(0, 300),
+    });
+  }
   const plan = parseDreamPlanJson(phaseOutputs.plan);
   const planJson = JSON.stringify(plan, null, 2);
   phaseOutputs.preflight = await runPhase(

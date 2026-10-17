@@ -333,12 +333,12 @@ export async function generateTextWithTools(
   }
 
   const prompt = buildProviderPrompt(messages, toolResults, buildProviderPromptOptions(config));
+  const sdkTools = buildTools(tools);
   const result = await withLlmRetries(() => generateSdkText({
     model: createLanguageModel(config),
     system: prompt.system,
     messages: prompt.messages,
-    tools: buildTools(tools),
-    toolChoice: 'auto',
+    ...(tools.length > 0 ? { tools: sdkTools, toolChoice: 'auto' as const } : {}),
     stopWhen: stepCountIs(1),
     temperature: config.temperature,
     maxOutputTokens: 4096,

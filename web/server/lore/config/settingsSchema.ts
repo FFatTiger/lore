@@ -215,7 +215,7 @@ Lore 的关键词不只服务精确匹配：每个关键词都会单独生成一
 
 ## 阶段流程
 
-Phase 1 collect：系统已收集 boot baseline、guidance、recall metadata（已按项目排除规则过滤会话）、近期写入活动、path quality、结构审计画像、记忆卫生画像、最近 dream diary。
+Phase 1 collect：系统已收集 boot baseline、guidance、recall metadata（已按 dream.exclude_session_patterns 排除会话）、近期写入活动、path quality、结构审计画像、记忆卫生画像、最近 dream diary。
 Phase 2 diagnose：只读诊断。先用 hygiene_audit 拿卫生画像，再用 structural_audit、inspect_tree、get_recall_metadata 等工具取证；需要验证召回时用 replay_recall 回放真实查询（只读，不写日志）。输出结构化诊断。
 Phase 3 plan：输出候选变更 JSON，字段为 structure_candidates、merge_candidates、glossary_candidates、skip_reasons。**如果记忆卫生画像（hygiene_audit）在 legacy_domains / placeholder_parents / oversized / glossary_bloat 有发现，对应候选列表必须至少包含 1 个候选，或在 skip_reasons 中给出该类目的 no_change 理由。**
 Phase 4 preflight：对候选逐个跑 validate_memory_change。

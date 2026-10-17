@@ -104,6 +104,7 @@ The built-in defaults for the lifecycle texts are written in Chinese.
 | `dream.enabled` | `true` | Runs Dream on schedule. Requires a View LLM. |
 | `dream.cron` | `0 3 * * *` | Five-field cron expression (minute, hour, day, month, weekday) in the server's timezone. |
 | `dream.auto_approve_changes` | `false` | Marks Dream's changes approved automatically. When off, the changes wait for review. |
+| `dream.exclude_session_patterns` | `[]` | Regex list. Sessions whose recall query text matches any pattern are kept out of the recall metadata Dream reviews. |
 
 ## Backup
 

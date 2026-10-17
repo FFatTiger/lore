@@ -104,6 +104,7 @@
 | `dream.enabled` | `true` | 按计划运行 Dream。需要配置 View LLM。 |
 | `dream.cron` | `0 3 * * *` | 五段式 cron 表达式（分、时、日、月、星期），按服务器时区计算。 |
 | `dream.auto_approve_changes` | `false` | 自动将 Dream 的变更标记为已批准。关闭时，变更会等待审核。 |
+| `dream.exclude_session_patterns` | `[]` | 正则表达式列表。召回查询文本命中任一正则的会话，不会进入 Dream 审阅的召回元数据。 |
 
 ## 备份
 

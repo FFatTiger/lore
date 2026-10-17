@@ -153,8 +153,9 @@ export async function chatWithTools(
   config: LlmConfig,
   messages: ChatMessage[],
   tools: ToolDefinition[],
+  options: { toolChoice?: 'auto' | 'none' } = {},
 ): Promise<Record<string, unknown>> {
-  const response = await generateTextWithTools(config, messages, tools);
+  const response = await generateTextWithTools(config, messages, tools, [], options);
   return {
     content: response.content,
     assistant_content: response.assistant_content,
@@ -573,9 +574,10 @@ export async function runDreamAgentLoop(
     await onEvent?.('phase_started', { phase, label });
     messages.push({ role: 'user', content: prompt });
     for (let phaseTurn = 0; phaseTurn < maxTurns; phaseTurn += 1) {
-      // The last turn is reserved for the phase's written output. Tools are
-      // omitted so the model cannot spend the whole budget on more reads and
-      // leave the next phase without its input.
+      // The last turn is reserved for the phase's written output. Tool calls
+      // are forbidden with tool_choice none while the definitions stay in the
+      // request: Anthropic rejects histories with tool_use/tool_result blocks
+      // that no longer declare tools.
       const finalTurn = phaseTurn === maxTurns - 1;
       turns += 1;
       await onEvent?.('llm_turn_started', { turn: turns, phase });
@@ -583,7 +585,12 @@ export async function runDreamAgentLoop(
         messages.push({ role: 'user', content: DREAM_FINAL_TURN_PROMPT });
         await onEvent?.('phase_output_requested', { phase, turn: turns });
       }
-      const response = await chatWithTools(config, messages, finalTurn ? [] : buildDreamToolsForPhase(phase));
+      const response = await chatWithTools(
+        config,
+        messages,
+        buildDreamToolsForPhase(phase),
+        finalTurn ? { toolChoice: 'none' } : {},
+      );
       const content = String(response.content || '');
       const rawToolCalls = finalTurn || !Array.isArray(response.tool_calls) ? [] : response.tool_calls;
 

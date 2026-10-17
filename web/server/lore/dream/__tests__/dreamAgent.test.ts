@@ -1607,8 +1607,8 @@ describe('runDreamAgentLoop', () => {
   it('reserves the last turn of every phase for the written phase output', async () => {
     mockGenerateTextWithTools.mockReset();
     mockGetNodePayload.mockResolvedValue({ node: { uri: 'core://a' }, children: [], breadcrumbs: [] } as any);
-    mockGenerateTextWithTools.mockImplementation(async (_config, _messages, tools) => {
-      if (tools.length > 0) {
+    mockGenerateTextWithTools.mockImplementation(async (_config, _messages, _tools, _toolResults, options) => {
+      if (options?.toolChoice !== 'none') {
         return makeToolResponse([{
           id: `call-${mockGenerateTextWithTools.mock.calls.length}`,
           function: { name: 'get_node', arguments: '{"uri":"core://a"}' },
@@ -1622,8 +1622,13 @@ describe('runDreamAgentLoop', () => {
       onEvent: async (type, payload) => events.push({ type, payload }),
     });
 
-    const finalCalls = mockGenerateTextWithTools.mock.calls.filter((call) => (call[2] as unknown[]).length === 0);
+    const finalCalls = mockGenerateTextWithTools.mock.calls.filter(
+      (call) => (call[4] as { toolChoice?: string } | undefined)?.toolChoice === 'none',
+    );
     expect(finalCalls).toHaveLength(5);
+    for (const call of finalCalls) {
+      expect((call[2] as Array<{ name: string }>).length).toBeGreaterThan(0);
+    }
     const phaseCompleted = events.filter((event) => event.type === 'phase_completed');
     expect(phaseCompleted.map((event) => event.payload?.phase)).toEqual([
       'diagnose',
@@ -1658,7 +1663,8 @@ describe('runDreamAgentLoop', () => {
       onEvent: async (type, payload) => events.push({ type, payload }),
     });
 
-    expect(mockGenerateTextWithTools.mock.calls[4][2]).toEqual([]);
+    expect((mockGenerateTextWithTools.mock.calls[4][2] as Array<{ name: string }>).map((tool) => tool.name)).toContain('hygiene_audit');
+    expect(mockGenerateTextWithTools.mock.calls[4][4]).toEqual({ toolChoice: 'none' });
     const planMessages = mockGenerateTextWithTools.mock.calls[5][1] as Array<{ content?: unknown }>;
     const planPrompt = planMessages.map((message) => String(message.content || '')).join('\n');
     expect(planPrompt).toContain('REAL DIAGNOSIS: legacy domains need relocation');
@@ -1689,7 +1695,8 @@ describe('runDreamAgentLoop', () => {
 
     expect(mockGenerateTextWithTools).toHaveBeenCalledTimes(14);
     expect(result.toolCalls).toHaveLength(9);
-    expect(mockGenerateTextWithTools.mock.calls[12][2]).toEqual([]);
+    expect((mockGenerateTextWithTools.mock.calls[12][2] as Array<{ name: string }>).map((tool) => tool.name)).toContain('update_node');
+    expect(mockGenerateTextWithTools.mock.calls[12][4]).toEqual({ toolChoice: 'none' });
     expect(events.find((event) => (
       event.type === 'phase_completed'
       && event.payload?.phase === 'apply'

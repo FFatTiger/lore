@@ -29,6 +29,21 @@ export async function readJsonFileStrict<T>(filePath: string): Promise<T | undef
   }
 }
 
+// Windows refuses to rename onto a file another handle (a concurrent writer, an antivirus scan)
+// still has open, failing with EPERM/EACCES/EBUSY; the handle closes quickly, so retry briefly.
+async function renameWithRetry(from: string, to: string): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await fs.rename(from, to);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? '';
+      if (process.platform !== 'win32' || attempt >= 10 || !['EPERM', 'EACCES', 'EBUSY'].includes(code)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 20));
+    }
+  }
+}
+
 export async function writeJsonAtomic(
   filePath: string,
   data: unknown,
@@ -43,7 +58,7 @@ export async function writeJsonAtomic(
       mode,
     });
     await fs.chmod(tmp, mode);
-    await fs.rename(tmp, filePath);
+    await renameWithRetry(tmp, filePath);
     await fs.chmod(filePath, mode);
   } finally {
     await fs.rm(tmp, { force: true }).catch(() => undefined);

@@ -1214,6 +1214,20 @@ describe('loadGuidanceFile', () => {
     expect(prompt).toContain('get_node');
     expect(prompt).not.toContain('做梦时不需要');
   });
+
+  it('falls back to the default memory-write guidance when server guidance is off', async () => {
+    mockGetSettings.mockResolvedValueOnce({
+      'lifecycle.guidance.enabled': false,
+      'lifecycle.guidance.global': '',
+      'lifecycle.boot.preamble': '',
+      'lifecycle.startup_recall.preamble': '',
+      'lifecycle.prompt_recall.preamble': '',
+    });
+    const prompt = await loadGuidanceFile();
+    expect(prompt).toContain('标识符类关键词服务精确匹配');
+    expect(prompt).toContain('纯卫生操作');
+    expect(prompt).toContain('证据不足时输出 no_change');
+  });
 });
 
 // ---------------------------------------------------------------------------

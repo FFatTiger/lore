@@ -91,6 +91,8 @@ export interface DebugRecallMemoriesResult {
 
 interface RecallRequestContext {
   clientType?: ClientType | null;
+  /** Set to false for read-only replays that must not write recall logs. */
+  logEvents?: boolean;
 }
 
 interface AggregateCandidatesOptions {
@@ -159,20 +161,22 @@ export async function recallMemories(body: RecallRequestBody, context: RecallReq
   const startedAt = Date.now();
   const result = await runRecallPipeline(body, { aggregateCandidates });
   const durationMs = Date.now() - startedAt;
-  const eventLog = startRecallEventLog({
-    queryText: result.query,
-    durationMs,
-    exactRows: result.exact_rows,
-    glossarySemanticRows: result.glossary_semantic_rows,
-    denseRows: result.dense_rows,
-    lexicalRows: result.lexical_rows,
-    rankedCandidates: result.ranked,
-    displayedItems: result.items,
-    retrievalMeta: result.retrieval_meta,
-    sessionId: result.session_id,
-    clientType: resolveRequestClientType(body, context),
-    errorLabel: '[recall_events] failed to log recall events',
-  });
+  const eventLog = context.logEvents === false
+    ? { query_id: '', enabled: false }
+    : startRecallEventLog({
+        queryText: result.query,
+        durationMs,
+        exactRows: result.exact_rows,
+        glossarySemanticRows: result.glossary_semantic_rows,
+        denseRows: result.dense_rows,
+        lexicalRows: result.lexical_rows,
+        rankedCandidates: result.ranked,
+        displayedItems: result.items,
+        retrievalMeta: result.retrieval_meta,
+        sessionId: result.session_id,
+        clientType: resolveRequestClientType(body, context),
+        errorLabel: '[recall_events] failed to log recall events',
+      });
 
   return {
     query: result.query,

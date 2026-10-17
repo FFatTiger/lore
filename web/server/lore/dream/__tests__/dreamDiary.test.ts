@@ -4,14 +4,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Mocks
 // ---------------------------------------------------------------------------
 
-vi.mock('../../../db', () => ({ sql: vi.fn() }));
+vi.mock('../../../db', () => ({ sql: vi.fn(), getPool: vi.fn() }));
 vi.mock('../../config/settings', () => ({
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
 }));
 vi.mock('../../recall/recall', () => ({ ensureRecallIndex: vi.fn() }));
 vi.mock('../../recall/recallAnalytics', () => ({ getRecallStats: vi.fn(), getDreamRecallReview: vi.fn() }));
-vi.mock('../../memory/writeEvents', () => ({ getWriteEventStats: vi.fn() }));
+vi.mock('../../memory/writeEvents', () => ({ getWriteEventStats: vi.fn(), logMemoryEvent: vi.fn() }));
 vi.mock('../../memory/boot', () => ({ bootView: vi.fn() }));
 vi.mock('../../memory/write', () => ({
   createNode: vi.fn(),
@@ -19,9 +19,21 @@ vi.mock('../../memory/write', () => ({
   deleteNodeByPath: vi.fn(),
   moveNode: vi.fn(),
 }));
-vi.mock('../../search/glossary', () => ({
-  addGlossaryKeyword: vi.fn(),
-  removeGlossaryKeyword: vi.fn(),
+vi.mock('../../search/glossary', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../search/glossary')>();
+  return {
+    ...actual,
+    addGlossaryKeyword: vi.fn(),
+    removeGlossaryKeyword: vi.fn(),
+  };
+});
+vi.mock('../../view/viewCrud', () => ({
+  upsertGeneratedMemoryViewsForPath: vi.fn(),
+  deleteGeneratedMemoryViewsByPrefix: vi.fn(),
+}));
+vi.mock('../../search/glossarySemantic', () => ({
+  upsertGeneratedGlossaryEmbeddingsForPath: vi.fn(),
+  deleteGeneratedGlossaryEmbeddingsByPrefix: vi.fn(),
 }));
 vi.mock('../dreamAgent', () => ({
   loadLlmConfig: vi.fn(),
@@ -44,12 +56,28 @@ vi.mock('../dreamWorkflow', () => ({
   listDreamWorkflowEvents: vi.fn(),
 }));
 
-import { sql } from '../../../db';
+vi.mock('../../memory/structuralAudit', () => ({
+  getPathQualitySummary: vi.fn(),
+  getStructuralAudit: vi.fn(),
+}));
+vi.mock('../../memory/hygieneAudit', () => ({
+  getHygieneAudit: vi.fn(),
+}));
+vi.mock('../dreamSessionFilter', () => ({
+  loadDreamSessionFilter: vi.fn(async () => ({ patterns: [] })),
+  collectExcludedDreamQueryIds: vi.fn(async () => new Set()),
+  filterDreamRecallReview: vi.fn((review: Record<string, unknown>) => review),
+}));
+
+import { sql, getPool } from '../../../db';
 import { getSettings, updateSettings } from '../../config/settings';
 import { bootView } from '../../memory/boot';
 import { deleteNodeByPath, updateNodeByPath, createNode, moveNode } from '../../memory/write';
 import { addGlossaryKeyword, removeGlossaryKeyword } from '../../search/glossary';
+import { logMemoryEvent } from '../../memory/writeEvents';
 import { appendDreamWorkflowEvent, listDreamWorkflowEvents } from '../dreamWorkflow';
+import { getPathQualitySummary, getStructuralAudit } from '../../memory/structuralAudit';
+import { getHygieneAudit } from '../../memory/hygieneAudit';
 import { loadLlmConfig, rewriteDreamNarrative, runDreamAgentLoop } from '../dreamAgent';
 import { ensureRecallIndex } from '../../recall/recall';
 import {
@@ -63,6 +91,8 @@ import {
 } from '../dreamDiary';
 
 const mockSql = vi.mocked(sql);
+const mockGetPool = vi.mocked(getPool);
+const mockLogMemoryEvent = vi.mocked(logMemoryEvent);
 const mockGetSettings = vi.mocked(getSettings);
 const mockUpdateSettings = vi.mocked(updateSettings);
 const mockBootView = vi.mocked(bootView);
@@ -322,6 +352,136 @@ describe('rollbackDream', () => {
     );
   });
 
+  it('reverses glossary_remove by adding the keyword back', async () => {
+    mockSql
+      .mockResolvedValueOnce(makeResult([{ id: 1, status: 'completed', started_at: '2024-01-01', completed_at: '2024-01-02' }]))
+      .mockResolvedValueOnce(makeResult([{
+        id: 15, event_type: 'glossary_remove', node_uri: 'core://test', node_uuid: 'uuid1',
+        domain: 'core', path: 'test', before_snapshot: { keyword: 'generic' }, after_snapshot: null, details: {},
+      }]))
+      .mockResolvedValueOnce(makeResult());
+
+    mockAddGlossaryKeyword.mockResolvedValue({ success: true } as any);
+
+    const result = await rollbackDream(1);
+    expect(result.events_reversed).toBe(1);
+    expect(mockAddGlossaryKeyword).toHaveBeenCalledWith(
+      { keyword: 'generic', node_uuid: 'uuid1' },
+      { source: 'dream:rollback' },
+    );
+  });
+
+  it('restores glossary keywords trimmed by a real update_node event', async () => {
+    mockSql.mockReset();
+    mockUpdateNodeByPath.mockReset();
+    mockAddGlossaryKeyword.mockReset();
+    mockRemoveGlossaryKeyword.mockReset();
+    mockLogMemoryEvent.mockReset();
+    mockGetPool.mockReset();
+
+    // Build the event through the real write path so its shape matches what
+    // update_node emits in production.
+    const actualWrite = await vi.importActual<typeof import('../../memory/write')>('../../memory/write');
+    let glossarySelects = 0;
+    const client = {
+      query: vi.fn((query: string) => {
+        if (query.includes('SELECT p.domain, p.path, e.id AS edge_id')) {
+          return Promise.resolve({
+            rows: [{
+              domain: 'project',
+              path: 'lore/dream',
+              edge_id: 7,
+              parent_uuid: 'parent-1',
+              child_uuid: 'node-1',
+              priority: 2,
+              disclosure: 'when editing dream',
+            }],
+          });
+        }
+        if (query.includes('FROM memories') && query.includes('deprecated = FALSE')) {
+          return Promise.resolve({ rows: [{ id: 1, content: 'dream body' }] });
+        }
+        if (query.includes('SELECT keyword') && query.includes('FROM glossary_keywords')) {
+          glossarySelects += 1;
+          return Promise.resolve({
+            rows: glossarySelects === 1
+              ? [{ keyword: 'keep' }, { keyword: 'shadcn/ui' }, { keyword: 'drop_me' }]
+              : [{ keyword: 'keep' }, { keyword: 'drop_me' }],
+          });
+        }
+        if (query.includes('DELETE FROM glossary_keywords')) {
+          return Promise.resolve({ rows: [{ keyword: 'shadcn/ui' }], rowCount: 1 });
+        }
+        return Promise.resolve({ rows: [], rowCount: 0 });
+      }),
+      release: vi.fn(),
+    };
+    mockGetPool.mockReturnValue({ connect: vi.fn().mockResolvedValue(client) } as any);
+
+    await actualWrite.updateNodeByPath(
+      { domain: 'project', path: 'lore/dream', glossaryRemove: ['shadcn/ui'] },
+      { source: 'dream:auto', session_id: 'dream:9' },
+    );
+
+    const logged = mockLogMemoryEvent.mock.calls[0][0] as Record<string, unknown>;
+    expect(logged.event_type).toBe('update');
+    expect(logged.details).toMatchObject({ glossary_removed: ['shadcn/ui'] });
+    expect(logged.before_snapshot).toMatchObject({ glossary_keywords: ['keep', 'shadcn/ui', 'drop_me'] });
+
+    mockSql
+      .mockResolvedValueOnce(makeResult([{ id: 9, status: 'completed', started_at: '2024-01-01', completed_at: '2024-01-02' }]))
+      .mockResolvedValueOnce(makeResult([{
+        id: 42,
+        event_type: logged.event_type,
+        node_uri: logged.node_uri,
+        node_uuid: logged.node_uuid,
+        domain: logged.domain,
+        path: logged.path,
+        before_snapshot: logged.before_snapshot,
+        after_snapshot: logged.after_snapshot,
+        details: logged.details,
+      }]))
+      .mockResolvedValueOnce(makeResult());
+    mockUpdateNodeByPath.mockResolvedValue({ success: true } as any);
+    mockAddGlossaryKeyword.mockResolvedValue({ success: true } as any);
+    mockRemoveGlossaryKeyword.mockResolvedValue({ success: true } as any);
+
+    const result = await rollbackDream(9);
+
+    expect(result.events_reversed).toBe(1);
+    expect(mockUpdateNodeByPath).toHaveBeenCalledWith(
+      expect.objectContaining({ domain: 'project', path: 'lore/dream', content: 'dream body' }),
+      { source: 'dream:rollback' },
+    );
+    expect(mockAddGlossaryKeyword).toHaveBeenCalledWith(
+      { keyword: 'shadcn/ui', node_uuid: 'node-1' },
+      { source: 'dream:rollback' },
+    );
+    expect(mockRemoveGlossaryKeyword).not.toHaveBeenCalled();
+  });
+
+  it('counts only events that were actually reversed', async () => {
+    mockSql
+      .mockResolvedValueOnce(makeResult([{ id: 1, status: 'completed', started_at: '2024-01-01', completed_at: '2024-01-02' }]))
+      .mockResolvedValueOnce(makeResult([
+        {
+          id: 20, event_type: 'unexpected', node_uri: 'core://x', node_uuid: 'uuid1',
+          domain: 'core', path: 'x', before_snapshot: {}, after_snapshot: {}, details: {},
+        },
+        {
+          id: 21, event_type: 'move', node_uri: 'core://renamed', node_uuid: 'uuid1',
+          domain: 'core', path: 'renamed', before_snapshot: { uri: 'core://original' }, after_snapshot: { uri: 'core://renamed' }, details: {},
+        },
+      ]))
+      .mockResolvedValueOnce(makeResult());
+    mockMoveNode.mockResolvedValue({ success: true } as any);
+
+    const result = await rollbackDream(1);
+
+    expect(result.events_total).toBe(2);
+    expect(result.events_reversed).toBe(1);
+  });
+
   it('reverses move events by moving the node back', async () => {
     mockSql
       .mockResolvedValueOnce(makeResult([{ id: 1, status: 'completed', started_at: '2024-01-01', completed_at: '2024-01-02' }]))
@@ -358,6 +518,16 @@ describe('runDream', () => {
     mockRewriteDreamNarrative.mockResolvedValue('poetic done');
     mockRunDreamAgentLoop.mockResolvedValue({ narrative: 'done', toolCalls: [], turns: 1 } as any);
     mockAppendDreamWorkflowEvent.mockResolvedValue({ id: 1, diary_id: 1, event_type: 'event', payload: {}, created_at: '2024-01-01T00:00:00Z' } as any);
+    vi.mocked(getPathQualitySummary).mockResolvedValue({ date_suffix_path_count: 1, recent_bad_creates: 0, top_nodes: [{ uri: 'project://lore/dream_2026_05_07', created_at: '2026-05-07T00:00:00.000Z', reason: 'ordinary_date_suffix' }] } as any);
+    vi.mocked(getStructuralAudit).mockResolvedValue({
+      counts: { date_suffix: 1, core_projects: 0, malformed_domains: 0, empty_content: 0 },
+      date_suffix_paths: [{ uri: 'project://lore/dream_review_2026_05_07', category: 'date_suffix', reason: 'ordinary_date_suffix' }],
+      total: 1,
+      limit: 8,
+      offset: 0,
+      has_more: false,
+    } as any);
+    vi.mocked(getHygieneAudit).mockResolvedValue({ counts: { oversized: 0, glossary_bloat: 2, identifier_keywords: 1, shared_keywords: 0, placeholder_parents: 3, legacy_domains: 4 }, total: 10, limit: 5, offset: 0, has_more: false } as any);
     mockBootView.mockResolvedValue({
       core_memories: [
         { uri: 'core://agent', content: 'agent boot', boot_role: 'agent', boot_role_label: 'workflow constraints', boot_purpose: 'Working rules' },
@@ -428,10 +598,17 @@ describe('runDream', () => {
       expect.anything(),
       expect.objectContaining({
         guidance: '# guidance body',
-        recallReview,
-        recallStats,
+        recallReview: expect.objectContaining({ summary: recallReview.summary, queries: recallReview.queries }),
+        recallStats: { summary: recallStats.summary },
         writeActivity: writeStats,
         recentDiaries: expect.any(Array),
+        pathQuality: expect.objectContaining({ date_suffix_path_count: 1 }),
+        structuralAudit: expect.objectContaining({
+          counts: expect.objectContaining({ date_suffix: 1 }),
+          date_suffix_paths: [expect.objectContaining({ uri: 'project://lore/dream_review_2026_05_07' })],
+          note: expect.stringContaining('pagination'),
+        }),
+        hygieneAudit: expect.objectContaining({ counts: expect.objectContaining({ legacy_domains: 4 }) }),
         bootBaseline: [
           expect.objectContaining({ uri: 'core://agent', content: 'agent boot' }),
           expect.objectContaining({ uri: 'core://soul', content: 'soul boot' }),
@@ -443,6 +620,9 @@ describe('runDream', () => {
       }),
     );
     expect(vi.mocked(recallAnalytics.getDreamRecallReview)).toHaveBeenCalledWith({ days: 1, limit: 100 });
+    expect(mockSql.mock.calls.some((call) => String(call[0]).includes('ORDER BY started_at DESC LIMIT 5'))).toBe(true);
+    const memoryChangeQuery = mockSql.mock.calls.find((call) => String(call[0]).includes('GROUP BY event_type'));
+    expect(memoryChangeQuery?.[1]).toEqual([1, 'dream:1']);
 
     const updateCall = mockSql.mock.calls.find((call) => String(call[0]).includes('UPDATE dream_diary SET status = \'completed\''));
     expect(updateCall).toBeTruthy();
@@ -487,8 +667,8 @@ describe('runDream', () => {
     expect(details).toMatchObject({
       initial_context: {
         guidance: '# guidance body',
-        recallReview,
-        recallStats,
+        recallReview: expect.objectContaining({ summary: recallReview.summary, queries: recallReview.queries }),
+        recallStats: { summary: recallStats.summary },
         writeActivity: writeStats,
       },
       recallReview,
@@ -501,6 +681,104 @@ describe('runDream', () => {
         moved: 2,
       },
     });
+  });
+
+  it('hands the agent a compact recall review and only the recall summary', async () => {
+    mockSql
+      .mockResolvedValueOnce(makeResult([{ id: 10 }]))
+      .mockResolvedValueOnce(makeResult([]))
+      .mockResolvedValueOnce(makeResult([]))
+      .mockResolvedValueOnce(makeResult());
+    mockGetSettings.mockResolvedValue({});
+    const recallAnalytics = await import('../../recall/recallAnalytics');
+    const writeEvents = await import('../../memory/writeEvents');
+    const queries = Array.from({ length: 20 }, (_, i) => ({
+      query_id: `q${i}`,
+      content: `query ${i}`,
+      merged_count: 1,
+      shown_count: 0,
+      used_count: 0,
+    }));
+    vi.mocked(recallAnalytics.getRecallStats).mockResolvedValue({
+      summary: { merged_count: 5, query_count: 20 },
+      recent_queries: { items: [] },
+    } as any);
+    vi.mocked(recallAnalytics.getDreamRecallReview).mockResolvedValue({
+      summary: { returned_queries: 20 },
+      queries,
+    } as any);
+    vi.mocked(writeEvents.getWriteEventStats).mockResolvedValue({ summary: {}, hot_nodes: [], recent_events: [] } as any);
+
+    await runDream();
+
+    const agentContext = mockRunDreamAgentLoop.mock.calls[0][1];
+    expect((agentContext.recallReview.queries as unknown[])).toHaveLength(12);
+    expect(agentContext.recallStats).toEqual({ summary: { merged_count: 5, query_count: 20 } });
+    const updateCall = mockSql.mock.calls.find((call) => String(call[0]).includes('UPDATE dream_diary SET status = \'completed\''));
+    const details = JSON.parse(String(updateCall?.[1]?.[7]));
+    expect(details.recall_metadata_queries).toHaveLength(20);
+  });
+
+  it('marks empty audit findings in the initial context', async () => {
+    mockSql
+      .mockResolvedValueOnce(makeResult([{ id: 11 }]))
+      .mockResolvedValueOnce(makeResult([]))
+      .mockResolvedValueOnce(makeResult([]))
+      .mockResolvedValueOnce(makeResult());
+    mockGetSettings.mockResolvedValue({});
+    const recallAnalytics = await import('../../recall/recallAnalytics');
+    const writeEvents = await import('../../memory/writeEvents');
+    vi.mocked(recallAnalytics.getRecallStats).mockResolvedValue({ summary: {} } as any);
+    vi.mocked(recallAnalytics.getDreamRecallReview).mockResolvedValue({ summary: {}, queries: [] } as any);
+    vi.mocked(writeEvents.getWriteEventStats).mockResolvedValue({ summary: {}, hot_nodes: [], recent_events: [] } as any);
+    vi.mocked(getStructuralAudit).mockResolvedValue({
+      counts: { date_suffix: 0, core_projects: 0, malformed_domains: 0, empty_content: 0 },
+      total: 0,
+    } as any);
+    vi.mocked(getHygieneAudit).mockResolvedValue({
+      counts: { oversized: 0, glossary_bloat: 0, identifier_keywords: 0, shared_keywords: 0, placeholder_parents: 0, legacy_domains: 0 },
+      total: 0,
+    } as any);
+
+    await runDream();
+
+    const agentContext = mockRunDreamAgentLoop.mock.calls[0][1];
+    expect(agentContext.structuralAudit).toEqual({
+      counts: { date_suffix: 0, core_projects: 0, malformed_domains: 0, empty_content: 0 },
+      note: 'No structural issues found.',
+    });
+    expect(agentContext.hygieneAudit).toEqual({
+      counts: { oversized: 0, glossary_bloat: 0, identifier_keywords: 0, shared_keywords: 0, placeholder_parents: 0, legacy_domains: 0 },
+      note: 'No hygiene findings.',
+    });
+  });
+
+  it('keeps excluded sessions out of the recall metadata Dream sees', async () => {
+    mockSql
+      .mockResolvedValueOnce(makeResult([{ id: 9 }]))
+      .mockResolvedValueOnce(makeResult([]))
+      .mockResolvedValueOnce(makeResult([]))
+      .mockResolvedValueOnce(makeResult());
+    mockGetSettings.mockResolvedValue({});
+    const recallAnalytics = await import('../../recall/recallAnalytics');
+    const writeEvents = await import('../../memory/writeEvents');
+    const sessionFilter = await import('../dreamSessionFilter');
+    vi.mocked(recallAnalytics.getRecallStats).mockResolvedValue({ summary: {}, recent_queries: { items: [{ query_id: 'q1' }, { query_id: 'q2' }] } } as any);
+    vi.mocked(recallAnalytics.getDreamRecallReview).mockResolvedValue({ summary: {}, queries: [{ query_id: 'q1' }, { query_id: 'q2' }] } as any);
+    vi.mocked(writeEvents.getWriteEventStats).mockResolvedValue({ summary: {}, hot_nodes: [], recent_events: [] } as any);
+    vi.mocked(sessionFilter.loadDreamSessionFilter).mockResolvedValue({ patterns: [/bot/] } as any);
+    vi.mocked(sessionFilter.collectExcludedDreamQueryIds).mockResolvedValue(new Set(['q2']));
+    vi.mocked(sessionFilter.filterDreamRecallReview).mockImplementation((review: Record<string, unknown>) => ({
+      ...review,
+      ...(Array.isArray(review.queries) ? { queries: (review.queries as Array<{ query_id: string }>).filter((item) => item.query_id !== 'q2') } : {}),
+    }));
+
+    await runDream();
+
+    expect(sessionFilter.loadDreamSessionFilter).toHaveBeenCalled();
+    expect(sessionFilter.collectExcludedDreamQueryIds).toHaveBeenCalled();
+    const agentContext = mockRunDreamAgentLoop.mock.calls[0][1];
+    expect((agentContext.recallReview.queries as Array<{ query_id: string }>).map((item) => item.query_id)).toEqual(['q1']);
   });
 
   it('keeps dream completed when poetic rewrite fails and records fallback', async () => {

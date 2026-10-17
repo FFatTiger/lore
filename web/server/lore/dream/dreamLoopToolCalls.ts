@@ -13,6 +13,8 @@ interface DreamLoopToolCallLogEntry {
   args: Record<string, unknown>;
   result_preview: string;
   result_size_chars?: number;
+  blocked?: boolean;
+  success?: boolean;
 }
 
 interface ProcessDreamToolCallsOptions {
@@ -42,6 +44,40 @@ function isProtectedBootBlocked(result: Record<string, unknown> | null): boolean
   return Boolean(result?.blocked && result?.code === 'protected_boot_path');
 }
 
+const MAX_TOOL_RESULT_CHARS = 6000;
+const MAX_TOOL_RESULT_PREVIEW_CHARS = 5200;
+
+/**
+ * Keeps a single oversized tool result from flooding the Dream context. The
+ * agent can retry with a narrower limit, path, or query when it needs detail.
+ */
+function compactDreamToolResult(raw: string): string {
+  if (raw.length <= MAX_TOOL_RESULT_CHARS) return raw;
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(raw);
+  } catch {
+    decoded = undefined;
+  }
+  const compacted: Record<string, unknown> = {
+    truncated: true,
+    original_chars: raw.length,
+    preview: `${raw.slice(0, MAX_TOOL_RESULT_PREVIEW_CHARS)}…`,
+    note: 'Dream tool result exceeded the per-call context budget; retry with a narrower limit/path/query if more detail is needed.',
+  };
+  if (decoded && typeof decoded === 'object' && !Array.isArray(decoded)) {
+    compacted.top_level_keys = Object.keys(decoded as Record<string, unknown>).sort();
+  } else if (Array.isArray(decoded)) {
+    compacted.top_level_type = 'array';
+    compacted.item_count = decoded.length;
+  }
+  return JSON.stringify(compacted);
+}
+
+function isBlockedToolResult(result: Record<string, unknown> | null): boolean {
+  return Boolean(result && (result.blocked === true || result.error));
+}
+
 export async function processDreamToolCalls({
   turn,
   content,
@@ -63,7 +99,7 @@ export async function processDreamToolCalls({
     const protectedBootBlocked = isProtectedBootBlocked(resultRecord);
     const policyValidationBlocked = isDreamPolicyValidationBlocked(resultRecord);
     const policyWarnings = getDreamPolicyWarnings(resultRecord);
-    const blocked = protectedBootBlocked || policyValidationBlocked;
+    const blocked = protectedBootBlocked || policyValidationBlocked || isBlockedToolResult(resultRecord);
 
     if (protectedBootBlocked) {
       await onEvent?.('protected_node_blocked', {
@@ -105,12 +141,14 @@ export async function processDreamToolCalls({
       policy_warnings: policyWarnings,
     });
 
-    const serializedResult = JSON.stringify(result);
+    const serializedResult = compactDreamToolResult(JSON.stringify(result));
     toolCalls.push({
       tool: name,
       args,
       result_preview: serializedResult.slice(0, 500),
       result_size_chars: serializedResult.length,
+      blocked,
+      success: !blocked && resultRecord?.success === true,
     });
 
     messages.push({

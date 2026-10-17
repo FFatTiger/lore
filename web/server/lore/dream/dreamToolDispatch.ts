@@ -1,5 +1,7 @@
 import { getNodePayload, listDomains } from '../memory/browse';
 import { createNode, deleteNodeByPath, moveNode, updateNodeByPath } from '../memory/write';
+import { getHygieneAudit } from '../memory/hygieneAudit';
+import { getStructuralAudit } from '../memory/structuralAudit';
 import { getPathEffectiveness } from '../recall/feedbackAnalytics';
 import {
   getDreamRecallReview,
@@ -14,12 +16,36 @@ import { listMemoryViewsByNode } from '../view/memoryViewQueries';
 import { getDreamMemoryEventSummary, getNodeWriteHistory } from '../memory/writeEvents';
 import { parseUri } from '../core/utils';
 import { inspectMemoryNodeForDream, inspectNeighbors, inspectTree, refreshOrInspectViews, validateMemoryChange } from './dreamToolReadHelpers';
+import { replayRecall } from './dreamReplayRecall';
+import { collectExcludedDreamQueryIds, dreamSessionMatches, filterDreamRecallReview, loadDreamSessionFilter } from './dreamSessionFilter';
 import {
   applyDreamWritePolicy,
   type DreamToolEventContext,
 } from './dreamToolPolicy';
 
 interface DreamMutationContext extends DreamToolEventContext {}
+
+const QUERY_SCOPED_DREAM_TOOLS = new Set([
+  'get_query_recall_detail',
+  'get_query_candidates',
+  'get_query_path_breakdown',
+  'get_query_node_paths',
+  'get_query_event_samples',
+]);
+
+async function blockedExcludedQuery(queryId: unknown, days: unknown): Promise<Record<string, unknown> | null> {
+  const id = String(queryId || '').trim();
+  if (!id) return null;
+  const filter = await loadDreamSessionFilter();
+  const excluded = await collectExcludedDreamQueryIds(filter, Number(days) || 7);
+  if (!excluded.has(id)) return null;
+  return {
+    blocked: true,
+    code: 'dream_session_excluded',
+    error: 'query belongs to an excluded session',
+    recoverable: true,
+  };
+}
 
 function attachDreamPolicyWarnings(result: unknown, warnings: string[]): unknown {
   if (!warnings.length || !result || typeof result !== 'object') return result;
@@ -39,6 +65,11 @@ export async function dispatchDreamTool(
   const policyResult = await applyDreamWritePolicy(name, args, eventContext);
   if (policyResult.blockedResult) return policyResult.blockedResult;
 
+  if (QUERY_SCOPED_DREAM_TOOLS.has(name)) {
+    const blocked = await blockedExcludedQuery(args.query_id, args.days);
+    if (blocked) return blocked;
+  }
+
   switch (name) {
     case 'get_node': {
       const { domain, path } = parseUri(args.uri as string);
@@ -48,20 +79,34 @@ export async function dispatchDreamTool(
       return await searchMemories({ query: args.query as string, limit: (args.limit as number) || 10 });
     case 'list_domains':
       return await listDomains();
-    case 'get_recall_metadata':
-      return await getDreamRecallReview({
+    case 'get_recall_metadata': {
+      const review = await getDreamRecallReview({
         date: (args.date as string) || '',
         days: (args.days as number) || 0,
         limit: (args.limit as number) || 100,
         offset: (args.offset as number) || 0,
-      });
-    case 'get_query_recall_detail':
+      }) as unknown as Record<string, unknown>;
+      const filter = await loadDreamSessionFilter();
+      const excluded = await collectExcludedDreamQueryIds(filter, (args.days as number) || 1);
+      return filterDreamRecallReview(review, excluded);
+    }
+    case 'get_query_recall_detail': {
+      const filter = await loadDreamSessionFilter();
+      if (args.query_text && dreamSessionMatches(filter, args.query_text)) {
+        return {
+          blocked: true,
+          code: 'dream_session_excluded',
+          error: 'query belongs to an excluded session',
+          recoverable: true,
+        };
+      }
       return await getDreamQueryRecallDetail({
         queryId: (args.query_id as string) || '',
         queryText: (args.query_text as string) || '',
         days: (args.days as number) || 7,
         limit: (args.limit as number) || 10,
       });
+    }
     case 'get_query_candidates':
       return await getDreamQueryCandidates({
         queryId: (args.query_id as string) || '',
@@ -85,6 +130,23 @@ export async function dispatchDreamTool(
         retrievalPath: (args.retrieval_path as string) || '',
         limit: (args.limit as number) || 10,
         includeMetadata: args.include_metadata === true,
+      });
+    case 'structural_audit':
+      return await getStructuralAudit({
+        category: (args.category as string) || '',
+        limit: (args.limit as number) || 15,
+        offset: (args.offset as number) || 0,
+      });
+    case 'hygiene_audit':
+      return await getHygieneAudit({
+        category: (args.category as string) || '',
+        limit: (args.limit as number) || 15,
+        offset: (args.offset as number) || 0,
+      });
+    case 'replay_recall':
+      return await replayRecall({
+        query_ids: args.query_ids,
+        queries: args.queries,
       });
     case 'get_node_write_history':
       return await getNodeWriteHistory({ nodeUri: args.uri as string, limit: (args.limit as number) || 20 });

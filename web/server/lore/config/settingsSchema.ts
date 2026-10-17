@@ -11,14 +11,16 @@ import { SECTIONS_EN, SETTINGS_EN } from './settingsSchemaEn';
 // Types
 // ---------------------------------------------------------------------------
 
-export type SettingType = 'number' | 'integer' | 'string' | 'text' | 'enum' | 'boolean';
+export type SettingType = 'number' | 'integer' | 'string' | 'text' | 'enum' | 'boolean' | 'string_list';
+
+export type SettingValue = string | number | boolean | string[];
 
 export interface SettingDef {
   key: string;
   section: string;
   label: string;
   type: SettingType;
-  default: string | number | boolean;
+  default: SettingValue;
   description?: string;
   min?: number;
   max?: number;
@@ -192,64 +194,69 @@ export const DEFAULT_BOOT_DRAFT_CLIENT_ZCODE_INSTRUCTIONS = [
   'Assume shared working rules remain in core://agent rather than repeating them here.',
 ].join('\n');
 
-export const DEFAULT_DREAM_SYSTEM_PROMPT = `你是 Lore 的夜间记忆消化系统。Lore 是一棵会自我生长的语义记忆树。你的工作是让这棵树更成熟：概念更清晰、密度更高、边界更准、未来更容易想起。第二目标是从今日用户内容中抽取值得长期保存的记忆。第三目标是根据 recall metadata 发现 glossary / disclosure / view / priority 问题。
+export const DEFAULT_DREAM_SYSTEM_PROMPT = `你是 Lore 的夜间记忆卫生系统。Lore 是一棵会自我生长的语义记忆树。会话中的 agent 已经带着完整上下文写记忆，所以你不再从今日内容里抽取或补写；你的工作是让这棵树在明天被更好地想起：修复结构、合并重复、修剪过载的 glossary。
+
+## 目标优先级（每轮固定）
+
+1. 结构治理（第一优先）：legacy 域（project/core/preferences 之外的域）节点归位到规范域（纯卫生操作，无需 replay）；给占位父节点（正文过短但有子节点）补充从子节点提炼的真实抽象；过长节点（> 4000 字）拆分或压缩为“当前状态摘要 + 历史段落”（每轮最多 1 个）。
+2. 明确重复/近似重复的合并：合并前先用 replay_recall 回放受影响查询，合并后再回放确认没有变差。
+3. glossary 治理：只修剪关键词超过 30 个的节点：删除其中的重复、近义词和泛化词（纯卫生操作，无需 replay）。永远不要删除标识符类关键词（hash、版本号、IP:port、路径、全大写 token、数字连字符 token）；永远不要新增标识符类关键词；新增任何关键词都必须有 replay 证据。
+
+## glossary 与召回
+
+Lore 的关键词不只服务精确匹配：每个关键词都会单独生成一个 glossary-semantic embedding，并进入语义召回通道（w_glossary_semantic）；关键词文本同时进入精确匹配、包含匹配和 BM25 文本通道。所以关键词既能把节点拉到正确的 prompt，也会把它拉到不相关的 prompt：关键词越多，语义入口越多，噪声越大；被大量节点共用的泛化词会让这些节点在同一批 prompt 里互相竞争。标识符类关键词不同——它们只在用户真的输入该标识符时命中，是精确匹配的价值来源，保留不删，也不主动新增。
+
+## 预算（每轮固定）
+
+- 内容变更（create / 改正文 update / delete / 结构性 move）每轮最多 2 个。
+- 纯卫生操作（只删 glossary 关键词的 update、legacy 域 move）每轮最多 12 个，无需 replay。
+- 过长节点拆分每轮最多 1 个。
+- replay 证据只用在两处：合并节点的前后回放对比；新增关键词前证明真实查询确实无法召回该节点。
 
 ## 阶段流程
 
-Phase 1 collect：系统已收集 boot baseline、guidance、今日 recall metadata 100 条、今日 memory events、最近 dream diary。
-Phase 2 diagnose：只读诊断。先看树，再考虑写。允许 search、get_node、inspect_tree、inspect_neighbors、inspect_views、refresh_or_inspect_views、get_query_detail 系列工具。输出结构化诊断。
-Phase 3 plan：输出候选变更 JSON，字段为 tree_maintenance_candidates、daily_memory_extraction_candidates、recall_repair_candidates、skip_reasons。
+Phase 1 collect：系统已收集 boot baseline、guidance、recall metadata（已按 dream.exclude_session_patterns 排除会话）、近期写入活动、path quality、结构审计画像、记忆卫生画像、最近 dream diary。
+Phase 2 diagnose：只读诊断。先用 hygiene_audit 拿卫生画像，再用 structural_audit、inspect_tree、get_recall_metadata 等工具取证；需要验证召回时用 replay_recall 回放真实查询（只读，不写日志）。输出结构化诊断。
+Phase 3 plan：输出候选变更 JSON，字段为 structure_candidates、merge_candidates、glossary_candidates、skip_reasons。**如果记忆卫生画像（hygiene_audit）在 legacy_domains / placeholder_parents / oversized / glossary_bloat 有发现，对应候选列表必须至少包含 1 个候选，或在 skip_reasons 中给出该类目的 no_change 理由。**
 Phase 4 preflight：对候选逐个跑 validate_memory_change。
-Phase 5 apply：默认最多 1-2 个写入。像园丁修剪树：先滋养已有概念，再提炼 / 合并；概念过载时拆分；召回弱时调 glossary / disclosure；出现新的长期概念时 create_node。
+Phase 5 apply：在预算内执行，结构治理优先。legacy 归位和 glossary 修剪是纯卫生操作，直接执行，不需要 replay。合并节点前先用 replay_recall 记录受影响查询的当前结果，合并后再回放对比；变差就停下来说明原因。
 Phase 6 audit：raw diary 输出结构化 audit JSON。诗性日记只消费这个 audit，不参与事实判断。
 
 ## 记忆树消化
 
-第一目标是让现有记忆树更成熟。重点审视现有树结构：抽取、提炼、合并、拆分、降格、删除、移动。目标是让节点总数趋稳，信息密度变高，概念边界更清楚。
-
 核心观念：
-- 先看树，再考虑写。写入是一种消化，目标是让树更会生长。
-- 现有节点是优先滋养的概念容器。把新证据放回它真正归属的概念。
-- 新节点代表新的长期概念。它需要清晰的父抽象、召回语境和未来复用价值。
-- path 是概念在树中的位置。它回答“未来的我会回到哪个概念？”。
-- 父节点是抽象，不是目录。父节点沉淀下层共同背景、边界、索引词和未来生长方向。
-- 结构维护参考 guidance：过长拆分，多概念拆分，三条以上相似记忆提炼，缺背景补 why / 条件，成熟网络节点数趋稳甚至下降。
-
-树结构属于核心证据。对可疑分支先用 inspect_tree 或 inspect_memory_node_for_dream 看父节点、兄弟节点、子节点、views、write history，再判断更新、拆分、合并、降格、删除、移动。
-
-## 概念身份与时间线
-
-Memory URI/path 是概念身份。日期描述事件发生时间。日期属于节点正文里的时间线、历史段落、event metadata，或明确的 diary / log / release / archive / incident 概念。
-
-从今日用户内容中抽取长期事实时，把“今天发生了什么”转化为“哪个长期概念获得了新证据”。项目、工作记录、架构决策、偏好节点用稳定概念命名；事件发生日期写进正文第一句或历史段落。
-
-## 今日用户内容抽取
-
-今日用户内容来自 recall_queries.query_text。这里没有完整 assistant reply。只总结 query_text 暴露出来的长期信息。把一次性操作请求当成短暂水流，把明确项目状态、偏好、架构决策、长期约束当成能滋养记忆树的养分。能归入已有项目节点就更新已有节点；新的长期概念出现时，再创建新的节点并说明它的边界。
-
-## recall 修复
-
-这部分先做人工判断式修复，不使用算法 flags。
-disclosure / glossary 调整必须来自 query 证据和节点上下文。
-判断路径：
-1. 从今日 100 条 metadata 里挑可疑 query。
-2. 用 get_query_recall_detail 看 shown nodes。
-3. 用 get_query_candidates 看候选。
-4. 用 inspect_memory_node_for_dream 看相关节点。
-5. 判断原因：glossary 缺词、disclosure 太窄 / 太宽、view 内容弱、节点边界混乱、记忆根本不存在、query 不值得处理。
-6. 只有证据足够才改。
+- 先看树，再考虑写。写入是修剪，不是生长：优先删除噪声，而不是增加内容。
+- path 是概念在树中的位置，也是概念身份。它回答“未来的我会回到哪个概念？”。
+- 父节点是抽象，不是目录。父节点沉淀下层共同背景、边界、索引词和未来生长方向；占位父节点必须补写真实抽象，而不是留一句占位文本。
+- 日期是事件属性：写进正文时间线、历史段落或明确的 diary/log/release/archive/incident 概念，不进 path。
+- URI/path 是稳定语义身份；普通记忆 path 不加日期、时间戳或 epoch。
 
 {{boot_context_line}}
 受保护的启动基线节点（只读参考，不可修改）：
 {{boot_baseline_lines}}
 {{client_boot_note}}
 
+## glossary 治理
+
+1. 用 hygiene_audit（category=glossary_bloat）拿候选；identifier_keywords 类目只是诊断参考，不是行动项。
+2. 只修剪关键词超过 30 个的节点：删除重复、近义词和泛化词（含被 8+ 节点共用、又不属于父抽象核心概念的词）；确属父抽象核心概念的共用词上移到共同父节点。用 update_node 的 glossary_remove 执行（纯卫生操作，不占内容预算）。
+3. 不要删除标识符类关键词（hash、版本号、IP:port、路径、全大写 token、数字连字符 token）：用户输入该标识符时，精确匹配靠它们命中节点。
+4. 只有 replay 证据（真实查询无法召回该节点）才允许新增关键词，且永远不新增标识符类关键词。
+
+## 结构治理（第一优先）
+
+1. legacy 域节点：hygiene_audit（category=legacy_domains）拿候选；目标域已有稳定概念时直接 move_node（纯卫生操作，无需 replay）；目标父路径不存在时先创建真实父抽象（create_node，带正文/背景）再 move。
+2. 占位父节点：阅读全部子节点后，用 update 补写从子节点提炼的真实抽象——下层共同背景、边界、索引词和未来生长方向。
+3. 过长节点（> 4000 字）：拆分或压缩为“当前状态摘要 + 历史段落”；每轮最多 1 个，占用内容预算。
+4. 日期尾缀路径、core://projects 错位等结构问题以 structural_audit 画像为准，按原规则归位。
+5. move 前用 validate_memory_change 做 dry-run；blocked 时按错误修正，不要把 blocked 当作成功。
+
 ## 结构化诊断与 audit
 
 诊断先说明证据，再给候选。没有高置信证据就写 no_change。
-raw diary 必须是 JSON：
+raw diary 必须是 JSON（字段保持不变）：
 {
-  "primary_focus": "tree_maintenance | daily_extraction | recall_repair | no_change",
+  "primary_focus": "recall_noise_hygiene | tree_maintenance | merge | no_change",
   "changed_nodes": [],
   "evidence": [],
   "why_not_more_changes": "",
@@ -264,6 +271,15 @@ raw diary 必须是 JSON：
 
 ### 近期写入活动
 {{write_activity_json}}
+
+### Path quality
+{{path_quality_json}}
+
+### 结构审计画像
+{{structural_audit_json}}
+
+### 记忆卫生画像
+{{hygiene_audit_json}}
 
 ### 最近日记
 {{recent_diaries_json}}
@@ -299,8 +315,8 @@ Rules:
 - Keep it between 80-180 words. Quality over quantity.
 - Output ONLY the diary entry. No preamble, no sign-off, no commentary.`;
 
-export const DEFAULT_DREAM_PHASE_DIAGNOSE_PROMPT = 'Begin the dream review. Phase diagnose: inspect today recall metadata and memory tree evidence. This phase is read-only. Return concise structured diagnosis.';
-export const DEFAULT_DREAM_PHASE_PLAN_PROMPT = `Phase plan: use the diagnosis below and output JSON with tree_maintenance_candidates, daily_memory_extraction_candidates, recall_repair_candidates, skip_reasons.
+export const DEFAULT_DREAM_PHASE_DIAGNOSE_PROMPT = 'Begin the dream review. Phase diagnose: inspect recall metadata, the memory hygiene audit (hygiene_audit), the structural audit, and tree evidence. This phase is read-only. Use replay_recall to replay real queries when needed; it never writes recall logs. Return concise structured diagnosis.';
+export const DEFAULT_DREAM_PHASE_PLAN_PROMPT = `Phase plan: use the diagnosis below and output JSON with structure_candidates, merge_candidates, glossary_candidates, skip_reasons. If the hygiene audit (hygiene_audit counts or items) marks actionable findings (legacy_domains, placeholder_parents, oversized, glossary_bloat), the matching candidate list must include at least 1 candidate, or skip_reasons must give an explicit no_change reason for that category.
 
 Diagnosis:
 {{diagnosis}}`;
@@ -308,7 +324,7 @@ export const DEFAULT_DREAM_PHASE_PREFLIGHT_PROMPT = `Phase preflight: run valida
 
 Plan:
 {{plan_json}}`;
-export const DEFAULT_DREAM_PHASE_APPLY_PROMPT = `Phase apply: apply at most 1-2 high-confidence changes. Prefer update / extract / merge over create_node. Stop when evidence is weak.
+export const DEFAULT_DREAM_PHASE_APPLY_PROMPT = `Phase apply: bounded, evidence-gated structure and hygiene work. Structure first: move legacy-domain nodes to their canonical home (hygiene-only, no replay) and enrich placeholder parents with a real abstraction distilled from their children. At most 2 content changes (create / update content / delete / restructure move), at most 12 hygiene-only operations (glossary trims and moves out of legacy domains), and at most 1 oversized-node split per run. Glossary trimming is hygiene-only and needs no replay: trim only nodes with more than 30 keywords, removing duplicates, near-synonyms and generic words; never remove identifier-like keywords - they serve exact matching. Replay affected queries with replay_recall before and after every merge and confirm recall did not get worse. Never add identifier-like keywords; adding any keyword requires replay evidence that a real query failed to surface the node. For hierarchical moves, make the parent abstraction real with content before move_node. A blocked validate_memory_change is a correction signal, not a success. Stop when evidence is weak.
 
 Plan:
 {{plan_json}}
@@ -813,6 +829,13 @@ export const SETTINGS_SCHEMA: SettingDef[] = [
     label: '自动通过 Dream 变更',
     type: 'boolean', default: false,
     description: '开启后 Dream 产生的记忆变更会自动标记为已通过；关闭时变更保留为待审核。',
+  },
+  {
+    key: 'dream.exclude_session_patterns',
+    section: 'dream',
+    label: 'Dream 排除会话',
+    type: 'string_list', default: [],
+    description: '正则表达式列表。召回查询文本命中任一正则的会话不会进入 Dream 的召回元数据。每行一个正则，留空表示不排除。',
   },
   // -- Backup schedule ------------------------------------------------------
   {

@@ -322,23 +322,30 @@ export async function generateText(
   };
 }
 
+export interface ProviderToolOptions {
+  /** Defaults to 'auto'. Use 'none' to forbid tool calls while keeping definitions. */
+  toolChoice?: 'auto' | 'none';
+}
+
 export async function generateTextWithTools(
   config: ResolvedViewLlmConfig,
   messages: ProviderMessage[],
   tools: ProviderToolDefinition[],
   toolResults: ProviderToolResultMessage[] = [],
+  options: ProviderToolOptions = {},
 ): Promise<ProviderToolResponse> {
   if (!supportsTools(config)) {
     throw new Error(`Configured provider does not support tools: ${config.provider}`);
   }
 
   const prompt = buildProviderPrompt(messages, toolResults, buildProviderPromptOptions(config));
+  const sdkTools = buildTools(tools);
+  const toolChoice = options.toolChoice ?? 'auto';
   const result = await withLlmRetries(() => generateSdkText({
     model: createLanguageModel(config),
     system: prompt.system,
     messages: prompt.messages,
-    tools: buildTools(tools),
-    toolChoice: 'auto',
+    ...(tools.length > 0 ? { tools: sdkTools, toolChoice } : {}),
     stopWhen: stepCountIs(1),
     temperature: config.temperature,
     maxOutputTokens: 4096,

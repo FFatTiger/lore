@@ -61,6 +61,76 @@ describe('provider LLM retries', () => {
     expect(mockGenerateSdkText).toHaveBeenCalledTimes(4);
   });
 
+  it('omits tools and tool_choice when no tools are provided', async () => {
+    mockGenerateSdkText.mockResolvedValueOnce({
+      text: 'phase output',
+      request: {},
+      response: { messages: [] },
+      providerMetadata: {},
+      steps: [],
+      toolCalls: [],
+      toolResults: [],
+    });
+
+    await generateTextWithTools(config, messages, []);
+
+    const request = mockGenerateSdkText.mock.calls[0][0];
+    expect(request).not.toHaveProperty('tools');
+    expect(request).not.toHaveProperty('toolChoice');
+  });
+
+  it('sends tools and tool_choice when tools are provided', async () => {
+    mockGenerateSdkText.mockResolvedValueOnce({
+      text: 'ok',
+      request: {},
+      response: { messages: [] },
+      providerMetadata: {},
+      steps: [],
+      toolCalls: [],
+      toolResults: [],
+    });
+
+    await generateTextWithTools(config, messages, [{
+      name: 'get_node',
+      description: 'read a node',
+      parameters: { type: 'object', properties: {} },
+    }]);
+
+    const request = mockGenerateSdkText.mock.calls[0][0];
+    expect(request.tools).toHaveProperty('get_node');
+    expect(request.toolChoice).toBe('auto');
+  });
+
+  it.each([
+    ['openai_compatible', 'http://localhost:1234/v1'],
+    ['anthropic', 'http://localhost:1234'],
+  ] as Array<[ResolvedViewLlmConfig['provider'], string]>)(
+    'passes toolChoice none through with tools for %s',
+    async (provider, baseUrl) => {
+      mockGenerateSdkText.mockResolvedValueOnce({
+        text: 'phase output',
+        request: {},
+        response: { messages: [] },
+        providerMetadata: {},
+        steps: [],
+        toolCalls: [],
+        toolResults: [],
+      });
+
+      await generateTextWithTools(
+        { ...config, provider, base_url: baseUrl },
+        messages,
+        [{ name: 'get_node', description: 'read a node', parameters: { type: 'object', properties: {} } }],
+        [],
+        { toolChoice: 'none' },
+      );
+
+      const request = mockGenerateSdkText.mock.calls[0][0];
+      expect(request.tools).toHaveProperty('get_node');
+      expect(request.toolChoice).toBe('none');
+    },
+  );
+
   it('retries tool generation three times before succeeding', async () => {
     mockGenerateSdkText
       .mockRejectedValueOnce(new Error('temporary 1'))

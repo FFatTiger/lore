@@ -4,6 +4,8 @@ import { getSettings as getSettingsBatch, updateSettings } from '../config/setti
 import { getRecallStats, getDreamRecallReview } from '../recall/recallAnalytics';
 import { getWriteEventStats } from '../memory/writeEvents';
 import { bootView } from '../memory/boot';
+import { getHygieneAudit, type HygieneAuditSummary } from '../memory/hygieneAudit';
+import { getPathQualitySummary, getStructuralAudit, type StructuralAuditSummary } from '../memory/structuralAudit';
 import { createNode, updateNodeByPath, deleteNodeByPath, moveNode } from '../memory/write';
 import { addGlossaryKeyword, removeGlossaryKeyword } from '../search/glossary';
 import {
@@ -17,6 +19,11 @@ import {
   type ToolCallLogEntry,
 } from './dreamAgent';
 import { appendDreamWorkflowEvent, listDreamWorkflowEvents, type DreamWorkflowEvent } from './dreamWorkflow';
+import {
+  collectExcludedDreamQueryIds,
+  filterDreamRecallReview,
+  loadDreamSessionFilter,
+} from './dreamSessionFilter';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -121,13 +128,45 @@ async function initializeDreamChangeReviews(diaryId: number, autoApprove: boolea
   const payload = buildDreamReviewPayload(autoApprove ? 'approved' : 'pending', autoApprove ? 'auto' : 'system');
   await sql(
     `UPDATE memory_events
-     SET details = jsonb_set(COALESCE(details, '{}'::jsonb), '{dream_review}', $2::jsonb, true)
+     SET details = jsonb_set(COALESCE(details, '{}'::jsonb), '{dream_review}', $3::jsonb, true)
      WHERE source = 'dream:auto'
+       AND session_id = $2
        AND created_at >= (SELECT started_at FROM dream_diary WHERE id = $1)
        AND created_at <= COALESCE((SELECT completed_at FROM dream_diary WHERE id = $1), NOW())
        AND NOT (COALESCE(details, '{}'::jsonb) ? 'dream_review')`,
-    [diaryId, JSON.stringify(payload)],
+    [diaryId, `dream:${diaryId}`, JSON.stringify(payload)],
   );
+}
+
+const DREAM_AGENT_RECENT_QUERIES = 12;
+const DREAM_AGENT_RECENT_DIARIES = 5;
+
+function auditCountsHaveFindings(counts: Record<string, number>): boolean {
+  return Object.values(counts).some((count) => Number(count) > 0);
+}
+
+function buildStructuralAuditContext(audit: StructuralAuditSummary): Record<string, unknown> {
+  if (!auditCountsHaveFindings(audit.counts)) {
+    return { counts: audit.counts, note: 'No structural issues found.' };
+  }
+  return {
+    counts: audit.counts,
+    date_suffix_paths: audit.date_suffix_paths || [],
+    core_projects_paths: audit.core_projects_paths || [],
+    malformed_domains: audit.malformed_domains || [],
+    empty_content_nodes: audit.empty_content_nodes || [],
+    note: 'Full per-category pagination is available via the structural_audit tool with category + offset.',
+  };
+}
+
+function buildHygieneAuditContext(audit: HygieneAuditSummary): Record<string, unknown> {
+  if (!auditCountsHaveFindings(audit.counts)) {
+    return { counts: audit.counts, note: 'No hygiene findings.' };
+  }
+  return {
+    counts: audit.counts,
+    note: 'Full per-category pagination is available via the hygiene_audit tool with category + offset. Hygiene findings are the first-priority work of this run.',
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -159,13 +198,27 @@ export async function runDream(): Promise<DreamResult> {
     currentPhase = 'data_collection';
     console.log('[dream] step 1: data collection');
     await appendDreamWorkflowEvent(diaryId, 'phase_started', { phase: 'data_collection', label: 'Data collection' });
-    const [boot, recallStats, recallReview, writeStats] = await Promise.all([
+    const [boot, recallStats, recallReview, writeStats, pathQuality, structuralAudit, hygieneAudit] = await Promise.all([
       bootView({ client_type: 'admin' }),
       getRecallStats({ days: 1, limit: 20 }),
       getDreamRecallReview({ days: 1, limit: 100 }),
       getWriteEventStats({ days: 1, limit: 20 }),
+      getPathQualitySummary(8),
+      getStructuralAudit({ limit: 8, includeItems: true }),
+      getHygieneAudit({ limit: 5 }),
     ]);
-    const recallReviewRecord = recallReview as unknown as Record<string, unknown>;
+    const sessionFilter = await loadDreamSessionFilter();
+    const excludedQueryIds = await collectExcludedDreamQueryIds(sessionFilter, 1).catch(() => new Set<string>());
+    const recallReviewRecord = filterDreamRecallReview(recallReview as unknown as Record<string, unknown>, excludedQueryIds);
+    const agentQueries = (Array.isArray(recallReviewRecord.queries) ? recallReviewRecord.queries : [])
+      .slice(0, DREAM_AGENT_RECENT_QUERIES);
+    const agentRecallReview = {
+      ...recallReviewRecord,
+      limit: agentQueries.length,
+      offset: 0,
+      queries: agentQueries,
+    };
+    const recallStatsRecord = recallStats as unknown as Record<string, unknown>;
     const recallReviewSummaryRecord = (recallReviewRecord.summary as Record<string, unknown>) || {};
     await appendDreamWorkflowEvent(diaryId, 'phase_completed', {
       phase: 'data_collection',
@@ -183,7 +236,7 @@ export async function runDream(): Promise<DreamResult> {
     const recentDiariesResult = await sql(
       `SELECT started_at, status, COALESCE(raw_narrative, narrative) AS narrative, tool_calls FROM dream_diary
        WHERE status = 'completed' AND id != $1
-       ORDER BY started_at DESC LIMIT 2`,
+       ORDER BY started_at DESC LIMIT ${DREAM_AGENT_RECENT_DIARIES}`,
       [diaryId],
     );
     const recentDiaries = recentDiariesResult.rows.map((r: Record<string, unknown>) => ({
@@ -204,9 +257,16 @@ export async function runDream(): Promise<DreamResult> {
         content: node.content || '',
       })),
       guidance: await loadGuidanceFile(),
-      recallReview: recallReview as unknown as Record<string, unknown>,
-      recallStats: recallStats as unknown as Record<string, unknown>,
+      recallReview: agentRecallReview,
+      recallStats: { summary: recallStatsRecord.summary || {} },
       writeActivity: writeStats as unknown as Record<string, unknown>,
+      pathQuality: {
+        date_suffix_path_count: pathQuality.date_suffix_path_count,
+        recent_bad_creates: pathQuality.recent_bad_creates,
+        top_nodes: pathQuality.top_nodes,
+      },
+      structuralAudit: buildStructuralAuditContext(structuralAudit),
+      hygieneAudit: buildHygieneAuditContext(hygieneAudit),
       recentDiaries,
     };
 
@@ -269,9 +329,10 @@ export async function runDream(): Promise<DreamResult> {
       `SELECT event_type, COUNT(*)::int AS total
        FROM memory_events
        WHERE source = 'dream:auto'
+         AND session_id = $2
          AND created_at >= (SELECT started_at FROM dream_diary WHERE id = $1)
        GROUP BY event_type`,
-      [diaryId],
+      [diaryId, `dream:${diaryId}`],
     );
     const memoryChangeCounts = Object.fromEntries(
       memoryChangeStatsResult.rows.map((row: Record<string, unknown>) => [
@@ -284,7 +345,7 @@ export async function runDream(): Promise<DreamResult> {
     const policyWarnings = workflowEvents.filter((event) => event.event_type === 'policy_warning_emitted').length;
 
     const writeSummary = (writeStats as unknown as Record<string, unknown>).summary as Record<string, unknown> | undefined;
-    const recallSummary = (recallStats as unknown as Record<string, unknown>).summary as Record<string, unknown> | undefined;
+    const recallSummary = (recallStatsRecord.summary as Record<string, unknown> | undefined);
     const recallReviewSummary = recallReviewSummaryRecord;
     const recallMetadataItems = Array.isArray(recallReviewRecord.queries)
       ? (recallReviewRecord.queries as Record<string, unknown>[])
@@ -332,7 +393,7 @@ export async function runDream(): Promise<DreamResult> {
        WHERE id = $1`,
       [diaryId, durationMs, JSON.stringify(summary), poeticNarrative, rawNarrative, poeticNarrative, JSON.stringify(agentResult.toolCalls), JSON.stringify({
         initial_context: initialContext,
-        recallReview,
+        recallReview: recallReviewRecord,
         recall_metadata_queries: recallMetadataItems.slice(0, 100),
         writeStats,
         maintenance: {
@@ -421,10 +482,11 @@ export async function getDreamEntry(id: number | string): Promise<DiaryEntry | n
       `SELECT id, event_type, node_uri, before_snapshot, after_snapshot, details, created_at
        FROM memory_events
        WHERE source = 'dream:auto'
+         AND session_id = $3
          AND created_at >= $1
          AND ($2::timestamptz IS NULL OR created_at <= $2)
        ORDER BY created_at ASC`,
-      [entry.started_at, entry.completed_at],
+      [entry.started_at, entry.completed_at, `dream:${entry.id}`],
     );
     entry.memory_changes = eventsResult.rows.map((r: Record<string, unknown>) => {
       const review = dreamReviewFromDetails(r.details);
@@ -506,6 +568,14 @@ export async function reviewDreamChange({
 
 const ROLLBACK_EVENT_CONTEXT = { source: 'dream:rollback' };
 
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const text = String(item ?? '').trim();
+    return text ? [text] : [];
+  });
+}
+
 export async function rollbackDream(id: number | string): Promise<{
   id: number;
   status: string;
@@ -533,10 +603,11 @@ export async function rollbackDream(id: number | string): Promise<{
     `SELECT id, event_type, node_uri, node_uuid, domain, path, before_snapshot, after_snapshot, details
      FROM memory_events
      WHERE source = 'dream:auto'
+       AND session_id = $3
        AND created_at >= $1
        AND ($2::timestamptz IS NULL OR created_at <= $2)
      ORDER BY id DESC`,
-    [latest.started_at, latest.completed_at],
+    [latest.started_at, latest.completed_at, `dream:${numId}`],
   );
 
   const events = eventsResult.rows as Array<Record<string, unknown>>;
@@ -547,25 +618,44 @@ export async function rollbackDream(id: number | string): Promise<{
     try {
       const before = (evt.before_snapshot as Record<string, unknown>) || {};
       const after = (evt.after_snapshot as Record<string, unknown>) || {};
+      const details = (evt.details as Record<string, unknown>) || {};
       const domain = (evt.domain as string) || 'core';
       const evtPath = (evt.path as string) || '';
+      let reversed = false;
 
       switch (evt.event_type) {
         case 'create':
           // Reverse: delete the created node
-          if (domain && evtPath) await deleteNodeByPath({ domain, path: evtPath }, ROLLBACK_EVENT_CONTEXT);
-          break;
-        case 'update':
-          // Reverse: restore before_snapshot
           if (domain && evtPath) {
+            await deleteNodeByPath({ domain, path: evtPath }, ROLLBACK_EVENT_CONTEXT);
+            reversed = true;
+          }
+          break;
+        case 'update': {
+          // Reverse: restore before_snapshot, including glossary changes that
+          // update_node records on the same event.
+          if (domain && evtPath && (before.content !== undefined || before.priority !== undefined || before.disclosure !== undefined)) {
             await updateNodeByPath({
               domain, path: evtPath,
               content: before.content as string | undefined,
               priority: before.priority as number | undefined,
               disclosure: before.disclosure as string | undefined,
             }, ROLLBACK_EVENT_CONTEXT);
+            reversed = true;
+          }
+          const nodeUuid = evt.node_uuid as string | null;
+          for (const keyword of stringList(details.glossary_removed)) {
+            if (!nodeUuid) break;
+            await addGlossaryKeyword({ keyword, node_uuid: nodeUuid }, ROLLBACK_EVENT_CONTEXT);
+            reversed = true;
+          }
+          for (const keyword of stringList(details.glossary_added)) {
+            if (!nodeUuid) break;
+            await removeGlossaryKeyword({ keyword, node_uuid: nodeUuid }, ROLLBACK_EVENT_CONTEXT);
+            reversed = true;
           }
           break;
+        }
         case 'delete':
           // Reverse: recreate with before_snapshot
           if (before.content !== undefined && domain && evtPath) {
@@ -577,6 +667,7 @@ export async function rollbackDream(id: number | string): Promise<{
               priority: (before.priority as number) ?? 2, title,
               disclosure: (before.disclosure as string) || null,
             }, ROLLBACK_EVENT_CONTEXT);
+            reversed = true;
           }
           break;
         case 'move':
@@ -585,6 +676,7 @@ export async function rollbackDream(id: number | string): Promise<{
               old_uri: after.uri as string,
               new_uri: before.uri as string,
             }, ROLLBACK_EVENT_CONTEXT);
+            reversed = true;
           }
           break;
         case 'alias':
@@ -592,24 +684,27 @@ export async function rollbackDream(id: number | string): Promise<{
           if (after.new_uri) {
             const parsed = parseUri(after.new_uri as string);
             await deleteNodeByPath({ domain: parsed.domain, path: parsed.path }, ROLLBACK_EVENT_CONTEXT);
+            reversed = true;
           }
           break;
         case 'glossary_add':
           // Reverse: remove the keyword
           if (after.keyword && evt.node_uuid) {
             await removeGlossaryKeyword({ keyword: after.keyword as string, node_uuid: evt.node_uuid as string }, ROLLBACK_EVENT_CONTEXT);
+            reversed = true;
           }
           break;
         case 'glossary_remove':
           // Reverse: add the keyword back
           if (before.keyword && evt.node_uuid) {
             await addGlossaryKeyword({ keyword: before.keyword as string, node_uuid: evt.node_uuid as string }, ROLLBACK_EVENT_CONTEXT);
+            reversed = true;
           }
           break;
         default:
           console.log(`[dream:rollback] skipping unknown event_type: ${evt.event_type}`);
       }
-      rolled++;
+      if (reversed) rolled++;
     } catch (err: unknown) {
       console.error(`[dream:rollback] failed to reverse event #${evt.id} (${evt.event_type} ${evt.node_uri}):`, (err as Error).message);
     }

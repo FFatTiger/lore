@@ -84,4 +84,24 @@ describe('buildStructuralAudit', () => {
       reason: 'no_active_memory_content',
     });
   });
+
+  it('can include every category list alongside the counts for initial context', () => {
+    const summary = buildStructuralAudit([
+      row('project', 'lore/dream_review_2026_05_07'),
+      row('core', 'projects/legacy_plan'),
+      row('core://agent', 'broken'),
+      row('project', 'lore/empty', ''),
+    ], { limit: 8, includeItems: true });
+
+    expect(summary.counts).toEqual({
+      date_suffix: 1,
+      core_projects: 1,
+      malformed_domains: 1,
+      empty_content: 1,
+    });
+    expect(summary.date_suffix_paths).toHaveLength(1);
+    expect(summary.core_projects_paths).toHaveLength(1);
+    expect(summary.malformed_domains).toHaveLength(1);
+    expect(summary.empty_content_nodes).toHaveLength(1);
+  });
 });

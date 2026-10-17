@@ -393,7 +393,14 @@ describe('runDream', () => {
     mockRunDreamAgentLoop.mockResolvedValue({ narrative: 'done', toolCalls: [], turns: 1 } as any);
     mockAppendDreamWorkflowEvent.mockResolvedValue({ id: 1, diary_id: 1, event_type: 'event', payload: {}, created_at: '2024-01-01T00:00:00Z' } as any);
     vi.mocked(getPathQualitySummary).mockResolvedValue({ date_suffix_path_count: 1, recent_bad_creates: 0, top_nodes: [{ uri: 'project://lore/dream_2026_05_07', created_at: '2026-05-07T00:00:00.000Z', reason: 'ordinary_date_suffix' }] } as any);
-    vi.mocked(getStructuralAudit).mockResolvedValue({ counts: { date_suffix: 1, core_projects: 0, malformed_domains: 0, empty_content: 0 }, total: 1, limit: 8, offset: 0, has_more: false } as any);
+    vi.mocked(getStructuralAudit).mockResolvedValue({
+      counts: { date_suffix: 1, core_projects: 0, malformed_domains: 0, empty_content: 0 },
+      date_suffix_paths: [{ uri: 'project://lore/dream_review_2026_05_07', category: 'date_suffix', reason: 'ordinary_date_suffix' }],
+      total: 1,
+      limit: 8,
+      offset: 0,
+      has_more: false,
+    } as any);
     vi.mocked(getHygieneAudit).mockResolvedValue({ counts: { oversized: 0, glossary_bloat: 2, identifier_keywords: 1, shared_keywords: 0, placeholder_parents: 3, legacy_domains: 4 }, total: 10, limit: 5, offset: 0, has_more: false } as any);
     mockBootView.mockResolvedValue({
       core_memories: [
@@ -465,12 +472,16 @@ describe('runDream', () => {
       expect.anything(),
       expect.objectContaining({
         guidance: '# guidance body',
-        recallReview,
-        recallStats,
+        recallReview: expect.objectContaining({ summary: recallReview.summary, queries: recallReview.queries }),
+        recallStats: { summary: recallStats.summary },
         writeActivity: writeStats,
         recentDiaries: expect.any(Array),
         pathQuality: expect.objectContaining({ date_suffix_path_count: 1 }),
-        structuralAudit: expect.objectContaining({ counts: expect.objectContaining({ date_suffix: 1 }) }),
+        structuralAudit: expect.objectContaining({
+          counts: expect.objectContaining({ date_suffix: 1 }),
+          date_suffix_paths: [expect.objectContaining({ uri: 'project://lore/dream_review_2026_05_07' })],
+          note: expect.stringContaining('pagination'),
+        }),
         hygieneAudit: expect.objectContaining({ counts: expect.objectContaining({ legacy_domains: 4 }) }),
         bootBaseline: [
           expect.objectContaining({ uri: 'core://agent', content: 'agent boot' }),
@@ -483,6 +494,7 @@ describe('runDream', () => {
       }),
     );
     expect(vi.mocked(recallAnalytics.getDreamRecallReview)).toHaveBeenCalledWith({ days: 1, limit: 100 });
+    expect(mockSql.mock.calls.some((call) => String(call[0]).includes('ORDER BY started_at DESC LIMIT 5'))).toBe(true);
     const memoryChangeQuery = mockSql.mock.calls.find((call) => String(call[0]).includes('GROUP BY event_type'));
     expect(memoryChangeQuery?.[1]).toEqual([1, 'dream:1']);
 
@@ -529,8 +541,8 @@ describe('runDream', () => {
     expect(details).toMatchObject({
       initial_context: {
         guidance: '# guidance body',
-        recallReview,
-        recallStats,
+        recallReview: expect.objectContaining({ summary: recallReview.summary, queries: recallReview.queries }),
+        recallStats: { summary: recallStats.summary },
         writeActivity: writeStats,
       },
       recallReview,
@@ -542,6 +554,76 @@ describe('runDream', () => {
         policy_warnings: 1,
         moved: 2,
       },
+    });
+  });
+
+  it('hands the agent a compact recall review and only the recall summary', async () => {
+    mockSql
+      .mockResolvedValueOnce(makeResult([{ id: 10 }]))
+      .mockResolvedValueOnce(makeResult([]))
+      .mockResolvedValueOnce(makeResult([]))
+      .mockResolvedValueOnce(makeResult());
+    mockGetSettings.mockResolvedValue({});
+    const recallAnalytics = await import('../../recall/recallAnalytics');
+    const writeEvents = await import('../../memory/writeEvents');
+    const queries = Array.from({ length: 20 }, (_, i) => ({
+      query_id: `q${i}`,
+      content: `query ${i}`,
+      merged_count: 1,
+      shown_count: 0,
+      used_count: 0,
+    }));
+    vi.mocked(recallAnalytics.getRecallStats).mockResolvedValue({
+      summary: { merged_count: 5, query_count: 20 },
+      recent_queries: { items: [] },
+    } as any);
+    vi.mocked(recallAnalytics.getDreamRecallReview).mockResolvedValue({
+      summary: { returned_queries: 20 },
+      queries,
+    } as any);
+    vi.mocked(writeEvents.getWriteEventStats).mockResolvedValue({ summary: {}, hot_nodes: [], recent_events: [] } as any);
+
+    await runDream();
+
+    const agentContext = mockRunDreamAgentLoop.mock.calls[0][1];
+    expect((agentContext.recallReview.queries as unknown[])).toHaveLength(12);
+    expect(agentContext.recallStats).toEqual({ summary: { merged_count: 5, query_count: 20 } });
+    const updateCall = mockSql.mock.calls.find((call) => String(call[0]).includes('UPDATE dream_diary SET status = \'completed\''));
+    const details = JSON.parse(String(updateCall?.[1]?.[7]));
+    expect(details.recall_metadata_queries).toHaveLength(20);
+  });
+
+  it('marks empty audit findings in the initial context', async () => {
+    mockSql
+      .mockResolvedValueOnce(makeResult([{ id: 11 }]))
+      .mockResolvedValueOnce(makeResult([]))
+      .mockResolvedValueOnce(makeResult([]))
+      .mockResolvedValueOnce(makeResult());
+    mockGetSettings.mockResolvedValue({});
+    const recallAnalytics = await import('../../recall/recallAnalytics');
+    const writeEvents = await import('../../memory/writeEvents');
+    vi.mocked(recallAnalytics.getRecallStats).mockResolvedValue({ summary: {} } as any);
+    vi.mocked(recallAnalytics.getDreamRecallReview).mockResolvedValue({ summary: {}, queries: [] } as any);
+    vi.mocked(writeEvents.getWriteEventStats).mockResolvedValue({ summary: {}, hot_nodes: [], recent_events: [] } as any);
+    vi.mocked(getStructuralAudit).mockResolvedValue({
+      counts: { date_suffix: 0, core_projects: 0, malformed_domains: 0, empty_content: 0 },
+      total: 0,
+    } as any);
+    vi.mocked(getHygieneAudit).mockResolvedValue({
+      counts: { oversized: 0, glossary_bloat: 0, identifier_keywords: 0, shared_keywords: 0, placeholder_parents: 0, legacy_domains: 0 },
+      total: 0,
+    } as any);
+
+    await runDream();
+
+    const agentContext = mockRunDreamAgentLoop.mock.calls[0][1];
+    expect(agentContext.structuralAudit).toEqual({
+      counts: { date_suffix: 0, core_projects: 0, malformed_domains: 0, empty_content: 0 },
+      note: 'No structural issues found.',
+    });
+    expect(agentContext.hygieneAudit).toEqual({
+      counts: { oversized: 0, glossary_bloat: 0, identifier_keywords: 0, shared_keywords: 0, placeholder_parents: 0, legacy_domains: 0 },
+      note: 'No hygiene findings.',
     });
   });
 

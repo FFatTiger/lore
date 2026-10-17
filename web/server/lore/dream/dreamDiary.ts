@@ -4,8 +4,8 @@ import { getSettings as getSettingsBatch, updateSettings } from '../config/setti
 import { getRecallStats, getDreamRecallReview } from '../recall/recallAnalytics';
 import { getWriteEventStats } from '../memory/writeEvents';
 import { bootView } from '../memory/boot';
-import { getHygieneAudit } from '../memory/hygieneAudit';
-import { getPathQualitySummary, getStructuralAudit } from '../memory/structuralAudit';
+import { getHygieneAudit, type HygieneAuditSummary } from '../memory/hygieneAudit';
+import { getPathQualitySummary, getStructuralAudit, type StructuralAuditSummary } from '../memory/structuralAudit';
 import { createNode, updateNodeByPath, deleteNodeByPath, moveNode } from '../memory/write';
 import { addGlossaryKeyword, removeGlossaryKeyword } from '../search/glossary';
 import {
@@ -138,6 +138,37 @@ async function initializeDreamChangeReviews(diaryId: number, autoApprove: boolea
   );
 }
 
+const DREAM_AGENT_RECENT_QUERIES = 12;
+const DREAM_AGENT_RECENT_DIARIES = 5;
+
+function auditCountsHaveFindings(counts: Record<string, number>): boolean {
+  return Object.values(counts).some((count) => Number(count) > 0);
+}
+
+function buildStructuralAuditContext(audit: StructuralAuditSummary): Record<string, unknown> {
+  if (!auditCountsHaveFindings(audit.counts)) {
+    return { counts: audit.counts, note: 'No structural issues found.' };
+  }
+  return {
+    counts: audit.counts,
+    date_suffix_paths: audit.date_suffix_paths || [],
+    core_projects_paths: audit.core_projects_paths || [],
+    malformed_domains: audit.malformed_domains || [],
+    empty_content_nodes: audit.empty_content_nodes || [],
+    note: 'Full per-category pagination is available via the structural_audit tool with category + offset.',
+  };
+}
+
+function buildHygieneAuditContext(audit: HygieneAuditSummary): Record<string, unknown> {
+  if (!auditCountsHaveFindings(audit.counts)) {
+    return { counts: audit.counts, note: 'No hygiene findings.' };
+  }
+  return {
+    counts: audit.counts,
+    note: 'Full per-category pagination is available via the hygiene_audit tool with category + offset. Hygiene findings are the first-priority work of this run.',
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Main dream orchestration
 // ---------------------------------------------------------------------------
@@ -173,13 +204,21 @@ export async function runDream(): Promise<DreamResult> {
       getDreamRecallReview({ days: 1, limit: 100 }),
       getWriteEventStats({ days: 1, limit: 20 }),
       getPathQualitySummary(8),
-      getStructuralAudit({ limit: 8 }),
+      getStructuralAudit({ limit: 8, includeItems: true }),
       getHygieneAudit({ limit: 5 }),
     ]);
     const sessionFilter = await loadDreamSessionFilter();
     const excludedQueryIds = await collectExcludedDreamQueryIds(sessionFilter, 1).catch(() => new Set<string>());
     const recallReviewRecord = filterDreamRecallReview(recallReview as unknown as Record<string, unknown>, excludedQueryIds);
-    const recallStatsRecord = filterDreamRecallReview(recallStats as unknown as Record<string, unknown>, excludedQueryIds);
+    const agentQueries = (Array.isArray(recallReviewRecord.queries) ? recallReviewRecord.queries : [])
+      .slice(0, DREAM_AGENT_RECENT_QUERIES);
+    const agentRecallReview = {
+      ...recallReviewRecord,
+      limit: agentQueries.length,
+      offset: 0,
+      queries: agentQueries,
+    };
+    const recallStatsRecord = recallStats as unknown as Record<string, unknown>;
     const recallReviewSummaryRecord = (recallReviewRecord.summary as Record<string, unknown>) || {};
     await appendDreamWorkflowEvent(diaryId, 'phase_completed', {
       phase: 'data_collection',
@@ -197,7 +236,7 @@ export async function runDream(): Promise<DreamResult> {
     const recentDiariesResult = await sql(
       `SELECT started_at, status, COALESCE(raw_narrative, narrative) AS narrative, tool_calls FROM dream_diary
        WHERE status = 'completed' AND id != $1
-       ORDER BY started_at DESC LIMIT 2`,
+       ORDER BY started_at DESC LIMIT ${DREAM_AGENT_RECENT_DIARIES}`,
       [diaryId],
     );
     const recentDiaries = recentDiariesResult.rows.map((r: Record<string, unknown>) => ({
@@ -218,22 +257,16 @@ export async function runDream(): Promise<DreamResult> {
         content: node.content || '',
       })),
       guidance: await loadGuidanceFile(),
-      recallReview: recallReviewRecord,
-      recallStats: recallStatsRecord,
+      recallReview: agentRecallReview,
+      recallStats: { summary: recallStatsRecord.summary || {} },
       writeActivity: writeStats as unknown as Record<string, unknown>,
       pathQuality: {
         date_suffix_path_count: pathQuality.date_suffix_path_count,
         recent_bad_creates: pathQuality.recent_bad_creates,
         top_nodes: pathQuality.top_nodes,
       },
-      structuralAudit: {
-        counts: structuralAudit.counts,
-        note: 'Full per-category pagination is available via the structural_audit tool with category + offset.',
-      },
-      hygieneAudit: {
-        counts: hygieneAudit.counts,
-        note: 'Full per-category pagination is available via the hygiene_audit tool with category + offset. Hygiene findings are the first-priority work of this run.',
-      },
+      structuralAudit: buildStructuralAuditContext(structuralAudit),
+      hygieneAudit: buildHygieneAuditContext(hygieneAudit),
       recentDiaries,
     };
 

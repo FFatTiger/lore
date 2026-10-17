@@ -28,6 +28,8 @@ export interface StructuralAuditOptions {
   category?: StructuralAuditCategory | string;
   limit?: number;
   offset?: number;
+  /** Include every category list (paged by limit/offset) alongside the counts. */
+  includeItems?: boolean;
 }
 
 export interface StructuralCandidate {
@@ -193,6 +195,12 @@ export function buildStructuralAudit(
       break;
     default:
       summary.total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+      if (options.includeItems) {
+        summary.date_suffix_paths = pageCandidates(dateSuffix, limit, offset);
+        summary.core_projects_paths = pageCandidates(coreProjects, limit, offset);
+        summary.malformed_domains = pageCandidates(malformed, limit, offset);
+        summary.empty_content_nodes = pageCandidates(emptyContent, limit, offset);
+      }
   }
   return summary;
 }

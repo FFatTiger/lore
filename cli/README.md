@@ -70,7 +70,7 @@ Passing `--api-token` places the token in the process arguments and may leave it
 curl -H "Authorization: Bearer $(npx -y @loremem/cli secret get API_TOKEN)" https://api.example.com/v1/whatever
 ```
 
-It reads the saved `base_url` and `api_token` from `~/.lore/config.json`, works fully non-interactively, and never prints the value or the token to stderr. Failures print one stderr line and exit 1. Secrets are managed in the Lore Console; the same HTTPS rules as the rest of the CLI apply to the request.
+It reads the saved `base_url` and `api_token` from `~/.lore/config.json`, works fully non-interactively, and never prints the value or the token to stderr. Failures print one stderr line and exit 1. It needs a Lore server that stores project secrets; a server without this feature answers `This Lore server does not support secrets`. The same HTTPS rules as the rest of the CLI apply to the request.
 
 ## Codex hooks
 

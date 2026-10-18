@@ -62,6 +62,16 @@ Shared connection settings are stored in `~/.lore/config.json`; set `LORE_HOME` 
 
 Passing `--api-token` places the token in the process arguments and may leave it in shell history. Use the normal secret-handling controls for your environment.
 
+## Secrets
+
+`secret get NAME` prints one stored project secret value to stdout with no trailing newline, so commands can substitute it at run time without the value entering a chat or file:
+
+```bash
+curl -H "Authorization: Bearer $(npx -y @loremem/cli secret get API_TOKEN)" https://api.example.com/v1/whatever
+```
+
+It reads the saved `base_url` and `api_token` from `~/.lore/config.json`, works fully non-interactively, and never prints the value or the token to stderr. Failures print one stderr line and exit 1. It needs a Lore server that stores project secrets; a server without this feature answers `This Lore server does not support secrets`. The same HTTPS rules as the rest of the CLI apply to the request.
+
 ## Codex hooks
 
 Codex uses the hooks bundled with the Lore plugin by default. The installer removes obsolete Lore entries from user-level `~/.codex/hooks.json` while preserving unrelated hooks, preventing duplicate lifecycle execution.

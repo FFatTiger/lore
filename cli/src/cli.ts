@@ -2,14 +2,18 @@ import { parseArgv } from './core/args.js';
 import { runInstall, runUpdate } from './commands/install.js';
 import { runUninstall } from './commands/uninstall.js';
 import { runStatus } from './commands/status.js';
+import { runSecretGet } from './commands/secret.js';
 
 const USAGE = `Usage: npx @loremem/cli [install|update|uninstall|status] [options]
+       npx @loremem/cli secret get NAME
 
 Commands:
   install (connect)  Install or connect Lore to agent runtimes (default)
   update             Update Lore server artifacts and channel integrations
   uninstall          Remove Lore integrations
   status             Show local Lore install status
+  secret get NAME    Print a stored project secret value (for shell substitution,
+                     e.g. \`curl -H "Authorization: Bearer $(npx -y @loremem/cli secret get NAME)"\`)
 
 Install runs an interactive wizard on a TTY; flags preselect its answers.
 Add -y to run straight from flags: unset options use defaults, and the
@@ -59,6 +63,8 @@ export async function run(argv: string[]): Promise<number> {
       return runUninstall(args);
     case 'status':
       return runStatus(args);
+    case 'secret':
+      return runSecretGet(args);
     default:
       console.error('Not implemented');
       return 1;

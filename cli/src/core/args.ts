@@ -1,7 +1,9 @@
 import { ALL_CHANNELS, type ChannelId, type Lang } from './types.js';
 
 export type GlobalArgs = {
-  command: 'install' | 'update' | 'uninstall' | 'status' | 'help';
+  command: 'install' | 'update' | 'uninstall' | 'status' | 'secret' | 'help';
+  /** Secret name for `secret get NAME`. */
+  secretName?: string;
   baseUrl?: string;
   apiToken?: string;
   channels?: ChannelId[];
@@ -26,7 +28,7 @@ export type GlobalArgs = {
   bare: boolean;
 };
 
-const COMMANDS = new Set(['install', 'update', 'uninstall', 'status', 'help', 'connect']);
+const COMMANDS = new Set(['install', 'update', 'uninstall', 'status', 'secret', 'help', 'connect']);
 
 function requireValue(flag: string, value: string | undefined): string {
   if (value === undefined || value.startsWith('-')) {
@@ -81,6 +83,18 @@ export function parseArgv(argv: string[]): GlobalArgs {
     }
     result.command = cmd === 'connect' ? 'install' : (cmd as GlobalArgs['command']);
     i = 1;
+    if (cmd === 'secret') {
+      const sub = argv[i];
+      if (sub !== 'get') {
+        throw new Error(sub === undefined ? 'Missing subcommand: secret get NAME' : `Unknown secret subcommand: ${sub}`);
+      }
+      const name = argv[i + 1];
+      if (name === undefined || name.startsWith('-')) {
+        throw new Error('secret get requires a secret name: secret get NAME');
+      }
+      result.secretName = name;
+      i += 2;
+    }
   }
 
   while (i < argv.length) {

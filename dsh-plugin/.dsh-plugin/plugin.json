@@ -1,6 +1,6 @@
 {
   "name": "lore",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "description": "Long-term Lore memory for DeepSeek Harness (dsh) via a native lifecycle plugin and an MCP bridge.",
   "author": {
     "name": "FFatTiger"

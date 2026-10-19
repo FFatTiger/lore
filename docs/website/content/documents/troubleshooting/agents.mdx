@@ -16,6 +16,7 @@ Run the check for your runtime, and restart the runtime after any change.
 | OpenClaw | `~/.openclaw/openclaw.json` has a `plugins.entries.lore` entry, and the plugin is enabled. | Restart OpenClaw. |
 | Hermes | `~/.hermes/skills/lore_memory` is a symlink to `~/.lore/hermes/lore_memory`. | Restart Hermes. |
 | ZCode | `zcode plugins list` includes `lore@lore`, and `zcode plugins enable lore@lore` has run. | Restart ZCode. |
+| DeepSeek Harness | `~/.dsh/cordis.patch.yml` contains the `lore (managed)` block, and `loremem status` shows dsh installed. | Restart dsh. |
 | Other MCP clients | The client connects to `<server>/api/mcp?client_type=mcp` with an `Authorization: Bearer` header. Nothing loads boot or recall automatically, so call `lore_boot` yourself. | Restart the client. |
 
 ## No boot memory at session start
@@ -27,7 +28,8 @@ Run the check for your runtime, and restart the runtime after any change.
 1. Ask the agent to call `lore_boot`. If it returns the boot view, the server and token work, and the hook is the problem. If the call fails, fix the connection first.
 2. Check your runtime in the table above, then restart it.
 3. For ZCode, add content to the node `core://agent/zcode` if that node is empty.
-4. For OpenCode, boot needs the experimental `experimental.chat.system.transform` hook. If your OpenCode build does not provide it, the plugin logs one warning, skips boot, and keeps native tools and prompt recall working. The warning starts with `Lore OpenCode system context is unavailable`. Update OpenCode and restart it.
+4. For DeepSeek Harness, add content to the node `core://agent/dsh` if that node is empty.
+5. For OpenCode, boot needs the experimental `experimental.chat.system.transform` hook. If your OpenCode build does not provide it, the plugin logs one warning, skips boot, and keeps native tools and prompt recall working. The warning starts with `Lore OpenCode system context is unavailable`. Update OpenCode and restart it.
 
 ## No `<recall>` block appears
 
@@ -46,6 +48,7 @@ Run the check for your runtime, and restart the runtime after any change.
 **Fix:**
 
 - **Claude Code and ZCode:** Memory tools appear as `mcp__plugin_lore_lore__<tool>`. In Claude Code, check with `/mcp` that `lore` is connected.
+- **DeepSeek Harness:** Memory tools appear as `mcp__lore__<tool>`, for example `mcp__lore__lore_search`.
 - **Codex:** `codex mcp list` must list `lore`. On servers with Skills, it also lists `lore-skills`.
 - **OpenCode:** The native tools must use the exact names from `lore_guidance` through `lore_move_node`. A name such as `lore_lore_search` means an MCP entry is registered instead of the native plugin. See the next section.
 - **Skills tools** (`lore_skill_*`) appear only when the server advertises Skills. The open-source server has none. Loremem Cloud does.

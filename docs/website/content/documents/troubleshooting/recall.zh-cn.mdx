@@ -54,7 +54,7 @@ SELECT to_tsvector('zhparser', '测试');
 **原因：** Lore 在搜索前需要先为查询生成嵌入，因此嵌入端点或数据库变慢，都会拖慢每一次召回。另外还有两个时间限制：
 
 - 召回请求的耗时超过 `recall.safety.timeout_ms`（默认 2000 毫秒）时会被终止。Lore 随后返回以下提示，而不是候选结果：`Recall took longer than 2 seconds and was skipped. Use lore_search for detailed related memories.` 这一限制适用于 API 客户端和 Hermes 插件使用的召回接口。
-- Agent 的 Hook 会在自身的超时时间后停止等待。Claude Code、Codex 和 ZCode 的超时时间为 10 秒。之后提示词会继续处理，但不会带上 `<recall>` 块。
+- Agent 的 Hook 会在自身的超时时间后停止等待。Claude Code、Codex、ZCode 和 DeepSeek Harness 的超时时间为 10 秒（dsh 可用 `LORE_PROMPT_TIMEOUT_MS` 调整）。之后提示词会继续处理，但不会带上 `<recall>` 块。
 
 **修复：**
 

@@ -51,7 +51,7 @@ At session start, Lore injects the boot nodes as the startup baseline. Their add
 | `preferences://user` | Stable user context | Durable preferences, collaboration habits, and background that rarely changes. Do not add details you have not confirmed. |
 | `core://agent/<client_type>` | Rules for one runtime | Only the differences for that runtime: its hooks, tools, and quirks. Assume `core://agent` already covers the shared rules. |
 
-Runtime nodes use these client types: `claudecode`, `codex`, `opencode`, `pi`, `openclaw`, `hermes`, and `zcode`. Each runtime loads only its own node.
+Runtime nodes use these client types: `claudecode`, `codex`, `opencode`, `pi`, `openclaw`, `hermes`, `zcode`, and `dsh`. Each runtime loads only its own node.
 
 The boot block also lists the five most recently written memories by path, priority, and disclosure. It does not include their content. Recall never returns boot nodes, because the agent already has them.
 

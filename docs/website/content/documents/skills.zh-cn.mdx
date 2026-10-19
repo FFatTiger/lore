@@ -81,7 +81,7 @@ Loremem 不会替你自动迁移本地技能。有些技能只能在某一个 Ag
 
 1. 找出这台机器上我用的每个 Agent 的全部技能，例如 ~/.agents/skills、
    ~/.claude/skills、~/.codex/skills、~/.pi/agent/skills、
-   ~/.config/opencode/skills、~/.zcode/skills，以及已安装的插件或扩展
+   ~/.config/opencode/skills、~/.zcode/skills、~/.dsh/skills，以及已安装的插件或扩展
    自带的技能。列成表格，写明每个技能的来源，并标出重复项。
 2. 分成两组。通用技能是任何 Agent 都能用的说明、参考资料或脚本。
    专属技能依赖某个 Agent 自己的工具、钩子或扩展，或者有代码在运行时
@@ -118,6 +118,6 @@ Loremem 不会替你自动迁移本地技能。有些技能只能在某一个 Ag
 
 ## 运行时
 
-技能适用于 Claude Code、Codex、OpenCode、Pi、OpenClaw、Hermes 和 ZCode。通过通用 MCP（`client_type=mcp`）连接的客户端不会获得技能。
+技能适用于 Claude Code、Codex、OpenCode、Pi、OpenClaw、Hermes、ZCode 和 DeepSeek Harness。通过通用 MCP（`client_type=mcp`）连接的客户端不会获得技能。
 
 只有当服务器报告支持技能时，CLI 才会启用技能工具。Loremem 云服务支持技能，开源服务器不支持。

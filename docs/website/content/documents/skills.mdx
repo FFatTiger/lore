@@ -81,7 +81,7 @@ Move my local agent skills into Loremem.
 
 1. Find every skill on this machine for each agent I use, for example
    ~/.agents/skills, ~/.claude/skills, ~/.codex/skills, ~/.pi/agent/skills,
-   ~/.config/opencode/skills and ~/.zcode/skills, plus skills that come
+   ~/.config/opencode/skills, ~/.zcode/skills and ~/.dsh/skills, plus skills that come
    with installed plugins or extensions. List them in a table with where
    each one comes from, and mark duplicates.
 2. Sort them into two groups. General skills are instructions, references
@@ -123,6 +123,6 @@ For the console and the create, update, and archive flows, see [Create and manag
 
 ## Runtimes
 
-Skills work with Claude Code, Codex, OpenCode, Pi, OpenClaw, Hermes, and ZCode. Clients that connect through generic MCP (`client_type=mcp`) don't get skills.
+Skills work with Claude Code, Codex, OpenCode, Pi, OpenClaw, Hermes, ZCode, and DeepSeek Harness. Clients that connect through generic MCP (`client_type=mcp`) don't get skills.
 
 The CLI turns on the skill tools only when the server reports skills support. Loremem Cloud does. The open-source server doesn't.

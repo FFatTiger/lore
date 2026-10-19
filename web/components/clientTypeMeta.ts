@@ -50,6 +50,12 @@ const CLIENT_TYPE_META: Record<string, ClientTypeMeta> = {
     assetPath: '/channel-icons/zcode.svg',
     initials: 'ZC',
   },
+  dsh: {
+    label: 'DeepSeek Harness',
+    tone: 'blue',
+    assetPath: '/channel-icons/dsh.svg',
+    initials: 'DS',
+  },
   mcp: {
     label: 'MCP',
     tone: 'orange',

@@ -17,7 +17,7 @@ export const LIFECYCLE_PROTOCOL_VERSION = 'lore.lifecycle.v1';
 
 export type LifecycleEventName = 'session.start' | 'prompt.submit';
 export type HostOutputMode = 'none' | 'stdout_json' | 'stdout_text' | 'return_value';
-const LIFECYCLE_RUNTIME_FAMILIES: ReadonlySet<ClientType> = new Set(['claudecode', 'codex', 'openclaw', 'hermes', 'pi', 'opencode', 'zcode']);
+const LIFECYCLE_RUNTIME_FAMILIES: ReadonlySet<ClientType> = new Set(['claudecode', 'codex', 'openclaw', 'hermes', 'pi', 'opencode', 'zcode', 'dsh']);
 
 export interface LifecycleEventInput {
   protocol_version?: string;
@@ -156,6 +156,15 @@ function renderHostOutput(args: {
   }
 
   if (args.family === 'opencode') {
+    return {
+      mode: 'return_value',
+      value: args.eventName === 'session.start'
+        ? { systemContext: context }
+        : { promptContext: context },
+    };
+  }
+
+  if (args.family === 'dsh') {
     return {
       mode: 'return_value',
       value: args.eventName === 'session.start'

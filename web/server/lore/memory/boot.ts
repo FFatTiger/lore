@@ -8,7 +8,7 @@ export type BootNodeRole = 'agent' | 'soul' | 'user';
 export type BootNodeState = 'missing' | 'empty' | 'initialized';
 export type BootOverallState = 'uninitialized' | 'partial' | 'complete';
 export type BootNodeScope = 'global' | 'client';
-export type BootClientType = Extract<ClientType, 'claudecode' | 'openclaw' | 'hermes' | 'codex' | 'pi' | 'opencode' | 'zcode'>;
+export type BootClientType = Extract<ClientType, 'claudecode' | 'openclaw' | 'hermes' | 'codex' | 'pi' | 'opencode' | 'zcode' | 'dsh'>;
 
 export interface BootNodeSpec {
   id: string;
@@ -226,6 +226,19 @@ const CLIENT_BOOT_NODES: readonly BootNodeSpec[] = [
     setup_title: 'ZCode boot memory',
     setup_description: 'Write the ZCode-specific native hook, boot, recall, attribution, and fail-open rules that load together with core://agent.',
   },
+  {
+    id: 'agent-dsh',
+    uri: 'core://agent/dsh',
+    role: 'agent',
+    role_label: 'dsh runtime constraints',
+    purpose: 'DeepSeek Harness (dsh) native lifecycle plugin, per-session system-prompt boot, pre-step recall, and fail-open runtime behavior.',
+    dream_protection: 'protected',
+    scope: 'client',
+    client_type: 'dsh',
+    setup_slug: 'agent-dsh',
+    setup_title: 'DeepSeek Harness boot memory',
+    setup_description: 'Write the dsh-specific lifecycle, boot, recall, attribution, and fail-open rules that load together with core://agent.',
+  },
 ] as const;
 
 const FIXED_BOOT_NODES: readonly BootNodeSpec[] = [
@@ -265,7 +278,8 @@ function isRuntimeBootClientType(value: ClientType | null | undefined): value is
     || value === 'codex'
     || value === 'pi'
     || value === 'opencode'
-    || value === 'zcode';
+    || value === 'zcode'
+    || value === 'dsh';
 }
 
 function shouldIncludeAllClientBootNodes(options: BootViewOptions): boolean {

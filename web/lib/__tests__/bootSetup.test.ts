@@ -83,6 +83,19 @@ describe('bootSetup routing helpers', () => {
     expect(content).not.toContain('AGENTS.md');
   });
 
+  it('provides dsh-specific default boot content', () => {
+    const content = getDefaultBootContent('core://agent/dsh');
+
+    expect(content).toContain('core://agent');
+    expect(content).toContain('agent/created');
+    expect(content).toContain('agent/pre-step');
+    expect(content).toContain('client_type=dsh');
+    expect(content).toContain('runtime_family=dsh');
+    expect(content).toContain('fail open');
+    expect(content).not.toContain('SessionStart');
+    expect(content).not.toContain('Pi extensions');
+  });
+
   it('detects setup paths', () => {
     expect(isSetupPath('/setup')).toBe(true);
     expect(isSetupPath('/setup/extra')).toBe(true);

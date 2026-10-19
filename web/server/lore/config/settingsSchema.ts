@@ -194,6 +194,13 @@ export const DEFAULT_BOOT_DRAFT_CLIENT_ZCODE_INSTRUCTIONS = [
   'Assume shared working rules remain in core://agent rather than repeating them here.',
 ].join('\n');
 
+export const DEFAULT_BOOT_DRAFT_CLIENT_DSH_INSTRUCTIONS = [
+  'Focus on DeepSeek Harness (dsh) runtime defaults for the native Lore lifecycle plugin, per-session system-prompt boot, pre-step recall, and coding workflow expectations.',
+  'State that Boot lands through a session-scoped system-prompt section on agent/created, while Recall joins the first step of a user turn as a lore-attributed context message.',
+  'Mention client_type=dsh with runtime_id=dsh and runtime_family=dsh lifecycle attribution, and require fail open behavior when Lore is unavailable.',
+  'Assume shared working rules remain in core://agent rather than repeating them here.',
+].join('\n');
+
 export const DEFAULT_DREAM_SYSTEM_PROMPT = `你是 Lore 的夜间记忆卫生系统。Lore 是一棵会自我生长的语义记忆树。会话中的 agent 已经带着完整上下文写记忆，所以你不再从今日内容里抽取或补写；你的工作是让这棵树在明天被更好地想起：修复结构、合并重复、修剪过载的 glossary。
 
 ## 目标优先级（每轮固定）
@@ -491,6 +498,13 @@ export const SETTINGS_SCHEMA: SettingDef[] = [
     label: 'Boot 草稿 ZCode 说明',
     type: 'text', default: DEFAULT_BOOT_DRAFT_CLIENT_ZCODE_INSTRUCTIONS,
     description: '生成 core://agent/zcode 初稿时追加的约束。',
+  },
+  {
+    key: 'prompts.boot_draft.instructions.client_dsh',
+    section: 'prompts',
+    label: 'Boot 草稿 dsh 说明',
+    type: 'text', default: DEFAULT_BOOT_DRAFT_CLIENT_DSH_INSTRUCTIONS,
+    description: '生成 core://agent/dsh 初稿时追加的约束。',
   },
   {
     key: 'prompts.dream.system',

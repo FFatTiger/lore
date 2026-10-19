@@ -5,7 +5,8 @@ export type ChannelId =
   | 'openclaw'
   | 'hermes'
   | 'opencode'
-  | 'zcode';
+  | 'zcode'
+  | 'dsh';
 
 export const ALL_CHANNELS: ChannelId[] = [
   'claudecode',
@@ -15,6 +16,7 @@ export const ALL_CHANNELS: ChannelId[] = [
   'hermes',
   'opencode',
   'zcode',
+  'dsh',
 ];
 
 export type NeedInstall = 0 | 1 | 2;

@@ -11,6 +11,7 @@ const AGENT_BINS = [
   'opencode',
   'hermes',
   'zcode',
+  'dsh',
   'docker',
 ] as const;
 

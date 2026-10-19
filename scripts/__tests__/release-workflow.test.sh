@@ -28,7 +28,10 @@ grep -Fq 'python3 -m py_compile scripts/opencode-compat.py' "$WORKFLOW" || fail 
 grep -Fq 'bash scripts/build-opencode-artifact.sh' "$WORKFLOW" || fail 'OpenCode artifact builder missing'
 grep -Fq 'name: Build ZCode artifact' "$WORKFLOW" || fail 'ZCode artifact step missing'
 grep -Fq 'lore-zcode.zip' "$WORKFLOW" || fail 'ZCode zip missing'
-grep -Fq 'lore-zcode.zip .zcode-plugin .mcp.json marketplace.json hooks mcp shared README.md' "$WORKFLOW" || fail 'ZCode zip must ship the MCP bridge'
+grep -Fq 'lore-zcode.zip .zcode-plugin .mcp.json marketplace.json hooks mcp vendor README.md' "$WORKFLOW" || fail 'ZCode zip must ship the MCP bridge'
+grep -Fq 'name: Build DSH artifact' "$WORKFLOW" || fail 'DSH artifact step missing'
+grep -Fq 'lore-dsh.zip' "$WORKFLOW" || fail 'DSH zip missing'
+grep -Fq 'lore-dsh.zip .dsh-plugin plugin mcp vendor README.md' "$WORKFLOW" || fail 'DSH zip must ship the lifecycle plugin and MCP bridge'
 grep -Fq 'for f in dist/lore-*.zip' "$WORKFLOW" || fail 'release upload loop missing'
 if grep -Fq -- '--clobber' "$WORKFLOW"; then
   fail 'release workflow must not overwrite immutable assets'

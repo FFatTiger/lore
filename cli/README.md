@@ -99,7 +99,7 @@ The current installer supports macOS and Linux. Some integrations still invoke P
 - Node.js 20 or newer
 - Bash for Bash-dependent integration helpers
 - `curl` and `unzip` for GitHub release artifacts
-- Host CLIs for the selected integrations (`claude`, `codex`, `pi`, `openclaw`, `opencode`, `zcode`, and others as applicable)
+- Host CLIs for the selected integrations (`claude`, `codex`, `pi`, `openclaw`, `opencode`, `zcode`, `dsh`, and others as applicable)
 - Docker plus Docker Compose only for local self-host mode
 - Python 3 for optional OpenCode compatibility handling when that compatibility state is present
 

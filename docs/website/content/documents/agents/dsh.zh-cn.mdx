@@ -1,0 +1,36 @@
+DeepSeek Harness（dsh）接入会为 dsh 安装 Lore lifecycle 插件和 MCP bridge。每个 dsh 会话都会从运行时 boot 节点获得启动记忆，在每条新用户消息前获得召回，并通过本地 MCP bridge 使用 Lore 记忆工具。
+
+## 安装
+
+在运行 dsh 的机器上执行：
+
+```bash
+npx @loremem/cli install --channels dsh
+```
+
+安装程序通过 `PATH` 上的 `dsh` 命令检测 dsh；如果你用 `npx @deepseek-ai/dsh` 运行而没有全局二进制，已存在的 `~/.dsh` 目录也会被识别。安装完成后重启 dsh。
+
+## 安装了什么
+
+- 来自 `lore-dsh.zip` 的插件文件，放在 `~/.lore/dsh/`。
+- 家目录级 `~/.dsh/cordis.patch.yml` 中的两行，所有 dsh profile 都会应用。这两行使用稳定 id `lore-lifecycle` 和 `lore-mcp`，放在明确标记的托管块里，重新安装时只替换托管块。文件中其余行和注释全部保留，旁边保留一份备份。
+- `lore-lifecycle` 加载 `~/.lore/dsh/plugin/lifecycle.mjs` 原生插件。每次 `agent/created` 发送 `session.start` 生命周期事件，并把返回的 boot 上下文放进该会话的 system prompt。在用户轮次的第一步，为该用户消息精确发送一次 `prompt.submit`，并把返回的召回上下文加入该步骤，标记为 Lore 注入的上下文而不是用户输入。
+- `lore-mcp` 启动名为 `lore` 的本地 stdio MCP bridge，把 MCP 请求转发到 `<server>/api/mcp?client_type=dsh`。工具显示为 `mcp__lore__lore_status`、`mcp__lore__lore_search` 等。
+- Skill 工具，仅当服务端声明 Skills 时启用。成功的 `lore_skill_get` 会把技能物化到 `~/.lore/skills/<project-id>/<skill-name>/`。
+
+令牌不会写入 dsh 配置。插件和 bridge 读取 `${LORE_HOME:-~/.lore}/config.json`。
+
+## 验证
+
+1. 运行 `npx @loremem/cli status`。`dsh` 一行应显示 `installed`。
+2. 不启动 dsh 也能检查组合结果：`dsh --profile <name> --dump-config` 会列出 `lore-lifecycle` 和 `lore-mcp` 两行。
+3. 启动一个 dsh 会话，让它调用 `lore_status`。工具显示为 `mcp__lore__lore_status`。
+4. 发送一条与某个有记忆的项目相关的提示词，然后问 agent 这次提示词拿到了哪些记忆节点。
+
+## 说明
+
+- **dsh boot 节点。** dsh 从 `core://agent/dsh` 加载启动记忆。如果该节点为空，在控制台的 Memory 页面创建它，写入你希望 dsh agent 启动时遵守的规则。自托管服务器的页面路径是 `/memory`。
+- **失败放行。** Lore 不可达或响应慢时，插件跳过上下文注入，dsh 正常工作。请求都有较短的超时上限。
+- **配置。** 插件和 bridge 读取 `${LORE_HOME:-~/.lore}/config.json`，环境变量 `LORE_BASE_URL`、`LORE_API_TOKEN`、`API_TOKEN` 是回退。令牌不会出现在 dsh patch 文件或命令参数里。
+- **卸载** 只移除托管的 Lore 行和 `~/.lore/dsh`，`~/.dsh/cordis.patch.yml` 里的其他内容原样保留。
+- **修改后重启。** 更改配置或令牌后重启 dsh。

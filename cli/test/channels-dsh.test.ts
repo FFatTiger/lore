@@ -179,7 +179,7 @@ test('dsh install writes lore rows into the home patch and keeps a backup', asyn
   const again = await fs.readFile(patchFile(home), 'utf8');
   assert.equal(again.match(/- id: lore-lifecycle/g)?.length, 1);
   assert.equal(again.match(/- id: user-row/g)?.length, 1);
-  assert.ok(again.includes(dest));
+  assert.ok(again.includes(JSON.stringify(path.join(dest, 'plugin', 'lifecycle.mjs'))));
   assert.ok(!again.includes('lm_x'));
 });
 

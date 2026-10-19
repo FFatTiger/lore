@@ -1,0 +1,36 @@
+The DeepSeek Harness (dsh) integration installs the Lore lifecycle plugin and MCP bridge for dsh. Every dsh session gets startup memory from its runtime boot node, recall before each new user message, and the Lore memory tools through a local MCP bridge.
+
+## Install
+
+Run this on the machine where you use dsh:
+
+```bash
+npx @loremem/cli install --channels dsh
+```
+
+The installer detects dsh through the `dsh` command on your `PATH`, or through an existing `~/.dsh` directory when you run dsh with `npx @deepseek-ai/dsh`. Restart dsh after the install finishes.
+
+## What gets installed
+
+- The plugin files from `lore-dsh.zip`, in `~/.lore/dsh/`.
+- Two rows in the home-level `~/.dsh/cordis.patch.yml`, which every dsh profile applies. The rows use the stable ids `lore-lifecycle` and `lore-mcp`, sit inside a clearly marked managed block, and are the only thing the installer replaces on re-install. All other rows and comments in the file are preserved, and a backup is kept beside it.
+- `lore-lifecycle` loads the native plugin at `~/.lore/dsh/plugin/lifecycle.mjs`. On every `agent/created` it sends a `session.start` lifecycle event and puts the returned boot context into that session's system prompt. On the first step of a user turn it sends exactly one `prompt.submit` for that user message and adds the returned recall context to that step, marked as Lore-injected context rather than user input.
+- `lore-mcp` starts a local stdio MCP bridge named `lore` that forwards MCP requests to `<server>/api/mcp?client_type=dsh`. Its tools appear as `mcp__lore__lore_status`, `mcp__lore__lore_search`, and so on.
+- Skill tools, only when the server advertises Skills. A successful `lore_skill_get` materializes the skill under `~/.lore/skills/<project-id>/<skill-name>/`.
+
+No token is written into the dsh configuration. The plugin and the bridge read `${LORE_HOME:-~/.lore}/config.json`.
+
+## Verify
+
+1. Run `npx @loremem/cli status`. The `dsh` line should read `installed`.
+2. Inspect the composed profile without booting it: `dsh --profile <name> --dump-config` lists the `lore-lifecycle` and `lore-mcp` rows.
+3. Start a dsh session and ask it to call `lore_status`. The tool appears as `mcp__lore__lore_status`.
+4. Send a prompt about a project that has memories. Then ask the agent which memory nodes it was given for that prompt.
+
+## Notes
+
+- **dsh boot node.** dsh loads its startup memory from `core://agent/dsh`. If that node is empty, create it with the rules you want dsh agents to start with. Use the Memory page in the console. On a self-hosted server, that page is `/memory`.
+- **Fail open.** If Lore is unreachable or slow, the plugin skips its context and dsh keeps working. Requests are bounded by short timeouts.
+- **Configuration.** The plugin and the bridge read `${LORE_HOME:-~/.lore}/config.json`. The environment variables `LORE_BASE_URL`, `LORE_API_TOKEN`, and `API_TOKEN` are fallbacks. The token never appears in the dsh patch file or in command arguments.
+- **Uninstall** removes only the managed Lore rows and `~/.lore/dsh`. Everything else in `~/.dsh/cordis.patch.yml` stays.
+- **Restart after changes.** Restart dsh after you change the configuration or the token.

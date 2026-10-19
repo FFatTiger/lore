@@ -51,7 +51,7 @@ Content:    Refund webhooks are idempotent by event.id. Tests must replay the sa
 | `preferences://user` | 稳定的用户背景 | 持久的偏好、协作习惯，以及很少变化的背景。不要写你还没有确认的细节。 |
 | `core://agent/<client_type>` | 单个运行时的规则 | 只写该运行时的差异：它的 hook、工具和特殊行为。假设 `core://agent` 已经覆盖通用规则。 |
 
-运行时节点使用以下 `client_type`：`claudecode`、`codex`、`opencode`、`pi`、`openclaw`、`hermes` 和 `zcode`。每个运行时只加载自己的节点。
+运行时节点使用以下 `client_type`：`claudecode`、`codex`、`opencode`、`pi`、`openclaw`、`hermes`、`zcode` 和 `dsh`。每个运行时只加载自己的节点。
 
 启动记忆块还会列出最近写入的五条记忆的路径、优先级和触发条件，但不包含它们的内容。召回也不会返回启动记忆节点，因为 Agent 已经拿到了它们。
 

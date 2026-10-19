@@ -9,6 +9,7 @@ Connect each agent runtime to Lore once, and it gets startup memory (boot), reca
 | OpenClaw | Yes | Yes | Yes | [OpenClaw](/documents/agents/openclaw) |
 | Hermes | Yes | Yes | Yes | [Hermes](/documents/agents/hermes) |
 | ZCode | Yes | Yes (MCP) | Yes | [ZCode](/documents/agents/zcode) |
+| DeepSeek Harness | Yes | Yes (MCP) | Yes | [DeepSeek Harness](/documents/agents/dsh) |
 | Other MCP clients | No. Call `lore_boot` yourself. | Yes | No | [Other MCP clients](/documents/agents/mcp) |
 
 Skills exist only on Loremem Cloud. The self-hosted server has none.
@@ -25,7 +26,7 @@ Run `npx @loremem/cli` in a terminal to open the installer. The first question i
 
 Next, choose runtimes. The installer preselects the runtimes it detects on this machine. Confirm the plan, and the installer writes the files.
 
-To skip the prompts, add `-y`. Pass the server with `--base-url` or `--docker`, or reuse the server already saved in `~/.lore/config.json`. Choose runtimes with `--channels`, using these names: `claudecode`, `codex`, `pi`, `openclaw`, `hermes`, `opencode`, and `zcode`. Without `--channels`, `-y` installs every runtime it detects. The [CLI reference](/documents/reference/cli) lists every flag.
+To skip the prompts, add `-y`. Pass the server with `--base-url` or `--docker`, or reuse the server already saved in `~/.lore/config.json`. Choose runtimes with `--channels`, using these names: `claudecode`, `codex`, `pi`, `openclaw`, `hermes`, `opencode`, `zcode`, and `dsh`. Without `--channels`, `-y` installs every runtime it detects. The [CLI reference](/documents/reference/cli) lists every flag.
 
 ### Loremem Cloud
 
@@ -85,6 +86,7 @@ A saved token is reused only while the server URL stays the same. If you change 
 | OpenClaw | Plugin files in `~/.lore/openclaw/`, and the `lore` entry in `~/.openclaw/openclaw.json`. |
 | Hermes | Plugin package in `~/.lore/hermes/lore_memory/`. You link it into Hermes yourself. |
 | ZCode | Plugin files in `~/.lore/zcode/`, registered and enabled as the `lore@lore` plugin. |
+| DeepSeek Harness | Plugin files in `~/.lore/dsh/`, plus the Lore rows in the home-level `~/.dsh/cordis.patch.yml` shared by every profile. |
 
 Codex paths follow `CODEX_HOME`, which defaults to `~/.codex`. Each runtime folder under `~/.lore/` is replaced when the installer downloads a new release.
 

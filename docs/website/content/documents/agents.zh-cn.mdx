@@ -9,6 +9,7 @@
 | OpenClaw | 是 | 是 | 是 | [OpenClaw](/documents/agents/openclaw) |
 | Hermes | 是 | 是 | 是 | [Hermes](/documents/agents/hermes) |
 | ZCode | 是 | 是（MCP） | 是 | [ZCode](/documents/agents/zcode) |
+| DeepSeek Harness | 是 | 是（MCP） | 是 | [DeepSeek Harness](/documents/agents/dsh) |
 | 其他 MCP 客户端 | 否，需要自己调用 `lore_boot` | 是 | 否 | [其他 MCP 客户端](/documents/agents/mcp) |
 
 技能只在 Loremem 云服务上提供。自托管服务器没有技能。
@@ -25,7 +26,7 @@
 
 接下来选择运行时。安装程序会预先勾选它在这台机器上检测到的运行时。确认方案后，安装程序才会写入文件。
 
-要跳过交互，请添加 `-y`。用 `--base-url` 或 `--docker` 指定服务器，也可以沿用 `~/.lore/config.json` 中已保存的服务器。用 `--channels` 选择运行时，可用名称包括 `claudecode`、`codex`、`pi`、`openclaw`、`hermes`、`opencode` 和 `zcode`。不加 `--channels` 时，`-y` 会安装检测到的全部运行时。[CLI 参考](/documents/reference/cli) 列出了所有参数。
+要跳过交互，请添加 `-y`。用 `--base-url` 或 `--docker` 指定服务器，也可以沿用 `~/.lore/config.json` 中已保存的服务器。用 `--channels` 选择运行时，可用名称包括 `claudecode`、`codex`、`pi`、`openclaw`、`hermes`、`opencode`、`zcode` 和 `dsh`。不加 `--channels` 时，`-y` 会安装检测到的全部运行时。[CLI 参考](/documents/reference/cli) 列出了所有参数。
 
 ### Loremem 云服务
 
@@ -85,6 +86,7 @@ npx @loremem/cli install -y --docker
 | OpenClaw | `~/.lore/openclaw/` 中的插件文件，以及 `~/.openclaw/openclaw.json` 中的 `lore` 条目。 |
 | Hermes | `~/.lore/hermes/lore_memory/` 中的插件包。需要你自己链接到 Hermes。 |
 | ZCode | `~/.lore/zcode/` 中的插件文件，注册并启用为 `lore@lore` 插件。 |
+| DeepSeek Harness | `~/.lore/dsh/` 中的插件文件，以及写入家目录级 `~/.dsh/cordis.patch.yml` 的 Lore 行，所有 profile 共享。 |
 
 Codex 的路径跟随 `CODEX_HOME`，默认为 `~/.codex`。每次安装程序下载新版本时，`~/.lore/` 下对应运行时的目录都会被替换。
 

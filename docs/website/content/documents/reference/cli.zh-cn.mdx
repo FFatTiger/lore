@@ -78,8 +78,9 @@ npx @loremem/cli [install|update|uninstall|status] [options]
 | `hermes` | Hermes | 无 |
 | `opencode` | OpenCode | `opencode` |
 | `zcode` | ZCode | `zcode` |
+| `dsh` | DeepSeek Harness | `dsh`，或已存在的 `~/.dsh` |
 
-- 宿主 CLI 未安装的运行时会被标记为跳过，而不是标记为已配置。
+- 宿主 CLI 未安装的运行时会被标记为跳过，而不是标记为已配置。`dsh` 在 `~/.dsh` 已存在时也算作已安装，因为 dsh 常通过 `npx @deepseek-ai/dsh` 运行而没有全局二进制。
 - Hermes 安装时不需要它的 CLI。只有当 `PATH` 中存在 `hermes` 命令时，它才会被默认选中；否则请传入 `--channels hermes`。安装后请自行链接文件：
 
   ```bash

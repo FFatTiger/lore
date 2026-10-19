@@ -54,7 +54,7 @@ SELECT to_tsvector('zhparser', '测试');
 **Cause:** Lore embeds each query before it searches, so a slow embedding endpoint or a slow database slows every recall. Two time limits also apply:
 
 - A recall request that runs longer than `recall.safety.timeout_ms` (2000 ms by default) is stopped. Lore then returns this notice instead of candidates: `Recall took longer than 2 seconds and was skipped. Use lore_search for detailed related memories.` This limit applies to the recall endpoint that API clients and the Hermes plugin use.
-- Agent hooks stop waiting after their own timeout, which is 10 seconds in Claude Code, Codex, and ZCode. The prompt then continues without a `<recall>` block.
+- Agent hooks stop waiting after their own timeout, which is 10 seconds in Claude Code, Codex, ZCode, and DeepSeek Harness (`LORE_PROMPT_TIMEOUT_MS` to change it there). The prompt then continues without a `<recall>` block.
 
 **Fix:**
 

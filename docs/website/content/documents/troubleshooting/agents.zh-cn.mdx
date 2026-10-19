@@ -16,6 +16,7 @@ Agent 没有启动记忆（boot）、没有召回、没有 Lore 工具，或者 
 | OpenClaw | `~/.openclaw/openclaw.json` 中有 `plugins.entries.lore` 条目，且插件已启用。 | 重启 OpenClaw。 |
 | Hermes | `~/.hermes/skills/lore_memory` 是指向 `~/.lore/hermes/lore_memory` 的符号链接。 | 重启 Hermes。 |
 | ZCode | `zcode plugins list` 中包含 `lore@lore`，并且已运行 `zcode plugins enable lore@lore`。 | 重启 ZCode。 |
+| DeepSeek Harness | `~/.dsh/cordis.patch.yml` 包含 `lore (managed)` 块，且 `loremem status` 显示 dsh 已安装。 | 重启 dsh。 |
 | 其他 MCP 客户端 | 客户端以 `Authorization: Bearer` 请求头连接 `<服务器>/api/mcp?client_type=mcp`。系统不会自动加载启动记忆或召回，需要你自己调用 `lore_boot`。 | 重启客户端。 |
 
 ## 会话开始时没有启动记忆
@@ -27,7 +28,8 @@ Agent 没有启动记忆（boot）、没有召回、没有 Lore 工具，或者 
 1. 让 Agent 调用 `lore_boot`。如果返回了启动记忆，说明服务器和令牌正常，问题出在 Hook。如果调用失败，请先修复连接。
 2. 对照上表检查你的运行时，然后重启它。
 3. 如果是 ZCode，且节点 `core://agent/zcode` 为空，请为它添加内容。
-4. 如果是 OpenCode，启动记忆需要实验性的 `experimental.chat.system.transform` Hook。如果你的 OpenCode 版本没有提供该 Hook，插件会输出一条警告，跳过启动记忆，但原生工具和提示词召回仍然可用。警告以 `Lore OpenCode system context is unavailable` 开头。请更新 OpenCode 并重启。
+4. 如果是 DeepSeek Harness，且节点 `core://agent/dsh` 为空，请为它添加内容。
+5. 如果是 OpenCode，启动记忆需要实验性的 `experimental.chat.system.transform` Hook。如果你的 OpenCode 版本没有提供该 Hook，插件会输出一条警告，跳过启动记忆，但原生工具和提示词召回仍然可用。警告以 `Lore OpenCode system context is unavailable` 开头。请更新 OpenCode 并重启。
 
 ## 没有出现 `<recall>` 块
 
@@ -46,6 +48,7 @@ Agent 没有启动记忆（boot）、没有召回、没有 Lore 工具，或者 
 **修复：**
 
 - **Claude Code 和 ZCode：** 记忆工具显示为 `mcp__plugin_lore_lore__<tool>`。在 Claude Code 中，用 `/mcp` 检查 `lore` 是否已连接。
+- **DeepSeek Harness：** 记忆工具显示为 `mcp__lore__<tool>`，例如 `mcp__lore__lore_search`。
 - **Codex：** `codex mcp list` 必须列出 `lore`。在支持 Skills 的服务器上，还会列出 `lore-skills`。
 - **OpenCode：** 原生工具名称必须与 `lore_guidance` 到 `lore_move_node` 完全一致。如果出现 `lore_lore_search` 这样的名称，说明注册的是 MCP 条目，而不是原生插件。参见下一节。
 - **技能工具**（`lore_skill_*`）只有在服务器声明支持 Skills 时才会出现。开源服务器没有该功能，Loremem 云服务有。

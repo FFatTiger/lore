@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { loadLoreConfig, pickString } from '../shared/lore-config.mjs';
+import { loadLoreConfig, pickString } from '../vendor/lore-config.mjs';
 
 const RUNTIME_FAMILY = 'zcode';
 const SESSION_START_TIMEOUT_MS = 8000;

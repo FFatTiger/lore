@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 /**
- * Sync shared/skill-workcopy/* into plugin vendor directories as byte-identical copies.
+ * Sync shared vendor sources into plugin directories as byte-identical copies.
+ *
+ * Covers shared/skill-workcopy (pi, openclaw, opencode) and the shared Lore
+ * channel sources (lore-config, mcp-bridge, skill-materializer) vendored
+ * into zcode-plugin and dsh-plugin.
  *
  * Usage:
  *   node scripts/sync-skill-workcopy.mjs          # write vendor copies
@@ -31,6 +35,28 @@ const EXTRA_VENDOR_TARGETS = [{
     'skill-workcopy.d.mts': 'index.d.mts',
   },
 }];
+
+// Per-plugin vendor copies of the shared channel sources. zcode keeps its
+// legacy mcp/skill-materializer.mjs; dsh uses the newer skill-workcopy core
+// under ~/.lore/skills like the other channels.
+const CHANNEL_VENDOR_TARGETS = [
+  {
+    dir: 'zcode-plugin/vendor',
+    files: {
+      'lore-config.mjs': 'lore-config.mjs',
+      'mcp-bridge/index.mjs': 'mcp-bridge/index.mjs',
+    },
+  },
+  {
+    dir: 'dsh-plugin/vendor',
+    files: {
+      'lore-config.mjs': 'lore-config.mjs',
+      'mcp-bridge/index.mjs': 'mcp-bridge/index.mjs',
+      'skill-workcopy/index.mjs': 'skill-workcopy/index.mjs',
+      'skill-workcopy/index.d.mts': 'skill-workcopy/index.d.mts',
+    },
+  },
+];
 
 function readSource(name) {
   const full = path.join(SOURCE_DIR, name);
@@ -100,16 +126,36 @@ function main() {
     }
   }
 
+  for (const target of CHANNEL_VENDOR_TARGETS) {
+    const destDir = path.join(REPO_ROOT, target.dir);
+    if (!checkOnly) fs.mkdirSync(destDir, { recursive: true });
+    for (const [destName, sourceName] of Object.entries(target.files)) {
+      const source = fs.readFileSync(path.join(REPO_ROOT, 'shared', sourceName));
+      const dest = path.join(destDir, destName);
+      if (checkOnly) {
+        if (!fs.existsSync(dest) || !fs.readFileSync(dest).equals(source)) {
+          console.error(`DRIFT content: ${path.join(target.dir, destName)}`);
+          drift += 1;
+        }
+      } else {
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.writeFileSync(dest, source);
+        written += 1;
+        console.log(`wrote ${path.join(target.dir, destName)}`);
+      }
+    }
+  }
+
   if (checkOnly) {
     if (drift > 0) {
-      console.error(`skill-workcopy vendor check failed: ${drift} drift(s)`);
+      console.error(`shared vendor check failed: ${drift} drift(s)`);
       process.exit(1);
     }
-    console.log(`skill-workcopy vendor check ok (${VENDOR_TARGETS.length + EXTRA_VENDOR_TARGETS.length} targets)`);
+    console.log(`shared vendor check ok (${VENDOR_TARGETS.length + EXTRA_VENDOR_TARGETS.length + CHANNEL_VENDOR_TARGETS.length} targets)`);
     return;
   }
 
-  console.log(`skill-workcopy synced: ${written} file(s) → ${VENDOR_TARGETS.length + EXTRA_VENDOR_TARGETS.length} vendor targets`);
+  console.log(`shared vendors synced: ${written} file(s) → ${VENDOR_TARGETS.length + EXTRA_VENDOR_TARGETS.length + CHANNEL_VENDOR_TARGETS.length} vendor targets`);
 }
 
 try {

@@ -14,6 +14,7 @@ const ARTIFACT_MAP: Record<ChannelId, string> = {
   hermes: 'lore-hermes.zip',
   opencode: 'lore-opencode.zip',
   zcode: 'lore-zcode.zip',
+  dsh: 'lore-dsh.zip',
 };
 
 export function artifactName(id: ChannelId): string {

@@ -5,7 +5,7 @@ export type BootNodeRole = 'agent' | 'soul' | 'user';
 export type BootNodeState = 'missing' | 'empty' | 'initialized';
 export type BootOverallState = 'uninitialized' | 'partial' | 'complete';
 export type BootNodeScope = 'global' | 'client';
-export type BootClientType = 'claudecode' | 'openclaw' | 'hermes' | 'codex' | 'pi' | 'opencode' | 'zcode';
+export type BootClientType = 'claudecode' | 'openclaw' | 'hermes' | 'codex' | 'pi' | 'opencode' | 'zcode' | 'dsh';
 export type BootSaveStatus = 'created' | 'updated' | 'unchanged' | 'failed';
 export type BootDraftStatus = 'generated' | 'failed';
 export type SetupStepId = string;
@@ -33,6 +33,7 @@ const CLIENT_BOOT_URIS = [
   'core://agent/pi',
   'core://agent/opencode',
   'core://agent/zcode',
+  'core://agent/dsh',
 ] as const;
 
 const DEFAULT_BOOT_CONTENT: Record<string, string> = {
@@ -90,6 +91,13 @@ ZCode 会把这个节点与 core://agent 一起加载。共享工作流规则保
 Lore 通过 ZCode 原生插件 hooks 注入生命周期上下文：SessionStart（startup|resume|clear）加载 boot，UserPromptSubmit 为非空 prompt 注入 recall。不要把 ZCode 当成 Pi 或 Codex。
 
 所有 Lore 生命周期请求使用 client_type=zcode，并携带 runtime_id=zcode 与 runtime_family=zcode。Lore 服务或 hook 解析失败时必须 fail open：保留 ZCode 正常对话，不因记忆集成失败阻断用户请求。`,
+  'core://agent/dsh': `# dsh 运行时约束
+
+DeepSeek Harness (dsh) 会把这个节点与 core://agent 一起加载。共享工作流规则保留在 core://agent；这里只记录 dsh 专属差异。
+
+Lore 通过原生 lifecycle plugin 注入上下文：agent/created 时把 boot 注册为该 session 的 system prompt section，agent/pre-step 的首个用户消息步骤注入一次 recall context（作为 lore 产生的 context message，不冒充用户输入）。MCP 工具通过 serverName=lore 的 mcp-client row 暴露，形如 mcp__lore__lore_search。
+
+所有 Lore 生命周期请求使用 client_type=dsh，并携带 runtime_id=dsh 与 runtime_family=dsh。Lore 服务不可用时必须 fail open：保留 dsh 正常会话，不因记忆集成失败阻断用户请求。`,
 };
 
 export function getDefaultBootContent(uri: string | null | undefined): string {

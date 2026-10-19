@@ -1,5 +1,5 @@
 /**
- * Shared Lore configuration for the ZCode plugin (lifecycle hooks + MCP bridge).
+ * Shared Lore configuration for channel plugins (lifecycle hooks + MCP bridge).
  *
  * The Lore home directory is ${LORE_HOME:-~/.lore}. Configuration resolution
  * order (highest precedence first):

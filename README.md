@@ -84,7 +84,7 @@ Common flags:
 | --- | --- |
 | `--pre` | Pre-release channel (`pre-latest` image) |
 | `--dev` | Dev channel (`dev-latest` image) |
-| `--channels CH,...` | Install only some runtimes: `claudecode`, `codex`, `pi`, `openclaw`, `hermes`, `opencode`, `zcode` |
+| `--channels CH,...` | Install only some runtimes: `claudecode`, `codex`, `pi`, `openclaw`, `hermes`, `opencode`, `zcode`, `dsh` |
 | `--base-url URL` | Use an existing Lore server and skip local Docker |
 | `--docker` | Deploy the Lore server on this machine with Docker |
 | `--api-token TOKEN` | API token for the server |
@@ -153,6 +153,7 @@ Then open `/settings` only if you want to tune recall weights, Dream schedule, b
 | **Hermes** | `hermes-plugin/` | MemoryProvider plugin with Lore tools, recall, and Python-native local Skill work copies |
 | **OpenCode** | `opencode-plugin/` | Native plugin with exact `lore_*` tools, recall, and bundled local Skill work copies |
 | **ZCode** | `zcode-plugin/` | Native marketplace plugin with SessionStart boot and UserPromptSubmit recall hooks (no MCP) |
+| **DeepSeek Harness** | `dsh-plugin/` | Native lifecycle plugin with per-session boot, pre-step recall, and an MCP bridge (`mcp__lore__*` tools) |
 | **Generic MCP** | `/api/mcp` | Streamable HTTP endpoint for clients that can attach remote tools |
 
 After install, restart each runtime. Useful notes:
@@ -161,6 +162,7 @@ After install, restart each runtime. Useful notes:
 - **Codex** may ask you to trust Lore hooks under `/hooks`. If `/plugins` still shows Lore as installable, install it there; the script has already configured MCP and user-level hooks.
 - **OpenCode** reads `~/.lore/config.json`. The installer skips OpenCode cleanly when the `opencode` CLI is absent. See [OpenCode notes](#opencode-notes) for compatibility details.
 - **ZCode** uses native process hooks only. From a source checkout: `zcode plugins marketplace add /path/to/lore/zcode-plugin && zcode plugins install lore@lore && zcode plugins enable lore@lore`. Create `core://agent/zcode` in Lore setup if that node is still empty.
+- **DeepSeek Harness (dsh)** is wired through the home-level `~/.dsh/cordis.patch.yml`, so every profile gets the lifecycle plugin and the `mcp__lore__*` tools. Restart dsh after the install. Create `core://agent/dsh` in Lore setup if that node is still empty.
 
 Generic MCP URL shape:
 

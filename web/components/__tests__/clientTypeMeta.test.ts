@@ -34,4 +34,11 @@ describe('clientTypeMeta', () => {
     expect(clientTypeAssetPath('zcode')).toBe('/channel-icons/zcode.svg');
     expect(clientTypeInitials('zcode')).toBe('ZC');
   });
+
+  it('exposes dsh display metadata', () => {
+    expect(KNOWN_CLIENT_TYPES).toContain('dsh');
+    expect(clientTypeLabel('dsh')).toBe('DeepSeek Harness');
+    expect(clientTypeAssetPath('dsh')).toBe('/channel-icons/dsh.svg');
+    expect(clientTypeInitials('dsh')).toBe('DS');
+  });
 });

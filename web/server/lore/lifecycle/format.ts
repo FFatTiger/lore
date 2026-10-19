@@ -33,6 +33,7 @@ const CLIENT_LABELS: Partial<Record<ClientType, string>> = {
   pi: 'Pi',
   opencode: 'OpenCode',
   zcode: 'ZCode',
+  dsh: 'DeepSeek Harness',
   mcp: 'MCP',
   admin: 'Admin',
 };
@@ -45,6 +46,7 @@ const CLIENT_BOOT_LABELS: Partial<Record<ClientType, string>> = {
   pi: 'pi runtime constraints',
   opencode: 'opencode runtime constraints',
   zcode: 'zcode runtime constraints',
+  dsh: 'dsh runtime constraints',
   mcp: 'mcp runtime constraints',
   admin: 'admin runtime constraints',
 };

@@ -34,6 +34,7 @@ export async function collectInstallSnapshot(opts: {
       ['opencode', agents.opencode],
       ['hermes', agents.hermes],
       ['zcode', agents.zcode],
+      ['dsh', agents.dsh],
     ] as Array<[ChannelId, boolean]>
   )
     .filter(([, on]) => on)

@@ -78,8 +78,9 @@ Other files:
 | `hermes` | Hermes | None |
 | `opencode` | OpenCode | `opencode` |
 | `zcode` | ZCode | `zcode` |
+| `dsh` | DeepSeek Harness | `dsh`, or an existing `~/.dsh` |
 
-- A runtime whose host CLI isn't installed is reported as skipped. It isn't reported as configured.
+- A runtime whose host CLI isn't installed is reported as skipped. It isn't reported as configured. `dsh` also counts as present when `~/.dsh` exists, because dsh is often run through `npx @deepseek-ai/dsh` with no global binary.
 - Hermes doesn't need its CLI to install. It's selected by default only when a `hermes` command is on your `PATH`; otherwise pass `--channels hermes`. Link the files yourself:
 
   ```bash

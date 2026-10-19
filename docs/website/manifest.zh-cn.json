@@ -80,6 +80,11 @@
           "description": "通过 Lore 插件接入 ZCode：生命周期钩子加本地 MCP 桥接。"
         },
         {
+          "path": "agents/dsh",
+          "title": "DeepSeek Harness",
+          "description": "用原生 lifecycle 插件和 MCP bridge 接入 DeepSeek Harness（dsh）：按会话注入 boot、每条用户消息前召回，并提供 lore 工具。"
+        },
+        {
           "path": "agents/mcp",
           "title": "其他 MCP 客户端",
           "description": "让任何支持 MCP 的客户端通过 Streamable HTTP 使用 Lore 记忆工具。"

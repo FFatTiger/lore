@@ -33,6 +33,7 @@ Don't repeat these in every local file: product rules, user preferences, project
 | OpenClaw-only behavior | `core://agent/openclaw` |
 | Hermes-only behavior | `core://agent/hermes` |
 | ZCode-only behavior | `core://agent/zcode` |
+| DeepSeek Harness-only behavior | `core://agent/dsh` |
 | Temporary task notes | Not in Lore. Keep them in the chat or your issue tracker. |
 | Secrets, API keys, and tokens | Not in Lore. Keep them in environment variables or a secret store. |
 
@@ -51,6 +52,7 @@ Check these files on the machine you are configuring. Paths vary, so confirm the
 | OpenClaw | Your project notes, and the plugin settings in `~/.openclaw/openclaw.json` under `plugins.entries.lore.config` |
 | Hermes | Any local memory or provider settings you keep for Hermes. If you linked Lore's provider by hand, the link is usually `~/.hermes/skills/lore_memory` |
 | ZCode | The rules files your ZCode projects use. If `core://agent/zcode` is empty, create it in Lore |
+| DeepSeek Harness | `~/.dsh/AGENTS.md` (and `~/.agents/AGENTS.md`), plus each project's `AGENTS.md` or `CLAUDE.md`. If `core://agent/dsh` is empty, create it in Lore |
 
 Two details to check:
 

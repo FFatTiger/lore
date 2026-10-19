@@ -80,6 +80,11 @@
           "description": "Connect ZCode with the Lore plugin: lifecycle hooks plus a local MCP bridge."
         },
         {
+          "path": "agents/dsh",
+          "title": "DeepSeek Harness",
+          "description": "Connect DeepSeek Harness (dsh) with a native lifecycle plugin and an MCP bridge: per-session boot, recall before each user message, and lore tools."
+        },
+        {
           "path": "agents/mcp",
           "title": "Other MCP clients",
           "description": "Connect any MCP-capable client to Lore's memory tools over Streamable HTTP."

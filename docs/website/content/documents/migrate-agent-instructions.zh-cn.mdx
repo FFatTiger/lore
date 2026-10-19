@@ -33,6 +33,7 @@
 | 仅 OpenClaw 的行为 | `core://agent/openclaw` |
 | 仅 Hermes 的行为 | `core://agent/hermes` |
 | 仅 ZCode 的行为 | `core://agent/zcode` |
+| 仅 DeepSeek Harness 的行为 | `core://agent/dsh` |
 | 临时的任务笔记 | 不放进 Lore，保留在当前对话或问题跟踪工具中 |
 | 密钥、API 密钥和令牌 | 不放进 Lore，保存在环境变量或密钥管理服务中 |
 
@@ -51,6 +52,7 @@
 | OpenClaw | 你的项目笔记，以及 `~/.openclaw/openclaw.json` 中 `plugins.entries.lore.config` 下的插件设置 |
 | Hermes | 你为 Hermes 保留的本地记忆或提供方设置。如果你手动创建过 Lore 提供方的链接，它通常位于 `~/.hermes/skills/lore_memory` |
 | ZCode | 各 ZCode 项目使用的规则文件。如果 `core://agent/zcode` 为空，请在 Lore 中创建它 |
+| DeepSeek Harness | `~/.dsh/AGENTS.md`（以及 `~/.agents/AGENTS.md`），加上各项目的 `AGENTS.md` 或 `CLAUDE.md`。如果 `core://agent/dsh` 为空，请在 Lore 中创建它 |
 
 需要检查的两个细节：
 

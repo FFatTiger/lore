@@ -173,7 +173,13 @@ jobs:
           mkdir -p dist
           cd zcode-plugin
           node --test hooks/__tests__/*.test.mjs mcp/__tests__/*.test.mjs
-          zip -r ../dist/lore-zcode.zip .zcode-plugin .mcp.json marketplace.json hooks mcp shared README.md -x '*/__tests__/*'
+          zip -r ../dist/lore-zcode.zip .zcode-plugin .mcp.json marketplace.json hooks mcp vendor README.md -x '*/__tests__/*'
+
+      - name: Build DSH artifact
+        run: |
+          cd dsh-plugin
+          node --test plugin/__tests__/*.test.mjs mcp/__tests__/*.test.mjs
+          zip -r ../dist/lore-dsh.zip .dsh-plugin plugin mcp vendor README.md -x '*/__tests__/*'
 
       - name: Upload artifacts to release
         env:

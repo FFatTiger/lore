@@ -162,19 +162,28 @@ export function apply(ctx) {
     if (sessions.size >= MAX_TRACKED_SESSIONS) {
       sessions.delete(sessions.keys().next().value);
     }
-    const state = { systemContext: '', lastPromptMessageId: '' };
+    const state = { systemContext: '', lastPromptMessageId: '', sectionDispose: null };
     sessions.set(sessionId, state);
     return state;
   }
 
-  function registerBootSection(agent, text) {
+  // dsh throws on a duplicate section name within one scope, so a repeated
+  // agent/created (for example clear or compact recreating the agent) must
+  // dispose the previous registration before registering the fresh text.
+  function registerBootSection(agent, text, state) {
+    if (typeof state.sectionDispose === 'function') {
+      try {
+        state.sectionDispose();
+      } catch {}
+      state.sectionDispose = null;
+    }
     try {
-      agent.ctx?.systemPrompt?.section({
+      state.sectionDispose = agent.ctx?.systemPrompt?.section({
         name: SECTION_NAME,
         order: SECTION_ORDER,
         text,
         interpolate: false,
-      });
+      }) ?? null;
       return true;
     } catch (error) {
       debug(`system prompt section registration failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -189,7 +198,7 @@ export function apply(ctx) {
     if (source === 'clear') state.systemContext = '';
 
     if (state.systemContext) {
-      registerBootSection(agent, state.systemContext);
+      registerBootSection(agent, state.systemContext, state);
       return;
     }
 
@@ -207,7 +216,7 @@ export function apply(ctx) {
       const systemContext = hostContext(response, 'systemContext');
       if (systemContext) {
         state.systemContext = systemContext;
-        registerBootSection(agent, systemContext);
+        registerBootSection(agent, systemContext, state);
       }
     } catch (error) {
       debug(`session.start failed open: ${error instanceof Error ? error.message : String(error)}`);

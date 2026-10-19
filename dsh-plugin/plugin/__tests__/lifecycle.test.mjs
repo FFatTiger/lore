@@ -44,9 +44,18 @@ function fakeAgent(id) {
     ctx: {
       systemPrompt: {
         sections: [],
+        // Behave like dsh: a duplicate section name in one scope throws, and
+        // the returned disposer removes the registration.
         section(spec) {
+          if (agent.ctx.systemPrompt.sections.some((existing) => existing.name === spec.name)) {
+            throw new Error(`prompt section "${spec.name}" is already registered in this scope`);
+          }
           agent.ctx.systemPrompt.sections.push(spec);
-          return () => {};
+          return () => {
+            agent.ctx.systemPrompt.sections = agent.ctx.systemPrompt.sections.filter(
+              (existing) => existing !== spec,
+            );
+          };
         },
       },
     },
@@ -201,6 +210,32 @@ test('resume reuses the boot section without a second request; clear refetches',
     await h.created(cleared, 'clear');
     assert.equal(server.requests.length, 2);
     assert.equal(cleared.ctx.systemPrompt.sections[0].text, 'BOOT 2');
+  } finally {
+    await server.close();
+  }
+});
+
+test('a repeated agent/created on the same agent replaces the boot section without a duplicate-name throw', async () => {
+  const home = tempHome('lore-dsh-life-');
+  let call = 0;
+  const server = await withLoreServer(() => sessionStartResponse(`BOOT ${++call}`));
+  useServer(server, home);
+  setEnv({ LORE_HOME: home });
+  try {
+    const h = harness();
+    apply(h.ctx);
+    const agent = fakeAgent('session-1');
+    await h.created(agent, 'startup');
+    assert.equal(agent.ctx.systemPrompt.sections.length, 1);
+    assert.equal(agent.ctx.systemPrompt.sections[0].text, 'BOOT 1');
+
+    // clear refetches and re-registers on the same agent scope: the old
+    // registration is disposed first, so dsh's duplicate-name guard never fires.
+    await h.created(agent, 'clear');
+    assert.equal(agent.ctx.systemPrompt.sections.length, 1);
+    assert.equal(agent.ctx.systemPrompt.sections[0].name, 'lore:boot');
+    assert.equal(agent.ctx.systemPrompt.sections[0].text, 'BOOT 2');
+    assert.equal(server.requests.length, 2);
   } finally {
     await server.close();
   }

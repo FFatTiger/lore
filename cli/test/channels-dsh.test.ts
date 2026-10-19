@@ -57,6 +57,16 @@ test('registry lists dsh', () => {
   assert.equal(getInstaller('dsh').id, 'dsh');
 });
 
+test('renderLoreRows quotes paths as YAML double-quoted scalars', () => {
+  const plain = renderLoreRows({ pluginPath: '/a/lifecycle.mjs', bridgePath: '/a/lore-mcp.mjs' });
+  assert.ok(plain.includes('name: "/a/lifecycle.mjs"'));
+  assert.ok(plain.includes('          - "/a/lore-mcp.mjs"'));
+
+  const tricky = renderLoreRows({ pluginPath: '/opt/my lore:a#b/lifecycle.mjs', bridgePath: '/opt/my lore:a#b/lore-mcp.mjs' });
+  assert.ok(tricky.includes('name: "/opt/my lore:a#b/lifecycle.mjs"'));
+  assert.ok(tricky.includes('          - "/opt/my lore:a#b/lore-mcp.mjs"'));
+});
+
 test('upsertManagedPatch replaces only the managed block and preserves user rows and comments', () => {
   const block = renderLoreRows({ pluginPath: '/a/lifecycle.mjs', bridgePath: '/a/lore-mcp.mjs' });
   const userFile = [
@@ -128,8 +138,8 @@ test('dsh install is detected through an existing dsh home without a binary', as
     const result = await dshInstaller.install(ctx({ loreHome, homeDir: home }));
     assert.equal(result.status, 'ok');
     const content = await fs.readFile(patchFile(home), 'utf8');
-    assert.ok(content.includes(`name: ${path.join(loreHome, 'dsh', 'plugin', 'lifecycle.mjs')}`));
-    assert.ok(content.includes(`- ${path.join(loreHome, 'dsh', 'mcp', 'lore-mcp.mjs')}`));
+    assert.ok(content.includes(`name: ${JSON.stringify(path.join(loreHome, 'dsh', 'plugin', 'lifecycle.mjs'))}`));
+    assert.ok(content.includes(`- ${JSON.stringify(path.join(loreHome, 'dsh', 'mcp', 'lore-mcp.mjs'))}`));
     assert.ok(!content.includes('lm_x'));
   } finally {
     process.env.PATH = originalPath;

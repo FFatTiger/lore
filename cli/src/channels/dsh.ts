@@ -40,10 +40,14 @@ async function pathExists(target: string): Promise<boolean> {
  * profile-local install is needed and every profile picks the rows up.
  */
 export function renderLoreRows(args: { pluginPath: string; bridgePath: string }): string {
+  // JSON.stringify output is valid YAML double-quoted scalar syntax, so paths
+  // containing ": ", "#", or other special characters still parse.
+  const pluginName = JSON.stringify(args.pluginPath);
+  const bridgeArg = JSON.stringify(args.bridgePath);
   return [
     `- insert:`,
     `    - id: lore-lifecycle`,
-    `      name: ${args.pluginPath}`,
+    `      name: ${pluginName}`,
     `    - id: lore-mcp`,
     `      name: '@deepseek-ai/dsh-mcp-client'`,
     `      config:`,
@@ -51,7 +55,7 @@ export function renderLoreRows(args: { pluginPath: string; bridgePath: string })
     `        transport: stdio`,
     `        command: node`,
     `        args:`,
-    `          - ${args.bridgePath}`,
+    `          - ${bridgeArg}`,
   ].join('\n');
 }
 

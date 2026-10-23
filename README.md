@@ -50,7 +50,7 @@ Most memory layers stop at retrieval. Lore covers the full lifecycle:
 - **URI-first graph** — durable addresses such as `core://agent`, `preferences://user`, `project://my_project`
 - **Disclosure** — each memory states when it should surface
 - **Dream** — scheduled maintenance with quality checks and rollback history
-- **Skills** — on servers that advertise Skills, session start lists the skills the agent may use, and `lore_skill_get` downloads or refreshes the server-managed package files of a local work copy on demand (managed files are read-only; the skill directory stays writable for local outputs)
+- **Skills** — on servers that advertise Skills, session start syncs the visible skills into the host plugin's own `skills/` directory (Claude Code, Codex) or lists them for on-demand fetch, and `lore_skill_get` downloads or refreshes the server-managed package files of a local work copy (managed files are read-only; the skill directory stays writable for local outputs)
 
 ## Quick Start
 
@@ -182,9 +182,9 @@ Once connected, the Memory flow is:
 
 The Skill flow is separate and only exists on servers that advertise Skills (`capabilities.skills=true`). The open-source server has none, so plugins expose no Skills tools or context there.
 
-1. session start lists the skills the agent may use (`<available_skills>` with name, description, and `skill_id`); skills whose `SKILL.md` sets `disable-model-invocation: true` are hidden
-2. the agent decides when a skill is relevant and calls `lore_skill_get(skill_id)`; a user can also invoke any skill explicitly by typing `$skill-name` in a prompt
-3. the runtime downloads the complete package into a local work copy at `${LORE_HOME:-~/.lore}/skills/<project-id>/<skill-name>/` when missing, or updates the server-managed package files when the server version differs
+1. at session start, channels with native host skill discovery (Claude Code, Codex) sync the visible skills into the plugin's own `skills/` directory — Claude Code exposes them as `/lore:<name>` and Codex via `$skill-name` or `/skills`; other channels list the skills the agent may use (`<available_skills>` with name, description, and `skill_id`)
+2. the host invokes skills through its own skill mechanism (changes from the sync appear from the next session on); the agent can also call `lore_skill_get(skill_id)` for the full package at any time
+3. `lore_skill_get` downloads the complete package into a local work copy at `${LORE_HOME:-~/.lore}/skills/<project-id>/<skill-name>/` when missing, or updates the server-managed package files when the server version differs; `disable-model-invocation` skills are hidden from model-initiated use (Codex honors it via a generated `agents/openai.yaml` policy)
 4. the tool returns the full `SKILL.md` content and absolute `skill_dir`; server-managed package files are read-only (0444 on POSIX) and the skill directory stays writable (0755) so agents can create local outputs, caches, and artifacts directly inside the same copy
 5. extra local files never trigger tamper and survive getSkill calls and version upgrades; a version mismatch updates only the server-managed package files
 

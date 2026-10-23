@@ -160,8 +160,6 @@ async function main() {
       runtime: lifecycleRuntime(),
       event: { name: "prompt.submit", native_name: "UserPromptSubmit" },
       normalized,
-      // Lore renders `$skill-name` invocations only for clients that expose Skills tools.
-      ...(cfg.skillsEnabled ? { features: { skills: true } } : {}),
       ...(nativeInputSnapshot ? { native_input_snapshot: nativeInputSnapshot } : {}),
     }, cfg.timeoutMs);
     writeHostOutput(lifecycle);

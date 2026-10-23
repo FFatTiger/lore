@@ -83,6 +83,8 @@ test('install defaults to plugin hooks and removes legacy Lore user hooks', () =
   assert.match(installedRecallHook, /\/api\/lifecycle\/event/);
   assert.doesNotMatch(installedRulesHook, /\/api\/bridge\//);
   assert.doesNotMatch(installedRecallHook, /\/api\/bridge\//);
+  // The session-start skills sync imports this vendored core next to the hook.
+  assert.equal(existsSync(path.join(installedRoot, 'hooks', 'vendor', 'skill-workcopy', 'index.mjs')), true);
   assert.equal(existsSync(staleVersionRoot), false);
   const codexConfig = readFileSync(path.join(codexHome, 'config.toml'), 'utf8');
   assert.match(codexConfig, /\[mcp_servers\.lore-skills\]/);

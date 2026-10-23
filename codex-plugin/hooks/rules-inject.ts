@@ -5,21 +5,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-
-import { syncSkillsToDir } from "./vendor/skill-workcopy/index.mjs";
 
 const LORE_CONFIG_FILE = path.join(os.homedir(), ".lore", "config.json");
 const DEFAULT_BASE_URL = "http://127.0.0.1:18901";
 const BOOT_TIMEOUT_MS = 8000;
-// Codex gives the hook 10s; keep the skills sync well under that and
-// independent of the lifecycle request's budget.
-const SKILLS_SYNC_TIMEOUT_MS = 7000;
-const OPENAI_YAML_PATH = "agents/openai.yaml";
-// Codex has no disable-model-invocation frontmatter support; the equivalent is
-// an agents/openai.yaml policy file shipped inside the skill package.
-const OPENAI_POLICY_YAML = "policy:\n  allow_implicit_invocation: false\n";
 const RUNTIME_FAMILY = "codex";
 const SNAPSHOT_ALLOWLIST = [
   "session_id",
@@ -167,57 +158,25 @@ function writeHostOutput(response: any) {
   if (output.mode === "stdout_text") process.stdout.write(String(output.value));
 }
 
-function resolvePluginRoot(): string {
-  // The marketplace layout runs this hook in place (<pluginRoot>/hooks), but
-  // install-hooks.sh copies it elsewhere; the installer pins the real root via
-  // LORE_CODEX_PLUGIN_ROOT so the skills/ target is never a guessed path.
-  const fromEnv = pickString(process.env.LORE_CODEX_PLUGIN_ROOT);
-  if (fromEnv) return fromEnv;
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-}
-
-function adaptCodexSkill(detail: any): any {
-  if (!detail || !detail.disable_model_invocation) return detail;
-  const files: any[] = Array.isArray(detail.files) ? detail.files : [];
-  if (files.some((file) => file && file.path === OPENAI_YAML_PATH)) return detail;
-  return {
-    ...detail,
-    files: [...files, { path: OPENAI_YAML_PATH, content: OPENAI_POLICY_YAML }],
-  };
-}
-
-async function fetchSkillsJson(baseUrl: string, apiToken: string, skillPath: string, signal: AbortSignal): Promise<any> {
-  const url = new URL(`/api/skills${skillPath}`, `${baseUrl}/`);
-  url.searchParams.set("client_type", "codex");
-  const headers: Record<string, string> = {};
-  if (apiToken) headers.authorization = `Bearer ${apiToken}`;
-  const response = await fetch(url, { headers, signal });
-  if (!response.ok) throw new Error(`skills request failed: ${response.status}`);
-  return response.json();
-}
-
 /**
- * Sync the server catalog into the plugin's own skills/ directory so Codex
- * discovers Lore skills natively ($name and /skills). Bundled skills without a
- * Lore marker (skills/lore-memory) are expected conflicts and stay untouched.
- * Failures are silent (single stderr line) and never affect boot output.
+ * Skills sync runs in a detached background process: Codex only sees new skills
+ * in the next session, so the hook must never spend its 10s budget waiting for
+ * it. The script resolves the real plugin root (LORE_CODEX_PLUGIN_ROOT pinned
+ * by the installer, else its own location) and records its outcome in
+ * <pluginRoot>/skills/.lore-sync-status.json.
  */
-async function runSkillsSync(): Promise<void> {
-  const pluginRoot = resolvePluginRoot();
-  const { baseUrl, apiToken } = loadConfig();
-  const signal = AbortSignal.timeout(SKILLS_SYNC_TIMEOUT_MS);
-  // include_user_only: user-trigger-only skills must still be discovered by the host.
-  const catalog = await fetchSkillsJson(baseUrl, apiToken, "?include_user_only=true", signal);
-  const skills = Array.isArray(catalog?.skills) ? catalog.skills : [];
-  const projectId = pickString(catalog?.project_id);
-  if (!projectId) return;
-  await syncSkillsToDir({
-    root: path.join(pluginRoot, "skills"),
-    projectId,
-    skills,
-    loadSkill: (skillId: string) => fetchSkillsJson(baseUrl, apiToken, `/${encodeURIComponent(skillId)}`, signal),
-    adapt: adaptCodexSkill,
-  });
+function spawnSkillsSync(): void {
+  try {
+    const hookDir = path.dirname(fileURLToPath(import.meta.url));
+    const child = spawn(process.execPath, [path.join(hookDir, "skills-sync.mjs")], {
+      detached: true,
+      stdio: "ignore",
+      env: process.env,
+    });
+    child.unref();
+  } catch {
+    // Silent degradation: skills sync is best-effort background work.
+  }
 }
 
 async function main() {
@@ -238,17 +197,12 @@ async function main() {
     project: detectProjectInfo(),
     ...(nativeInputSnapshot ? { native_input_snapshot: nativeInputSnapshot } : {}),
   }, BOOT_TIMEOUT_MS).catch(() => null);
-  // Skills sync runs next to the lifecycle request (host skills are discovered
-  // natively, so the lifecycle call no longer advertises features.skills).
-  const skillsPromise = skillsEnabled
-    ? runSkillsSync().catch((error) => {
-      process.stderr.write(`lore: skills sync skipped (${error instanceof Error ? error.message : String(error)})\n`);
-    })
-    : Promise.resolve();
 
+  // Write the lifecycle output, hand the skills sync to a detached background
+  // process, and exit - the host picks synced skills up next session.
   const lifecycle = await lifecyclePromise;
   writeHostOutput(lifecycle);
-  await skillsPromise;
+  if (skillsEnabled) spawnSkillsSync();
 }
 
 main();

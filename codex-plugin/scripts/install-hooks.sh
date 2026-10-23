@@ -16,6 +16,8 @@ cp "$PLUGIN_ROOT/hooks/rules-inject.ts" "$HOOK_ROOT/hooks/rules-inject.ts"
 cp "$PLUGIN_ROOT/hooks/recall-inject.ts" "$HOOK_ROOT/hooks/recall-inject.ts"
 cp "$PLUGIN_ROOT/hooks/rules-inject.mjs" "$HOOK_ROOT/hooks/rules-inject.mjs"
 cp "$PLUGIN_ROOT/hooks/recall-inject.mjs" "$HOOK_ROOT/hooks/recall-inject.mjs"
+# Background skills sync spawned by the SessionStart hook (plain node, no tsx).
+cp "$PLUGIN_ROOT/hooks/skills-sync.mjs" "$HOOK_ROOT/hooks/skills-sync.mjs"
 # The hooks import the shared skill-workcopy core relative to their own file.
 if [[ -d "$PLUGIN_ROOT/hooks/vendor" ]]; then
   cp -R "$PLUGIN_ROOT/hooks/vendor" "$HOOK_ROOT/hooks/vendor"

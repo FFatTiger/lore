@@ -17,6 +17,10 @@ const pluginVersion = JSON.parse(
   readFileSync(path.join(hooksDir, '..', '.codex-plugin', 'plugin.json'), 'utf8'),
 ).version;
 const isolatedHome = mkdtempSync(path.join(tmpdir(), 'lore-codex-hook-home-'));
+// Default isolated plugin root: detached skills-sync children spawned by the
+// hook must never write into the repository checkout.
+const defaultPluginRoot = mkdtempSync(path.join(tmpdir(), 'lore-codex-plugin-home-'));
+const skillsSyncScript = path.join(hooksDir, 'skills-sync.mjs');
 
 /** Server-side skill packages used by the native-sync tests. */
 function syncedSkillFixtures() {
@@ -61,6 +65,7 @@ function runHook(scriptPath, input, env = {}) {
         HOME: isolatedHome,
         LORE_API_TOKEN: '',
         API_TOKEN: '',
+        LORE_CODEX_PLUGIN_ROOT: defaultPluginRoot,
         ...env,
       },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -95,13 +100,13 @@ async function withServer(onRequest, skillsRoutes) {
       if (url.pathname === '/api/skills') {
         skillRequests.push({ path: url.pathname, query: Object.fromEntries(url.searchParams) });
         const list = routes.list || (() => ({ project_id: 'proj-1', catalog_revision: '0', skills: [] }));
-        return respond(200, list());
+        return respond(200, await list());
       }
       const detailMatch = url.pathname.match(/^\/api\/skills\/([^/]+)$/);
       if (detailMatch) {
         skillRequests.push({ path: url.pathname, query: Object.fromEntries(url.searchParams) });
         const detail = routes.detail || (() => null);
-        const data = detail(decodeURIComponent(detailMatch[1]));
+        const data = await detail(decodeURIComponent(detailMatch[1]));
         if (data) return respond(200, data);
         return respond(404, { detail: 'not found' });
       }
@@ -128,7 +133,41 @@ async function withServer(onRequest, skillsRoutes) {
 
 test.after(() => {
   rmSync(isolatedHome, { recursive: true, force: true });
+  rmSync(defaultPluginRoot, { recursive: true, force: true });
 });
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Wait for the detached skills-sync child to record its outcome. */
+async function waitForStatusFile(pluginRoot, timeoutMs = 30000) {
+  const statusPath = path.join(pluginRoot, 'skills', '.lore-sync-status.json');
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (existsSync(statusPath)) return JSON.parse(readFileSync(statusPath, 'utf-8'));
+    await delay(100);
+  }
+  throw new Error(`skills sync status file not written: ${statusPath}`);
+}
+
+/** Run the standalone sync script directly and resolve its exit code. */
+function runSyncScript(env) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [skillsSyncScript], {
+      env: {
+        ...process.env,
+        HOME: isolatedHome,
+        LORE_API_TOKEN: '',
+        API_TOKEN: '',
+        ...env,
+      },
+      stdio: 'ignore',
+    });
+    child.on('error', reject);
+    child.on('close', (code) => resolve(code));
+  });
+}
 
 test('UserPromptSubmit omits invented codex session_id but still posts prompt.submit', async () => {
   const server = await withServer(() => ({
@@ -288,6 +327,26 @@ test('legacy install-hooks.sh SessionStart matcher matches bundled startup|resum
       repinned.hooks.SessionStart[0].hooks[0].command,
       new RegExp(`LORE_CODEX_PLUGIN_ROOT=${JSON.stringify(pinnedRoot)}`),
     );
+
+    // The copied-out sync script must run standalone (vendor copied with it)
+    // and record its outcome under the pinned plugin root.
+    const copiedSync = path.join(codexHome, 'hooks', 'lore', 'hooks', 'skills-sync.mjs');
+    assert.equal(existsSync(copiedSync), true);
+    const syncRoot = path.join(root, 'pinned-plugin');
+    execFileSync(process.execPath, [copiedSync], {
+      env: {
+        ...process.env,
+        HOME: root,
+        LORE_CODEX_PLUGIN_ROOT: syncRoot,
+        LORE_BASE_URL: 'http://127.0.0.1:9',
+        LORE_API_TOKEN: '',
+        API_TOKEN: '',
+      },
+      stdio: 'pipe',
+    });
+    const syncStatus = JSON.parse(readFileSync(path.join(syncRoot, 'skills', '.lore-sync-status.json'), 'utf8'));
+    assert.equal(syncStatus.errors.length, 1);
+    assert.ok(syncStatus.finished_at.length > 0);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -332,23 +391,29 @@ test('Skills-enabled hooks write host output through without advertising feature
   }
 });
 
-test('SessionStart syncs skills natively and adapts disable_model_invocation', async () => {
+test('SessionStart spawns a detached skills sync, adapts it, and exits without waiting', async () => {
   const fixtures = syncedSkillFixtures();
   const details = new Map([
     [fixtures.adapted.detail.skill_id, fixtures.adapted.detail],
     [fixtures.existing.detail.skill_id, fixtures.existing.detail],
   ]);
+  // The list response is slower than any plausible hook runtime; a hook that
+  // waited for the sync would blow past this delay.
+  const LIST_DELAY_MS = 6000;
   const server = await withServer(() => ({
     host_output: {
       mode: 'stdout_json',
       value: { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: 'CODEX_BOOT' } },
     },
   }), {
-    list: () => ({
-      project_id: 'proj-1',
-      catalog_revision: 'rev-4',
-      skills: [fixtures.adapted.summary, fixtures.existing.summary],
-    }),
+    list: async () => {
+      await delay(LIST_DELAY_MS);
+      return {
+        project_id: 'proj-1',
+        catalog_revision: 'rev-4',
+        skills: [fixtures.adapted.summary, fixtures.existing.summary],
+      };
+    },
     detail: (id) => details.get(id) || null,
   });
   const pluginRoot = mkdtempSync(path.join(tmpdir(), 'lore-codex-plugin-root-'));
@@ -357,15 +422,29 @@ test('SessionStart syncs skills natively and adapts disable_model_invocation', a
   mkdirSync(bundled, { recursive: true });
   writeFileSync(path.join(bundled, 'SKILL.md'), '# Bundled Lore memory skill\n');
   try {
+    const startedAt = Date.now();
     const result = await runHook(rulesHook, { session_id: 's1', source: 'startup' }, {
       LORE_BASE_URL: server.baseUrl,
       LORE_SKILLS_ENABLED: '1',
       LORE_CODEX_PLUGIN_ROOT: pluginRoot,
     });
+    const hookDurationMs = Date.now() - startedAt;
 
     assert.equal(result.code, 0, result.stderr);
     assert.match(result.stdout, /CODEX_BOOT/);
+    assert.equal(result.stderr, '');
     assert.equal(server.requests[0].features, undefined);
+    assert.ok(hookDurationMs < LIST_DELAY_MS, `hook waited for the sync: ${hookDurationMs}ms`);
+
+    const status = await waitForStatusFile(pluginRoot);
+    assert.equal(status.project_id, 'proj-1');
+    assert.equal(status.catalog_revision, 'rev-4');
+    assert.deepEqual(status.created.sort(), ['synced-skill', 'yaml-skill']);
+    assert.deepEqual(status.errors, []);
+    // lore-memory is an expected conflict and stays out of the recorded conflicts.
+    assert.deepEqual(status.conflicts, []);
+    assert.ok(status.finished_at.length > 0);
+
     assert.equal(server.skillRequests.length, 3);
     assert.equal(server.skillRequests[0].query.client_type, 'codex');
     assert.equal(server.skillRequests[0].query.include_user_only, 'true');
@@ -391,10 +470,58 @@ test('SessionStart syncs skills natively and adapts disable_model_invocation', a
     assert.equal(readFileSync(path.join(bundled, 'SKILL.md'), 'utf-8'), '# Bundled Lore memory skill\n');
     assert.equal(existsSync(path.join(bundled, '.lore-skill-marker.json')), false);
     assert.equal(existsSync(path.join(pluginRoot, 'skills', '.lore-sync.lock')), false);
-    assert.equal(result.stderr, '');
   } finally {
     rmSync(pluginRoot, { recursive: true, force: true });
     await server.close();
+  }
+});
+
+test('skills-sync.mjs syncs, adapts, and records status on its own', async () => {
+  const fixtures = syncedSkillFixtures();
+  const server = await withServer(null, {
+    list: () => ({
+      project_id: 'proj-1',
+      catalog_revision: 'rev-2',
+      skills: [fixtures.adapted.summary, fixtures.existing.summary],
+    }),
+    detail: (id) => (id === fixtures.adapted.detail.skill_id ? fixtures.adapted.detail
+      : id === fixtures.existing.detail.skill_id ? fixtures.existing.detail : null),
+  });
+  const pluginRoot = mkdtempSync(path.join(tmpdir(), 'lore-codex-plugin-root-'));
+  try {
+    const code = await runSyncScript({
+      LORE_BASE_URL: server.baseUrl,
+      LORE_CODEX_PLUGIN_ROOT: pluginRoot,
+    });
+    assert.equal(code, 0);
+    const status = JSON.parse(readFileSync(path.join(pluginRoot, 'skills', '.lore-sync-status.json'), 'utf-8'));
+    assert.deepEqual(status.created.sort(), ['synced-skill', 'yaml-skill']);
+    assert.deepEqual(status.errors, []);
+    assert.equal(
+      readFileSync(path.join(pluginRoot, 'skills', 'synced-skill', 'agents', 'openai.yaml'), 'utf-8'),
+      'policy:\n  allow_implicit_invocation: false\n',
+    );
+  } finally {
+    rmSync(pluginRoot, { recursive: true, force: true });
+    await server.close();
+  }
+});
+
+test('skills-sync.mjs records server failures and still exits 0', async () => {
+  const pluginRoot = mkdtempSync(path.join(tmpdir(), 'lore-codex-plugin-root-'));
+  try {
+    const code = await runSyncScript({
+      LORE_BASE_URL: 'http://127.0.0.1:9', // nothing listens here
+      LORE_CODEX_PLUGIN_ROOT: pluginRoot,
+    });
+    assert.equal(code, 0);
+    const status = JSON.parse(readFileSync(path.join(pluginRoot, 'skills', '.lore-sync-status.json'), 'utf-8'));
+    assert.equal(status.created.length, 0);
+    assert.equal(status.errors.length, 1);
+    assert.ok(status.errors[0].message.length > 0);
+    assert.ok(status.finished_at.length > 0);
+  } finally {
+    rmSync(pluginRoot, { recursive: true, force: true });
   }
 });
 
@@ -408,7 +535,10 @@ test('SessionStart stays silent when the Lore server is unavailable', async () =
     });
     assert.equal(result.code, 0, result.stderr);
     assert.equal(result.stdout, '');
-    assert.equal(existsSync(path.join(pluginRoot, 'skills')), false);
+    // The detached sync child records the failure and exits cleanly.
+    const status = await waitForStatusFile(pluginRoot);
+    assert.equal(status.errors.length, 1);
+    assert.equal(status.created.length, 0);
   } finally {
     rmSync(pluginRoot, { recursive: true, force: true });
   }

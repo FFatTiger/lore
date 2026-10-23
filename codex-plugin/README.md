@@ -63,7 +63,7 @@ Set `LORE_CODEX_INSTALL_USER_HOOKS=1` only for legacy Codex builds that require 
 
 The hooks add:
 
-- `SessionStart`: server-returned Lore boot lifecycle context from `client_type=codex`, plus a sync of the visible skills into the plugin's own `skills/` directory so Codex discovers them natively — invoke with `$skill-name` or `/skills`; changes from the sync appear from the next session on. Skills marked `disable-model-invocation` get a generated `agents/openai.yaml` policy, and the bundled `skills/lore-memory` is never touched. `lore_skill_get` remains available for fetching a full work copy.
+- `SessionStart`: server-returned Lore boot lifecycle context from `client_type=codex`, plus a background sync of the visible skills into the plugin's own `skills/` directory so Codex discovers them natively — invoke with `$skill-name` or `/skills`; the sync runs in a detached process after the hook returns, its last outcome is recorded in `skills/.lore-sync-status.json`, and changes appear from the next session on. Skills marked `disable-model-invocation` get a generated `agents/openai.yaml` policy, and the bundled `skills/lore-memory` is never touched. `lore_skill_get` remains available for fetching a full work copy.
 - `UserPromptSubmit`: `<recall>` / Memory host output
 
 Hook commands run plain `node` `.mjs` files instead of `npx tsx`, avoiding per-prompt package runner startup cost.

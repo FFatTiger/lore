@@ -15,6 +15,10 @@ const pluginVersion = JSON.parse(
   readFileSync(path.join(hooksDir, '..', '.claude-plugin', 'plugin.json'), 'utf8'),
 ).version;
 const isolatedHome = mkdtempSync(path.join(tmpdir(), 'lore-claude-hook-home-'));
+// Default isolated plugin root: detached skills-sync children spawned by the
+// hook must never write into the repository checkout.
+const defaultPluginRoot = mkdtempSync(path.join(tmpdir(), 'lore-claude-plugin-home-'));
+const skillsSyncScript = path.join(hooksDir, 'skills-sync.mjs');
 
 /** Server-side skill package used by the native-sync tests. */
 function syncedSkillFixture() {
@@ -43,6 +47,7 @@ function runHook(scriptPath, input, env = {}) {
         HOME: isolatedHome,
         LORE_API_TOKEN: '',
         API_TOKEN: '',
+        CLAUDE_PLUGIN_ROOT: defaultPluginRoot,
         ...env,
       },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -77,13 +82,13 @@ async function withServer(onRequest, skillsRoutes) {
       if (url.pathname === '/api/skills') {
         skillRequests.push({ path: url.pathname, query: Object.fromEntries(url.searchParams) });
         const list = routes.list || (() => ({ project_id: 'proj-1', catalog_revision: '0', skills: [] }));
-        return respond(200, list());
+        return respond(200, await list());
       }
       const detailMatch = url.pathname.match(/^\/api\/skills\/([^/]+)$/);
       if (detailMatch) {
         skillRequests.push({ path: url.pathname, query: Object.fromEntries(url.searchParams) });
         const detail = routes.detail || (() => null);
-        const data = detail(decodeURIComponent(detailMatch[1]));
+        const data = await detail(decodeURIComponent(detailMatch[1]));
         if (data) return respond(200, data);
         return respond(404, { detail: 'not found' });
       }
@@ -110,7 +115,41 @@ async function withServer(onRequest, skillsRoutes) {
 
 test.after(() => {
   rmSync(isolatedHome, { recursive: true, force: true });
+  rmSync(defaultPluginRoot, { recursive: true, force: true });
 });
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Wait for the detached skills-sync child to record its outcome. */
+async function waitForStatusFile(pluginRoot, timeoutMs = 30000) {
+  const statusPath = path.join(pluginRoot, 'skills', '.lore-sync-status.json');
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (existsSync(statusPath)) return JSON.parse(readFileSync(statusPath, 'utf8'));
+    await delay(100);
+  }
+  throw new Error(`skills sync status file not written: ${statusPath}`);
+}
+
+/** Run the standalone sync script directly and resolve its exit code. */
+function runSyncScript(env) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [skillsSyncScript], {
+      env: {
+        ...process.env,
+        HOME: isolatedHome,
+        LORE_API_TOKEN: '',
+        API_TOKEN: '',
+        ...env,
+      },
+      stdio: 'ignore',
+    });
+    child.on('error', reject);
+    child.on('close', (code) => resolve(code));
+  });
+}
 
 test('UserPromptSubmit prefers official prompt over user_prompt and omits invented session_id', async () => {
   const server = await withServer(() => ({
@@ -324,37 +363,92 @@ test('Skills-enabled hooks write host output through without advertising feature
   }
 });
 
-test('SessionStart syncs the catalog into the plugin skills directory natively', async () => {
+test('SessionStart spawns a detached skills sync and exits without waiting for it', async () => {
   const fixture = syncedSkillFixture();
+  // The list response is slower than any plausible hook runtime; a hook that
+  // waited for the sync would blow past this delay.
+  const LIST_DELAY_MS = 6000;
   const server = await withServer(() => ({ host_output: { mode: 'stdout_text', value: 'BOOT' } }), {
-    list: () => ({ project_id: 'proj-1', catalog_revision: 'rev-9', skills: [fixture.summary] }),
+    list: async () => {
+      await delay(LIST_DELAY_MS);
+      return { project_id: 'proj-1', catalog_revision: 'rev-9', skills: [fixture.summary] };
+    },
     detail: (id) => (id === fixture.detail.skill_id ? fixture.detail : null),
   });
   const pluginRoot = mkdtempSync(path.join(tmpdir(), 'lore-claude-plugin-root-'));
   try {
+    const startedAt = Date.now();
     const result = await runHook(rulesHook, { session_id: 's1', hook_event_name: 'SessionStart' }, {
       LORE_BASE_URL: server.baseUrl,
       LORE_SKILLS_ENABLED: '1',
       CLAUDE_PLUGIN_ROOT: pluginRoot,
     });
+    const hookDurationMs = Date.now() - startedAt;
 
     assert.equal(result.code, 0, result.stderr);
     assert.equal(result.stdout, 'BOOT');
+    assert.ok(hookDurationMs < LIST_DELAY_MS, `hook waited for the sync: ${hookDurationMs}ms`);
+
+    const status = await waitForStatusFile(pluginRoot);
+    assert.equal(status.project_id, 'proj-1');
+    assert.equal(status.catalog_revision, 'rev-9');
+    assert.deepEqual(status.created, ['synced-skill']);
+    assert.deepEqual(status.errors, []);
+    assert.equal(status.skipped, undefined);
+    assert.ok(status.finished_at.length > 0);
     const skillDir = path.join(pluginRoot, 'skills', 'synced-skill');
     assert.equal(readFileSync(path.join(skillDir, 'SKILL.md'), 'utf-8'), '# Synced Skill\n\nDo it natively.\n');
     const marker = JSON.parse(readFileSync(path.join(skillDir, '.lore-skill-marker.json'), 'utf-8'));
     assert.equal(marker.skill_id, fixture.detail.skill_id);
     assert.equal(marker.project_id, 'proj-1');
     assert.equal(server.requests[0].features, undefined);
-    assert.equal(server.skillRequests.length, 2);
-    assert.equal(server.skillRequests[0].path, '/api/skills');
     assert.equal(server.skillRequests[0].query.client_type, 'claudecode');
     assert.equal(server.skillRequests[0].query.include_user_only, 'true');
-    assert.equal(server.skillRequests[1].query.client_type, 'claudecode');
     assert.equal(existsSync(path.join(pluginRoot, 'skills', '.lore-sync.lock')), false);
   } finally {
     rmSync(pluginRoot, { recursive: true, force: true });
     await server.close();
+  }
+});
+
+test('skills-sync.mjs syncs and records status on its own', async () => {
+  const fixture = syncedSkillFixture();
+  const server = await withServer(null, {
+    list: () => ({ project_id: 'proj-1', catalog_revision: 'rev-3', skills: [fixture.summary] }),
+    detail: (id) => (id === fixture.detail.skill_id ? fixture.detail : null),
+  });
+  const pluginRoot = mkdtempSync(path.join(tmpdir(), 'lore-claude-plugin-root-'));
+  try {
+    const code = await runSyncScript({
+      LORE_BASE_URL: server.baseUrl,
+      CLAUDE_PLUGIN_ROOT: pluginRoot,
+    });
+    assert.equal(code, 0);
+    const status = JSON.parse(readFileSync(path.join(pluginRoot, 'skills', '.lore-sync-status.json'), 'utf-8'));
+    assert.deepEqual(status.created, ['synced-skill']);
+    assert.deepEqual(status.errors, []);
+    assert.equal(readFileSync(path.join(pluginRoot, 'skills', 'synced-skill', 'SKILL.md'), 'utf-8'), '# Synced Skill\n\nDo it natively.\n');
+  } finally {
+    rmSync(pluginRoot, { recursive: true, force: true });
+    await server.close();
+  }
+});
+
+test('skills-sync.mjs records server failures and still exits 0', async () => {
+  const pluginRoot = mkdtempSync(path.join(tmpdir(), 'lore-claude-plugin-root-'));
+  try {
+    const code = await runSyncScript({
+      LORE_BASE_URL: 'http://127.0.0.1:9', // nothing listens here
+      CLAUDE_PLUGIN_ROOT: pluginRoot,
+    });
+    assert.equal(code, 0);
+    const status = JSON.parse(readFileSync(path.join(pluginRoot, 'skills', '.lore-sync-status.json'), 'utf-8'));
+    assert.equal(status.created.length, 0);
+    assert.equal(status.errors.length, 1);
+    assert.ok(status.errors[0].message.length > 0);
+    assert.ok(status.finished_at.length > 0);
+  } finally {
+    rmSync(pluginRoot, { recursive: true, force: true });
   }
 });
 
@@ -368,7 +462,10 @@ test('SessionStart stays silent when the Lore server is unavailable', async () =
     });
     assert.equal(result.code, 0, result.stderr);
     assert.equal(result.stdout, '');
-    assert.equal(existsSync(path.join(pluginRoot, 'skills')), false);
+    // The detached sync child records the failure and exits cleanly.
+    const status = await waitForStatusFile(pluginRoot);
+    assert.equal(status.errors.length, 1);
+    assert.equal(status.created.length, 0);
   } finally {
     rmSync(pluginRoot, { recursive: true, force: true });
   }

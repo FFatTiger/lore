@@ -5,16 +5,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { syncSkillsToDir } from "./vendor/skill-workcopy/index.mjs";
 
 const LORE_CONFIG_FILE = path.join(os.homedir(), ".lore", "config.json");
 const DEFAULT_BASE_URL = "http://127.0.0.1:18901";
 const BOOT_TIMEOUT_MS = 8000;
-// The hook itself gets 10s from Claude Code; keep the skills sync well under that
-// and independent of the lifecycle request's budget.
-const SKILLS_SYNC_TIMEOUT_MS = 7000;
 const RUNTIME_FAMILY = "claudecode";
 const SNAPSHOT_ALLOWLIST = [
   "session_id",
@@ -157,37 +153,25 @@ function writeHostOutput(response: any) {
   if (output.mode === "stdout_text") process.stdout.write(String(output.value));
 }
 
-async function fetchSkillsJson(baseUrl: string, apiToken: string, skillPath: string, signal: AbortSignal): Promise<any> {
-  const url = new URL(`/api/skills${skillPath}`, `${baseUrl}/`);
-  url.searchParams.set("client_type", "claudecode");
-  const headers: Record<string, string> = {};
-  if (apiToken) headers.authorization = `Bearer ${apiToken}`;
-  const response = await fetch(url, { headers, signal });
-  if (!response.ok) throw new Error(`skills request failed: ${response.status}`);
-  return response.json();
-}
-
 /**
- * Sync the server catalog into the plugin's own skills/ directory so Claude Code
- * discovers Lore skills natively (/lore:<name>). Never touches user-global dirs;
- * failures are silent (single stderr line) and never affect boot output.
+ * Skills sync runs in a detached background process: Claude Code only sees new
+ * skills in the next session, so the hook must never spend its 10s budget
+ * waiting for it. The script records its outcome in
+ * <CLAUDE_PLUGIN_ROOT>/skills/.lore-sync-status.json.
  */
-async function runSkillsSync(): Promise<void> {
-  const pluginRoot = pickString(process.env.CLAUDE_PLUGIN_ROOT);
-  if (!pluginRoot) return;
-  const { baseUrl, apiToken } = loadConfig();
-  const signal = AbortSignal.timeout(SKILLS_SYNC_TIMEOUT_MS);
-  // include_user_only: user-trigger-only skills must still be discovered by the host.
-  const catalog = await fetchSkillsJson(baseUrl, apiToken, "?include_user_only=true", signal);
-  const skills = Array.isArray(catalog?.skills) ? catalog.skills : [];
-  const projectId = pickString(catalog?.project_id);
-  if (!projectId) return;
-  await syncSkillsToDir({
-    root: path.join(pluginRoot, "skills"),
-    projectId,
-    skills,
-    loadSkill: (skillId) => fetchSkillsJson(baseUrl, apiToken, `/${encodeURIComponent(skillId)}`, signal),
-  });
+function spawnSkillsSync(): void {
+  try {
+    if (!pickString(process.env.CLAUDE_PLUGIN_ROOT)) return;
+    const hookDir = path.dirname(fileURLToPath(import.meta.url));
+    const child = spawn(process.execPath, [path.join(hookDir, "skills-sync.mjs")], {
+      detached: true,
+      stdio: "ignore",
+      env: process.env,
+    });
+    child.unref();
+  } catch {
+    // Silent degradation: skills sync is best-effort background work.
+  }
 }
 
 async function main() {
@@ -208,17 +192,12 @@ async function main() {
     project: detectProjectInfo(),
     ...(nativeInputSnapshot ? { native_input_snapshot: nativeInputSnapshot } : {}),
   }, BOOT_TIMEOUT_MS).catch(() => null);
-  // Skills sync runs next to the lifecycle request (host skills are discovered natively,
-  // so the lifecycle call no longer advertises features.skills).
-  const skillsPromise = skillsEnabled
-    ? runSkillsSync().catch((error) => {
-      process.stderr.write(`lore: skills sync skipped (${error instanceof Error ? error.message : String(error)})\n`);
-    })
-    : Promise.resolve();
 
+  // Write the lifecycle output, hand the skills sync to a detached background
+  // process, and exit - the host picks synced skills up next session.
   const lifecycle = await lifecyclePromise;
   writeHostOutput(lifecycle);
-  await skillsPromise;
+  if (skillsEnabled) spawnSkillsSync();
 }
 
 main();

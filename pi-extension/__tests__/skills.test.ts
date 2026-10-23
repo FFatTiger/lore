@@ -13,6 +13,7 @@ import {
   materializeSkillWorkCopy,
   normalizeSkillSummary,
   readWorkCopyMarker,
+  registerSkillResourceDiscovery,
   registerSkillTools,
   resolveLoreHome,
   sha256Buffer,
@@ -24,6 +25,7 @@ import {
 } from '../skills';
 import { registerHooks } from '../hooks';
 import { registerTools } from '../tools';
+import lorePiExtension from '../index';
 
 function makeTempHome() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'lore-skills-'));
@@ -418,7 +420,6 @@ describe('skills adapter ensure DI + work-copy smoke', () => {
 
 describe('skills lifecycle discovery', () => {
   let loreHome: string;
-  const projectId = 'proj-life';
   const pluginCfg = () => ({
     baseUrl: 'http://host',
     apiToken: '',
@@ -450,14 +451,11 @@ describe('skills lifecycle discovery', () => {
       const body = JSON.parse(String(init?.body || '{}'));
       bodies.push(body);
       const payload = body?.event?.name === 'session.start'
-        ? {
-          host_output: { mode: 'return_value', value: { systemPromptAppend: 'SYS\n<available_skills>catalog</available_skills>' } },
-          skill_catalog: { project_id: projectId, catalog_revision: 'cat-1' },
-        }
+        ? { host_output: { mode: 'return_value', value: { systemPromptAppend: 'SYS' } } }
         : {
           host_output: {
             mode: 'return_value',
-            value: { message: { customType: 'lore-recall', content: '<recall>\n0.8 | core://a\n</recall>\n\n<skill_invocation>x</skill_invocation>', display: false } },
+            value: { message: { customType: 'lore-recall', content: '<recall>\n0.8 | core://a\n</recall>', display: false } },
           },
         };
       return { ok: true, status: 200, statusText: 'OK', text: async () => JSON.stringify(payload) };
@@ -472,28 +470,30 @@ describe('skills lifecycle discovery', () => {
     };
   }
 
-  it('opts into Skills context, applies host output unchanged, and never downloads at session start', async () => {
+  it('applies host output unchanged, never declares features.skills, and never downloads at session start', async () => {
     const bodies: any[] = [];
     const apiCalls: string[] = [];
     stubLifecycle(bodies, apiCalls);
     const pi = makePi();
     const skills = createSkillsSession(pluginCfg());
-    registerHooks(pi as any, pluginCfg(), skills);
+    registerHooks(pi as any, pluginCfg());
 
     const ctx = { sessionManager: { getSessionId: () => 'sess-s' } };
     await pi.events.session_start({ reason: 'startup' }, ctx);
     const turn = await pi.events.before_agent_start({ prompt: 'run $deploy', systemPrompt: 'base' }, ctx);
 
-    expect(bodies.map((body) => body.features)).toEqual([{ skills: true }, { memory_recall: true, skills: true }]);
-    expect(skills.state.projectId).toBe(projectId);
-    expect(skills.state.catalogRevision).toBe('cat-1');
-    expect(turn.systemPrompt).toBe('base\n\nSYS\n<available_skills>catalog</available_skills>');
-    expect(turn.message.content).toBe('<recall>\n0.8 | core://a\n</recall>\n\n<skill_invocation>x</skill_invocation>');
+    // Skills discovery is host-native now: lifecycle requests must not ask for
+    // the injected <available_skills> catalog, even with a skills session.
+    expect(bodies.map((body) => body.features)).toEqual([undefined, { memory_recall: true }]);
+    expect(turn.systemPrompt).toBe('base\n\nSYS');
+    expect(turn.message.content).toBe('<recall>\n0.8 | core://a\n</recall>');
     expect(apiCalls).toEqual([]);
     expect(fs.existsSync(path.join(loreHome, 'skills'))).toBe(false);
+    // Catalog identity comes from the resources_discover list request instead.
+    expect(skills.state.projectId).toBeUndefined();
   });
 
-  it('does not opt into Skills context without a Skills session', async () => {
+  it('keeps lifecycle working without a skills session', async () => {
     const bodies: any[] = [];
     stubLifecycle(bodies, []);
     const pi = makePi();
@@ -504,6 +504,196 @@ describe('skills lifecycle discovery', () => {
     await pi.events.before_agent_start({ prompt: 'hello', systemPrompt: 'base' }, ctx);
 
     expect(bodies.map((body) => body.features)).toEqual([undefined, { memory_recall: true }]);
+  });
+});
+
+describe('resources_discover skill directory registration', () => {
+  let loreHome: string;
+  const projectId = 'proj-disc';
+  const pluginCfg = () => ({
+    baseUrl: 'http://host',
+    apiToken: '',
+    timeoutMs: 1000,
+    loreHome,
+    injectPromptGuidance: true,
+    recallEnabled: true,
+    startupHealthcheck: false,
+  });
+
+  beforeEach(() => {
+    loreHome = makeTempHome();
+    process.env.LORE_HOME = loreHome;
+  });
+
+  afterEach(() => {
+    delete process.env.LORE_HOME;
+    rmTempHome(loreHome);
+    vi.unstubAllGlobals();
+  });
+
+  /** Server-side skill package used by the native-sync tests. */
+  function syncedSkillFixture() {
+    const content = '# Synced Skill\n\nDo it natively.\n';
+    const sha256 = sha256Text(content);
+    const size = Buffer.byteLength(content, 'utf-8');
+    const manifest_hash = computeManifestHash([{ path: 'SKILL.md', sha256, size }]);
+    return {
+      detail: {
+        skill_id: 'sk-disc-1',
+        name: 'synced-skill',
+        version: 3,
+        manifest_hash,
+        files: [{ path: 'SKILL.md', content, sha256, size }],
+      },
+      summary: { skill_id: 'sk-disc-1', name: 'synced-skill', version: 3, manifest_hash },
+    };
+  }
+
+  function makePi() {
+    return {
+      events: {} as Record<string, any>,
+      on(event: string, handler: any) { this.events[event] = handler; },
+      logger: { warn: vi.fn(), debug: vi.fn(), info: vi.fn() },
+    };
+  }
+
+  it('returns the work-copy root immediately and records the background sync outcome', async () => {
+    const fixture = syncedSkillFixture();
+    const apiUrls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      apiUrls.push(u);
+      if (u.includes(`/api/skills/${fixture.detail.skill_id}`)) {
+        return { ok: true, status: 200, statusText: 'OK', text: async () => JSON.stringify(fixture.detail) };
+      }
+      return {
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: async () => JSON.stringify({ project_id: projectId, catalog_revision: 'rev-9', skills: [fixture.summary] }),
+      };
+    }));
+
+    const pi = makePi();
+    const skills = createSkillsSession(pluginCfg());
+    const discovery = registerSkillResourceDiscovery(pi as any, pluginCfg(), skills);
+
+    const result = await pi.events.resources_discover({ type: 'resources_discover', cwd: loreHome, reason: 'startup' }, {});
+
+    const root = path.join(loreHome, 'skills', projectId);
+    expect(result).toEqual({ skillPaths: [root] });
+    expect(apiUrls[0]).toContain('/api/skills?');
+    expect(apiUrls[0]).toContain('include_user_only=true');
+    expect(apiUrls[0]).toContain('client_type=pi');
+    expect(skills.state.projectId).toBe(projectId);
+    expect(skills.state.catalogRevision).toBe('rev-9');
+    // The root exists (and is registered) before the sync finishes.
+    expect(fs.existsSync(root)).toBe(true);
+
+    await discovery.currentSync();
+
+    expect(apiUrls[1]).toContain(`/api/skills/${fixture.detail.skill_id}`);
+    expect(apiUrls[1]).toContain('client_type=pi');
+    const skillDir = path.join(root, 'synced-skill');
+    expect(fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf-8')).toContain('# Synced Skill');
+    const marker = JSON.parse(fs.readFileSync(path.join(skillDir, LORE_SKILL_MARKER), 'utf-8'));
+    expect(marker.project_id).toBe(projectId);
+    expect(marker.skill_id).toBe('sk-disc-1');
+    const status = JSON.parse(fs.readFileSync(path.join(root, '.lore-sync-status.json'), 'utf-8'));
+    expect(status.project_id).toBe(projectId);
+    expect(status.catalog_revision).toBe('rev-9');
+    expect(status.created).toEqual(['synced-skill']);
+    expect(status.errors).toEqual([]);
+    expect(status.finished_at).toBeTruthy();
+  });
+
+  it('syncs again on reload and reuses unchanged copies', async () => {
+    const fixture = syncedSkillFixture();
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes(`/api/skills/${fixture.detail.skill_id}`)) {
+        throw new Error('detail should not be fetched for an unchanged skill');
+      }
+      return {
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: async () => JSON.stringify({ project_id: projectId, catalog_revision: 'rev-9', skills: [fixture.summary] }),
+      };
+    }));
+
+    const pi = makePi();
+    const discovery = registerSkillResourceDiscovery(pi as any, pluginCfg());
+    const root = path.join(loreHome, 'skills', projectId);
+
+    // Seed the directory the way the previous session's sync left it.
+    materializeSkillWorkCopy({ loreHome, projectId, detail: fixture.detail });
+    await pi.events.resources_discover({ type: 'resources_discover', cwd: loreHome, reason: 'reload' }, {});
+    await discovery.currentSync();
+
+    const status = JSON.parse(fs.readFileSync(path.join(root, '.lore-sync-status.json'), 'utf-8'));
+    expect(status.unchanged).toEqual(['synced-skill']);
+    expect(status.created).toEqual([]);
+  });
+
+  it('returns nothing and stays silent when the skills server is down', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      statusText: 'Down',
+      text: async () => 'unavailable',
+    })));
+
+    const pi = makePi();
+    const discovery = registerSkillResourceDiscovery(pi as any, pluginCfg());
+
+    const result = await pi.events.resources_discover({ type: 'resources_discover', cwd: loreHome, reason: 'startup' }, {});
+
+    expect(result).toBeUndefined();
+    expect(pi.logger.debug).toHaveBeenCalledTimes(1);
+    expect(pi.logger.warn).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(loreHome, 'skills'))).toBe(false);
+    expect(discovery.currentSync()).toBeUndefined();
+  });
+
+  it('treats a catalog timeout as unavailable without registering paths', async () => {
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: any) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+    })));
+
+    const pi = makePi();
+    // The discover request is capped independently of the plugin timeout.
+    const discovery = registerSkillResourceDiscovery(pi as any, { ...pluginCfg(), timeoutMs: 50 });
+
+    const result = await pi.events.resources_discover({ type: 'resources_discover', cwd: loreHome, reason: 'startup' }, {});
+
+    expect(result).toBeUndefined();
+    expect(fs.existsSync(path.join(loreHome, 'skills'))).toBe(false);
+  });
+
+  it('registers resources_discover from the extension entry only when skills are enabled', () => {
+    const home = makeTempHome();
+    process.env.LORE_HOME = home;
+    const extensionPi = () => {
+      const pi: any = makePi();
+      pi.registerTool = (tool: any) => { pi.tools = { ...(pi.tools || {}), [tool.name]: tool }; };
+      pi.pluginConfig = { baseUrl: 'http://host', loreHome: home, startupHealthcheck: false };
+      return pi;
+    };
+    try {
+      const enabled = extensionPi();
+      enabled.pluginConfig.skillsEnabled = true;
+      lorePiExtension(enabled);
+      expect(typeof enabled.events.resources_discover).toBe('function');
+
+      const disabled = extensionPi();
+      disabled.pluginConfig.skillsEnabled = false;
+      lorePiExtension(disabled);
+      expect(disabled.events.resources_discover).toBeUndefined();
+    } finally {
+      delete process.env.LORE_HOME;
+      rmTempHome(home);
+    }
   });
 });
 

@@ -14,7 +14,8 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lore} -d ${POSTGRES_DB:-lore}"]
       interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 30
+      start_period: 30s
 
   redis:
     image: ${LORE_REDIS_IMAGE:-redis:7-alpine}

@@ -1,12 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const pgMocks = vi.hoisted(() => ({
+  on: vi.fn(),
+  query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
+}));
+
 vi.mock('pg', () => {
-  const mockQuery = vi.fn().mockResolvedValue({ rows: [], rowCount: 0 });
-  const MockPool = vi.fn().mockImplementation(() => ({ query: mockQuery }));
+  const MockPool = vi.fn().mockImplementation(() => ({ query: pgMocks.query, on: pgMocks.on }));
   return { Pool: MockPool };
 });
 
-import { _normalizeDatabaseUrl as normalizeDatabaseUrl, _buildSslConfig as buildSslConfig } from '../../db';
+import { Pool } from 'pg';
+import { _normalizeDatabaseUrl as normalizeDatabaseUrl, _buildSslConfig as buildSslConfig, getPool } from '../../db';
+
+beforeEach(() => {
+  globalThis.__lorePgPool = undefined;
+  delete process.env.DATABASE_URL;
+  pgMocks.on.mockClear();
+  pgMocks.query.mockClear();
+  vi.mocked(Pool).mockClear();
+});
 
 describe('normalizeDatabaseUrl', () => {
   it('returns empty for empty input', () => {
@@ -24,6 +37,24 @@ describe('normalizeDatabaseUrl', () => {
   });
   it('strips unknown postgresql+ prefix', () => {
     expect(normalizeDatabaseUrl('postgresql+psycopg2://user:pass@host/db')).toBe('postgresql://user:pass@host/db');
+  });
+});
+
+describe('getPool', () => {
+  it('logs idle client errors without throwing', () => {
+    process.env.DATABASE_URL = 'postgresql://user:pass@postgres/db';
+
+    getPool();
+
+    expect(Pool).toHaveBeenCalledTimes(1);
+    expect(pgMocks.on).toHaveBeenCalledWith('error', expect.any(Function));
+    const errorHandler = pgMocks.on.mock.calls.find(([event]) => event === 'error')?.[1] as (error: Error) => void;
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(() => errorHandler(new Error('terminating connection due to administrator command'))).not.toThrow();
+    expect(consoleError).toHaveBeenCalledWith('[db] idle client error', 'terminating connection due to administrator command');
+
+    consoleError.mockRestore();
   });
 });
 

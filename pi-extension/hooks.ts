@@ -80,8 +80,6 @@ async function fetchStartupLifecycle(pluginCfg: any, sessionId: string | undefin
 }
 
 async function fetchPromptLifecycle(pluginCfg: any, prompt: string, sessionId: string | undefined) {
-  // Prompt lifecycle carries the per-prompt recall injection, so it stays
-  // enabled even when Memory recall configuration is off.
   return fetchLifecycleEvent(pluginCfg, {
     protocol_version: 'lore.lifecycle.v1',
     runtime: lifecycleRuntime(),

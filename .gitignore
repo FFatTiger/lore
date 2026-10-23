@@ -28,6 +28,9 @@ snapshots/
 .claude/
 /.claude-plugin/
 
+# Session-start skills sync target inside the Claude Code plugin (runtime state)
+claudecode-plugin/skills/
+
 # OS / editor
 .DS_Store
 .vscode/

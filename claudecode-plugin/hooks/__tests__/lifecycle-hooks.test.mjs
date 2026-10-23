@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
+
+import { computeManifestHash, sha256Text } from '../vendor/skill-workcopy/index.mjs';
 
 const hooksDir = path.resolve(import.meta.dirname, '..');
 const recallHook = path.join(hooksDir, 'recall-inject.ts');
@@ -13,6 +15,24 @@ const pluginVersion = JSON.parse(
   readFileSync(path.join(hooksDir, '..', '.claude-plugin', 'plugin.json'), 'utf8'),
 ).version;
 const isolatedHome = mkdtempSync(path.join(tmpdir(), 'lore-claude-hook-home-'));
+
+/** Server-side skill package used by the native-sync tests. */
+function syncedSkillFixture() {
+  const content = '# Synced Skill\n\nDo it natively.\n';
+  const sha256 = sha256Text(content);
+  const files = [{ path: 'SKILL.md', content, sha256, size: Buffer.byteLength(content, 'utf-8') }];
+  const manifest_hash = computeManifestHash([{ path: 'SKILL.md', sha256, size: files[0].size }]);
+  return {
+    detail: {
+      skill_id: 'sk-sync-1',
+      name: 'synced-skill',
+      version: 3,
+      manifest_hash,
+      files,
+    },
+    summary: { skill_id: 'sk-sync-1', name: 'synced-skill', version: 3, manifest_hash },
+  };
+}
 
 function runHook(scriptPath, input, env = {}) {
   return new Promise((resolve, reject) => {
@@ -43,22 +63,45 @@ function runHook(scriptPath, input, env = {}) {
   });
 }
 
-async function withServer(onRequest) {
+async function withServer(onRequest, skillsRoutes) {
   const requests = [];
+  const skillRequests = [];
+  const routes = skillsRoutes || {};
   const server = createServer(async (req, res) => {
+    const respond = (status, data) => {
+      res.writeHead(status, { 'content-type': 'application/json' });
+      res.end(data === undefined ? '' : JSON.stringify(data));
+    };
+    if (req.method === 'GET') {
+      const url = new URL(req.url, 'http://127.0.0.1');
+      if (url.pathname === '/api/skills') {
+        skillRequests.push({ path: url.pathname, query: Object.fromEntries(url.searchParams) });
+        const list = routes.list || (() => ({ project_id: 'proj-1', catalog_revision: '0', skills: [] }));
+        return respond(200, list());
+      }
+      const detailMatch = url.pathname.match(/^\/api\/skills\/([^/]+)$/);
+      if (detailMatch) {
+        skillRequests.push({ path: url.pathname, query: Object.fromEntries(url.searchParams) });
+        const detail = routes.detail || (() => null);
+        const data = detail(decodeURIComponent(detailMatch[1]));
+        if (data) return respond(200, data);
+        return respond(404, { detail: 'not found' });
+      }
+      return respond(404, { detail: 'not found' });
+    }
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     requests.push(body);
     const response = onRequest?.(body) ?? { host_output: { mode: 'none' } };
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(response));
+    respond(200, response);
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address();
   return {
     baseUrl: `http://127.0.0.1:${port}`,
     requests,
+    skillRequests,
     async close() {
       await new Promise((resolve) => server.close(resolve));
     },
@@ -260,22 +303,74 @@ test('SessionStart uses conversation_id when session_id is absent', async () => 
 });
 
 
-test('Skills-enabled hooks declare features.skills and write Lore host output through', async () => {
+test('Skills-enabled hooks write host output through without advertising features.skills', async () => {
   const server = await withServer((body) => ({
     host_output: {
       mode: 'stdout_text',
-      value: body.event.name === 'session.start' ? '<available_skills>catalog</available_skills>' : '<skill_invocation>x</skill_invocation>',
+      value: body.event.name === 'session.start' ? 'BOOT_CONTEXT' : 'RECALL_BLOCK',
     },
   }));
   try {
     const env = { LORE_BASE_URL: server.baseUrl, LORE_SKILLS_ENABLED: '1' };
     const start = await runHook(rulesHook, { session_id: 's1', hook_event_name: 'SessionStart' }, env);
     const prompt = await runHook(recallHook, { prompt: 'run $deploy', session_id: 's1' }, env);
-    assert.equal(start.stdout, '<available_skills>catalog</available_skills>');
-    assert.equal(prompt.stdout, '<skill_invocation>x</skill_invocation>');
-    assert.deepEqual(server.requests.map((body) => body.features), [{ skills: true }, { skills: true }]);
+    assert.equal(start.stdout, 'BOOT_CONTEXT');
+    assert.equal(prompt.stdout, 'RECALL_BLOCK');
+    // Skills are synced into the plugin directory instead of the injected catalog,
+    // so the lifecycle requests must not ask for skills features anymore.
+    assert.deepEqual(server.requests.map((body) => body.features), [undefined, undefined]);
   } finally {
     await server.close();
+  }
+});
+
+test('SessionStart syncs the catalog into the plugin skills directory natively', async () => {
+  const fixture = syncedSkillFixture();
+  const server = await withServer(() => ({ host_output: { mode: 'stdout_text', value: 'BOOT' } }), {
+    list: () => ({ project_id: 'proj-1', catalog_revision: 'rev-9', skills: [fixture.summary] }),
+    detail: (id) => (id === fixture.detail.skill_id ? fixture.detail : null),
+  });
+  const pluginRoot = mkdtempSync(path.join(tmpdir(), 'lore-claude-plugin-root-'));
+  try {
+    const result = await runHook(rulesHook, { session_id: 's1', hook_event_name: 'SessionStart' }, {
+      LORE_BASE_URL: server.baseUrl,
+      LORE_SKILLS_ENABLED: '1',
+      CLAUDE_PLUGIN_ROOT: pluginRoot,
+    });
+
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.stdout, 'BOOT');
+    const skillDir = path.join(pluginRoot, 'skills', 'synced-skill');
+    assert.equal(readFileSync(path.join(skillDir, 'SKILL.md'), 'utf-8'), '# Synced Skill\n\nDo it natively.\n');
+    const marker = JSON.parse(readFileSync(path.join(skillDir, '.lore-skill-marker.json'), 'utf-8'));
+    assert.equal(marker.skill_id, fixture.detail.skill_id);
+    assert.equal(marker.project_id, 'proj-1');
+    assert.equal(server.requests[0].features, undefined);
+    assert.equal(server.skillRequests.length, 2);
+    assert.equal(server.skillRequests[0].path, '/api/skills');
+    assert.equal(server.skillRequests[0].query.client_type, 'claudecode');
+    assert.equal(server.skillRequests[0].query.include_user_only, 'true');
+    assert.equal(server.skillRequests[1].query.client_type, 'claudecode');
+    assert.equal(existsSync(path.join(pluginRoot, 'skills', '.lore-sync.lock')), false);
+  } finally {
+    rmSync(pluginRoot, { recursive: true, force: true });
+    await server.close();
+  }
+});
+
+test('SessionStart stays silent when the Lore server is unavailable', async () => {
+  const pluginRoot = mkdtempSync(path.join(tmpdir(), 'lore-claude-plugin-root-'));
+  try {
+    const result = await runHook(rulesHook, { session_id: 's1', hook_event_name: 'SessionStart' }, {
+      LORE_BASE_URL: 'http://127.0.0.1:9', // nothing listens here
+      LORE_SKILLS_ENABLED: '1',
+      CLAUDE_PLUGIN_ROOT: pluginRoot,
+    });
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.stdout, '');
+    assert.equal(existsSync(path.join(pluginRoot, 'skills')), false);
+  } finally {
+    rmSync(pluginRoot, { recursive: true, force: true });
   }
 });
 
@@ -291,7 +386,7 @@ test('Skills stay off unless the configured server advertises them', async () =>
     await runHook(rulesHook, { session_id: 's1' }, { HOME: home });
     await runHook(recallHook, { prompt: 'hello', session_id: 's1' }, { HOME: home, LORE_SKILLS_ENABLED: '0' });
     await runHook(recallHook, { prompt: 'hello', session_id: 's1' }, { LORE_BASE_URL: server.baseUrl });
-    assert.deepEqual(server.requests.map((body) => body.features), [{ skills: true }, undefined, undefined]);
+    assert.deepEqual(server.requests.map((body) => body.features), [undefined, undefined, undefined]);
   } finally {
     rmSync(home, { recursive: true, force: true });
     await server.close();

@@ -22,6 +22,7 @@ import {
   LORE_SKILL_MARKER,
   LORE_SKILL_SCHEMA,
   materializeSkillWorkCopy,
+  materializeSkillWorkCopyAt,
   normalizeSkillSummary,
   readWorkCopyMarker,
   resolveLoreHome,
@@ -29,6 +30,7 @@ import {
   sha256Text,
   skillRevisionOf,
   skillVersionOf,
+  syncSkillsToDir,
   validateManagedFileList,
   validateSafeRelativePath,
   validateSkillPayload,
@@ -914,6 +916,245 @@ describe('local work-copy lifecycle', () => {
     });
     assert.equal(result.project_id, projectId);
     assert.equal(result.downloaded, true);
+  });
+});
+
+describe('skills-directory sync', () => {
+  const projectId = 'proj-1';
+
+  function makeSyncRoot() {
+    return fs.mkdtempSync(path.join(os.tmpdir(), 'lore-skills-dir-sync-'));
+  }
+
+  function summaryOf(detail) {
+    return {
+      skill_id: detail.id,
+      name: detail.name,
+      version: detail.version,
+      manifest_hash: detail.manifest_hash,
+    };
+  }
+
+  function fakeLoader(details) {
+    const calls = [];
+    return {
+      calls,
+      loadSkill: async (id) => {
+        calls.push(id);
+        const detail = details[id];
+        if (!detail) throw new Error(`unknown skill: ${id}`);
+        return detail;
+      },
+    };
+  }
+
+  it('creates skill directories with markers and read-only managed files', async () => {
+    const root = makeSyncRoot();
+    try {
+      const loader = fakeLoader({ 'skill-1': skillDetail() });
+      const result = await syncSkillsToDir({
+        root, projectId, skills: [summaryOf(skillDetail())], loadSkill: loader.loadSkill,
+      });
+      assert.deepEqual(result, {
+        created: ['demo-skill'], updated: [], unchanged: [], removed: [], conflicts: [], errors: [],
+      });
+      const dir = path.join(root, 'demo-skill');
+      assert.equal(fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf-8').includes('# Demo Skill'), true);
+      const marker = readWorkCopyMarker(dir);
+      assert.equal(marker.skill_id, 'skill-1');
+      assert.equal(marker.project_id, projectId);
+      assert.equal(marker.source_manifest_hash, undefined);
+      if (process.platform !== 'win32') {
+        assert.equal(fs.statSync(path.join(dir, 'SKILL.md')).mode & 0o777, 0o444);
+      }
+      assert.equal(fs.existsSync(path.join(root, '.lore-sync-staging')), false);
+      assert.equal(fs.existsSync(path.join(root, '.lore-sync.lock')), false);
+    } finally {
+      rmTempHome(root);
+    }
+  });
+
+  it('reports unchanged without requesting details, and upgrades preserve artifacts', async () => {
+    const root = makeSyncRoot();
+    try {
+      const v1 = skillDetail();
+      const loader = fakeLoader({ 'skill-1': v1 });
+      await syncSkillsToDir({ root, projectId, skills: [summaryOf(v1)], loadSkill: loader.loadSkill });
+
+      const localArtifact = path.join(root, 'demo-skill', 'artifacts', 'out.txt');
+      fs.mkdirSync(path.dirname(localArtifact), { recursive: true });
+      fs.writeFileSync(localArtifact, 'local output');
+
+      const fresh = fakeLoader({ 'skill-1': v1 });
+      const unchanged = await syncSkillsToDir({
+        root, projectId, skills: [summaryOf(v1)], loadSkill: fresh.loadSkill,
+      });
+      assert.deepEqual(unchanged.unchanged, ['demo-skill']);
+      assert.deepEqual(fresh.calls, []);
+
+      const v2 = skillDetail({ version: 2, content: '# Demo Skill v2\n', files: [
+        { path: 'SKILL.md', content: '# Demo Skill v2\n' },
+        { path: 'refs/helper.md', content: 'helper\n' },
+      ] });
+      const up = fakeLoader({ 'skill-1': v2 });
+      const updated = await syncSkillsToDir({
+        root, projectId, skills: [summaryOf(v2)], loadSkill: up.loadSkill,
+      });
+      assert.deepEqual(updated.updated, ['demo-skill']);
+      assert.equal(fs.readFileSync(path.join(root, 'demo-skill', 'SKILL.md'), 'utf-8'), '# Demo Skill v2\n');
+      assert.equal(fs.existsSync(path.join(root, 'demo-skill', 'refs', 'helper.md')), true);
+      assert.equal(fs.readFileSync(localArtifact, 'utf-8'), 'local output');
+    } finally {
+      rmTempHome(root);
+    }
+  });
+
+  it('leaves unmarked or foreign-project directories untouched as conflicts', async () => {
+    const root = makeSyncRoot();
+    try {
+      const foreign = path.join(root, 'other-skill');
+      materializeSkillWorkCopyAt({
+        installPath: foreign,
+        stagingBase: path.join(root, '.lore-sync-staging'),
+        projectId: 'proj-other',
+        detail: skillDetail({ id: 'skill-x', name: 'other-skill' }),
+      });
+      const foreignMarkerBefore = readWorkCopyMarker(foreign);
+
+      const plain = path.join(root, 'demo-skill');
+      fs.mkdirSync(plain);
+      fs.writeFileSync(path.join(plain, 'SKILL.md'), 'not lore managed');
+
+      const loader = fakeLoader({});
+      const result = await syncSkillsToDir({
+        root,
+        projectId,
+        skills: [summaryOf(skillDetail()), summaryOf(skillDetail({ id: 'skill-9', name: 'other-skill' }))],
+        loadSkill: loader.loadSkill,
+      });
+      assert.deepEqual(result.conflicts.sort(), ['demo-skill', 'other-skill']);
+      assert.deepEqual(result.errors, []);
+      assert.deepEqual(loader.calls, []);
+      assert.equal(fs.readFileSync(path.join(plain, 'SKILL.md'), 'utf-8'), 'not lore managed');
+      assert.deepEqual(readWorkCopyMarker(foreign).managed_files, foreignMarkerBefore.managed_files);
+    } finally {
+      rmTempHome(root);
+    }
+  });
+
+  it('removes unlisted copies while preserving local artifacts', async () => {
+    const root = makeSyncRoot();
+    try {
+      const details = {
+        'skill-1': skillDetail(),
+        'skill-2': skillDetail({ id: 'skill-2', name: 'beta-skill' }),
+      };
+      const loader = fakeLoader(details);
+      await syncSkillsToDir({
+        root, projectId, skills: Object.values(details).map(summaryOf), loadSkill: loader.loadSkill,
+      });
+      const artifact = path.join(root, 'demo-skill', 'notes.txt');
+      fs.writeFileSync(artifact, 'keep me');
+
+      const result = await syncSkillsToDir({
+        root, projectId, skills: [], loadSkill: loader.loadSkill,
+      });
+      assert.deepEqual(result.removed.sort(), ['beta-skill', 'demo-skill']);
+      assert.equal(fs.existsSync(path.join(root, 'beta-skill')), false);
+      assert.equal(fs.existsSync(path.join(root, 'demo-skill', 'SKILL.md')), false);
+      assert.equal(fs.existsSync(path.join(root, 'demo-skill', LORE_SKILL_MARKER)), false);
+      assert.equal(fs.readFileSync(artifact, 'utf-8'), 'keep me');
+    } finally {
+      rmTempHome(root);
+    }
+  });
+
+  it('treats adapted copies as unchanged, not tampered, and still detects server updates', async () => {
+    const root = makeSyncRoot();
+    const adapt = (detail) => ({
+      ...detail,
+      files: [...detail.files, {
+        path: 'agents/openai.yaml',
+        content: 'policy:\n  allow_implicit_invocation: false\n',
+      }],
+    });
+    try {
+      const v1 = skillDetail();
+      const loader = fakeLoader({ 'skill-1': v1 });
+      await syncSkillsToDir({
+        root, projectId, skills: [summaryOf(v1)], loadSkill: loader.loadSkill, adapt,
+      });
+      const dir = path.join(root, 'demo-skill');
+      assert.equal(fs.existsSync(path.join(dir, 'agents', 'openai.yaml')), true);
+      const marker = readWorkCopyMarker(dir);
+      assert.equal(marker.source_manifest_hash, v1.manifest_hash);
+      assert.notEqual(marker.source_manifest_hash, marker.manifest_hash);
+      assert.deepEqual(marker.managed_files, ['SKILL.md', 'agents/openai.yaml'].sort());
+
+      const fresh = fakeLoader({ 'skill-1': v1 });
+      const unchanged = await syncSkillsToDir({
+        root, projectId, skills: [summaryOf(v1)], loadSkill: fresh.loadSkill, adapt,
+      });
+      assert.deepEqual(unchanged.unchanged, ['demo-skill']);
+      assert.deepEqual(unchanged.errors, []);
+      assert.deepEqual(fresh.calls, []);
+
+      const v2 = skillDetail({ version: 2, content: '# v2\n' });
+      const up = fakeLoader({ 'skill-1': v2 });
+      const updated = await syncSkillsToDir({
+        root, projectId, skills: [summaryOf(v2)], loadSkill: up.loadSkill, adapt,
+      });
+      assert.deepEqual(updated.updated, ['demo-skill']);
+      assert.equal(fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf-8'), '# v2\n');
+      assert.equal(fs.existsSync(path.join(dir, 'agents', 'openai.yaml')), true);
+    } finally {
+      rmTempHome(root);
+    }
+  });
+
+  it('isolates per-skill failures into errors', async () => {
+    const root = makeSyncRoot();
+    try {
+      const ok = skillDetail({ id: 'skill-2', name: 'beta-skill' });
+      const loader = fakeLoader({ 'skill-2': ok });
+      const result = await syncSkillsToDir({
+        root,
+        projectId,
+        skills: [summaryOf(skillDetail()), summaryOf(ok)],
+        loadSkill: loader.loadSkill,
+      });
+      assert.deepEqual(result.created, ['beta-skill']);
+      assert.equal(result.errors.length, 1);
+      assert.equal(result.errors[0].name, 'demo-skill');
+      assert.match(result.errors[0].message, /unknown skill/);
+    } finally {
+      rmTempHome(root);
+    }
+  });
+
+  it('skips while a fresh lock exists and takes over a stale lock', async () => {
+    const root = makeSyncRoot();
+    try {
+      fs.mkdirSync(path.join(root, '.lore-sync.lock'));
+      const loader = fakeLoader({ 'skill-1': skillDetail() });
+      const locked = await syncSkillsToDir({
+        root, projectId, skills: [summaryOf(skillDetail())], loadSkill: loader.loadSkill,
+      });
+      assert.equal(locked.skipped, 'locked');
+      assert.deepEqual(locked.created, []);
+      assert.deepEqual(loader.calls, []);
+      assert.equal(fs.existsSync(path.join(root, 'demo-skill')), false);
+
+      const stale = new Date(Date.now() - 3 * 60 * 1000);
+      fs.utimesSync(path.join(root, '.lore-sync.lock'), stale, stale);
+      const tookOver = await syncSkillsToDir({
+        root, projectId, skills: [summaryOf(skillDetail())], loadSkill: loader.loadSkill,
+      });
+      assert.equal(tookOver.skipped, undefined);
+      assert.deepEqual(tookOver.created, ['demo-skill']);
+    } finally {
+      rmTempHome(root);
+    }
   });
 });
 

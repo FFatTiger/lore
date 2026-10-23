@@ -2,9 +2,9 @@
 /**
  * Sync shared vendor sources into plugin directories as byte-identical copies.
  *
- * Covers shared/skill-workcopy (pi, openclaw, opencode) and the shared Lore
- * channel sources (lore-config, mcp-bridge, skill-materializer) vendored
- * into zcode-plugin and dsh-plugin.
+ * Covers shared/skill-workcopy (pi, openclaw, opencode, claudecode, codex) and the
+ * shared Lore channel sources (lore-config, mcp-bridge, skill-materializer)
+ * vendored into zcode-plugin and dsh-plugin.
  *
  * Usage:
  *   node scripts/sync-skill-workcopy.mjs          # write vendor copies
@@ -26,6 +26,8 @@ const VENDOR_TARGETS = [
   'pi-extension/vendor/skill-workcopy',
   'openclaw-plugin/vendor/skill-workcopy',
   'opencode-plugin/vendor/skill-workcopy',
+  'claudecode-plugin/hooks/vendor/skill-workcopy',
+  'codex-plugin/hooks/vendor/skill-workcopy',
 ];
 
 const EXTRA_VENDOR_TARGETS = [{

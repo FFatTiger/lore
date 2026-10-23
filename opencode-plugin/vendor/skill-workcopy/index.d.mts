@@ -75,6 +75,8 @@ export interface WorkCopyMarker {
   synced_at: string;
   revision_hash?: string;
   manifest_hash?: string;
+  /** Server-side manifest of the unadapted payload; present only when a host adapter changed the written file set. */
+  source_manifest_hash?: string;
   /** Server-managed package files are read-only; the directory itself is writable for local outputs. */
   readonly?: boolean;
 }
@@ -200,6 +202,19 @@ export function writeSkillMirrorAtomic(opts: {
 }): { installPath: string; marker: WorkCopyMarker };
 
 /**
+ * Materialize a work copy at an explicit install path and staging base (same
+ * filesystem). `sourceManifestHash` records the server-side manifest of the
+ * unadapted payload when a host adapter changed the written file set.
+ */
+export function materializeSkillWorkCopyAt(opts: {
+  installPath: string;
+  stagingBase: string;
+  projectId: string;
+  detail: SkillDetail;
+  sourceManifestHash?: string;
+}): { installPath: string; marker: WorkCopyMarker };
+
+/**
  * Ensure a local work copy for the skill and return local SKILL.md + absolute skill_dir.
  * Missing/outdated/tampered/legacy copies are rematerialized from server detail
  * (preserving extra local files). Same version with intact managed files reuses the
@@ -227,3 +242,28 @@ export function listLocalWorkCopyStatuses(loreHome: string, projectId: string): 
 export function listAllLocalWorkCopyStatuses(loreHome: string): Array<WorkCopyStatus & { project_id: string }>;
 /** @deprecated Prefer listLocalWorkCopyStatuses. */
 export const listLocalMirrorStatuses: typeof listLocalWorkCopyStatuses;
+
+export const LORE_SYNC_LOCK: '.lore-sync.lock';
+
+export interface SkillSyncResult {
+  created: string[];
+  updated: string[];
+  unchanged: string[];
+  removed: string[];
+  conflicts: string[];
+  errors: Array<{ name: string; message: string }>;
+  skipped?: 'locked';
+}
+
+/**
+ * Reconcile a host-native skills directory with the server catalog. See
+ * shared/skill-workcopy/index.mjs for the full contract (conflicts, unchanged
+ * fast path, adaptation, removal, staging, and locking semantics).
+ */
+export function syncSkillsToDir(opts: {
+  root: string;
+  projectId: string;
+  skills: SkillSummary[];
+  loadSkill: (skillId: string) => Promise<SkillDetail>;
+  adapt?: (detail: SkillDetail) => SkillDetail | Promise<SkillDetail>;
+}): Promise<SkillSyncResult>;

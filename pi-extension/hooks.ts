@@ -2,7 +2,6 @@ import { execSync } from 'node:child_process';
 import { basename } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { fetchJson, hasRecallConfig } from './api';
-import { createSkillsSession, type SkillsSession } from './skills';
 
 // ---- Message text extraction helpers ----
 
@@ -70,26 +69,24 @@ async function fetchLifecycleEvent(pluginCfg: any, body: Record<string, unknown>
   });
 }
 
-async function fetchStartupLifecycle(pluginCfg: any, sessionId: string | undefined, cwd: string | undefined, skills: boolean) {
+async function fetchStartupLifecycle(pluginCfg: any, sessionId: string | undefined, cwd: string | undefined) {
   return fetchLifecycleEvent(pluginCfg, {
     protocol_version: 'lore.lifecycle.v1',
     runtime: lifecycleRuntime(),
     event: { name: 'session.start', native_name: 'session_start' },
-    // Lore appends the Skills catalog only for clients that expose Skills tools.
-    ...(skills ? { features: { skills: true } } : {}),
     normalized: { session_id: sessionId },
     project: detectProjectInfo(cwd),
   });
 }
 
-async function fetchPromptLifecycle(pluginCfg: any, prompt: string, sessionId: string | undefined, skills: boolean) {
-  // Prompt lifecycle also carries explicit `$skill-name` invocations, so it must
-  // remain available when Memory recall injection is disabled.
+async function fetchPromptLifecycle(pluginCfg: any, prompt: string, sessionId: string | undefined) {
+  // Prompt lifecycle carries the per-prompt recall injection, so it stays
+  // enabled even when Memory recall configuration is off.
   return fetchLifecycleEvent(pluginCfg, {
     protocol_version: 'lore.lifecycle.v1',
     runtime: lifecycleRuntime(),
     event: { name: 'prompt.submit', native_name: 'before_agent_start' },
-    features: { memory_recall: hasRecallConfig(pluginCfg), ...(skills ? { skills: true } : {}) },
+    features: { memory_recall: hasRecallConfig(pluginCfg) },
     normalized: { session_id: sessionId, prompt },
   });
 }
@@ -111,13 +108,12 @@ function getSessionId(ctx: any): string | undefined {
 
 // ---- Hook registration ----
 
-export function registerHooks(pi: any, pluginCfg: any, skillsSession?: SkillsSession) {
+export function registerHooks(pi: any, pluginCfg: any) {
   const startupRequests = new Map<string, Promise<void>>();
   // Boot baseline is per session, not per first turn: Pi rebuilds the system
   // prompt from its base on every user prompt, so the fixed baseline has to be
   // re-appended on each turn (and several sessions can run in one process).
   const startupAppendBySession = new Map<string, string>();
-  const skills = skillsSession;
 
   pi.on('session_start', async (_event: any, ctx: any) => {
     if (pluginCfg.startupHealthcheck) {
@@ -130,7 +126,8 @@ export function registerHooks(pi: any, pluginCfg: any, skillsSession?: SkillsSes
     }
 
     if (!pluginCfg.injectPromptGuidance) {
-      // No automatic skill sync. Catalog identity is recorded only when lifecycle returns it.
+      // No lifecycle startup request; skills are handled by
+      // registerSkillResourceDiscovery, independent of prompt guidance.
       return;
     }
     const sessionId = getSessionId(ctx);
@@ -141,15 +138,7 @@ export function registerHooks(pi: any, pluginCfg: any, skillsSession?: SkillsSes
 
     const request = (async () => {
       try {
-        const lifecycleResponse = await fetchStartupLifecycle(pluginCfg, sessionId, ctx?.cwd, Boolean(skills));
-        // Record project/catalog identity only — never auto-download or reconcile skills.
-        if (skills) {
-          try {
-            await skills.onSessionStart(lifecycleResponse);
-          } catch (error: any) {
-            pi.logger?.debug?.(`lore: skill catalog identity on session_start failed: ${error.message}`);
-          }
-        }
+        const lifecycleResponse = await fetchStartupLifecycle(pluginCfg, sessionId, ctx?.cwd);
         const value = readReturnValue(lifecycleResponse);
         const systemPromptAppend = typeof value?.systemPromptAppend === 'string'
           ? value.systemPromptAppend.trim()
@@ -195,7 +184,7 @@ export function registerHooks(pi: any, pluginCfg: any, skillsSession?: SkillsSes
 
     if (typeof event?.prompt === 'string' && event.prompt.trim()) {
       try {
-        const lifecycleResponse = await fetchPromptLifecycle(pluginCfg, event.prompt, sessionId, Boolean(skills));
+        const lifecycleResponse = await fetchPromptLifecycle(pluginCfg, event.prompt, sessionId);
         const message = readReturnValue(lifecycleResponse)?.message;
         if (message) out.message = message;
       } catch (error: any) {
@@ -205,6 +194,4 @@ export function registerHooks(pi: any, pluginCfg: any, skillsSession?: SkillsSes
 
     return Object.keys(out).length > 0 ? out : undefined;
   });
-
-  return { skills };
 }

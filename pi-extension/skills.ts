@@ -1,8 +1,11 @@
 /**
  * Pi skills adapter — thin wrapper over vendor/skill-workcopy.
- * Owns lore_skill_* tools, session helpers, and discovery formatting for hooks.
+ * Owns lore_skill_* tools, session helpers, and the resources_discover
+ * registration that exposes Lore skills through Pi's native skill system.
  */
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { fetchJson, textResult } from './api';
 import {
   ensureSkillWorkCopy as ensureSharedWorkCopy,
@@ -11,8 +14,10 @@ import {
   normalizeSkillCandidate,
   normalizeSkillDetail,
   normalizeSkillSummary,
+  projectWorkCopyRoot,
   skillIdOf,
   skillVersionOf,
+  syncSkillsToDir,
   resolveLoreHome as resolveVendorLoreHome,
   type SkillCandidate,
   type SkillDetail,
@@ -62,6 +67,7 @@ export {
   listAllLocalWorkCopyStatuses,
   listLocalWorkCopyStatuses,
   listLocalMirrorStatuses,
+  syncSkillsToDir,
 } from './vendor/skill-workcopy/index.mjs';
 
 export type {
@@ -85,11 +91,6 @@ export interface SkillsClientState {
   projectId?: string;
   catalogRevision?: string;
   lastError?: string;
-}
-
-export interface SkillCatalog {
-  project_id: string;
-  catalog_revision: string;
 }
 
 // ---- API ----
@@ -205,21 +206,13 @@ export async function ensureSkillWorkCopy(opts: {
 // ---- session-scoped skills client used by hooks ----
 
 export function createSkillsSession(pluginCfg: any) {
+  // Project/catalog identity is recorded from the skills catalog list request
+  // (see registerSkillResourceDiscovery) and by the lore_skill_* tools; the
+  // session itself never downloads or reconciles skills.
   const state: SkillsClientState = {};
   const loreHome = () => (typeof pluginCfg?.loreHome === 'string' && pluginCfg.loreHome.trim()
     ? pluginCfg.loreHome.trim()
     : resolveLoreHome());
-
-  /**
-   * Session start: record project/catalog identity only. Never auto-downloads or
-   * reconciles; all download/update is on-demand via lore_skill_get.
-   */
-  async function onSessionStart(lifecycleResponse: any): Promise<void> {
-    const catalog = readSkillCatalog(lifecycleResponse);
-    if (!catalog?.project_id) return;
-    state.projectId = catalog.project_id;
-    state.catalogRevision = catalog.catalog_revision;
-  }
 
   function getStatus(): {
     project_id?: string;
@@ -245,7 +238,6 @@ export function createSkillsSession(pluginCfg: any) {
   return {
     state,
     loreHome,
-    onSessionStart,
     getStatus,
     ensureSkillWorkCopy: (skillId: string) => ensureSkillWorkCopy({
       pluginCfg,
@@ -258,15 +250,126 @@ export function createSkillsSession(pluginCfg: any) {
 
 export type SkillsSession = ReturnType<typeof createSkillsSession>;
 
-export function readSkillCatalog(lifecycleResponse: any): SkillCatalog | null {
-  const catalog = lifecycleResponse?.skill_catalog;
-  if (!catalog || typeof catalog !== 'object') return null;
-  const project_id = String(catalog.project_id || '').trim();
-  if (!project_id) return null;
-  return {
-    project_id,
-    catalog_revision: String(catalog.catalog_revision || ''),
-  };
+// ---- host-native skill directory (resources_discover + background sync) ----
+
+/** Total budget for one background skills sync, matching the other plugins. */
+const SKILLS_SYNC_TIMEOUT_MS = 120_000;
+/** The catalog list gates skill-path registration, so it keeps a tight deadline. */
+const SKILLS_DISCOVER_TIMEOUT_MS = 3_000;
+const SKILLS_SYNC_STATUS_FILE = '.lore-sync-status.json';
+
+function writeSyncStatusFile(root: string, status: Record<string, unknown>) {
+  fs.mkdirSync(root, { recursive: true });
+  const tmp = `${path.join(root, SKILLS_SYNC_STATUS_FILE)}.tmp-${process.pid}`;
+  fs.writeFileSync(tmp, `${JSON.stringify(status, null, 2)}\n`, 'utf-8');
+  fs.renameSync(tmp, path.join(root, SKILLS_SYNC_STATUS_FILE));
+}
+
+function runSkillsDirSync(
+  pi: any,
+  pluginCfg: any,
+  opts: { root: string; projectId: string; catalogRevision: string; skills: unknown[] },
+): Promise<void> {
+  const { root, projectId, catalogRevision, skills } = opts;
+  const deadline = Date.now() + SKILLS_SYNC_TIMEOUT_MS;
+  return (async () => {
+    const status: Record<string, any> = {
+      finished_at: '',
+      project_id: projectId,
+      catalog_revision: catalogRevision,
+      created: [],
+      updated: [],
+      unchanged: [],
+      removed: [],
+      conflicts: [],
+      errors: [],
+    };
+    try {
+      const result = await syncSkillsToDir({
+        root,
+        projectId,
+        skills,
+        // One deadline covers the whole run; each detail fetch is additionally
+        // clamped to the remaining budget so no request can outlive it.
+        loadSkill: (skillId: string) => {
+          const remaining = deadline - Date.now();
+          if (remaining <= 0) {
+            throw new Error(`skills sync exceeded its ${SKILLS_SYNC_TIMEOUT_MS / 1000}s deadline`);
+          }
+          return getSkillApi({ ...pluginCfg, timeoutMs: Math.min(pluginCfg.timeoutMs || remaining, remaining) }, skillId);
+        },
+      });
+      status.created = result.created;
+      status.updated = result.updated;
+      status.unchanged = result.unchanged;
+      status.removed = result.removed;
+      status.conflicts = result.conflicts;
+      status.errors = result.errors;
+      if (result.skipped) status.skipped = result.skipped;
+    } catch (error: any) {
+      status.errors.push({ name: '', message: error?.message ?? String(error) });
+    }
+    status.finished_at = new Date().toISOString();
+    try {
+      writeSyncStatusFile(root, status);
+    } catch { /* silent: background best-effort */ }
+  })().catch((error: any) => {
+    pi.logger?.debug?.(`lore: background skills sync failed: ${error?.message ?? error}`);
+  });
+}
+
+export interface RegisteredSkillResources {
+  session: SkillsSession;
+  /** Resolves once the latest background sync has recorded its outcome. */
+  currentSync: () => Promise<void> | undefined;
+}
+
+/**
+ * Register Pi's resources_discover handler that exposes the Lore work-copy root
+ * (~/.lore/skills/<project-id>/) as a native skill directory. The directory is
+ * reconciled with the server catalog by a background sync whose result lands in
+ * <root>/.lore-sync-status.json; the previous sync's skills are visible in the
+ * current session, this sync's in the next one (or after /reload).
+ */
+export function registerSkillResourceDiscovery(pi: any, pluginCfg: any, skillsSession?: SkillsSession): RegisteredSkillResources {
+  const session = skillsSession || createSkillsSession(pluginCfg);
+  let activeSync: Promise<void> | undefined;
+
+  pi.on('resources_discover', async () => {
+    let catalog: any;
+    try {
+      catalog = await fetchJson(
+        { ...pluginCfg, timeoutMs: Math.min(pluginCfg.timeoutMs || SKILLS_DISCOVER_TIMEOUT_MS, SKILLS_DISCOVER_TIMEOUT_MS) },
+        '/skills?include_user_only=true',
+        { method: 'GET' },
+      );
+    } catch (error: any) {
+      pi.logger?.debug?.(`lore: skills catalog unavailable (${error.message}); not registering skill paths`);
+      return undefined;
+    }
+    const projectId = String(catalog?.project_id || '').trim();
+    if (!projectId) return undefined;
+    session.state.projectId = projectId;
+    session.state.catalogRevision = catalog?.catalog_revision === undefined || catalog?.catalog_revision === null
+      ? ''
+      : String(catalog.catalog_revision);
+    const root = projectWorkCopyRoot(session.loreHome(), projectId);
+    try {
+      fs.mkdirSync(root, { recursive: true });
+    } catch (error: any) {
+      pi.logger?.debug?.(`lore: cannot create skills root (${error.message})`);
+      return undefined;
+    }
+    activeSync = runSkillsDirSync(pi, pluginCfg, {
+      root,
+      projectId,
+      catalogRevision: session.state.catalogRevision,
+      skills: Array.isArray(catalog?.skills) ? catalog.skills : [],
+    });
+    return { skillPaths: [root] };
+  });
+
+  return { session, currentSync: () => activeSync };
 }
 
 // ---- tool registration ----

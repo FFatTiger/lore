@@ -21,7 +21,7 @@ npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_
 - 来自 `lore-codex.zip` 的插件。安装程序会先把它放到 `~/.lore/codex/`，用 `codex plugin marketplace add` 把该目录注册为本地插件市场，并把插件复制到 `$CODEX_HOME/plugins/cache/lore/lore/local/`。
 - 两个随插件提供的钩子。`SessionStart` 在 `startup`、`resume` 和 `clear` 时加载启动记忆，`UserPromptSubmit` 为每条提示词添加召回。每个钩子的超时时间为 10 秒。
 - `lore` MCP 服务，地址为 `<server>/api/mcp?client_type=codex`。它通过 `codex mcp add` 注册，并写入 `config.toml`。
-- `lore-skills` MCP 服务，只在服务器支持技能时添加。没有技能时，安装程序会移除这个条目。
+- 插件自带的 `skills/` 目录，SessionStart 钩子会把 Codex 可用的技能同步进去：用 `$技能名` 或 `/skills` 调用。
 - 随插件提供的 `lore-memory` 技能。当任务依赖长期上下文时，它会提示 Codex 加载 `lore_guidance` 和 `lore_boot`。
 - 删除 `$CODEX_HOME/hooks.json` 中早期 Lore 安装留下的钩子条目。该文件中的其他钩子保持不变。
 
@@ -44,7 +44,7 @@ http_headers = { Authorization = "Bearer lm_your_token" }
 ## 验证
 
 1. 运行 `npx @loremem/cli status`。`codex` 一行应显示 `installed`。
-2. 运行 `codex mcp list`。输出应包含 `lore`；如果服务器支持技能，还应包含 `lore-skills`。
+2. 运行 `codex mcp list`。输出应包含 `lore`。
 3. 启动 Codex 并打开 `/plugins`。如果 Lore 仍显示为可安装，请在这里完成安装。
 4. 打开 `/hooks`，如果 Codex 提示，请信任 Lore 的钩子。
 5. 开始一个新会话，让 Codex 调用 `lore_status`。它应返回服务器的健康状态。

@@ -49,7 +49,7 @@ Run the check for your runtime, and restart the runtime after any change.
 
 - **Claude Code and ZCode:** Memory tools appear as `mcp__plugin_lore_lore__<tool>`. In Claude Code, check with `/mcp` that `lore` is connected.
 - **DeepSeek Harness:** Memory tools appear as `mcp__lore__<tool>`, for example `mcp__lore__lore_search`.
-- **Codex:** `codex mcp list` must list `lore`. On servers with Skills, it also lists `lore-skills`.
+- **Codex:** `codex mcp list` must list `lore`.
 - **OpenCode:** The native tools must use the exact names from `lore_guidance` through `lore_move_node`. A name such as `lore_lore_search` means an MCP entry is registered instead of the native plugin. See the next section.
 - **Skills tools** (`lore_skill_*`) appear only when the server advertises Skills. The open-source server has none. Loremem Cloud does.
 
@@ -59,7 +59,7 @@ Run the check for your runtime, and restart the runtime after any change.
 
 **Fix:**
 
-- **Claude Code:** An earlier install may have left user-scope `lore` or `lore-skills` MCP entries. Remove them, then run the install again. Skip any command that reports the server was not found.
+- **Claude Code:** An earlier install may have left user-scope `lore` or `lore-skills` MCP entries. Remove them, then run the install again. Skip any command that reports the server was not found. The installer scrubs the `lore-skills` entry itself; skills reach Claude Code through the plugin's `skills/` directory now.
 
   ```bash
   claude mcp remove --scope user lore

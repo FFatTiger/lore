@@ -53,23 +53,23 @@ Open a skill and select **Settings**.
 | --- | --- | --- |
 | Enabled | On or off | When off, agents no longer see or load the skill. |
 | Visible to | All agents, or one agent | Limits the skill to one runtime. |
-| Invocation | Agent and user, or User only | **User only** hides the skill from agents. It runs only when a user types `$name`. |
+| Invocation | Agent and user, or User only | **User only** keeps the model from running the skill on its own. You can still invoke it with your agent's own trigger. |
 
-Invocation is stored in `SKILL.md` as `disable-model-invocation: true`. Changing it in the console updates that line in the file, and editing the line changes the console setting. Select **Copy trigger** to copy the `$name` text.
+Invocation is stored in `SKILL.md` as `disable-model-invocation: true`. Changing it in the console updates that line in the file, and editing the line changes the console setting. **Copy name** copies the skill's name, which each host turns into its own trigger; see [Skills](/documents/skills#runtimes).
 
 ## Archive a skill
 
 Archive a skill when no agent should use it again. Select **Archive skill**, then **Archive…**, then confirm with **Archive for good**.
 
 > [!WARNING]
-> Archiving can't be undone. Agents stop finding and loading the skill, the name can't be reused, and copies already on agent machines stay where they are.
+> Archiving can't be undone. Agents stop finding and loading the skill and the name can't be reused. The next sync removes its managed files from each agent, while the artifacts you added inside those directories stay.
 
 ## Let agents create and update skills
 
 Agents with the skill tools can manage skills too:
 
-- `lore_skill_create` takes a `name`, a list of `files` that must include `SKILL.md`, and an optional `enabled` flag, which defaults to `true`. The new skill isn't copied to an agent's machine until an agent calls `lore_skill_get`.
-- `lore_skill_update` takes the `skill_id` and an `expected_version`, which is the version the agent last read. It can also set `enabled`, create or replace files (`upsert_files`), and delete paths (`delete_paths`). If the skill has moved to a newer version, the update fails with a version conflict. The agent should read the latest version with `lore_skill_get`, then try again. The name can't be changed.
+- `lore_skill_create` takes a `name`, a list of `files` that must include `SKILL.md`, and an optional `enabled` flag, which defaults to `true`. The new skill reaches an agent at that agent's next session start.
+- `lore_skill_update` takes the `skill_id` and an `expected_version`, which is the version the agent last read. It can also set `enabled`, create or replace files (`upsert_files`), and delete paths (`delete_paths`). If the skill has moved to a newer version, the update fails with a version conflict. The agent should read the latest version with `lore_skill_list`, then try again. The name can't be changed.
 - `lore_skill_delete` archives the skill, with the same effects as **Archive skill**.
 
 For what the tools return and how agents see skills at session start, see [Skills](/documents/skills).

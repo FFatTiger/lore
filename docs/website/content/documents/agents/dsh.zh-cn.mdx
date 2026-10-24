@@ -16,7 +16,7 @@ npx @loremem/cli install --channels dsh
 - 家目录级 `~/.dsh/cordis.patch.yml` 中的两行，所有 dsh profile 都会应用。这两行使用稳定 id `lore-lifecycle` 和 `lore-mcp`，放在明确标记的托管块里，重新安装时只替换托管块。文件中其余行和注释全部保留，旁边保留一份备份。
 - `lore-lifecycle` 加载 `~/.lore/dsh/plugin/lifecycle.mjs` 原生插件。每次 `agent/created` 发送 `session.start` 生命周期事件，并把返回的 boot 上下文放进该会话的 system prompt。在用户轮次的第一步，为该用户消息精确发送一次 `prompt.submit`，并把返回的召回上下文加入该步骤，标记为 Lore 注入的上下文而不是用户输入。
 - `lore-mcp` 启动名为 `lore` 的本地 stdio MCP bridge，把 MCP 请求转发到 `<server>/api/mcp?client_type=dsh`。工具显示为 `mcp__lore__lore_status`、`mcp__lore__lore_search` 等。
-- Skill 工具，仅当服务端声明 Skills 时启用。成功的 `lore_skill_get` 会把技能物化到 `~/.lore/skills/<project-id>/<skill-name>/`。
+- 技能，仅当服务端声明支持时启用。插件在 `~/.lore/skills/<project-id>/` 上注册自己的 skills provider，该目录由会话开始时的同步填充；调用技能用它自己的用户可调用入口。
 
 令牌不会写入 dsh 配置。插件和 bridge 读取 `${LORE_HOME:-~/.lore}/config.json`。
 

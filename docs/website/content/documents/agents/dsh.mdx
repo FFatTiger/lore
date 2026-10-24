@@ -16,7 +16,7 @@ The installer detects dsh through the `dsh` command on your `PATH`, or through a
 - Two rows in the home-level `~/.dsh/cordis.patch.yml`, which every dsh profile applies. The rows use the stable ids `lore-lifecycle` and `lore-mcp`, sit inside a clearly marked managed block, and are the only thing the installer replaces on re-install. All other rows and comments in the file are preserved, and a backup is kept beside it.
 - `lore-lifecycle` loads the native plugin at `~/.lore/dsh/plugin/lifecycle.mjs`. On every `agent/created` it sends a `session.start` lifecycle event and puts the returned boot context into that session's system prompt. On the first step of a user turn it sends exactly one `prompt.submit` for that user message and adds the returned recall context to that step, marked as Lore-injected context rather than user input.
 - `lore-mcp` starts a local stdio MCP bridge named `lore` that forwards MCP requests to `<server>/api/mcp?client_type=dsh`. Its tools appear as `mcp__lore__lore_status`, `mcp__lore__lore_search`, and so on.
-- Skill tools, only when the server advertises Skills. A successful `lore_skill_get` materializes the skill under `~/.lore/skills/<project-id>/<skill-name>/`.
+- Skills, only when the server advertises them. The plugin registers a skills provider over `~/.lore/skills/<project-id>/`, which the session-start sync fills; you invoke a skill by its own user-invocable entry.
 
 No token is written into the dsh configuration. The plugin and the bridge read `${LORE_HOME:-~/.lore}/config.json`.
 

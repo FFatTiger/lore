@@ -21,7 +21,7 @@ The installer skips Codex when the `codex` command is not on your `PATH`. It wri
 - The plugin from `lore-codex.zip`. The installer stages it in `~/.lore/codex/`, registers that folder as a local marketplace with `codex plugin marketplace add`, and copies the plugin to `$CODEX_HOME/plugins/cache/lore/lore/local/`.
 - Two hooks, bundled with the plugin. `SessionStart`, which runs on `startup`, `resume`, and `clear`, loads startup memory. `UserPromptSubmit` adds recall to each prompt. Each hook has a 10-second timeout.
 - The `lore` MCP server at `<server>/api/mcp?client_type=codex`, registered with `codex mcp add` and written to `config.toml`.
-- The `lore-skills` MCP server, only when the server has Skills. Without Skills, the installer removes that entry.
+- The bundled `skills/` directory, which the SessionStart hook fills with the skills Codex may use: `$skill-name` or `/skills` runs one.
 - A bundled `lore-memory` skill. It tells Codex to load `lore_guidance` and `lore_boot` when a task depends on durable context.
 - Hook entries from earlier Lore installs are removed from `$CODEX_HOME/hooks.json`. Other hooks in that file stay.
 
@@ -44,7 +44,7 @@ The `http_headers` line appears only when you set a token. The token is stored i
 ## Verify
 
 1. Run `npx @loremem/cli status`. The `codex` line should read `installed`.
-2. Run `codex mcp list`. It should list `lore`, and `lore-skills` on a server with Skills.
+2. Run `codex mcp list`. It should list `lore`.
 3. Start Codex and open `/plugins`. If Lore is still listed as installable, install it from there.
 4. Open `/hooks` and trust the Lore hooks if Codex asks.
 5. Start a new session and ask Codex to call `lore_status`. It should return the server's health.

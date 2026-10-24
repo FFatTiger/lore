@@ -39,6 +39,9 @@ openclaw-plugin/skills/
 codex-plugin/skills/*
 !codex-plugin/skills/lore-memory/
 
+# Session-start skills sync target inside the ZCode plugin (runtime state)
+zcode-plugin/skills/
+
 # OS / editor
 .DS_Store
 .vscode/

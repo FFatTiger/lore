@@ -187,6 +187,37 @@ test('first sync writes opencode skills under XDG_CONFIG_HOME and defaults to ~/
   }
 });
 
+test('first sync writes archive-installed Claude Code skills into the recorded installPath', async () => {
+  const { server, baseUrl } = await startSkillsServer();
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-first-sync-cca-'));
+  const loreHome = path.join(home, '.lore');
+  await fs.mkdir(path.join(loreHome, 'claudecode', '.claude-plugin'), { recursive: true });
+  await fs.writeFile(
+    path.join(loreHome, 'claudecode', '.claude-plugin', 'marketplace.json'),
+    JSON.stringify({ plugins: [{ name: 'lore', source: { source: 'archive', url: 'https://x/y.zip' } }] }),
+  );
+  const installPath = path.join(home, '.claude', 'plugins', 'cache', 'lore', 'lore', '1.2.3');
+  const pluginsFile = path.join(home, '.claude', 'plugins', 'installed_plugins.json');
+  await fs.mkdir(path.dirname(pluginsFile), { recursive: true });
+  await fs.writeFile(pluginsFile, JSON.stringify({ version: 2, plugins: { 'lore@lore': [{ scope: 'user', installPath }] } }));
+  const lines: string[] = [];
+  try {
+    await runFirstSkillsSync({
+      results: [{ id: 'claudecode', status: 'ok' }],
+      loreHome,
+      baseUrl,
+      apiToken: 'lm_test',
+      homeDir: home,
+      env: {},
+      log: recordLogger(lines),
+    });
+    assert.ok(lines.includes('Skills: 1 synced → Claude Code'), lines.join('\n'));
+    await fs.access(path.join(installPath, 'skills', 'demo-skill', 'SKILL.md'));
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
 test('first sync writes Claude Code skills into the channel directory the plugin loads from', async () => {
   const { server, baseUrl } = await startSkillsServer();
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-first-sync-cc-'));

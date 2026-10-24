@@ -113,25 +113,32 @@ test('claude install writes no skills switch when the server does not advertise 
   });
 });
 
-test('Claude install updates a listed plugin and installs an unlisted one', async () => {
-  for (const listed of [true, false]) {
-    const { home, loreHome } = await tempHome();
-    await fs.mkdir(path.join(loreHome, 'claudecode'), { recursive: true });
-    const calls: string[] = [];
-    const run: ExecFn = async (argv) => {
-      calls.push(argv.join(' '));
-      if (argv.join(' ') === 'claude plugin list') {
-        return { code: 0, stdout: listed ? 'lore@lore' : '', stderr: '' };
-      }
-      return { code: 0, stdout: '', stderr: '' };
-    };
-    await withBin(home, 'claude', async () => {
-      const result = await claudecodeInstaller.install(ctx({ loreHome, homeDir: home, run }));
-      assert.equal(result.status, 'ok');
-      assert.ok(calls.includes(listed ? 'claude plugin update lore@lore' : 'claude plugin install lore@lore'), calls.join('\n'));
-      assert.ok(!calls.includes(listed ? 'claude plugin install lore@lore' : 'claude plugin update lore@lore'), calls.join('\n'));
-    });
-  }
+test('Claude install points the marketplace at the release zip and reinstalls the plugin', async () => {
+  const { home, loreHome } = await tempHome();
+  const dest = path.join(loreHome, 'claudecode');
+  await fs.mkdir(path.join(dest, '.claude-plugin'), { recursive: true });
+  await fs.writeFile(
+    path.join(dest, '.claude-plugin', 'marketplace.json'),
+    JSON.stringify({ name: 'lore', plugins: [{ name: 'lore', source: './' }] }),
+  );
+  await fs.writeFile(path.join(dest, '.lore-release'), 'v9.9.9\n');
+  const calls: string[] = [];
+  const run: ExecFn = async (argv) => {
+    calls.push(argv.join(' '));
+    return { code: 0, stdout: '', stderr: '' };
+  };
+  await withBin(home, 'claude', async () => {
+    const result = await claudecodeInstaller.install(ctx({ loreHome, homeDir: home, run, releaseVersion: 'v9.9.9' }));
+    assert.equal(result.status, 'ok', result.message);
+  });
+  const marketplace = JSON.parse(await fs.readFile(path.join(dest, '.claude-plugin', 'marketplace.json'), 'utf8'));
+  assert.deepEqual(marketplace.plugins[0].source, {
+    source: 'archive',
+    url: 'https://github.com/FFatTiger/lore/releases/download/v9.9.9/lore-claudecode.zip',
+  });
+  const uninstall = calls.indexOf('claude plugin uninstall lore@lore');
+  const install = calls.indexOf('claude plugin install lore@lore');
+  assert.ok(uninstall >= 0 && install > uninstall, calls.join('\n'));
 });
 
 test('Claude preserves host configuration written during installation', async () => {

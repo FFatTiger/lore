@@ -70,6 +70,28 @@ async function removeLegacyGuidance(homeDir: string): Promise<void> {
   }
 }
 
+const RELEASE_REPO = 'FFatTiger/lore';
+
+/**
+ * Point the marketplace entry at the release zip instead of the local
+ * directory. A directory-sourced plugin runs in place from the marketplace
+ * directory, while an archive-sourced one is installed into Claude Code's
+ * plugin cache like any marketplace plugin: CLAUDE_PLUGIN_ROOT and the
+ * installPath that other tools (HAPI's skill completion) read are then the
+ * same directory, so the skills synced there are visible everywhere.
+ */
+async function useReleaseArchive(dest: string, releaseVersion: string): Promise<void> {
+  const file = path.join(dest, '.claude-plugin', 'marketplace.json');
+  const marketplace = JSON.parse(await fs.readFile(file, 'utf8')) as {
+    plugins?: Array<{ name?: string; source?: unknown }>;
+  };
+  const url = `https://github.com/${RELEASE_REPO}/releases/download/${releaseVersion}/lore-claudecode.zip`;
+  for (const plugin of marketplace.plugins ?? []) {
+    if (plugin.name === 'lore') plugin.source = { source: 'archive', url };
+  }
+  await writeJsonAtomic(file, marketplace);
+}
+
 export const claudecodeInstaller: ChannelInstaller = {
   id: 'claudecode',
 
@@ -110,6 +132,8 @@ export const claudecodeInstaller: ChannelInstaller = {
         force: true,
       }).catch(() => undefined);
 
+      if (ctx.releaseVersion) await useReleaseArchive(dest, ctx.releaseVersion);
+
       await runChecked(
         run,
         'Claude marketplace registration',
@@ -117,22 +141,16 @@ export const claudecodeInstaller: ChannelInstaller = {
         commandOpts,
         { redact },
       );
+      // `add` keeps an already-known marketplace as it was; re-read the entry.
+      await run(['claude', 'plugin', 'marketplace', 'update', 'lore'], commandOpts).catch(() => undefined);
 
-      const list = await runChecked(
-        run,
-        'Claude plugin listing',
-        ['claude', 'plugin', 'list'],
-        commandOpts,
-        { redact },
-      );
-      // The cache was just removed, so a plugin that is still listed must be
-      // re-fetched from the marketplace: `update` does that, `install` would
-      // refuse because the record still exists.
-      const listed = list.stdout.includes('lore@lore');
+      // Reinstall instead of `update`: update skips when the version is
+      // unchanged, which would leave the cache we just removed empty.
+      await run(['claude', 'plugin', 'uninstall', 'lore@lore'], commandOpts).catch(() => undefined);
       await runChecked(
         run,
-        listed ? 'Claude plugin update' : 'Claude plugin installation',
-        ['claude', 'plugin', listed ? 'update' : 'install', 'lore@lore'],
+        'Claude plugin installation',
+        ['claude', 'plugin', 'install', 'lore@lore'],
         commandOpts,
         { redact },
       );

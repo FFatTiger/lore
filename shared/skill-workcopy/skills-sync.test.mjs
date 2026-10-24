@@ -166,10 +166,9 @@ describe('runSkillsSync', () => {
       const marker = JSON.parse(fs.readFileSync(path.join(root, 'synced-skill', '.lore-skill-marker.json'), 'utf-8'));
       assert.equal(marker.project_id, 'proj-1');
 
-      // Catalog request: client_type set, credentials from config, no include_user_only.
+      // Catalog request: client_type set, credentials from config, no extra params.
       assert.equal(server.requests[0].path, '/api/skills');
-      assert.equal(server.requests[0].query.client_type, 'pi');
-      assert.equal(server.requests[0].query.include_user_only, undefined);
+      assert.deepEqual(server.requests[0].query, { client_type: 'pi' });
       assert.equal(server.requests[0].authorization, 'Bearer tok-1');
       // Detail request carries the same client_type.
       assert.equal(server.requests[1].query.client_type, 'pi');

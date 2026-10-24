@@ -404,8 +404,7 @@ test('SessionStart spawns a detached skills sync and exits without waiting for i
     assert.equal(marker.skill_id, fixture.detail.skill_id);
     assert.equal(marker.project_id, 'proj-1');
     assert.equal(server.requests[0].features, undefined);
-    assert.equal(server.skillRequests[0].query.client_type, 'claudecode');
-    assert.equal(server.skillRequests[0].query.include_user_only, undefined);
+    assert.deepEqual(server.skillRequests[0].query, { client_type: 'claudecode' });
   } finally {
     rmSync(pluginRoot, { recursive: true, force: true });
     await server.close();

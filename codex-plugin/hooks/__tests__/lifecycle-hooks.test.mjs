@@ -449,8 +449,7 @@ test('SessionStart spawns a detached skills sync, adapts it, and exits without w
     assert.ok(status.finished_at.length > 0);
 
     assert.equal(server.skillRequests.length, 3);
-    assert.equal(server.skillRequests[0].query.client_type, 'codex');
-    assert.equal(server.skillRequests[0].query.include_user_only, undefined);
+    assert.deepEqual(server.skillRequests[0].query, { client_type: 'codex' });
 
     const adaptedDir = path.join(pluginRoot, 'skills', 'synced-skill');
     assert.equal(readFileSync(path.join(adaptedDir, 'SKILL.md'), 'utf-8'), '# Synced Skill\n\nDo it natively.\n');

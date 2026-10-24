@@ -6,7 +6,7 @@
  * framed MCP JSON-RPC from stdin, forwards every request to
  * `<server>/api/mcp?client_type=<clientType>`, and writes responses back to
  * stdout. Skill tools stay hidden unless the configured server advertises
- * Skills; a successful `lore_skill_get` response is rewritten by the
+ * Skills; a successful skill-package fetch response is rewritten by the
  * channel-supplied transform so the skill materializes under the Lore home
  * like the other channels.
  *

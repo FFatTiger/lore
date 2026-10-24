@@ -359,9 +359,7 @@ describe('resources_discover skill directory registration', () => {
 
     const root = path.join(loreHome, 'skills', projectId);
     expect(result).toEqual({ skillPaths: [root] });
-    expect(apiUrls[0]).toContain('/api/skills?');
-    expect(apiUrls[0]).not.toContain('include_user_only');
-    expect(apiUrls[0]).toContain('client_type=pi');
+    expect(apiUrls[0]).toBe('http://host/api/skills?client_type=pi');
     expect(skills.state.projectId).toBe(projectId);
     expect(skills.state.catalogRevision).toBe('rev-9');
     // The root exists (and is registered) before the sync finishes.

@@ -242,12 +242,21 @@ describe('classifies genuine OpenCode direct-user prompts', () => {
 describe('OpenCode lifecycle adapter', () => {
   it('prefetches startup once and injects one cached system block into concurrent transforms', async () => {
     const pending = deferred<Response>();
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockReturnValue(pending.promise);
+    const lifecycleCalls = () => fetchMock.mock.calls
+      .filter(([input]) => new URL(String(input)).pathname === '/api/lifecycle/event');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input));
+      if (url.pathname !== '/api/lifecycle/event') {
+        // Background skills sync sees an empty catalog and writes nothing.
+        return Promise.resolve(jsonResponse({ project_id: 'project-1', catalog_revision: '', skills: [] }));
+      }
+      return pending.promise;
+    });
     const lifecycle = adapter();
 
     await lifecycle.hooks.event?.({ event: sessionEvent('session.created', 'ses-1') });
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(lifecycleCalls()).toHaveLength(1);
+    const [url, init] = lifecycleCalls()[0] as [string, RequestInit];
     expect(url).toBe('https://api.example.test/api/lifecycle/event?client_type=opencode');
     expect(JSON.parse(String(init.body))).toEqual({
       protocol_version: 'lore.lifecycle.v1',
@@ -285,7 +294,7 @@ describe('OpenCode lifecycle adapter', () => {
       ],
     };
     await lifecycle.hooks['experimental.chat.system.transform']?.(systemInput('ses-1'), later);
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(lifecycleCalls()).toHaveLength(1);
     expect(later.system.join('\n').match(/lore:opencode-system-context:start/g)).toHaveLength(1);
     expect(later.system.join('\n')).not.toContain('stale');
   });
@@ -307,7 +316,10 @@ describe('OpenCode lifecycle adapter', () => {
         return jsonResponse({
           project_id: 'project-1',
           catalog_revision: 'rev-1',
-          skills: [{ skill_id: 'skill-1', name: 'demo-skill', version: 2 }],
+          skills: [
+            { skill_id: 'skill-1', name: 'demo-skill', version: 2 },
+            { skill_id: 'skill-2', name: 'local-skill', version: 1 },
+          ],
         });
       }
       if (url.pathname === '/api/skills/skill-1') {
@@ -344,6 +356,7 @@ describe('OpenCode lifecycle adapter', () => {
     const marker = JSON.parse(readFileSync(join(skillsRoot, 'demo-skill', '.lore-skill-marker.json'), 'utf8'));
     expect(marker.project_id).toBe('project-1');
     expect(marker.skill_id).toBe('skill-1');
+    await untilTrue(() => existsSync(join(skillsRoot, '.lore-sync-status.json')));
     const status = JSON.parse(readFileSync(join(skillsRoot, '.lore-sync-status.json'), 'utf8'));
     expect(status.created).toEqual(['demo-skill']);
     expect(status.conflicts).toEqual(['local-skill']);
@@ -389,6 +402,11 @@ describe('OpenCode lifecycle adapter', () => {
     const signals: AbortSignal[] = [];
     const attempts = new Map<string, number>();
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const url = new URL(String(_url));
+      if (url.pathname !== '/api/lifecycle/event') {
+        // Background skills sync sees an empty catalog and writes nothing.
+        return jsonResponse({ project_id: 'project-1', catalog_revision: '', skills: [] });
+      }
       signals.push(init?.signal as AbortSignal);
       const body = JSON.parse(String(init?.body));
       const id = String(body.normalized.session_id);

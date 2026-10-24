@@ -125,15 +125,17 @@ export const claudecodeInstaller: ChannelInstaller = {
         commandOpts,
         { redact },
       );
-      if (!list.stdout.includes('lore@lore')) {
-        await runChecked(
-          run,
-          'Claude plugin installation',
-          ['claude', 'plugin', 'install', 'lore@lore'],
-          commandOpts,
-          { redact },
-        );
-      }
+      // The cache was just removed, so a plugin that is still listed must be
+      // re-fetched from the marketplace: `update` does that, `install` would
+      // refuse because the record still exists.
+      const listed = list.stdout.includes('lore@lore');
+      await runChecked(
+        run,
+        listed ? 'Claude plugin update' : 'Claude plugin installation',
+        ['claude', 'plugin', listed ? 'update' : 'install', 'lore@lore'],
+        commandOpts,
+        { redact },
+      );
 
       // The plugin ships its own MCP server (auth via LORE_API_TOKEN); drop
       // user-scope duplicates — including the removed lore-skills Skills MCP —

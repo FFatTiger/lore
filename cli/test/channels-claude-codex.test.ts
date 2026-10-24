@@ -113,6 +113,27 @@ test('claude install writes no skills switch when the server does not advertise 
   });
 });
 
+test('Claude install updates a listed plugin and installs an unlisted one', async () => {
+  for (const listed of [true, false]) {
+    const { home, loreHome } = await tempHome();
+    await fs.mkdir(path.join(loreHome, 'claudecode'), { recursive: true });
+    const calls: string[] = [];
+    const run: ExecFn = async (argv) => {
+      calls.push(argv.join(' '));
+      if (argv.join(' ') === 'claude plugin list') {
+        return { code: 0, stdout: listed ? 'lore@lore' : '', stderr: '' };
+      }
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    await withBin(home, 'claude', async () => {
+      const result = await claudecodeInstaller.install(ctx({ loreHome, homeDir: home, run }));
+      assert.equal(result.status, 'ok');
+      assert.ok(calls.includes(listed ? 'claude plugin update lore@lore' : 'claude plugin install lore@lore'), calls.join('\n'));
+      assert.ok(!calls.includes(listed ? 'claude plugin install lore@lore' : 'claude plugin update lore@lore'), calls.join('\n'));
+    });
+  }
+});
+
 test('Claude preserves host configuration written during installation', async () => {
   const { home, loreHome } = await tempHome();
   await fs.mkdir(path.join(loreHome, 'claudecode'), { recursive: true });

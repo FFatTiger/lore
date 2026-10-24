@@ -210,7 +210,10 @@ test('first sync uses the Claude Code installed plugin path and skips when absen
     const pluginsFile = path.join(home, '.claude', 'plugins', 'installed_plugins.json');
     await fs.mkdir(path.dirname(pluginsFile), { recursive: true });
     const installPath = path.join(home, '.claude', 'plugins', 'cache', 'lore', 'lore', '1.2.3');
-    await fs.writeFile(pluginsFile, JSON.stringify({ 'lore@lore': { installPath } }));
+    await fs.writeFile(
+      pluginsFile,
+      JSON.stringify({ version: 2, plugins: { 'lore@lore': [{ scope: 'user', installPath }] } }),
+    );
     lines.length = 0;
     await runFirstSkillsSync({
       results,

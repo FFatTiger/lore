@@ -30,11 +30,15 @@ type SyncOptions = {
 async function claudecodeSkillsRoot(homeDir: string): Promise<string | undefined> {
   try {
     const file = path.join(homeDir, '.claude', 'plugins', 'installed_plugins.json');
-    const data = JSON.parse(await fs.readFile(file, 'utf8')) as Record<string, unknown>;
-    const entry = data['lore@lore'];
-    const installPath = entry && typeof entry === 'object'
-      ? (entry as { installPath?: unknown }).installPath
-      : undefined;
+    // Claude Code writes { version: 2, plugins: { 'lore@lore': [{ scope, installPath, ... }] } }.
+    const data = JSON.parse(await fs.readFile(file, 'utf8')) as { plugins?: Record<string, unknown> };
+    const entries = data.plugins?.['lore@lore'];
+    if (!Array.isArray(entries)) return undefined;
+    const records = entries.filter(
+      (e): e is { scope?: unknown; installPath?: unknown } => Boolean(e) && typeof e === 'object',
+    );
+    const entry = records.find((e) => e.scope === 'user') ?? records[0];
+    const installPath = entry?.installPath;
     return typeof installPath === 'string' && installPath.trim()
       ? path.join(installPath.trim(), 'skills')
       : undefined;

@@ -102,10 +102,7 @@ export const claudecodeInstaller: ChannelInstaller = {
     try {
       const existingSettings = await readJsonFileStrict<unknown>(sf);
       if (existingSettings !== undefined) asSettings(existingSettings, sf);
-      const commandOpts = {
-        quiet: true,
-        env: { ...env, LORE_SKILLS_ENABLED: ctx.capabilities.skills ? '1' : '0' },
-      };
+      const commandOpts = { quiet: true, env };
       const redact = [ctx.apiToken ?? ''];
 
       await fs.rm(path.join(homeDir, '.claude', 'plugins', 'cache', 'lore'), {
@@ -138,8 +135,9 @@ export const claudecodeInstaller: ChannelInstaller = {
         );
       }
 
-      // The plugin ships its own MCP servers (auth via LORE_API_TOKEN; Skills tools stay
-      // hidden unless LORE_SKILLS_ENABLED=1); drop user-scope duplicates from older installers.
+      // The plugin ships its own MCP server (auth via LORE_API_TOKEN); drop
+      // user-scope duplicates — including the removed lore-skills Skills MCP —
+      // left by older installers.
       for (const name of ['lore', 'lore-skills']) {
         await run(['claude', 'mcp', 'remove', '--scope', 'user', name], commandOpts).catch(
           () => undefined,
@@ -154,7 +152,9 @@ export const claudecodeInstaller: ChannelInstaller = {
       settingsEnv.LORE_BASE_URL = ctx.baseUrl.replace(/\/$/, '');
       settingsEnv.LORE_HOME = ctx.loreHome;
       settingsEnv.LORE_CLIENT_TYPE = 'claudecode';
-      settingsEnv.LORE_SKILLS_ENABLED = ctx.capabilities.skills ? '1' : '0';
+      // Old installers persisted a skills switch here; hooks now read the
+      // server profile from ~/.lore/config.json, so scrub the stale value.
+      delete settingsEnv.LORE_SKILLS_ENABLED;
       if (ctx.apiToken) settingsEnv.LORE_API_TOKEN = ctx.apiToken;
       else if (ctx.tokenAction === 'clear') delete settingsEnv.LORE_API_TOKEN;
       await writeJsonAtomic(sf, settings);

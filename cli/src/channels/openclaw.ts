@@ -101,10 +101,7 @@ export const openclawInstaller: ChannelInstaller = {
     try {
       const existing = await readJsonFileStrict<unknown>(cfgPath);
       if (existing !== undefined) asConfig(existing, cfgPath);
-      const commandOpts = {
-        quiet: true,
-        env: { ...env, LORE_SKILLS_ENABLED: ctx.capabilities.skills ? '1' : '0' },
-      };
+      const commandOpts = { quiet: true, env };
       const redact = [ctx.apiToken ?? ''];
 
       await fs.rm(openclawExtPath(homeDir), { recursive: true, force: true }).catch(() => undefined);

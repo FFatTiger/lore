@@ -61,7 +61,6 @@ test('install defaults to plugin hooks and removes legacy Lore user hooks', () =
       PATH: `${fakeBin}:${process.env.PATH}`,
       LORE_BASE_URL: 'http://core.local',
       LORE_API_TOKEN: 'test-token',
-      LORE_SKILLS_ENABLED: '1',
     },
     stdio: 'pipe',
   });
@@ -87,9 +86,9 @@ test('install defaults to plugin hooks and removes legacy Lore user hooks', () =
   assert.equal(existsSync(path.join(installedRoot, 'hooks', 'vendor', 'skill-workcopy', 'index.mjs')), true);
   assert.equal(existsSync(staleVersionRoot), false);
   const codexConfig = readFileSync(path.join(codexHome, 'config.toml'), 'utf8');
-  assert.match(codexConfig, /\[mcp_servers\.lore-skills\]/);
-  assert.match(codexConfig, /local-skills-mcp\/src\/server\.mjs/);
-  assert.match(codexConfig, /LORE_SKILLS_ENABLED = "1"/);
+  assert.doesNotMatch(codexConfig, /lore-skills/);
+  assert.doesNotMatch(codexConfig, /local-skills-mcp/);
+  assert.doesNotMatch(codexConfig, /LORE_SKILLS_ENABLED/);
 
   const marketplaceRoot = path.join(codexHome, 'plugins', 'lore-local-marketplace', 'plugins', 'lore');
   const marketplaceHooks = readFileSync(path.join(marketplaceRoot, 'hooks', 'hooks.json'), 'utf8');

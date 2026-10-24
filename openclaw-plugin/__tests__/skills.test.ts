@@ -532,6 +532,7 @@ describe("skills lifecycle discovery hooks", () => {
 describe("build artifact packages vendor", () => {
   it("dist vendor workcopy is present and importable after build", async () => {
     const distVendor = path.join(process.cwd(), "dist", "vendor", "skill-workcopy", "index.mjs");
+    const distSync = path.join(process.cwd(), "dist", "vendor", "skill-workcopy", "skills-sync.mjs");
     const srcVendor = path.join(process.cwd(), "vendor", "skill-workcopy", "index.mjs");
     const distSkills = path.join(process.cwd(), "dist", "skills.js");
     expect(fs.existsSync(srcVendor)).toBe(true);
@@ -540,8 +541,9 @@ describe("build artifact packages vendor", () => {
     const distSkillsSrc = fs.readFileSync(distSkills, "utf-8");
     expect(distSkillsSrc).toContain("./vendor/skill-workcopy/index.mjs");
     const mod = await import(distVendor);
-    expect(typeof mod.runSkillsSync).toBe("function");
     expect(typeof mod.materializeSkillWorkCopy).toBe("function");
+    const sync = await import(distSync);
+    expect(typeof sync.runSkillsSync).toBe("function");
     const hooksSrc = fs.readFileSync(path.join(process.cwd(), "hooks.ts"), "utf-8");
     expect(hooksSrc).toContain("./vendor/skill-workcopy/skills-sync.mjs");
     expect(hooksSrc).toContain("runSkillsSync");

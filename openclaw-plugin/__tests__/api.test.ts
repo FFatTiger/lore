@@ -12,6 +12,7 @@ describe('pickPluginConfig', () => {
     originalHome = process.env.HOME;
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'lore-openclaw-home-'));
     process.env.HOME = tempHome;
+    delete process.env.LORE_HOME;
     delete process.env.LORE_BASE_URL;
     delete process.env.LORE_API_TOKEN;
     delete process.env.API_TOKEN;
@@ -21,6 +22,7 @@ describe('pickPluginConfig', () => {
     if (originalHome === undefined) delete process.env.HOME;
     else process.env.HOME = originalHome;
     fs.rmSync(tempHome, { recursive: true, force: true });
+    delete process.env.LORE_HOME;
     delete process.env.LORE_BASE_URL;
     delete process.env.LORE_API_TOKEN;
     delete process.env.API_TOKEN;

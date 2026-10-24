@@ -991,8 +991,17 @@ class LoreProviderThinAdapterTests(unittest.TestCase):
         ):
             self.assertIn(name, schemas)
         # Load/status tools are gone: the host reads the synced skills directory.
-        self.assertNotIn("lore_skill_get", schemas)
-        self.assertNotIn("lore_skill_status", schemas)
+        self.assertEqual(
+            sorted(name for name in schemas if name.startswith("lore_skill_")),
+            [
+                "lore_skill_create",
+                "lore_skill_delete",
+                "lore_skill_import",
+                "lore_skill_list",
+                "lore_skill_search",
+                "lore_skill_update",
+            ],
+        )
         # No separate artifact-create tool.
         self.assertNotIn("lore_skill_artifact_create", schemas)
         update = schemas["lore_skill_update"]

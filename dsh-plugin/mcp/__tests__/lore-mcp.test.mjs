@@ -105,7 +105,7 @@ test('bridge keeps Skill tools hidden unless the configured server advertises Sk
   const core = await withCore((request) => ({
     jsonrpc: '2.0',
     id: request.id,
-    result: { tools: [{ name: 'lore_search' }, { name: 'lore_skill_get' }, { name: 'lore_skill_list' }] },
+    result: { tools: [{ name: 'lore_search' }, { name: 'lore_skill_search' }, { name: 'lore_skill_list' }] },
   }));
   try {
     const list = await runBridge({ jsonrpc: '2.0', id: 'list-1', method: 'tools/list', params: {} }, {

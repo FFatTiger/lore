@@ -190,7 +190,7 @@ test('session.start posts a full lifecycle payload and scopes the boot section t
   }
 });
 
-test('skills-enabled servers register the provider, sync on agent/created, and never receive features.skills', async () => {
+test('skills-enabled servers register the provider, sync on agent/created, and never declare the skills lifecycle feature', async () => {
   const home = tempHome('lore-dsh-life-');
   const server = await withLoreServer(() => sessionStartResponse('BOOT'));
   useServer(server, home, { server_profile: { base_url: server.baseUrl, capabilities: { skills: true } } });

@@ -52,7 +52,7 @@ make_fixture_repo() {
   local dest="$1"
   mkdir -p "$dest/scripts" "$dest/web/server" "$dest/cli" "$dest/claudecode-plugin/.claude-plugin" \
     "$dest/codex-plugin/.codex-plugin" "$dest/openclaw-plugin" "$dest/pi-extension" \
-    "$dest/hermes-plugin/lore_memory" "$dest/opencode-plugin" "$dest/zcode-plugin/.zcode-plugin" "$dest/dsh-plugin/.dsh-plugin" "$dest/local-skills-mcp/src"
+    "$dest/hermes-plugin/lore_memory" "$dest/opencode-plugin" "$dest/zcode-plugin/.zcode-plugin" "$dest/dsh-plugin/.dsh-plugin"
   cp "$ROOT/scripts/release.sh" "$dest/scripts/release.sh"
   cp "$ROOT/web/package.json" "$ROOT/web/package-lock.json" "$dest/web/"
   cp "$ROOT/cli/package.json" "$ROOT/cli/package-lock.json" "$dest/cli/"
@@ -68,8 +68,6 @@ make_fixture_repo() {
   cp "$ROOT/zcode-plugin/.zcode-plugin/plugin.json" "$dest/zcode-plugin/.zcode-plugin/plugin.json"
   cp "$ROOT/zcode-plugin/marketplace.json" "$dest/zcode-plugin/marketplace.json"
   cp "$ROOT/dsh-plugin/.dsh-plugin/plugin.json" "$dest/dsh-plugin/.dsh-plugin/plugin.json"
-  cp "$ROOT/local-skills-mcp/package.json" "$dest/local-skills-mcp/package.json"
-  cp "$ROOT/local-skills-mcp/src/server.mjs" "$dest/local-skills-mcp/src/server.mjs"
 }
 
 make_fake_git() {
@@ -104,7 +102,6 @@ assert_file_version "$PREP_REPO/opencode-plugin/package.json" '9.8.7-pre.1'
 assert_file_version "$PREP_REPO/zcode-plugin/.zcode-plugin/plugin.json" '9.8.7-pre.1'
 assert_file_version "$PREP_REPO/zcode-plugin/marketplace.json" '9.8.7-pre.1'
 assert_file_version "$PREP_REPO/dsh-plugin/.dsh-plugin/plugin.json" '9.8.7-pre.1'
-assert_file_version "$PREP_REPO/local-skills-mcp/package.json" '9.8.7-pre.1'
 assert_opencode_lock_version "$PREP_REPO/opencode-plugin/package-lock.json" '9.8.7-pre.1'
 if grep -Eq '^(commit|tag|push)( |$)' "$PREP_LOG"; then
   fail "prepare-only invoked commit/tag/push"
@@ -127,7 +124,6 @@ assert_file_version "$NORMAL_REPO/opencode-plugin/package.json" '9.8.7-pre.1'
 assert_file_version "$NORMAL_REPO/zcode-plugin/.zcode-plugin/plugin.json" '9.8.7-pre.1'
 assert_file_version "$NORMAL_REPO/zcode-plugin/marketplace.json" '9.8.7-pre.1'
 assert_file_version "$NORMAL_REPO/dsh-plugin/.dsh-plugin/plugin.json" '9.8.7-pre.1'
-assert_file_version "$NORMAL_REPO/local-skills-mcp/package.json" '9.8.7-pre.1'
 assert_opencode_lock_version "$NORMAL_REPO/opencode-plugin/package-lock.json" '9.8.7-pre.1'
 grep -Fq 'commit -m release: v9.8.7-pre.1' "$NORMAL_LOG" || fail "normal release did not commit"
 grep -Fq 'tag v9.8.7-pre.1' "$NORMAL_LOG" || fail "normal release did not tag"

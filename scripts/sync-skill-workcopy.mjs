@@ -30,14 +30,6 @@ const VENDOR_TARGETS = [
   'codex-plugin/hooks/vendor/skill-workcopy',
 ];
 
-const EXTRA_VENDOR_TARGETS = [{
-  dir: 'local-skills-mcp/vendor',
-  files: {
-    'skill-workcopy.mjs': 'index.mjs',
-    'skill-workcopy.d.mts': 'index.d.mts',
-  },
-}];
-
 // Per-plugin vendor copies of the shared channel sources. zcode keeps its
 // legacy mcp/skill-materializer.mjs; dsh uses the newer skill-workcopy core
 // under ~/.lore/skills like the other channels.
@@ -109,25 +101,6 @@ function main() {
     }
   }
 
-  for (const target of EXTRA_VENDOR_TARGETS) {
-    const destDir = path.join(REPO_ROOT, target.dir);
-    if (!checkOnly) fs.mkdirSync(destDir, { recursive: true });
-    for (const [destName, sourceName] of Object.entries(target.files)) {
-      const dest = path.join(destDir, destName);
-      const expected = sources[sourceName];
-      if (checkOnly) {
-        if (!fs.existsSync(dest) || !fs.readFileSync(dest).equals(expected)) {
-          console.error(`DRIFT content: ${path.join(target.dir, destName)}`);
-          drift += 1;
-        }
-      } else {
-        fs.writeFileSync(dest, expected);
-        written += 1;
-        console.log(`wrote ${path.join(target.dir, destName)}`);
-      }
-    }
-  }
-
   for (const target of CHANNEL_VENDOR_TARGETS) {
     const destDir = path.join(REPO_ROOT, target.dir);
     if (!checkOnly) fs.mkdirSync(destDir, { recursive: true });
@@ -153,11 +126,11 @@ function main() {
       console.error(`shared vendor check failed: ${drift} drift(s)`);
       process.exit(1);
     }
-    console.log(`shared vendor check ok (${VENDOR_TARGETS.length + EXTRA_VENDOR_TARGETS.length + CHANNEL_VENDOR_TARGETS.length} targets)`);
+    console.log(`shared vendor check ok (${VENDOR_TARGETS.length + CHANNEL_VENDOR_TARGETS.length} targets)`);
     return;
   }
 
-  console.log(`shared vendors synced: ${written} file(s) → ${VENDOR_TARGETS.length + EXTRA_VENDOR_TARGETS.length + CHANNEL_VENDOR_TARGETS.length} vendor targets`);
+  console.log(`shared vendors synced: ${written} file(s) → ${VENDOR_TARGETS.length + CHANNEL_VENDOR_TARGETS.length} vendor targets`);
 }
 
 try {

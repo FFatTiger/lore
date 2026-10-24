@@ -20,7 +20,7 @@ const isolatedHome = mkdtempSync(path.join(tmpdir(), 'lore-codex-hook-home-'));
 // Default isolated plugin root: detached skills-sync children spawned by the
 // hook must never write into the repository checkout.
 const defaultPluginRoot = mkdtempSync(path.join(tmpdir(), 'lore-codex-plugin-home-'));
-const skillsSyncScript = path.join(hooksDir, 'skills-sync.mjs');
+const skillsSyncScript = path.join(hooksDir, 'vendor', 'skill-workcopy', 'skills-sync.mjs');
 
 /** Server-side skill packages used by the native-sync tests. */
 function syncedSkillFixtures() {
@@ -63,6 +63,7 @@ function runHook(scriptPath, input, env = {}) {
       env: {
         ...process.env,
         HOME: isolatedHome,
+        LORE_HOME: isolatedHome,
         LORE_API_TOKEN: '',
         API_TOKEN: '',
         LORE_CODEX_PLUGIN_ROOT: defaultPluginRoot,
@@ -151,13 +152,14 @@ async function waitForStatusFile(pluginRoot, timeoutMs = 30000) {
   throw new Error(`skills sync status file not written: ${statusPath}`);
 }
 
-/** Run the standalone sync script directly and resolve its exit code. */
-function runSyncScript(env) {
+/** Run the standalone shared sync script directly and resolve its exit code. */
+function runSyncScript(pluginRoot, env) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [skillsSyncScript], {
+    const child = spawn(process.execPath, [skillsSyncScript, '--client-type', 'codex', '--root', path.join(pluginRoot, 'skills')], {
       env: {
         ...process.env,
         HOME: isolatedHome,
+        LORE_HOME: isolatedHome,
         LORE_API_TOKEN: '',
         API_TOKEN: '',
         ...env,
@@ -305,8 +307,8 @@ test('legacy install-hooks.sh SessionStart matcher matches bundled startup|resum
     // runtime.plugin_version from at runtime.
     const installedManifest = JSON.parse(readFileSync(path.join(codexHome, 'hooks/lore/plugin.json'), 'utf8'));
     assert.equal(installedManifest.version, pluginVersion);
-    // The copied-out hook must keep its vendor skill-workcopy core and sync into
-    // the real plugin root, not the copy location.
+    // The copied-out hook must keep its vendor skill-workcopy core (including
+    // the shared sync script) and sync into the real plugin root, not the copy location.
     assert.equal(existsSync(path.join(codexHome, 'hooks', 'lore', 'hooks', 'vendor', 'skill-workcopy', 'index.mjs')), true);
     const pluginRoot = path.resolve(scriptsDir, '..');
     const command = hooks.hooks.SessionStart[0].hooks[0].command;
@@ -328,15 +330,16 @@ test('legacy install-hooks.sh SessionStart matcher matches bundled startup|resum
       new RegExp(`LORE_CODEX_PLUGIN_ROOT=${JSON.stringify(pinnedRoot)}`),
     );
 
-    // The copied-out sync script must run standalone (vendor copied with it)
-    // and record its outcome under the pinned plugin root.
-    const copiedSync = path.join(codexHome, 'hooks', 'lore', 'hooks', 'skills-sync.mjs');
+    // The copied-out vendor sync script must run standalone and record its
+    // outcome under the pinned plugin root.
+    const copiedSync = path.join(codexHome, 'hooks', 'lore', 'hooks', 'vendor', 'skill-workcopy', 'skills-sync.mjs');
     assert.equal(existsSync(copiedSync), true);
     const syncRoot = path.join(root, 'pinned-plugin');
-    execFileSync(process.execPath, [copiedSync], {
+    execFileSync(process.execPath, [copiedSync, '--client-type', 'codex', '--root', path.join(syncRoot, 'skills')], {
       env: {
         ...process.env,
         HOME: root,
+        LORE_HOME: root,
         LORE_CODEX_PLUGIN_ROOT: syncRoot,
         LORE_BASE_URL: 'http://127.0.0.1:9',
         LORE_API_TOKEN: '',
@@ -447,7 +450,7 @@ test('SessionStart spawns a detached skills sync, adapts it, and exits without w
 
     assert.equal(server.skillRequests.length, 3);
     assert.equal(server.skillRequests[0].query.client_type, 'codex');
-    assert.equal(server.skillRequests[0].query.include_user_only, 'true');
+    assert.equal(server.skillRequests[0].query.include_user_only, undefined);
 
     const adaptedDir = path.join(pluginRoot, 'skills', 'synced-skill');
     assert.equal(readFileSync(path.join(adaptedDir, 'SKILL.md'), 'utf-8'), '# Synced Skill\n\nDo it natively.\n');
@@ -469,7 +472,6 @@ test('SessionStart spawns a detached skills sync, adapts it, and exits without w
 
     assert.equal(readFileSync(path.join(bundled, 'SKILL.md'), 'utf-8'), '# Bundled Lore memory skill\n');
     assert.equal(existsSync(path.join(bundled, '.lore-skill-marker.json')), false);
-    assert.equal(existsSync(path.join(pluginRoot, 'skills', '.lore-sync.lock')), false);
   } finally {
     rmSync(pluginRoot, { recursive: true, force: true });
     await server.close();
@@ -489,10 +491,7 @@ test('skills-sync.mjs syncs, adapts, and records status on its own', async () =>
   });
   const pluginRoot = mkdtempSync(path.join(tmpdir(), 'lore-codex-plugin-root-'));
   try {
-    const code = await runSyncScript({
-      LORE_BASE_URL: server.baseUrl,
-      LORE_CODEX_PLUGIN_ROOT: pluginRoot,
-    });
+    const code = await runSyncScript(pluginRoot, { LORE_BASE_URL: server.baseUrl });
     assert.equal(code, 0);
     const status = JSON.parse(readFileSync(path.join(pluginRoot, 'skills', '.lore-sync-status.json'), 'utf-8'));
     assert.deepEqual(status.created.sort(), ['synced-skill', 'yaml-skill']);
@@ -510,10 +509,7 @@ test('skills-sync.mjs syncs, adapts, and records status on its own', async () =>
 test('skills-sync.mjs records server failures and still exits 0', async () => {
   const pluginRoot = mkdtempSync(path.join(tmpdir(), 'lore-codex-plugin-root-'));
   try {
-    const code = await runSyncScript({
-      LORE_BASE_URL: 'http://127.0.0.1:9', // nothing listens here
-      LORE_CODEX_PLUGIN_ROOT: pluginRoot,
-    });
+    const code = await runSyncScript(pluginRoot, { LORE_BASE_URL: 'http://127.0.0.1:9' }); // nothing listens here
     assert.equal(code, 0);
     const status = JSON.parse(readFileSync(path.join(pluginRoot, 'skills', '.lore-sync-status.json'), 'utf-8'));
     assert.equal(status.created.length, 0);

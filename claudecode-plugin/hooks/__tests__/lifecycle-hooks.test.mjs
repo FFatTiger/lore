@@ -18,7 +18,7 @@ const isolatedHome = mkdtempSync(path.join(tmpdir(), 'lore-claude-hook-home-'));
 // Default isolated plugin root: detached skills-sync children spawned by the
 // hook must never write into the repository checkout.
 const defaultPluginRoot = mkdtempSync(path.join(tmpdir(), 'lore-claude-plugin-home-'));
-const skillsSyncScript = path.join(hooksDir, 'skills-sync.mjs');
+const skillsSyncScript = path.join(hooksDir, 'vendor', 'skill-workcopy', 'skills-sync.mjs');
 
 /** Server-side skill package used by the native-sync tests. */
 function syncedSkillFixture() {
@@ -45,6 +45,7 @@ function runHook(scriptPath, input, env = {}) {
       env: {
         ...process.env,
         HOME: isolatedHome,
+        LORE_HOME: isolatedHome,
         LORE_API_TOKEN: '',
         API_TOKEN: '',
         CLAUDE_PLUGIN_ROOT: defaultPluginRoot,
@@ -133,13 +134,14 @@ async function waitForStatusFile(pluginRoot, timeoutMs = 30000) {
   throw new Error(`skills sync status file not written: ${statusPath}`);
 }
 
-/** Run the standalone sync script directly and resolve its exit code. */
-function runSyncScript(env) {
+/** Run the standalone shared sync script directly and resolve its exit code. */
+function runSyncScript(pluginRoot, env) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [skillsSyncScript], {
+    const child = spawn(process.execPath, [skillsSyncScript, '--client-type', 'claudecode', '--root', path.join(pluginRoot, 'skills')], {
       env: {
         ...process.env,
         HOME: isolatedHome,
+        LORE_HOME: isolatedHome,
         LORE_API_TOKEN: '',
         API_TOKEN: '',
         ...env,
@@ -403,8 +405,7 @@ test('SessionStart spawns a detached skills sync and exits without waiting for i
     assert.equal(marker.project_id, 'proj-1');
     assert.equal(server.requests[0].features, undefined);
     assert.equal(server.skillRequests[0].query.client_type, 'claudecode');
-    assert.equal(server.skillRequests[0].query.include_user_only, 'true');
-    assert.equal(existsSync(path.join(pluginRoot, 'skills', '.lore-sync.lock')), false);
+    assert.equal(server.skillRequests[0].query.include_user_only, undefined);
   } finally {
     rmSync(pluginRoot, { recursive: true, force: true });
     await server.close();
@@ -419,10 +420,7 @@ test('skills-sync.mjs syncs and records status on its own', async () => {
   });
   const pluginRoot = mkdtempSync(path.join(tmpdir(), 'lore-claude-plugin-root-'));
   try {
-    const code = await runSyncScript({
-      LORE_BASE_URL: server.baseUrl,
-      CLAUDE_PLUGIN_ROOT: pluginRoot,
-    });
+    const code = await runSyncScript(pluginRoot, { LORE_BASE_URL: server.baseUrl });
     assert.equal(code, 0);
     const status = JSON.parse(readFileSync(path.join(pluginRoot, 'skills', '.lore-sync-status.json'), 'utf-8'));
     assert.deepEqual(status.created, ['synced-skill']);
@@ -437,10 +435,7 @@ test('skills-sync.mjs syncs and records status on its own', async () => {
 test('skills-sync.mjs records server failures and still exits 0', async () => {
   const pluginRoot = mkdtempSync(path.join(tmpdir(), 'lore-claude-plugin-root-'));
   try {
-    const code = await runSyncScript({
-      LORE_BASE_URL: 'http://127.0.0.1:9', // nothing listens here
-      CLAUDE_PLUGIN_ROOT: pluginRoot,
-    });
+    const code = await runSyncScript(pluginRoot, { LORE_BASE_URL: 'http://127.0.0.1:9' }); // nothing listens here
     assert.equal(code, 0);
     const status = JSON.parse(readFileSync(path.join(pluginRoot, 'skills', '.lore-sync-status.json'), 'utf-8'));
     assert.equal(status.created.length, 0);

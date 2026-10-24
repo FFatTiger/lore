@@ -156,14 +156,19 @@ function writeHostOutput(response: any) {
 /**
  * Skills sync runs in a detached background process: Claude Code only sees new
  * skills in the next session, so the hook must never spend its 10s budget
- * waiting for it. The script records its outcome in
+ * waiting for it. The shared script records its outcome in
  * <CLAUDE_PLUGIN_ROOT>/skills/.lore-sync-status.json.
  */
 function spawnSkillsSync(): void {
   try {
-    if (!pickString(process.env.CLAUDE_PLUGIN_ROOT)) return;
+    const pluginRoot = pickString(process.env.CLAUDE_PLUGIN_ROOT);
+    if (!pluginRoot) return;
     const hookDir = path.dirname(fileURLToPath(import.meta.url));
-    const child = spawn(process.execPath, [path.join(hookDir, "skills-sync.mjs")], {
+    const child = spawn(process.execPath, [
+      path.join(hookDir, "vendor", "skill-workcopy", "skills-sync.mjs"),
+      "--client-type", "claudecode",
+      "--root", path.join(pluginRoot, "skills"),
+    ], {
       detached: true,
       stdio: "ignore",
       env: process.env,

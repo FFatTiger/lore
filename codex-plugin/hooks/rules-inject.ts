@@ -161,14 +161,21 @@ function writeHostOutput(response: any) {
 /**
  * Skills sync runs in a detached background process: Codex only sees new skills
  * in the next session, so the hook must never spend its 10s budget waiting for
- * it. The script resolves the real plugin root (LORE_CODEX_PLUGIN_ROOT pinned
- * by the installer, else its own location) and records its outcome in
- * <pluginRoot>/skills/.lore-sync-status.json.
+ * it. The shared script records its outcome in
+ * <pluginRoot>/skills/.lore-sync-status.json; the plugin root is pinned by the
+ * installer (LORE_CODEX_PLUGIN_ROOT) and falls back to this hook's own location,
+ * which is the plugin root in the repo/marketplace layout.
  */
 function spawnSkillsSync(): void {
   try {
+    const pluginRoot = pickString(process.env.LORE_CODEX_PLUGIN_ROOT)
+      || path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
     const hookDir = path.dirname(fileURLToPath(import.meta.url));
-    const child = spawn(process.execPath, [path.join(hookDir, "skills-sync.mjs")], {
+    const child = spawn(process.execPath, [
+      path.join(hookDir, "vendor", "skill-workcopy", "skills-sync.mjs"),
+      "--client-type", "codex",
+      "--root", path.join(pluginRoot, "skills"),
+    ], {
       detached: true,
       stdio: "ignore",
       env: process.env,

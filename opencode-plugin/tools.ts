@@ -5,15 +5,11 @@ import type { LorePluginConfig } from './config.js';
 import { formatBootView, formatNode, formatSearchResults, normalizeKeywordList } from './formatters.js';
 import { resolveMemoryLocator, splitParentPathAndTitle } from './uri.js';
 import {
-  ensureSkillWorkCopy,
-  listAllLocalWorkCopyStatuses,
-  listLocalWorkCopyStatuses,
   normalizeSkillCandidate,
   normalizeSkillDetail,
   normalizeSkillSummary,
   skillIdOf,
   skillVersionOf,
-  type SkillDetail,
   type SkillSummary,
 } from './vendor/skill-workcopy/index.mjs';
 
@@ -33,12 +29,10 @@ const MEMORY_TOOL_NAMES = [
 const SKILL_TOOL_NAMES = [
   'lore_skill_list',
   'lore_skill_search',
-  'lore_skill_get',
   'lore_skill_create',
   'lore_skill_update',
   'lore_skill_delete',
   'lore_skill_import',
-  'lore_skill_status',
 ] as const;
 
 export const OPEN_CODE_TOOL_NAMES = [
@@ -92,11 +86,6 @@ async function request<T>(
 function writeBody<T extends Record<string, unknown>>(context: ToolContext, body: T): T & { session_id: string } {
   return { ...body, session_id: context.sessionID };
 }
-
-type SkillToolState = {
-  projectId?: string;
-  catalogRevision?: string;
-};
 
 function skillFileSchema() {
   return tool.schema.object({
@@ -165,8 +154,6 @@ export function createLoreTools(
   config: LorePluginConfig,
   opts: { skillsEnabled?: boolean } = {},
 ): NonNullable<Hooks['tool']> {
-  const skillState: SkillToolState = {};
-
   const tools: NonNullable<Hooks['tool']> = {
     lore_guidance: tool({
       description: contract('lore_guidance').description,
@@ -434,8 +421,6 @@ export function createLoreTools(
       async execute(args, context) {
         const includeDisabled = args.include_disabled !== false;
         const data = await listSkillsApi(config, context, includeDisabled);
-        if (data.project_id) skillState.projectId = data.project_id;
-        if (data.catalog_revision) skillState.catalogRevision = data.catalog_revision;
         const lines = (data.skills || []).map((s) => {
           const enabled = s.enabled === false ? 'disabled' : 'enabled';
           return `- ${s.name} (${skillIdOf(s)}) ${enabled} v${skillVersionOf(s) ?? '?'}`;
@@ -468,46 +453,6 @@ export function createLoreTools(
       },
     }),
 
-    lore_skill_get: tool({
-      description: contract('lore_skill_get').description,
-      args: {
-        skill_id: tool.schema.string().describe(parameterDescription('lore_skill_get', 'skill_id')),
-      },
-      async execute(args, context) {
-        const skillId = args.skill_id.trim();
-        if (!skillId) throw new Error('skill_id is required');
-        const ensureResult = await ensureSkillWorkCopy({
-          loreHome: config.loreHome,
-          skillId,
-          projectId: skillState.projectId,
-          loadSkill: async (id) => {
-            const detail = await request<unknown>(config, context, `/skills/${encodeURIComponent(id)}`);
-            return normalizeSkillDetail(detail) as SkillDetail;
-          },
-          loadCatalog: async () => listSkillsApi(config, context, true),
-        });
-        if (ensureResult.project_id) skillState.projectId = ensureResult.project_id;
-        const text = [
-          `Skill ready: ${ensureResult.skill.name || skillId}`,
-          `skill_dir: ${ensureResult.skill_dir}`,
-          'Files from Lore in skill_dir are read-only and refreshed by lore_skill_get. Any other file there is a local artifact: never checked or uploaded. Save deliverables for the user where they asked or in the working directory, not in skill_dir.',
-          `server_version: ${ensureResult.server_version ?? '?'}`,
-          `local_version: ${ensureResult.local_version}`,
-          `downloaded: ${ensureResult.downloaded}`,
-          '',
-          ensureResult.skill_md,
-        ].join('\n');
-        return result(context, 'Lore skill get', text, {
-          skill_dir: ensureResult.skill_dir,
-          skill_md_path: ensureResult.skill_md_path,
-          server_version: ensureResult.server_version,
-          local_version: ensureResult.local_version,
-          downloaded: ensureResult.downloaded,
-          project_id: ensureResult.project_id,
-        });
-      },
-    }),
-
     lore_skill_create: tool({
       description: contract('lore_skill_create').description,
       args: {
@@ -527,7 +472,6 @@ export function createLoreTools(
           method: 'POST',
           body,
         }));
-        if (data.project_id) skillState.projectId = String(data.project_id);
         const createdId = skillIdOf(data) || '?';
         const createdVersion = skillVersionOf(data);
         const createdSuffix = createdVersion !== undefined && createdVersion !== null && createdVersion !== ''
@@ -591,8 +535,6 @@ export function createLoreTools(
         const data = await request<Record<string, unknown>>(config, context, `/skills/${encodeURIComponent(skillId)}`, {
           method: 'DELETE',
         });
-        if (data?.project_id) skillState.projectId = String(data.project_id);
-        if (data?.catalog_revision !== undefined) skillState.catalogRevision = String(data.catalog_revision);
         return result(context, 'Lore skill delete', `Deleted skill ${skillId}`, { result: data });
       },
     }),
@@ -627,39 +569,6 @@ export function createLoreTools(
           `${formatSkillImportText(data)}\n\n${JSON.stringify(data, null, 2)}`,
           { result: data },
         );
-      },
-    }),
-
-    lore_skill_status: tool({
-      description: contract('lore_skill_status').description,
-      args: {},
-      async execute(_args, context) {
-        if (!skillState.projectId) {
-          try {
-            const catalog = await listSkillsApi(config, context, true);
-            if (catalog.project_id) {
-              skillState.projectId = catalog.project_id;
-              skillState.catalogRevision = catalog.catalog_revision;
-            }
-          } catch {
-            // keep local-only status
-          }
-        }
-        const work_copies = skillState.projectId
-          ? listLocalWorkCopyStatuses(config.loreHome, skillState.projectId)
-          : listAllLocalWorkCopyStatuses(config.loreHome);
-        const lines = work_copies.map((m) => {
-          const ver = m.version !== undefined ? ` v${m.version}` : '';
-          const msg = m.message ? ` — ${m.message}` : '';
-          return `- ${m.name}: ${m.state}${ver}${msg}`;
-        });
-        const header = `project=${skillState.projectId || '?'} catalog_revision=${skillState.catalogRevision || '?'}`;
-        const text = [header, ...(lines.length ? lines : ['(no local work copies)'])].join('\n');
-        return result(context, 'Lore skill status', text, {
-          project_id: skillState.projectId,
-          catalog_revision: skillState.catalogRevision,
-          work_copies,
-        });
       },
     }),
 

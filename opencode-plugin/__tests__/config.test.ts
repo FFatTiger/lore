@@ -44,6 +44,7 @@ describe('OpenCode plugin configuration', () => {
       defaultDomain: 'core',
       skillsEnabled: false,
       loreHome: join(home, '.lore'),
+      opencodeSkillsRoot: join(home, '.config', 'opencode', 'skills'),
     });
   });
 
@@ -85,6 +86,18 @@ describe('OpenCode plugin configuration', () => {
     expect(loadLorePluginConfig({ LORE_HOME: '  ' }, home).loreHome).toBe(join(home, '.lore'));
   });
 
+  it('resolves the OpenCode skills root from XDG_CONFIG_HOME else <home>/.config', () => {
+    const home = temporaryHome();
+    const xdg = join(home, 'xdg-config');
+
+    expect(loadLorePluginConfig({}, home).opencodeSkillsRoot)
+      .toBe(join(home, '.config', 'opencode', 'skills'));
+    expect(loadLorePluginConfig({ XDG_CONFIG_HOME: xdg }, home).opencodeSkillsRoot)
+      .toBe(join(xdg, 'opencode', 'skills'));
+    expect(loadLorePluginConfig({ XDG_CONFIG_HOME: '  ' }, home).opencodeSkillsRoot)
+      .toBe(join(home, '.config', 'opencode', 'skills'));
+  });
+
   it('falls through blank or invalid shared values to Lore environment values', () => {
     const home = temporaryHome();
     writeSharedConfig(home, { base_url: '   ', api_token: '\n' });
@@ -118,6 +131,7 @@ describe('OpenCode Lore API URL construction', () => {
     defaultDomain: 'core',
     skillsEnabled: true,
     loreHome: '/tmp/lore-home',
+    opencodeSkillsRoot: '/tmp/lore-opencode-skills',
   };
 
   it('normalizes browse routes under /api and adds OpenCode identity', () => {

@@ -218,19 +218,8 @@
     ]
   },
   {
-    "name": "lore_skill_get",
-    "description": "Load a Lore skill (cloud-stored, not part of the host's own skill system) by skill_id, including its package files. Use it when a task matches a Lore skill or another skill's instructions name one.",
-    "parameters": [
-      {
-        "name": "skill_id",
-        "description": "Skill id.",
-        "required": true
-      }
-    ]
-  },
-  {
     "name": "lore_skill_create",
-    "description": "Create a Lore skill on the server. Does not auto-materialize a local copy; call lore_skill_get later if needed.",
+    "description": "Create a Lore skill on the server. Changes sync to the local skills directory when the next session starts.",
     "parameters": [
       {
         "name": "name",
@@ -251,7 +240,7 @@
   },
   {
     "name": "lore_skill_update",
-    "description": "Update a Lore skill on the server with optimistic concurrency via expected_version. Does not auto-reconcile the local copy; call lore_skill_get later if the version differs.",
+    "description": "Update a Lore skill on the server with optimistic concurrency via expected_version. Changes sync to the local skills directory when the next session starts.",
     "parameters": [
       {
         "name": "skill_id",
@@ -282,7 +271,7 @@
   },
   {
     "name": "lore_skill_delete",
-    "description": "Archive/delete a Lore skill on the server. Does not auto-remove the local copy.",
+    "description": "Archive/delete a Lore skill on the server. Changes sync to the local skills directory when the next session starts.",
     "parameters": [
       {
         "name": "skill_id",
@@ -316,10 +305,5 @@
         "required": false
       }
     ]
-  },
-  {
-    "name": "lore_skill_status",
-    "description": "Report local skill work-copy states (ready/missing/outdated/tampered/unmanaged/invalid). Read-only: never mutates or reconciles copies.",
-    "parameters": []
   }
 ]

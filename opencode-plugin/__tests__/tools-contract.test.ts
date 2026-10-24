@@ -32,6 +32,7 @@ describe('native OpenCode tool contract parity', () => {
       defaultDomain: 'core',
       skillsEnabled: true,
       loreHome: '/tmp/lore-home',
+      opencodeSkillsRoot: '/tmp/lore-opencode-skills',
     });
 
     expect(Object.keys(tools)).toEqual(contracts.map((contract) => contract.name));
@@ -82,11 +83,28 @@ describe('native OpenCode tool contract parity', () => {
     expect(names).toContain('new_text');
   });
 
-  it('lore_skill_get contract uses the shared cloud-skill description', () => {
-    const skillGet = contracts.find((contract) => contract.name === 'lore_skill_get');
-    expect(skillGet!.description).toBe(
-      'Load a Lore skill (cloud-stored, not part of the host\'s own skill system) by skill_id, including its package files. '
-      + 'Use it when a task matches a Lore skill or another skill\'s instructions name one.',
-    );
+  it('skill write contracts point at the next-session local sync', () => {
+    expect(contracts.map((contract) => contract.name)).toEqual([
+      'lore_guidance',
+      'lore_status',
+      'lore_boot',
+      'lore_get_node',
+      'lore_search',
+      'lore_list_domains',
+      'lore_create_node',
+      'lore_update_node',
+      'lore_delete_node',
+      'lore_move_node',
+      'lore_skill_list',
+      'lore_skill_search',
+      'lore_skill_create',
+      'lore_skill_update',
+      'lore_skill_delete',
+      'lore_skill_import',
+    ]);
+    for (const name of ['lore_skill_create', 'lore_skill_update', 'lore_skill_delete']) {
+      expect(contracts.find((contract) => contract.name === name)!.description)
+        .toContain('Changes sync to the local skills directory when the next session starts.');
+    }
   });
 });

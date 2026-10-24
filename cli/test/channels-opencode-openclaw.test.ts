@@ -99,6 +99,76 @@ test('opencode uninstall removes only managed plugin', async () => {
   await assert.rejects(fs.access(target));
 });
 
+function workcopyMarker(name: string, skillId: string): string {
+  return JSON.stringify({
+    schema: 'lore.skill.workcopy.v1',
+    project_id: 'proj-1',
+    skill_id: skillId,
+    name,
+    version: 1,
+    managed_files: ['SKILL.md'],
+    synced_at: '2026-01-01T00:00:00.000Z',
+    manifest_hash: 'irrelevant-for-removal',
+  });
+}
+
+test('opencode uninstall removes only Lore-managed skill packages', async () => {
+  const { home, loreHome } = await tempHome();
+  const skillsRoot = path.join(home, '.config', 'opencode', 'skills');
+  // Managed skill with a local artifact: managed files and marker go, artifact stays.
+  const managed = path.join(skillsRoot, 'demo-skill');
+  await fs.mkdir(managed, { recursive: true });
+  await fs.writeFile(path.join(managed, 'SKILL.md'), '# demo\n');
+  await fs.writeFile(path.join(managed, '.lore-skill-marker.json'), workcopyMarker('demo-skill', 'skill-1'));
+  await fs.writeFile(path.join(managed, 'local-artifact.txt'), 'keep me');
+  // Managed skill with only managed files: the directory disappears entirely.
+  const bare = path.join(skillsRoot, 'bare-skill');
+  await fs.mkdir(bare, { recursive: true });
+  await fs.writeFile(path.join(bare, 'SKILL.md'), '# bare\n');
+  await fs.writeFile(path.join(bare, '.lore-skill-marker.json'), workcopyMarker('bare-skill', 'skill-2'));
+  // Unmarked directory: never touched.
+  const unmanaged = path.join(skillsRoot, 'user-skill');
+  await fs.mkdir(unmanaged, { recursive: true });
+  await fs.writeFile(path.join(unmanaged, 'SKILL.md'), '# user\n');
+
+  const result = await opencodeInstaller.uninstall({
+    loreHome,
+    homeDir: home,
+    run: async () => ({ code: 0, stdout: '', stderr: '' }),
+  });
+  assert.equal(result.status, 'ok');
+  await assert.rejects(fs.access(path.join(managed, 'SKILL.md')));
+  await assert.rejects(fs.access(path.join(managed, '.lore-skill-marker.json')));
+  assert.equal(await fs.readFile(path.join(managed, 'local-artifact.txt'), 'utf8'), 'keep me');
+  await assert.rejects(fs.access(bare));
+  assert.equal(await fs.readFile(path.join(unmanaged, 'SKILL.md'), 'utf8'), '# user\n');
+});
+
+test('opencode uninstall cleans skills under XDG_CONFIG_HOME', async () => {
+  const { home, loreHome } = await tempHome();
+  const xdg = path.join(home, 'xdg');
+  const skillsRoot = path.join(xdg, 'opencode', 'skills');
+  const managed = path.join(skillsRoot, 'demo-skill');
+  await fs.mkdir(managed, { recursive: true });
+  await fs.writeFile(path.join(managed, 'SKILL.md'), '# demo\n');
+  await fs.writeFile(path.join(managed, '.lore-skill-marker.json'), workcopyMarker('demo-skill', 'skill-1'));
+
+  const original = process.env.XDG_CONFIG_HOME;
+  process.env.XDG_CONFIG_HOME = xdg;
+  try {
+    const result = await opencodeInstaller.uninstall({
+      loreHome,
+      homeDir: home,
+      run: async () => ({ code: 0, stdout: '', stderr: '' }),
+    });
+    assert.equal(result.status, 'ok');
+    await assert.rejects(fs.access(managed));
+  } finally {
+    if (original === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = original;
+  }
+});
+
 test('openclaw install patches config and runs plugin install', async () => {
   const { home, loreHome } = await tempHome();
   const dest = path.join(loreHome, 'openclaw');

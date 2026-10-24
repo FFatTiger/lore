@@ -23,6 +23,8 @@ export interface LorePluginConfig {
   skillsEnabled: boolean;
   /** Writable skill work-copy root: LORE_HOME, else <home>/.lore. */
   loreHome: string;
+  /** Host-native skills root OpenCode scans: $XDG_CONFIG_HOME/opencode/skills, else ~/.config/opencode/skills. */
+  opencodeSkillsRoot: string;
 }
 
 function firstNonBlank(...values: unknown[]): string {
@@ -47,6 +49,12 @@ function resolveLoreHome(env: NodeJS.ProcessEnv, homeDir: string): string {
   const fromEnv = firstNonBlank(env.LORE_HOME);
   if (fromEnv) return resolve(fromEnv);
   return resolve(join(homeDir, '.lore'));
+}
+
+export function resolveOpenCodeSkillsRoot(env: NodeJS.ProcessEnv, homeDir: string): string {
+  const xdg = firstNonBlank(env.XDG_CONFIG_HOME);
+  if (xdg) return resolve(join(xdg, 'opencode', 'skills'));
+  return resolve(join(homeDir, '.config', 'opencode', 'skills'));
 }
 
 function resolveSkillsEnabled(
@@ -91,5 +99,6 @@ export function loadLorePluginConfig(
     defaultDomain: firstNonBlank(env.LORE_DEFAULT_DOMAIN, DEFAULT_DOMAIN),
     skillsEnabled: resolveSkillsEnabled(env, shared, baseUrl, loreHome),
     loreHome,
+    opencodeSkillsRoot: resolveOpenCodeSkillsRoot(env, homeDir),
   };
 }

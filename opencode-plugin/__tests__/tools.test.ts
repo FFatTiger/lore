@@ -1,7 +1,7 @@
 import type { ToolContext, ToolResult } from '@opencode-ai/plugin';
-import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, lstatSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createLoreTools, OPEN_CODE_TOOL_NAMES } from '../tools.js';
 
@@ -21,6 +21,7 @@ const config = {
   defaultDomain: 'core',
   skillsEnabled: true,
   loreHome: tempLoreHome(),
+  opencodeSkillsRoot: '/tmp/lore-opencode-skills',
 };
 
 function context(abort = new AbortController()): ToolContext {
@@ -84,12 +85,10 @@ describe('native OpenCode Lore tools', () => {
       'lore_move_node',
       'lore_skill_list',
       'lore_skill_search',
-      'lore_skill_get',
       'lore_skill_create',
       'lore_skill_update',
       'lore_skill_delete',
       'lore_skill_import',
-      'lore_skill_status',
     ]);
   });
 
@@ -211,128 +210,6 @@ describe('native OpenCode Lore tools', () => {
 
     controller.abort();
     for (const { init } of calls) expect(init.signal?.aborted).toBe(true);
-  });
-
-  it('lore_skill_get materializes a work copy via ensureSkillWorkCopy and returns SKILL.md + skill_dir', async () => {
-    const loreHome = tempLoreHome();
-    const skillConfig = { ...config, loreHome };
-    const skillMd = '# Demo Skill\n\nDo the thing.\n';
-    const contentSha = (await import('node:crypto')).createHash('sha256').update(skillMd, 'utf8').digest('hex');
-    const detail = {
-      project_id: 'project-1',
-      id: 'skill-1',
-      skill_id: 'skill-1',
-      name: 'demo-skill',
-      description: 'Demo',
-      enabled: true,
-      version: 1,
-      files: [{
-        path: 'SKILL.md',
-        content: skillMd,
-        sha256: contentSha,
-        size: Buffer.byteLength(skillMd, 'utf8'),
-      }],
-    };
-
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const url = new URL(String(input));
-      if (url.pathname === '/api/skills/skill-1') return jsonResponse(detail);
-      throw new Error(`unexpected request: ${url}`);
-    });
-
-    const tools = createLoreTools(skillConfig);
-    const result = await tools.lore_skill_get.execute({ skill_id: 'skill-1' }, context());
-    const output = resultOutput(result);
-
-    expect(output).toContain('Skill ready: demo-skill');
-    expect(output).toContain('skill_dir:');
-    expect(output).toContain(skillMd.trim());
-    expect(output).toContain('downloaded: true');
-
-    const skillDir = join(loreHome, 'skills', 'project-1', 'demo-skill');
-    expect(readFileSync(join(skillDir, 'SKILL.md'), 'utf8')).toBe(skillMd);
-
-    // Same-version local edits are detected as tampered and restored, never preserved.
-    const walk = (current: string) => {
-      const st = lstatSync(current);
-      if (st.isDirectory()) {
-        chmodSync(current, 0o755);
-        for (const entry of readdirSync(current)) walk(join(current, entry));
-      } else if (st.isFile()) chmodSync(current, 0o644);
-    };
-    walk(skillDir);
-    writeFileSync(join(skillDir, 'SKILL.md'), '# local edit\n', 'utf8');
-    const second = await tools.lore_skill_get.execute({ skill_id: 'skill-1' }, context());
-    expect(resultOutput(second)).toContain(skillMd.trim());
-    expect(resultOutput(second)).toContain('downloaded: true');
-    expect(readFileSync(join(skillDir, 'SKILL.md'), 'utf8')).toBe(skillMd);
-  });
-
-  it('preserves extra local files across a same-version get and restores modified managed files', async () => {
-    const loreHome = tempLoreHome();
-    const skillConfig = { ...config, loreHome };
-    const skillMd = '# Demo Skill\n\nDo the thing.\n';
-    const contentSha = (await import('node:crypto')).createHash('sha256').update(skillMd, 'utf8').digest('hex');
-    const detail = {
-      project_id: 'project-1',
-      id: 'skill-1',
-      skill_id: 'skill-1',
-      name: 'demo-skill',
-      description: 'Demo',
-      enabled: true,
-      version: 1,
-      files: [{
-        path: 'SKILL.md',
-        content: skillMd,
-        sha256: contentSha,
-        size: Buffer.byteLength(skillMd, 'utf8'),
-      }],
-    };
-
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const url = new URL(String(input));
-      if (url.pathname === '/api/skills/skill-1') return jsonResponse(detail);
-      throw new Error(`unexpected request: ${url}`);
-    });
-
-    const tools = createLoreTools(skillConfig);
-    const first = await tools.lore_skill_get.execute({ skill_id: 'skill-1' }, context());
-    expect(resultOutput(first)).toContain('downloaded: true');
-    const skillDir = join(loreHome, 'skills', 'project-1', 'demo-skill');
-    expect(readFileSync(join(skillDir, 'SKILL.md'), 'utf8')).toBe(skillMd);
-
-    // Installed dir is writable for local outputs; the managed SKILL.md is read-only (POSIX).
-    if (process.platform !== 'win32') {
-      expect(lstatSync(skillDir).mode & 0o200).toBe(0o200);
-      expect(lstatSync(join(skillDir, 'SKILL.md')).mode & 0o777).toBe(0o444);
-    }
-
-    // Add a local output file directly inside the same work copy (dir is writable).
-    const makeTreeWritable = (current: string) => {
-      const st = lstatSync(current);
-      if (st.isDirectory()) {
-        chmodSync(current, 0o755);
-        for (const entry of readdirSync(current)) makeTreeWritable(join(current, entry));
-      } else if (st.isFile()) chmodSync(current, 0o644);
-    };
-    makeTreeWritable(skillDir);
-    const extraPath = join(skillDir, 'notes', 'local-output.txt');
-    mkdirSync(dirname(extraPath), { recursive: true });
-    writeFileSync(extraPath, 'local agent output', 'utf8');
-
-    // (a) Extra local files never trigger tamper and survive a same-version get.
-    const sameVersion = await tools.lore_skill_get.execute({ skill_id: 'skill-1' }, context());
-    expect(resultOutput(sameVersion)).toContain('downloaded: false');
-    expect(readFileSync(extraPath, 'utf8')).toBe('local agent output');
-    expect(readFileSync(join(skillDir, 'SKILL.md'), 'utf8')).toBe(skillMd);
-
-    // (b) Modifying a managed file triggers restore; the extra still survives.
-    makeTreeWritable(skillDir);
-    writeFileSync(join(skillDir, 'SKILL.md'), '# tampered\n', 'utf8');
-    const restored = await tools.lore_skill_get.execute({ skill_id: 'skill-1' }, context());
-    expect(resultOutput(restored)).toContain('downloaded: true');
-    expect(readFileSync(join(skillDir, 'SKILL.md'), 'utf8')).toBe(skillMd);
-    expect(readFileSync(extraPath, 'utf8')).toBe('local agent output');
   });
 
   it('lore_skill_update requires a positive integer expected_version', async () => {

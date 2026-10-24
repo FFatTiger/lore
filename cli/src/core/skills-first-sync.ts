@@ -43,6 +43,17 @@ async function claudecodeSkillsRoot(homeDir: string): Promise<string | undefined
   }
 }
 
+/**
+ * OpenCode's global skills root, per OpenCode's own resolution:
+ * $XDG_CONFIG_HOME/opencode/skills, else ~/.config/opencode/skills.
+ * Single source of this rule for the CLI (first sync and uninstall).
+ */
+export function opencodeSkillsRoot(homeDir: string, env: NodeJS.ProcessEnv): string {
+  const xdg = env.XDG_CONFIG_HOME?.trim();
+  if (xdg) return path.resolve(xdg, 'opencode', 'skills');
+  return path.join(homeDir, '.config', 'opencode', 'skills');
+}
+
 function skillsRootFor(id: ChannelId, args: { loreHome: string; homeDir: string; env: NodeJS.ProcessEnv }): SyncOptions | undefined {
   switch (id) {
     case 'claudecode':
@@ -66,7 +77,7 @@ function skillsRootFor(id: ChannelId, args: { loreHome: string; homeDir: string;
     case 'openclaw':
       return { clientType: id, root: path.join(args.homeDir, '.openclaw', 'extensions', 'lore', 'skills') };
     case 'opencode':
-      return { clientType: id, root: path.join(args.homeDir, '.config', 'opencode', 'skills') };
+      return { clientType: id, root: opencodeSkillsRoot(args.homeDir, args.env) };
   }
 }
 

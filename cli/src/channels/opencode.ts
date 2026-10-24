@@ -4,13 +4,47 @@ import path from 'node:path';
 import { downloadOrSkipDetailed } from '../core/artifact.js';
 import { haveCommand } from '../core/detect.js';
 import { createExec, runChecked, type ExecFn } from '../core/exec.js';
-import { channelDir } from '../core/paths.js';
 import { ensureDir } from '../core/fs.js';
+import { channelDir } from '../core/paths.js';
+import { opencodeSkillsRoot } from '../core/skills-first-sync.js';
 import type { ChannelResult, ChannelStatus } from '../core/types.js';
 import type { ChannelContext, ChannelInstaller, UninstallContext } from './types.js';
+import { readWorkCopyMarker, syncSkillsToDir } from '../../vendor/skill-workcopy/index.mjs';
 
 const MANAGED_MARKER = '@lore-managed-opencode-plugin';
 const DEFAULT_REPO = 'FFatTiger/lore';
+
+/**
+ * Remove Lore-managed skill packages from OpenCode's global skills root.
+ * Only directories carrying a Lore marker are touched (any project): managed
+ * files and the marker go, local artifacts stay, directories empty afterwards
+ * are dropped. Reuses the vendor reconciliation with an empty catalog.
+ */
+async function removeManagedSkills(homeDir: string): Promise<void> {
+  const root = opencodeSkillsRoot(homeDir, process.env);
+  let entries;
+  try {
+    entries = await fs.readdir(root, { withFileTypes: true });
+  } catch {
+    return; // no skills root — nothing to clean up
+  }
+  const projects = new Set<string>();
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+    const marker = readWorkCopyMarker(path.join(root, entry.name));
+    if (marker) projects.add(marker.project_id);
+  }
+  for (const projectId of projects) {
+    await syncSkillsToDir({
+      root,
+      projectId,
+      skills: [],
+      loadSkill: async () => {
+        throw new Error('uninstall never loads skill details');
+      },
+    }).catch(() => undefined);
+  }
+}
 
 type CompatibilityResult = { ok: true } | { ok: false; error: string };
 type CompatHelper = { path: string; temporary: boolean };
@@ -245,6 +279,8 @@ export const opencodeInstaller: ChannelInstaller = {
     } catch {
       // missing
     }
+
+    await removeManagedSkills(homeDir);
 
     try {
       await fs.rm(channelDir(ctx.loreHome, 'opencode'), { recursive: true, force: true });

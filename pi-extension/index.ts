@@ -22,6 +22,4 @@ export {
   resolveLoreHome,
   validateSafeRelativePath,
   computeManifestHash,
-  ensureSkillWorkCopy,
-  materializeSkillWorkCopy,
 } from './skills';

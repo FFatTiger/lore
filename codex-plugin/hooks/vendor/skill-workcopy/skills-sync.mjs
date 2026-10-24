@@ -85,7 +85,7 @@ async function fetchSkillsJson(baseUrl, apiToken, clientType, skillPath, signal)
   if (apiToken) headers.authorization = `Bearer ${apiToken}`;
   const response = await fetch(url, { headers, signal });
   if (!response.ok) throw new Error(`skills request failed: ${response.status}`);
-  return response.json();
+  return JSON.parse(await response.text());
 }
 
 function writeStatusFile(root, status) {

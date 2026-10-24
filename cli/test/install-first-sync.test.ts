@@ -187,11 +187,11 @@ test('first sync writes opencode skills under XDG_CONFIG_HOME and defaults to ~/
   }
 });
 
-test('first sync uses the Claude Code installed plugin path and skips when absent', async () => {
+test('first sync writes Claude Code skills into the channel directory the plugin loads from', async () => {
   const { server, baseUrl } = await startSkillsServer();
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-first-sync-cc-'));
   const loreHome = path.join(home, '.lore');
-  await fs.mkdir(loreHome, { recursive: true });
+  await fs.mkdir(path.join(loreHome, 'claudecode'), { recursive: true });
   const results: ChannelResult[] = [{ id: 'claudecode', status: 'ok' }];
   const lines: string[] = [];
   try {
@@ -204,28 +204,10 @@ test('first sync uses the Claude Code installed plugin path and skips when absen
       env: {},
       log: recordLogger(lines),
     });
-    assert.ok(lines.some((line) => line.includes('plugin path not found yet')), lines.join('\n'));
-    assert.ok(!lines.some((line) => line.includes('synced →')), lines.join('\n'));
-
-    const pluginsFile = path.join(home, '.claude', 'plugins', 'installed_plugins.json');
-    await fs.mkdir(path.dirname(pluginsFile), { recursive: true });
-    const installPath = path.join(home, '.claude', 'plugins', 'cache', 'lore', 'lore', '1.2.3');
-    await fs.writeFile(
-      pluginsFile,
-      JSON.stringify({ version: 2, plugins: { 'lore@lore': [{ scope: 'user', installPath }] } }),
-    );
-    lines.length = 0;
-    await runFirstSkillsSync({
-      results,
-      loreHome,
-      baseUrl,
-      apiToken: 'lm_test',
-      homeDir: home,
-      env: {},
-      log: recordLogger(lines),
-    });
     assert.ok(lines.includes('Skills: 1 synced → Claude Code'), lines.join('\n'));
-    await fs.access(path.join(installPath, 'skills', 'demo-skill', 'SKILL.md'));
+    await fs.access(path.join(loreHome, 'claudecode', 'skills', 'demo-skill', 'SKILL.md'));
+    // The update cache under ~/.claude is not a runtime root and stays untouched.
+    await assert.rejects(fs.access(path.join(home, '.claude', 'plugins', 'cache')));
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }

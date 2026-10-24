@@ -1,4 +1,3 @@
-import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { ChannelId, ChannelResult } from '../core/types.js';
@@ -23,31 +22,6 @@ type SyncOptions = {
 };
 
 /**
- * Claude Code records the installed plugin under `lore@lore` → installPath only
- * after `claude plugin install/update` completes, so read it right after the
- * channel installer finished.
- */
-async function claudecodeSkillsRoot(homeDir: string): Promise<string | undefined> {
-  try {
-    const file = path.join(homeDir, '.claude', 'plugins', 'installed_plugins.json');
-    // Claude Code writes { version: 2, plugins: { 'lore@lore': [{ scope, installPath, ... }] } }.
-    const data = JSON.parse(await fs.readFile(file, 'utf8')) as { plugins?: Record<string, unknown> };
-    const entries = data.plugins?.['lore@lore'];
-    if (!Array.isArray(entries)) return undefined;
-    const records = entries.filter(
-      (e): e is { scope?: unknown; installPath?: unknown } => Boolean(e) && typeof e === 'object',
-    );
-    const entry = records.find((e) => e.scope === 'user') ?? records[0];
-    const installPath = entry?.installPath;
-    return typeof installPath === 'string' && installPath.trim()
-      ? path.join(installPath.trim(), 'skills')
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
  * OpenCode's global skills root, per OpenCode's own resolution:
  * $XDG_CONFIG_HOME/opencode/skills, else ~/.config/opencode/skills.
  * Single source of this rule for the CLI (first sync and uninstall).
@@ -61,10 +35,14 @@ export function opencodeSkillsRoot(homeDir: string, env: NodeJS.ProcessEnv): str
 function skillsRootFor(id: ChannelId, args: { loreHome: string; homeDir: string; env: NodeJS.ProcessEnv }): SyncOptions | undefined {
   switch (id) {
     case 'claudecode':
+      // Claude Code loads a directory-sourced marketplace plugin straight from
+      // the marketplace directory (the channel dir), and that is where
+      // CLAUDE_PLUGIN_ROOT points at session start. The installPath recorded in
+      // installed_plugins.json is only the copy `claude plugin update` manages.
+      return { clientType: id, root: path.join(args.loreHome, 'claudecode', 'skills') };
     case 'zcode':
-      // claudecode resolves asynchronously below; zcode installs into a
-      // zcode-managed plugin root the CLI cannot see, so it syncs from its
-      // own session hooks only.
+      // zcode installs into a zcode-managed plugin root the CLI cannot see, so
+      // it syncs from its own session hooks only.
       return undefined;
     case 'codex': {
       const codexHome = args.env.CODEX_HOME?.trim() || path.join(args.homeDir, '.codex');
@@ -108,17 +86,7 @@ export async function runFirstSkillsSync(args: {
 
   for (const result of args.results) {
     if (result.status !== 'ok') continue;
-    let options = skillsRootFor(result.id, { loreHome: args.loreHome, homeDir, env });
-    if (result.id === 'claudecode') {
-      const root = await claudecodeSkillsRoot(homeDir);
-      if (!root) {
-        args.log.info(
-          'Skills: Claude Code plugin path not found yet; skills will sync at the next session start',
-        );
-        continue;
-      }
-      options = { clientType: result.id, root };
-    }
+    const options = skillsRootFor(result.id, { loreHome: args.loreHome, homeDir, env });
     if (!options) continue;
 
     const status = await runSkillsSync({

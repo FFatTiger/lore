@@ -8,6 +8,10 @@ import { openclawInstaller } from '../src/channels/openclaw.ts';
 import type { ChannelContext } from '../src/channels/types.ts';
 import type { ExecFn } from '../src/core/exec.ts';
 
+// GitHub's Ubuntu runners export XDG_CONFIG_HOME, which would point the OpenCode
+// skills root outside the temp home. Tests that need it set it explicitly.
+delete process.env.XDG_CONFIG_HOME;
+
 async function tempHome() {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-oc-'));
   const loreHome = path.join(home, '.lore');

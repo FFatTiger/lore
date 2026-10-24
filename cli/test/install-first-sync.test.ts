@@ -150,6 +150,43 @@ test('install still succeeds when the skills catalog is unreachable', async () =
   assert.ok(lines.some((line) => line.includes('Skills sync failed')), lines.join('\n'));
 });
 
+test('first sync writes opencode skills under XDG_CONFIG_HOME and defaults to ~/.config', async () => {
+  const { server, baseUrl } = await startSkillsServer();
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-first-sync-oc-'));
+  const loreHome = path.join(home, '.lore');
+  await fs.mkdir(loreHome, { recursive: true });
+  const xdg = path.join(home, 'xdg');
+  const lines: string[] = [];
+  try {
+    await runFirstSkillsSync({
+      results: [{ id: 'opencode', status: 'ok' }],
+      loreHome,
+      baseUrl,
+      apiToken: 'lm_test',
+      homeDir: home,
+      env: { XDG_CONFIG_HOME: xdg },
+      log: recordLogger(lines),
+    });
+    assert.ok(lines.includes('Skills: 1 synced → OpenCode'), lines.join('\n'));
+    await fs.access(path.join(xdg, 'opencode', 'skills', 'demo-skill', 'SKILL.md'));
+    await fs.access(path.join(xdg, 'opencode', 'skills', '.lore-sync-status.json'));
+
+    lines.length = 0;
+    await runFirstSkillsSync({
+      results: [{ id: 'opencode', status: 'ok' }],
+      loreHome,
+      baseUrl,
+      apiToken: 'lm_test',
+      homeDir: home,
+      env: {},
+      log: recordLogger(lines),
+    });
+    await fs.access(path.join(home, '.config', 'opencode', 'skills', 'demo-skill', 'SKILL.md'));
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
 test('first sync uses the Claude Code installed plugin path and skips when absent', async () => {
   const { server, baseUrl } = await startSkillsServer();
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-first-sync-cc-'));

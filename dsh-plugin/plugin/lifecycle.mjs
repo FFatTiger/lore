@@ -6,12 +6,15 @@
  * - `agent/created` (serial, all sources) POSTs a `session.start` lifecycle
  *   event to Lore and registers the returned boot context as a per-session
  *   system-prompt section through `agent.ctx.systemPrompt.section()`, so it
- *   reaches only that session's prompt.
+ *   reaches only that session's prompt. When the server advertises Skills it
+ *   also fires a background skills sync into ~/.lore/skills/<project-id>/.
  * - `agent/pre-step` (waterfall) fires `prompt.submit` once per new user
  *   message (the first step of a turn whose claimed batch ends with a
  *   user-authored message), then appends the returned recall context to that
  *   step's admitted messages — the same seam the harness runtime context
  *   uses, attributed to a `lore` producer so it is never shown as user input.
+ * - `apply` registers a `ctx.skills` provider that serves the synced Lore
+ *   skills directory to dsh's native skill system (see skills.mjs).
  *
  * Fail-open: Lore/network/registration errors are swallowed (optionally
  * logged to stderr with LORE_DEBUG=1) and never propagate into dsh.
@@ -23,6 +26,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadLoreConfig, pickString } from '../vendor/lore-config.mjs';
+import { createLoreSkillProvider, createLoreSkills } from './skills.mjs';
 
 export const name = 'lore-lifecycle';
 export const inject = ['workingDirectory'];
@@ -65,12 +69,6 @@ function lifecycleRuntime() {
   const version = pluginVersion();
   if (version) runtime.plugin_version = version;
   return runtime;
-}
-
-// Lore renders the Skills catalog and `$skill-name` invocations only for
-// clients that expose Skills tools.
-function skillsFeature() {
-  return loadLoreConfig().skillsEnabled ? { features: { skills: true } } : {};
 }
 
 function detectProjectInfo(cwd) {
@@ -155,6 +153,17 @@ function contextMessage(text) {
 
 export function apply(ctx) {
   const sessions = new Map();
+  const loreSkills = createLoreSkills();
+
+  // Registration must be synchronous inside apply(); the provider itself
+  // resolves the project id lazily and reports an empty catalog until then.
+  if (loadLoreConfig().skillsEnabled && typeof ctx.skills?.registerProvider === 'function') {
+    try {
+      ctx.skills.registerProvider((control) => createLoreSkillProvider(loreSkills, control));
+    } catch (error) {
+      debug(`skills provider registration failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 
   function stateFor(sessionId) {
     const existing = sessions.get(sessionId);
@@ -197,6 +206,9 @@ export function apply(ctx) {
     const state = stateFor(sessionId);
     if (source === 'clear') state.systemContext = '';
 
+    // Fire-and-forget: agent/created is serial, the sync must never gate it.
+    loreSkills.triggerSync();
+
     if (state.systemContext) {
       registerBootSection(agent, state.systemContext, state);
       return;
@@ -208,7 +220,6 @@ export function apply(ctx) {
         protocol_version: 'lore.lifecycle.v1',
         runtime: lifecycleRuntime(),
         event: { name: 'session.start', native_name: 'agent/created' },
-        ...skillsFeature(),
         normalized: { session_id: sessionId },
         project: detectProjectInfo(cwd),
         native_input_snapshot: { source: pickString(source), cwd },
@@ -237,7 +248,6 @@ export function apply(ctx) {
             protocol_version: 'lore.lifecycle.v1',
             runtime: lifecycleRuntime(),
             event: { name: 'prompt.submit', native_name: 'agent/pre-step' },
-            ...skillsFeature(),
             normalized: {
               session_id: sessionId,
               prompt: sessionText(payload.messages),

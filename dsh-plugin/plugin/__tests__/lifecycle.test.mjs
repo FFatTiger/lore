@@ -6,7 +6,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, test } from 'node:test';
 import { apply, inject as pluginInject, name as pluginName } from '../lifecycle.mjs';
-
 const temporaryHomes = [];
 const savedEnv = {};
 
@@ -63,8 +62,9 @@ function fakeAgent(id) {
   return agent;
 }
 
-function harness({ cwd } = {}) {
+function harness({ cwd, skills = true } = {}) {
   const listeners = new Map();
+  const providers = [];
   const ctx = {
     on: (event, listener) => {
       if (!listeners.has(event)) listeners.set(event, []);
@@ -72,8 +72,17 @@ function harness({ cwd } = {}) {
     },
     workingDirectory: { get: () => cwd || process.cwd() },
   };
+  if (skills) {
+    ctx.skills = {
+      registerProvider: (create) => {
+        providers.push(create({ signal: new AbortController().signal, invalidate: () => {} }));
+        return () => {};
+      },
+    };
+  }
   return {
     ctx,
+    providers,
     async created(agent, source = 'startup') {
       for (const listener of listeners.get('agent/created') || []) {
         await listener({ agent, source });
@@ -95,6 +104,12 @@ function harness({ cwd } = {}) {
 async function withLoreServer(handler) {
   const requests = [];
   const server = createServer(async (req, res) => {
+    if (req.method === 'GET' && req.url && req.url.startsWith('/api/skills')) {
+      requests.push({ url: req.url, headers: req.headers, body: {} });
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ project_id: 'proj-1', catalog_revision: 'r1', skills: [] }));
+      return;
+    }
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
@@ -175,7 +190,7 @@ test('session.start posts a full lifecycle payload and scopes the boot section t
   }
 });
 
-test('features.skills is sent when the server advertises Skills', async () => {
+test('skills-enabled servers register the provider, sync on agent/created, and never declare the skills lifecycle feature', async () => {
   const home = tempHome('lore-dsh-life-');
   const server = await withLoreServer(() => sessionStartResponse('BOOT'));
   useServer(server, home, { server_profile: { base_url: server.baseUrl, capabilities: { skills: true } } });
@@ -183,9 +198,47 @@ test('features.skills is sent when the server advertises Skills', async () => {
   try {
     const h = harness();
     apply(h.ctx);
-    await h.created(fakeAgent('session-1'));
-    assert.deepEqual(server.requests[0].body.features, { skills: true });
+    assert.equal(h.providers.length, 1);
+    assert.equal(h.providers[0].name, 'lore');
+
+    const agent = fakeAgent('session-1');
+    await h.created(agent, 'startup');
+    assert.equal(server.requests[0].body.features, undefined);
+
+    // The fire-and-forget sync lands in ~/.lore/skills/proj-1/.lore-sync-status.json.
+    const statusPath = path.join(home, 'skills', 'proj-1', '.lore-sync-status.json');
+    const deadline = Date.now() + 15_000;
+    while (!fs.existsSync(statusPath) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const status = JSON.parse(fs.readFileSync(statusPath, 'utf8'));
+    assert.equal(status.project_id, 'proj-1');
+    assert.deepEqual(status.errors, []);
+
+    // The provider serves the (empty) synced directory once the id is known.
+    const listed = await h.providers[0].list({});
+    assert.equal(listed.complete, true);
+    assert.deepEqual(listed.candidates, []);
   } finally {
+    server.closeAllConnections?.();
+    await server.close();
+  }
+});
+
+test('skills-disabled servers register no provider and post no skills sync requests', async () => {
+  const home = tempHome('lore-dsh-life-');
+  const server = await withLoreServer(() => sessionStartResponse('BOOT'));
+  useServer(server, home);
+  setEnv({ LORE_HOME: home });
+  try {
+    const h = harness();
+    apply(h.ctx);
+    assert.equal(h.providers.length, 0);
+    await h.created(fakeAgent('session-1'), 'startup');
+    assert.equal(server.requests.length, 1);
+    assert.equal(fs.existsSync(path.join(home, 'skills')), false);
+  } finally {
+    server.closeAllConnections?.();
     await server.close();
   }
 });

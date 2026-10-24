@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { createServer } from 'node:http';
 import os from 'node:os';
@@ -9,33 +8,6 @@ import { afterEach, test } from 'node:test';
 
 const bridgeScript = path.resolve(import.meta.dirname, '..', 'lore-mcp.mjs');
 const temporaryHomes = [];
-
-function sha256(content) {
-  return createHash('sha256').update(content).digest('hex');
-}
-
-function skillPackage() {
-  const content = Buffer.from('---\nname: bridge-skill\ndescription: Bridge Skill\n---\n\n# Bridge Skill\n', 'utf8');
-  const fileHash = sha256(content);
-  const manifestHash = sha256(Buffer.from(`SKILL.md\n${fileHash}\n${content.length}\n`, 'utf8'));
-  return {
-    project_id: 'project-1',
-    skill_id: 'skill-1',
-    name: 'bridge-skill',
-    description: 'Bridge Skill',
-    enabled: true,
-    version: 1,
-    revision_hash: sha256(Buffer.from(`manifest=${manifestHash}`, 'utf8')),
-    manifest_hash: manifestHash,
-    files: [{
-      path: 'SKILL.md',
-      media_type: 'text/markdown',
-      content: content.toString('utf8'),
-      sha256: fileHash,
-      size: content.length,
-    }],
-  };
-}
 
 function runBridge(message, env) {
   return new Promise((resolve, reject) => {
@@ -95,21 +67,20 @@ afterEach(() => {
   while (temporaryHomes.length) fs.rmSync(temporaryHomes.pop(), { recursive: true, force: true });
 });
 
-test('bridge forwards with client_type=dsh and materializes lore_skill_get under LORE_HOME/skills', async () => {
+test('bridge forwards tool calls verbatim; skills need no local materialization', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'lore-dsh-bridge-'));
   temporaryHomes.push(home);
-  const skill = skillPackage();
   const core = await withCore((request) => ({
     jsonrpc: '2.0',
     id: request.id,
-    result: { content: [{ type: 'text', text: JSON.stringify(skill) }] },
+    result: { content: [{ type: 'text', text: 'raw skill payload' }] },
   }));
   try {
     const { payload, stderr } = await runBridge({
       jsonrpc: '2.0',
       id: 'get-1',
       method: 'tools/call',
-      params: { name: 'lore_skill_get', arguments: { skill_id: 'skill-1' } },
+      params: { name: 'lore_skill_list', arguments: {} },
     }, {
       LORE_HOME: home,
       LORE_BASE_URL: core.baseUrl,
@@ -119,12 +90,10 @@ test('bridge forwards with client_type=dsh and materializes lore_skill_get under
     assert.equal(stderr, '');
     assert.equal(core.urls[0], '/api/mcp?client_type=dsh');
     assert.equal(core.headers[0].authorization, 'Bearer bridge-token');
-    const text = payload.result.content[0].text;
-    assert.match(text, /Skill ready: bridge-skill/);
-    const skillDir = path.join(home, 'skills', 'project-1', 'bridge-skill');
-    assert.ok(text.includes(`skill_dir: ${skillDir}`));
-    assert.equal(fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8'), skill.files[0].content);
-    assert.equal(fs.existsSync(path.join(skillDir, '.lore-skill-marker.json')), true);
+    assert.deepEqual(payload.result.content, [{ type: 'text', text: 'raw skill payload' }]);
+    // dsh discovers skills through its native skill system; the bridge never
+    // writes skill work copies anymore.
+    assert.equal(fs.existsSync(path.join(home, 'skills')), false);
   } finally {
     await core.close();
   }
@@ -136,7 +105,7 @@ test('bridge keeps Skill tools hidden unless the configured server advertises Sk
   const core = await withCore((request) => ({
     jsonrpc: '2.0',
     id: request.id,
-    result: { tools: [{ name: 'lore_search' }, { name: 'lore_skill_get' }, { name: 'lore_skill_list' }] },
+    result: { tools: [{ name: 'lore_search' }, { name: 'lore_skill_search' }, { name: 'lore_skill_list' }] },
   }));
   try {
     const list = await runBridge({ jsonrpc: '2.0', id: 'list-1', method: 'tools/list', params: {} }, {

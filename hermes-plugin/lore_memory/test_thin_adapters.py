@@ -8,6 +8,7 @@ import re
 import shutil
 import stat
 import tempfile
+import threading
 from pathlib import Path
 
 
@@ -224,7 +225,7 @@ class LoreClientThinAdapterTests(unittest.TestCase):
         self.assertNotIn("features", requests[0][1]["data"])
         self.assertNotIn("features", requests[1][1]["data"])
 
-    def test_lifecycle_event_declares_skills_only_when_enabled(self):
+    def test_lifecycle_event_never_declares_skills_feature(self):
         client = LoreClient(base_url="http://example.com")
         client.skills_enabled = True
         requests = []
@@ -233,7 +234,8 @@ class LoreClientThinAdapterTests(unittest.TestCase):
         client.lifecycle_event("session.start", session_id="sess-1")
         client.lifecycle_event("prompt.submit", session_id="sess-1", prompt="run $deploy")
 
-        self.assertEqual([data["features"] for data in requests], [{"skills": True}, {"skills": True}])
+        for data in requests:
+            self.assertNotIn("features", data)
 
 
     def test_search_sends_full_and_derived_content_limit(self):
@@ -982,24 +984,18 @@ class LoreProviderThinAdapterTests(unittest.TestCase):
         for name in (
             "lore_skill_list",
             "lore_skill_search",
-            "lore_skill_get",
             "lore_skill_create",
             "lore_skill_update",
             "lore_skill_delete",
             "lore_skill_import",
-            "lore_skill_status",
         ):
             self.assertIn(name, schemas)
+        # Load/status tools are gone: the host reads the synced skills directory.
+        self.assertNotIn("lore_skill_get", schemas)
+        self.assertNotIn("lore_skill_status", schemas)
         # No separate artifact-create tool.
         self.assertNotIn("lore_skill_artifact_create", schemas)
         update = schemas["lore_skill_update"]
-        self.assertEqual(schemas["lore_skill_get"]["parameters"]["required"], ["skill_id"])
-        self.assertEqual(
-            schemas["lore_skill_get"]["description"],
-            "Load a Lore skill (cloud-stored, not part of the host's own skill system) by skill_id, "
-            "including its package files. Use it when a task matches a Lore skill or another skill's "
-            "instructions name one.",
-        )
         self.assertEqual(schemas["lore_skill_import"]["parameters"]["required"], ["source"])
         self.assertEqual(
             schemas["lore_skill_import"]["description"],
@@ -1013,9 +1009,13 @@ class LoreProviderThinAdapterTests(unittest.TestCase):
         )
         self.assertEqual(update["parameters"]["required"], ["skill_id", "expected_version"])
         self.assertEqual(schemas["lore_skill_delete"]["parameters"]["required"], ["skill_id"])
-        self.assertIn("skill_id", schemas["lore_skill_get"]["parameters"]["properties"])
-        self.assertNotIn("id", schemas["lore_skill_get"]["parameters"]["properties"])
         self.assertNotIn("id", update["parameters"]["properties"])
+        # Mutations point at the session-start sync instead of a load tool.
+        for name in ("lore_skill_create", "lore_skill_update", "lore_skill_delete"):
+            self.assertIn(
+                "sync to the local skills directory when the next session starts",
+                schemas[name]["description"],
+            )
         # No behavioral prompt guidance about when the agent should use skills.
         for name, tool in schemas.items():
             if name.startswith("lore_skill_"):
@@ -1231,6 +1231,33 @@ class SkillWorkCopyTests(unittest.TestCase):
         }
         return detail
 
+    def _summary(self, detail):
+        return {
+            "id": detail["id"],
+            "name": detail["name"],
+            "version": detail["version"],
+            "manifest_hash": detail["manifest_hash"],
+            "enabled": detail.get("enabled") is not False,
+        }
+
+    def _sync_skills(self, catalog_skills, details):
+        """Run sync_skills_to_dir with canned details keyed by skill id; returns
+        (result, loaded_skill_ids)."""
+        loads = []
+
+        def load_skill(skill_id):
+            loads.append(skill_id)
+            return details[skill_id]
+
+        result = self.sw.sync_skills_to_dir(
+            root=self.sw.skills_root(self.lore_home, self.project_id),
+            project_id=self.project_id,
+            skills=catalog_skills,
+            load_skill=load_skill,
+            lore_home=self.lore_home,
+        )
+        return result, loads
+
     def test_validate_safe_paths_and_managed_files(self):
         self.assertEqual(self.sw.validate_safe_relative_path("SKILL.md"), "SKILL.md")
         self.assertEqual(self.sw.validate_safe_relative_path("refs/notes.md"), "refs/notes.md")
@@ -1308,8 +1335,8 @@ class SkillWorkCopyTests(unittest.TestCase):
         with open(os.path.join(install_path, "outputs", "result.json"), "w", encoding="utf-8") as handle:
             handle.write('{"ok":true}\n')
 
-        # Same-version managed edit (after explicit chmod) is tampered and restored;
-        # the local output is preserved.
+        # Same-version managed edit (after explicit chmod) is tampered; the next
+        # sync rematerializes from server state and preserves the local output.
         _make_writable(install_path)
         with open(os.path.join(install_path, "SKILL.md"), "w", encoding="utf-8") as handle:
             handle.write("# edited\n")
@@ -1319,15 +1346,9 @@ class SkillWorkCopyTests(unittest.TestCase):
             )["state"],
             "tampered",
         )
-        ensured = self.sw.ensure_skill_work_copy(
-            skill_id="skill-1",
-            lore_home=self.lore_home,
-            project_id=self.project_id,
-            load_skill=lambda _sid: detail,
-        )
-        self.assertTrue(ensured["downloaded"])
-        self.assertEqual(ensured["skill_md"], "# Demo Skill\n")
-        self.assertEqual(ensured["skill_dir"], str(Path(install_path).resolve()))
+        result, loads = self._sync_skills([self._summary(detail)], {"skill-1": detail})
+        self.assertEqual(result["updated"], ["demo-skill"])
+        self.assertEqual(loads, ["skill-1"])
         self.assertEqual(
             self.sw.inspect_local_work_copy(
                 self.lore_home, self.project_id, "demo-skill", {"version": 1}
@@ -1338,19 +1359,103 @@ class SkillWorkCopyTests(unittest.TestCase):
         with open(os.path.join(install_path, "outputs", "result.json"), "r", encoding="utf-8") as handle:
             self.assertEqual(handle.read(), '{"ok":true}\n')
 
-    def test_copy_left_by_older_skill_with_same_name_is_replaced(self):
+    def test_sync_creates_missing_and_skips_unchanged_without_detail_fetch(self):
+        detail = self._skill_detail(version=1)
+        result, loads = self._sync_skills([self._summary(detail)], {"skill-1": detail})
+        self.assertEqual(result["created"], ["demo-skill"])
+        self.assertEqual(loads, ["skill-1"])
+        self.assertTrue(os.path.isfile(
+            os.path.join(self.lore_home, "skills", self.project_id, "demo-skill", "SKILL.md")
+        ))
+
+        # Second sync with the same summary: intact copy, no detail request.
+        result2, loads2 = self._sync_skills([self._summary(detail)], {"skill-1": detail})
+        self.assertEqual(result2["unchanged"], ["demo-skill"])
+        self.assertEqual(loads2, [])
+
+    def test_sync_replaces_copy_left_by_older_skill_with_same_name(self):
         self.sw.materialize_skill_work_copy(
             lore_home=self.lore_home, project_id=self.project_id,
             detail=self._skill_detail(id="old-skill", version=2),
         )
-        ensured = self.sw.ensure_skill_work_copy(
-            skill_id="skill-1",
-            lore_home=self.lore_home,
-            project_id=self.project_id,
-            load_skill=lambda _sid: self._skill_detail(id="skill-1", version=1),
+        detail = self._skill_detail(id="skill-1", version=1)
+        result, loads = self._sync_skills([self._summary(detail)], {"skill-1": detail})
+        self.assertEqual(result["updated"], ["demo-skill"])
+        self.assertEqual(loads, ["skill-1"])
+        marker = self.sw.read_work_copy_marker(
+            os.path.join(self.lore_home, "skills", self.project_id, "demo-skill")
         )
-        self.assertTrue(ensured["downloaded"])
-        self.assertEqual(ensured["marker"]["skill_id"], "skill-1")
+        self.assertEqual(marker["skill_id"], "skill-1")
+
+    def test_sync_does_not_touch_unmarked_same_name_directory(self):
+        install_dir = os.path.join(self.lore_home, "skills", self.project_id, "demo-skill")
+        os.makedirs(install_dir, exist_ok=True)
+        with open(os.path.join(install_dir, "SKILL.md"), "w", encoding="utf-8") as handle:
+            handle.write("# local unmanaged\n")
+
+        detail = self._skill_detail(version=1)
+        result, loads = self._sync_skills([self._summary(detail)], {"skill-1": detail})
+        self.assertEqual(result["conflicts"], ["demo-skill"])
+        self.assertEqual(loads, [])
+        with open(os.path.join(install_dir, "SKILL.md"), "r", encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "# local unmanaged\n")
+        self.assertFalse(os.path.exists(os.path.join(install_dir, self.sw.LORE_SKILL_MARKER)))
+
+    def test_sync_removal_deletes_managed_files_and_keeps_artifacts(self):
+        detail = self._skill_detail(version=1)
+        self._sync_skills([self._summary(detail)], {"skill-1": detail})
+        install_path = os.path.join(self.lore_home, "skills", self.project_id, "demo-skill")
+        with open(os.path.join(install_path, "notes.txt"), "w", encoding="utf-8") as handle:
+            handle.write("local artifact\n")
+
+        # Catalog no longer lists the skill: managed files and marker go, the
+        # artifact stays, so the directory survives.
+        result, loads = self._sync_skills([], {})
+        self.assertEqual(result["removed"], ["demo-skill"])
+        self.assertEqual(loads, [])
+        self.assertFalse(os.path.exists(os.path.join(install_path, "SKILL.md")))
+        self.assertFalse(os.path.exists(os.path.join(install_path, self.sw.LORE_SKILL_MARKER)))
+        with open(os.path.join(install_path, "notes.txt"), "r", encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "local artifact\n")
+
+    def test_run_skills_sync_writes_status_file(self):
+        detail = self._skill_detail(version=1)
+
+        class SyncClient:
+            def __init__(self, project_id):
+                self.project_id = project_id
+
+            def list_skills(self, include_disabled=True):
+                return {
+                    "project_id": self.project_id,
+                    "catalog_revision": "rev-9",
+                    "skills": [{"id": "skill-1", "name": "demo-skill", "version": 1, "manifest_hash": detail["manifest_hash"]}],
+                }
+
+            def get_skill(self, skill_id):
+                return detail
+
+        status = self.sw.run_skills_sync(SyncClient(self.project_id), self.lore_home)
+        self.assertEqual(status["project_id"], self.project_id)
+        self.assertEqual(status["catalog_revision"], "rev-9")
+        self.assertEqual(status["created"], ["demo-skill"])
+        self.assertEqual(status["errors"], [])
+        self.assertTrue(status["finished_at"])
+        status_path = os.path.join(self.lore_home, "skills", self.project_id, ".lore-sync-status.json")
+        with open(status_path, "r", encoding="utf-8") as handle:
+            recorded = json.load(handle)
+        self.assertEqual(recorded["created"], ["demo-skill"])
+
+        # Network-style failures never raise; they land in status.errors.
+        class BrokenClient:
+            def list_skills(self, include_disabled=True):
+                raise RuntimeError("boom")
+
+        failed = self.sw.run_skills_sync(BrokenClient(), self.lore_home)
+        self.assertEqual(len(failed["errors"]), 1)
+        self.assertEqual(failed["errors"][0]["name"], "")
+        self.assertIn("boom", failed["errors"][0]["message"])
+        self.assertTrue(failed["finished_at"])
 
     def test_extras_do_not_trigger_tamper_and_survive_same_version_get(self):
         detail = self._skill_detail(version=1)
@@ -1373,13 +1478,9 @@ class SkillWorkCopyTests(unittest.TestCase):
         )
         self.assertEqual(self.sw.hash_local_skill_files(install_path)["manifest_hash"], detail["manifest_hash"])
 
-        ensured = self.sw.ensure_skill_work_copy(
-            skill_id="skill-1",
-            lore_home=self.lore_home,
-            project_id=self.project_id,
-            load_skill=lambda _sid: detail,
-        )
-        self.assertFalse(ensured["downloaded"])
+        result, loads = self._sync_skills([self._summary(detail)], {"skill-1": detail})
+        self.assertEqual(result["unchanged"], ["demo-skill"])
+        self.assertEqual(loads, [])
         self.assertTrue(os.path.exists(os.path.join(install_path, "outputs", "result.json")))
         self.assertTrue(os.path.exists(os.path.join(install_path, "extra-root.md")))
 
@@ -1405,14 +1506,11 @@ class SkillWorkCopyTests(unittest.TestCase):
             "tampered",
         )
 
-        ensured = self.sw.ensure_skill_work_copy(
-            skill_id="skill-1",
-            lore_home=self.lore_home,
-            project_id=self.project_id,
-            load_skill=lambda _sid: detail,
-        )
-        self.assertTrue(ensured["downloaded"])
-        self.assertEqual(ensured["skill_md"], "# Demo Skill\n\nDo the thing.\n")
+        result, loads = self._sync_skills([self._summary(detail)], {"skill-1": detail})
+        self.assertEqual(result["updated"], ["demo-skill"])
+        self.assertEqual(loads, ["skill-1"])
+        with open(os.path.join(install_path, "SKILL.md"), "r", encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "# Demo Skill\n\nDo the thing.\n")
         with open(os.path.join(install_path, "local-output.txt"), "r", encoding="utf-8") as handle:
             self.assertEqual(handle.read(), "agent\n")
         status = self.sw.inspect_local_work_copy(
@@ -1569,13 +1667,8 @@ class SkillWorkCopyTests(unittest.TestCase):
             )["state"],
             "tampered",
         )
-        restored = self.sw.ensure_skill_work_copy(
-            skill_id="skill-1",
-            lore_home=self.lore_home,
-            project_id=self.project_id,
-            load_skill=lambda _sid: detail,
-        )
-        self.assertTrue(restored["downloaded"])
+        restored, loads = self._sync_skills([self._summary(detail)], {"skill-1": detail})
+        self.assertEqual(restored["updated"], ["demo-skill"])
         self.assertFalse(os.path.islink(os.path.join(install_path, "SKILL.md")))
         with open(os.path.join(install_path, "SKILL.md"), encoding="utf-8") as handle:
             self.assertEqual(handle.read(), "# Demo Skill\n\nDo the thing.\n")
@@ -1648,13 +1741,8 @@ class SkillWorkCopyTests(unittest.TestCase):
             }, handle)
 
         detail = self._skill_detail(version=1, content="# legacy\n")
-        result = self.sw.ensure_skill_work_copy(
-            skill_id="skill-1",
-            lore_home=self.lore_home,
-            project_id=self.project_id,
-            load_skill=lambda _sid: detail,
-        )
-        self.assertTrue(result["downloaded"])
+        result, loads = self._sync_skills([self._summary(detail)], {"skill-1": detail})
+        self.assertEqual(result["updated"], ["demo-skill"])
         marker = self.sw.read_work_copy_marker(install_path)
         self.assertEqual(marker["schema"], self.sw.LORE_SKILL_SCHEMA)
         self.assertEqual(marker["manifest_hash"], detail["manifest_hash"])
@@ -1847,23 +1935,6 @@ class SkillWorkCopyTests(unittest.TestCase):
 
             listed = provider._tool_lore_skill_list({})
             self.assertIn("demo-skill", listed)
-            self.assertEqual(provider._skill_project_id, self.project_id)
-
-            got = provider._tool_lore_skill_get({"skill_id": "skill-1"})
-            self.assertIn("skill_dir:", got)
-            self.assertIn("# Demo Skill", got)
-            self.assertIn("downloaded: True", got)
-
-            # same-version local edit is tampered and restored from server, never preserved
-            install_path = os.path.join(
-                self.lore_home, "skills", self.project_id, "demo-skill"
-            )
-            _make_writable(install_path)
-            with open(os.path.join(install_path, "SKILL.md"), "w", encoding="utf-8") as handle:
-                handle.write("# local\n")
-            got2 = provider._tool_lore_skill_get({"skill_id": "skill-1"})
-            self.assertIn("downloaded: True", got2)
-            self.assertIn("# Demo Skill", got2)
 
             # expected_version validation at tool layer
             bad = provider.handle_tool_call("lore_skill_update", {"skill_id": "skill-1", "expected_version": 0})
@@ -1897,10 +1968,6 @@ class SkillWorkCopyTests(unittest.TestCase):
 
             missing = provider.handle_tool_call("lore_skill_import", {})
             self.assertIn("source is required", missing)
-
-            status = provider._tool_lore_skill_status({})
-            self.assertIn("demo-skill", status)
-            self.assertIn("ready", status)
         finally:
             if old_home is None:
                 os.environ.pop("LORE_HOME", None)
@@ -1910,41 +1977,17 @@ class SkillWorkCopyTests(unittest.TestCase):
     def test_no_session_start_reconcile_and_no_artifact_tool(self):
         provider = LoreMemoryProvider()
         provider._skills_enabled = True
-        provider._skill_project_id = self.project_id
 
-        class NoSyncClient(FakeClient):
-            def __init__(self, home, project_id):
-                super().__init__()
-                self.home = home
-                self.project_id = project_id
-                self.list_calls = 0
-                self.reconcile_loads = []
-
-            def list_skills(self, include_disabled=True):
-                self.list_calls += 1
-                return {
-                    "project_id": self.project_id,
-                    "catalog_revision": "rev-1",
-                    "skills": [],
-                }
-
-            def get_skill(self, skill_id):
-                self.reconcile_loads.append(skill_id)
-                return self._detail
-
-        client = NoSyncClient(self.lore_home, self.project_id)
-        client._detail = self._skill_detail(name="demo-skill", version=1)
+        client = FakeClient()
         provider._client = client
         provider._session_id = "sess-1"
 
         old_home = os.environ.get("LORE_HOME")
         os.environ["LORE_HOME"] = self.lore_home
         try:
-            # Session start records catalog identity only — never reconciles/downloads.
+            # initialize never reconciles/downloads: the on_session_start hook owns
+            # the skills sync, not the memory provider.
             provider.initialize("sess-2")
-            self.assertEqual(provider._skill_project_id, self.project_id)
-            self.assertEqual(client.list_calls, 0)
-            self.assertEqual(client.reconcile_loads, [])
             self.assertFalse(os.path.exists(os.path.join(self.lore_home, "skills")))
 
             # No artifact-create tool schema and no artifact handler.
@@ -1959,6 +2002,123 @@ class SkillWorkCopyTests(unittest.TestCase):
                 os.environ.pop("LORE_HOME", None)
             else:
                 os.environ["LORE_HOME"] = old_home
+
+
+class RegisterPluginTests(unittest.TestCase):
+    def setUp(self):
+        import lore_memory
+
+        self.lore_memory = lore_memory
+        self.lore_home = tempfile.mkdtemp(prefix="lore-register-")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.lore_home, ignore_errors=True)
+
+    def _install_stubs(self, skills_enabled=True):
+        """Patch lore_memory.LoreClient and skill_workcopy.run_skills_sync.
+
+        The patched run_skills_sync blocks on `entered` until `release` is set,
+        so the single-flight lock can be observed deterministically."""
+        module = self.lore_memory
+        entered = threading.Event()
+        release = threading.Event()
+        calls = []
+
+        class StubClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+        StubClient.skills_enabled = skills_enabled
+
+        def fake_run_skills_sync(client, lore_home):
+            calls.append((client, lore_home))
+            entered.set()
+            release.wait(timeout=10)
+
+        old_client = module.LoreClient
+        old_run = module.skill_workcopy.run_skills_sync
+        old_home = os.environ.get("LORE_HOME")
+        module.LoreClient = StubClient
+        module.skill_workcopy.run_skills_sync = fake_run_skills_sync
+        os.environ["LORE_HOME"] = self.lore_home
+        return entered, release, calls, (module, old_client, old_run, old_home)
+
+    @staticmethod
+    def _uninstall(stubs):
+        module, old_client, old_run, old_home = stubs
+        module.LoreClient = old_client
+        module.skill_workcopy.run_skills_sync = old_run
+        if old_home is None:
+            os.environ.pop("LORE_HOME", None)
+        else:
+            os.environ["LORE_HOME"] = old_home
+
+    def test_register_hooks_session_start_and_runs_single_sync(self):
+        registered = []
+
+        class FakeCtx:
+            def register_memory_provider(self, provider):
+                registered.append(("provider", provider))
+
+            def register_hook(self, event, callback):
+                registered.append(("hook", event, callback))
+
+        entered, release, calls, stubs = self._install_stubs(skills_enabled=True)
+        try:
+            self.lore_memory.register(FakeCtx())
+            self.assertEqual(registered[0][0], "provider")
+            self.assertEqual(len(registered), 2)
+            event, callback = registered[1][1], registered[1][2]
+            self.assertEqual(event, "on_session_start")
+
+            # The callback accepts **kwargs and starts a daemon sync thread.
+            thread = callback(session_id="sess-1", extra="ignored")
+            self.assertIsNotNone(thread)
+            self.assertTrue(thread.daemon)
+            self.assertTrue(entered.wait(timeout=5))
+
+            # While the first sync is in flight a second session start is a no-op.
+            self.assertIsNone(callback(session_id="sess-2"))
+            release.set()
+            thread.join(timeout=5)
+            self.assertFalse(thread.is_alive())
+
+            self.assertEqual(len(calls), 1)
+            client, lore_home = calls[0]
+            self.assertTrue(hasattr(client, "skills_enabled"))
+            self.assertEqual(lore_home, self.lore_home)
+
+            # After the run completes the next session start syncs again.
+            release.clear()
+            thread2 = callback(session_id="sess-3")
+            self.assertIsNotNone(thread2)
+            self.assertTrue(entered.wait(timeout=5))
+            release.set()
+            thread2.join(timeout=5)
+            self.assertEqual(len(calls), 2)
+        finally:
+            release.set()
+            self._uninstall(stubs)
+
+    def test_register_skips_hook_when_skills_disabled(self):
+        registered = []
+
+        class FakeCtx:
+            def register_memory_provider(self, provider):
+                registered.append(("provider", provider))
+
+            def register_hook(self, event, callback):
+                registered.append(("hook", event))
+
+        _entered, release, _calls, stubs = self._install_stubs(skills_enabled=False)
+        try:
+            self.lore_memory.register(FakeCtx())
+            self.assertEqual(len(registered), 1)
+            self.assertEqual(registered[0][0], "provider")
+        finally:
+            release.set()
+            self._uninstall(stubs)
 
 
 if __name__ == "__main__":

@@ -19,7 +19,10 @@ import subprocess
 import threading
 from typing import Any, Dict, List, Optional
 
-from agent.memory_provider import MemoryProvider
+try:
+    from agent.memory_provider import MemoryProvider
+except ImportError:  # standalone import (tests, direct client use) without the Hermes runtime
+    MemoryProvider = object
 
 from .client import LoreClient, LoreError
 from . import formatters
@@ -137,10 +140,6 @@ class LoreMemoryProvider(MemoryProvider):
         self._ready_key: Optional[str] = None
         self._ready_result: str = ""
         self._inflight: Dict[str, "_PrefetchFlight"] = {}
-        # Skill session identity (catalog only; no auto-download).
-        self._skill_project_id: str = ""
-        self._skill_catalog_revision: str = ""
-        self._skill_last_error: str = ""
         self._skills_enabled: bool = False
 
     @property
@@ -177,13 +176,6 @@ class LoreMemoryProvider(MemoryProvider):
             system_context = str((value or {}).get("system_context") or "").strip()
             if system_context:
                 self._boot_block = system_context
-            # Record project/catalog identity only — never auto-download or reconcile
-            # skills at session start. All download/update is on-demand via lore_skill_get.
-            if self._skills_enabled:
-                catalog = skill_workcopy.read_skill_catalog(lifecycle)
-                if catalog and catalog.get("project_id"):
-                    self._skill_project_id = catalog["project_id"]
-                    self._skill_catalog_revision = catalog.get("catalog_revision") or ""
         except Exception as e:
             logger.debug("Lore lifecycle startup failed: %s", e)
 
@@ -384,11 +376,7 @@ class LoreMemoryProvider(MemoryProvider):
         self._claim_or_join(sid, query, for_queue=True)
 
     def _do_recall(self, query: str, session_id: str) -> str:
-        """Execute recall API and return the host context. Thread-safe.
-
-        With Skills enabled the context also carries any `$skill-name`
-        invocation rendered by Lore.
-        """
+        """Execute recall API and return the host context. Thread-safe."""
         payload = self._payload_prompt(query)
         if not payload:
             return ""
@@ -588,25 +576,10 @@ class LoreMemoryProvider(MemoryProvider):
                 },
             },
             {
-                "name": "lore_skill_get",
-                "description": (
-                    "Load a Lore skill (cloud-stored, not part of the host's own skill system) "
-                    "by skill_id, including its package files. Use it when a task matches a Lore skill "
-                    "or another skill's instructions name one."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "skill_id": {"type": "string", "description": "Skill id."},
-                    },
-                    "required": ["skill_id"],
-                },
-            },
-            {
                 "name": "lore_skill_create",
                 "description": (
-                    "Create a Lore skill on the server. Does not auto-materialize a local copy; "
-                    "call lore_skill_get later if needed."
+                    "Create a Lore skill on the server. "
+                    "Changes sync to the local skills directory when the next session starts."
                 ),
                 "parameters": {
                     "type": "object",
@@ -650,7 +623,7 @@ class LoreMemoryProvider(MemoryProvider):
                 "name": "lore_skill_update",
                 "description": (
                     "Update a Lore skill on the server with optimistic concurrency via expected_version. "
-                    "Does not auto-reconcile the local copy; call lore_skill_get later if the version differs."
+                    "Changes sync to the local skills directory when the next session starts."
                 ),
                 "parameters": {
                     "type": "object",
@@ -704,7 +677,10 @@ class LoreMemoryProvider(MemoryProvider):
             },
             {
                 "name": "lore_skill_delete",
-                "description": "Archive/delete a Lore skill on the server. Does not auto-remove the local copy.",
+                "description": (
+                    "Archive/delete a Lore skill on the server. "
+                    "Changes sync to the local skills directory when the next session starts."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -745,19 +721,6 @@ class LoreMemoryProvider(MemoryProvider):
                     "required": ["source"],
                 },
             },
-            {
-                "name": "lore_skill_status",
-                "description": (
-                    "Report local skill work-copy states (ready/missing/outdated/tampered/unmanaged/invalid). "
-                    "Read-only: never mutates or reconciles copies."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {},
-                    "additionalProperties": False,
-                    "required": [],
-                },
-            },
         ]
         if not self._skills_enabled:
             schemas = [schema for schema in schemas if not schema["name"].startswith("lore_skill_")]
@@ -777,15 +740,8 @@ class LoreMemoryProvider(MemoryProvider):
                 return handler(args)
             return f'{{"error": "Unknown tool: {tool_name}"}}'
         except LoreError as e:
-            if tool_name.startswith("lore_skill_"):
-                self._skill_last_error = str(e)
-            return f'"Error: {e}"'
-        except skill_workcopy.SkillWorkCopyError as e:
-            self._skill_last_error = str(e)
             return f'"Error: {e}"'
         except Exception as e:
-            if tool_name.startswith("lore_skill_"):
-                self._skill_last_error = str(e)
             logger.warning("lore %s failed: %s", tool_name, e, exc_info=True)
             return f'"Error: {e}"'
 
@@ -926,10 +882,6 @@ class LoreMemoryProvider(MemoryProvider):
     def _tool_lore_skill_list(self, args: Dict) -> str:
         include_disabled = args.get("include_disabled") is not False
         data = self._client.list_skills(include_disabled=include_disabled)
-        if data.get("project_id"):
-            self._skill_project_id = str(data["project_id"])
-        if data.get("catalog_revision") is not None:
-            self._skill_catalog_revision = str(data.get("catalog_revision") or "")
         skills = data.get("skills") or []
         lines = []
         for s in skills:
@@ -958,40 +910,6 @@ class LoreMemoryProvider(MemoryProvider):
             ]
         return json.dumps(data, indent=2, ensure_ascii=False)
 
-    def _tool_lore_skill_get(self, args: Dict) -> str:
-        skill_id = str(args.get("skill_id") or "").strip()
-        if not skill_id:
-            raise LoreError("skill_id is required")
-        lore_home = skill_workcopy.resolve_lore_home()
-
-        def load_skill(sid: str):
-            return skill_workcopy.normalize_skill_detail(self._client.get_skill(sid))
-
-        def load_catalog():
-            return self._client.list_skills(include_disabled=True)
-
-        result = skill_workcopy.ensure_skill_work_copy(
-            skill_id=skill_id,
-            load_skill=load_skill,
-            lore_home=lore_home,
-            project_id=self._skill_project_id or None,
-            load_catalog=load_catalog,
-        )
-        if result.get("project_id"):
-            self._skill_project_id = str(result["project_id"])
-        skill = result.get("skill") or {}
-        lines = [
-            f"Skill ready: {skill.get('name') or skill_id}",
-            f"skill_dir: {result['skill_dir']}",
-            'Files from Lore in skill_dir are read-only and refreshed by lore_skill_get. Any other file there is a local artifact: never checked or uploaded. Save deliverables for the user where they asked or in the working directory, not in skill_dir.',
-            f"server_version: {result.get('server_version') if result.get('server_version') is not None else '?'}",
-            f"local_version: {result.get('local_version')}",
-            f"downloaded: {result.get('downloaded')}",
-            "",
-            result.get("skill_md") or "",
-        ]
-        return "\n".join(lines)
-
     def _tool_lore_skill_create(self, args: Dict) -> str:
         name = str(args.get("name") or "").strip()
         if not name:
@@ -1002,8 +920,6 @@ class LoreMemoryProvider(MemoryProvider):
             "files": args.get("files") if isinstance(args.get("files"), list) else [],
         }
         data = skill_workcopy.normalize_skill_detail(self._client.create_skill(body))
-        if data.get("project_id"):
-            self._skill_project_id = str(data["project_id"])
         skill_id = skill_workcopy.skill_id_of(data) or "?"
         version = skill_workcopy.skill_version_of(data)
         if version is not None and version != "":
@@ -1043,11 +959,7 @@ class LoreMemoryProvider(MemoryProvider):
         skill_id = str(args.get("skill_id") or "").strip()
         if not skill_id:
             raise LoreError("skill_id is required")
-        data = self._client.delete_skill(skill_id) or {}
-        if data.get("project_id"):
-            self._skill_project_id = str(data["project_id"])
-        if data.get("catalog_revision") is not None:
-            self._skill_catalog_revision = str(data.get("catalog_revision") or "")
+        self._client.delete_skill(skill_id)
         return f"Deleted skill {skill_id}"
 
     def _tool_lore_skill_import(self, args: Dict) -> str:
@@ -1064,43 +976,50 @@ class LoreMemoryProvider(MemoryProvider):
         )
         return _format_skill_import(data) + "\n\n" + json.dumps(data, indent=2, ensure_ascii=False)
 
-    def _tool_lore_skill_status(self, args: Dict) -> str:
-        project_id = self._skill_project_id
-        catalog_revision = self._skill_catalog_revision
-        if not project_id and self._client:
-            try:
-                catalog = self._client.list_skills(include_disabled=True)
-                if catalog.get("project_id"):
-                    project_id = str(catalog["project_id"])
-                    self._skill_project_id = project_id
-                    catalog_revision = str(catalog.get("catalog_revision") or "")
-                    self._skill_catalog_revision = catalog_revision
-            except Exception:
-                pass
-        lore_home = skill_workcopy.resolve_lore_home()
-        work_copies = (
-            skill_workcopy.list_local_work_copy_statuses(lore_home, project_id)
-            if project_id
-            else skill_workcopy.list_all_local_work_copy_statuses(lore_home)
-        )
-        lines = []
-        for m in work_copies:
-            ver = f" v{m['version']}" if m.get("version") is not None else ""
-            msg = f" — {m['message']}" if m.get("message") else ""
-            project = m.get("project_id")
-            project_label = f" [{project}]" if project else ""
-            lines.append(f"- {m.get('name')}{project_label}: {m.get('state')}{ver}{msg}")
-        header = f"project={project_id or '?'} catalog_revision={catalog_revision or '?'}"
-        parts = [header] + (lines if lines else ["(no local work copies)"])
-        if self._skill_last_error:
-            parts.append(f"last_error: {self._skill_last_error}")
-        return "\n".join(parts)
-
 
 # ---------------------------------------------------------------------------
 # Plugin registration entry point
 # ---------------------------------------------------------------------------
 
+# Guards the background skills sync: at most one run per process at a time.
+_skills_sync_lock = threading.Lock()
+
+
+def _start_skills_sync_thread() -> Optional[threading.Thread]:
+    """Start run_skills_sync on a daemon thread when no sync is in flight.
+
+    Returns the started thread, or None when a sync is already running."""
+    if not _skills_sync_lock.acquire(blocking=False):
+        return None
+
+    def run() -> None:
+        try:
+            client = LoreClient()
+            skill_workcopy.run_skills_sync(client, skill_workcopy.resolve_lore_home())
+        except Exception as e:
+            logger.debug("Lore skills sync failed: %s", e)
+        finally:
+            _skills_sync_lock.release()
+
+    thread = threading.Thread(target=run, daemon=True, name="lore-skills-sync")
+    thread.start()
+    return thread
+
+
 def register(ctx) -> None:
-    """Register Lore as a memory provider plugin."""
+    """Register Lore as a memory provider plugin.
+
+    When the connected Lore server exposes Skills, also hook session start to
+    reconcile ~/.lore/skills/<project-id>/ (the directory Hermes reads via
+    skills.external_dirs) with the server catalog on a background thread."""
     ctx.register_memory_provider(LoreMemoryProvider())
+    try:
+        skills_enabled = bool(getattr(LoreClient(), "skills_enabled", False))
+    except Exception:
+        return
+    if not skills_enabled:
+        return
+    ctx.register_hook(
+        "on_session_start",
+        lambda **kwargs: _start_skills_sync_thread(),
+    )

@@ -6,6 +6,25 @@ import { channelDir } from '../core/paths.js';
 import type { ChannelInstaller, ChannelContext, UninstallContext } from './types.js';
 import type { ChannelResult, ChannelStatus } from '../core/types.js';
 
+/** Best-effort project id for the skills.external_dirs hint (GET /api/skills?client_type=hermes). */
+async function fetchSkillsProjectId(ctx: ChannelContext): Promise<string> {
+  const baseUrl = (ctx.baseUrl ?? '').replace(/\/+$/, '');
+  if (!baseUrl) return '';
+  try {
+    const url = new URL('/api/skills?client_type=hermes', `${baseUrl}/`);
+    const headers: Record<string, string> = { accept: 'application/json' };
+    if (ctx.apiToken) headers.authorization = `Bearer ${ctx.apiToken}`;
+    const response = await fetch(url, { headers, signal: AbortSignal.timeout(4_000) });
+    if (!response.ok) return '';
+    const payload: unknown = await response.json();
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return '';
+    const projectId = (payload as { project_id?: unknown }).project_id;
+    return typeof projectId === 'string' ? projectId.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
 export const hermesInstaller: ChannelInstaller = {
   id: 'hermes',
 
@@ -32,10 +51,18 @@ export const hermesInstaller: ChannelInstaller = {
     } else {
       await fs.rm(path.join(dest, '.lore-skills-enabled'), { force: true });
     }
+    let message = `Hermes files ready. Manual setup required: symlink ${memoryPath} into your Hermes plugin/skills path (e.g. ~/.hermes/skills/lore_memory).`;
+    if (ctx.capabilities.skills) {
+      const projectId = await fetchSkillsProjectId(ctx);
+      const skillsDir = projectId
+        ? `~/.lore/skills/${projectId}`
+        : '~/.lore/skills/<project-id> (see the directory name under ~/.lore/skills/)';
+      message += ` For Lore Skills, also add ${skillsDir} to skills.external_dirs in ~/.hermes/config.yaml; the plugin syncs it at session start.`;
+    }
     return {
       id: 'hermes',
       status: 'ok',
-      message: `Hermes files ready. Manual setup required: symlink ${memoryPath} into your Hermes plugin/skills path (e.g. ~/.hermes/skills/lore_memory).`,
+      message,
     };
   },
 

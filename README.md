@@ -151,7 +151,7 @@ Then open `/settings` only if you want to tune recall weights, Dream schedule, b
 | **Codex** | `codex-plugin/` | Local marketplace plugin, remote Memory MCP, boot/recall hooks, and Skill sync into the plugin's `skills/` directory |
 | **OpenClaw** | `openclaw-plugin/` | Runtime plugin with boot, recall, Lore tools, and Skill sync into the plugin's `skills/` directory |
 | **Hermes** | `hermes-plugin/` | MemoryProvider plugin with Lore tools, recall, and Python-native Skill sync into `~/.lore/skills/<project-id>/` |
-| **OpenCode** | `opencode-plugin/` | Native plugin with exact `lore_*` tools and recall, plus Skill sync into `~/.config/opencode/skills/` on `lore install`/`update` |
+| **OpenCode** | `opencode-plugin/` | Native plugin with exact `lore_*` tools and recall, plus session-start Skill sync into `~/.config/opencode/skills/` (Lore-marked entries only) |
 | **ZCode** | `zcode-plugin/` | Native marketplace plugin with SessionStart boot and UserPromptSubmit recall hooks (no MCP) |
 | **DeepSeek Harness** | `dsh-plugin/` | Native lifecycle plugin with per-session boot, pre-step recall, and an MCP bridge (`mcp__lore__*` tools) |
 | **Generic MCP** | `/api/mcp` | Streamable HTTP endpoint for clients that can attach remote tools |

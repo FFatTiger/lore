@@ -148,6 +148,6 @@ For the console and the create, update, and archive flows, see [Create and manag
 | DeepSeek Harness | `~/.lore/skills/<project-id>/`, served by the plugin's own skills provider | the host's user-invocable entry |
 | OpenCode | `~/.config/opencode/skills/<name>/` | the host's own skill tool |
 
-OpenCode is the one channel whose copies are written only by `lore install` and `lore update`, and whose plugin still lists skills with its own tools.
+OpenCode is the one host without a plugin-owned skills directory, so Lore writes into OpenCode's own global skills folder. It only creates, updates, or removes entries that carry a Lore marker; anything else in that folder is left alone.
 
 Clients that connect through generic MCP (`client_type=mcp`) don't get skills. The open-source server has no skills, so it syncs none.

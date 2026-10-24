@@ -143,6 +143,6 @@ Loremem 不会替你自动迁移本地技能。有些技能只能在某一个 Ag
 | DeepSeek Harness | `~/.lore/skills/<project-id>/`，由插件自己的 skills provider 提供 | 按宿主的用户可调用入口 |
 | OpenCode | `~/.config/opencode/skills/<名称>/` | 宿主自己的技能工具 |
 
-OpenCode 是唯一一个只有 `lore install` 和 `lore update` 才会写入副本的渠道，它的插件目前仍用自己的工具列出技能。
+OpenCode 是唯一没有插件专属技能目录的宿主，所以 Lore 直接写入 OpenCode 自己的全局技能目录。Lore 只会创建、更新、删除带 Lore 标记的条目，目录里其他东西一律不碰。
 
 通过通用 MCP（`client_type=mcp`）连接的客户端不会获得技能。开源服务器没有技能，也不会同步任何技能。

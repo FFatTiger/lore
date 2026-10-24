@@ -20,7 +20,7 @@ const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, '..');
 
 const SOURCE_DIR = path.join(REPO_ROOT, 'shared', 'skill-workcopy');
-const SOURCE_FILES = ['index.mjs', 'index.d.mts'];
+const SOURCE_FILES = ['index.mjs', 'index.d.mts', 'skills-sync.mjs', 'skills-sync.d.mts'];
 
 const VENDOR_TARGETS = [
   'pi-extension/vendor/skill-workcopy',

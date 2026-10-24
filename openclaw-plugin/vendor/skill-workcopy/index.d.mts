@@ -243,8 +243,6 @@ export function listAllLocalWorkCopyStatuses(loreHome: string): Array<WorkCopySt
 /** @deprecated Prefer listLocalWorkCopyStatuses. */
 export const listLocalMirrorStatuses: typeof listLocalWorkCopyStatuses;
 
-export const LORE_SYNC_LOCK: '.lore-sync.lock';
-
 export interface SkillSyncResult {
   created: string[];
   updated: string[];
@@ -252,13 +250,12 @@ export interface SkillSyncResult {
   removed: string[];
   conflicts: string[];
   errors: Array<{ name: string; message: string }>;
-  skipped?: 'locked';
 }
 
 /**
  * Reconcile a host-native skills directory with the server catalog. See
  * shared/skill-workcopy/index.mjs for the full contract (conflicts, unchanged
- * fast path, adaptation, removal, staging, and locking semantics).
+ * fast path, adaptation, removal, and staging semantics).
  */
 export function syncSkillsToDir(opts: {
   root: string;

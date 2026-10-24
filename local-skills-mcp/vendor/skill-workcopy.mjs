@@ -1120,9 +1120,7 @@ export function listLocalWorkCopyStatuses(loreHome, projectId) {
 
 // ---- skills-directory sync (host-native skills/ directories) ----
 
-export const LORE_SYNC_LOCK = '.lore-sync.lock';
 const SYNC_STAGING_DIR = '.lore-sync-staging';
-const SYNC_LOCK_MAX_AGE_MS = 2 * 60 * 1000;
 
 /**
  * True when the marker identity matches the server summary (skill_id, version, and
@@ -1142,31 +1140,6 @@ function markerMatchesSummary(marker, summary) {
     if (localSource !== serverManifest) return false;
   }
   return true;
-}
-
-function acquireSyncLock(lockPath) {
-  try {
-    fs.mkdirSync(lockPath);
-    return true;
-  } catch (error) {
-    if (error?.code !== 'EEXIST') throw error;
-  }
-  let stat = null;
-  try {
-    stat = fs.statSync(lockPath);
-  } catch (error) {
-    if (error?.code === 'ENOENT') return acquireSyncLock(lockPath);
-    throw error;
-  }
-  if (Date.now() - stat.mtimeMs <= SYNC_LOCK_MAX_AGE_MS) return false;
-  // Stale lock from a crashed sync: take it over.
-  try { fs.rmSync(lockPath, { recursive: true, force: true }); } catch { /* raced */ }
-  try {
-    fs.mkdirSync(lockPath);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -1215,11 +1188,10 @@ function removeManagedWorkCopy(dir, marker) {
  *   (archived/disabled/renamed) lose their managed files and marker; local artifacts
  *   keep the directory alive.
  * - Staging lives in a hidden directory inside root (same filesystem) and is cleaned
- *   up afterwards. A single sync per root is enforced via root/.lore-sync.lock
- *   (mkdir mutex, stale after 2 minutes).
+ *   up afterwards.
  *
  * Returns { created, updated, unchanged, removed, conflicts, errors } (name arrays;
- * errors entries carry { name, message }), or the same result with skipped: 'locked'.
+ * errors entries carry { name, message }).
  */
 export async function syncSkillsToDir(opts) {
   const { root, projectId, skills, loadSkill, adapt } = opts;
@@ -1233,9 +1205,6 @@ export async function syncSkillsToDir(opts) {
   const result = { created: [], updated: [], unchanged: [], removed: [], conflicts: [], errors: [] };
   const rootPath = path.resolve(String(root));
   fs.mkdirSync(rootPath, { recursive: true, mode: WORK_DIR_MODE });
-
-  const lockPath = path.join(rootPath, LORE_SYNC_LOCK);
-  if (!acquireSyncLock(lockPath)) return { ...result, skipped: 'locked' };
 
   const stagingBase = path.join(rootPath, SYNC_STAGING_DIR);
   try {
@@ -1316,7 +1285,7 @@ export async function syncSkillsToDir(opts) {
     }
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
-      if (entry.name === SYNC_STAGING_DIR || entry.name === LORE_SYNC_LOCK) continue;
+      if (entry.name === SYNC_STAGING_DIR) continue;
       const dir = path.join(rootPath, entry.name);
       const marker = readWorkCopyMarker(dir);
       if (!marker || marker.project_id !== projectIdStr) continue;
@@ -1334,7 +1303,6 @@ export async function syncSkillsToDir(opts) {
     return result;
   } finally {
     if (pathExists(stagingBase)) rmrf(stagingBase);
-    try { fs.rmSync(lockPath, { recursive: true, force: true }); } catch { /* ignore */ }
   }
 }
 

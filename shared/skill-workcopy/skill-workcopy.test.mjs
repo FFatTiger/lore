@@ -968,7 +968,6 @@ describe('skills-directory sync', () => {
         assert.equal(fs.statSync(path.join(dir, 'SKILL.md')).mode & 0o777, 0o444);
       }
       assert.equal(fs.existsSync(path.join(root, '.lore-sync-staging')), false);
-      assert.equal(fs.existsSync(path.join(root, '.lore-sync.lock')), false);
     } finally {
       rmTempHome(root);
     }
@@ -1127,31 +1126,6 @@ describe('skills-directory sync', () => {
       assert.equal(result.errors.length, 1);
       assert.equal(result.errors[0].name, 'demo-skill');
       assert.match(result.errors[0].message, /unknown skill/);
-    } finally {
-      rmTempHome(root);
-    }
-  });
-
-  it('skips while a fresh lock exists and takes over a stale lock', async () => {
-    const root = makeSyncRoot();
-    try {
-      fs.mkdirSync(path.join(root, '.lore-sync.lock'));
-      const loader = fakeLoader({ 'skill-1': skillDetail() });
-      const locked = await syncSkillsToDir({
-        root, projectId, skills: [summaryOf(skillDetail())], loadSkill: loader.loadSkill,
-      });
-      assert.equal(locked.skipped, 'locked');
-      assert.deepEqual(locked.created, []);
-      assert.deepEqual(loader.calls, []);
-      assert.equal(fs.existsSync(path.join(root, 'demo-skill')), false);
-
-      const stale = new Date(Date.now() - 3 * 60 * 1000);
-      fs.utimesSync(path.join(root, '.lore-sync.lock'), stale, stale);
-      const tookOver = await syncSkillsToDir({
-        root, projectId, skills: [summaryOf(skillDetail())], loadSkill: loader.loadSkill,
-      });
-      assert.equal(tookOver.skipped, undefined);
-      assert.deepEqual(tookOver.created, ['demo-skill']);
     } finally {
       rmTempHome(root);
     }

@@ -47,7 +47,9 @@ The mcp-client row registers a stdio server named `lore` that forwards MCP JSON-
 
 Skills are fail-closed. They are enabled only when the connected server advertises `capabilities.skills=true`, which the installer records as `server_profile` in `config.json` for the same base URL. `LORE_SKILLS_ENABLED=0` forces them off; `LORE_SKILLS_ENABLED=1` enables them when no matching profile exists.
 
-When Skills are enabled, a successful `lore_skill_get` materializes the server package under `${LORE_HOME:-~/.lore}/skills/<project-id>/<skill-name>/` like the other channels. Server-managed files are read-only and refreshed by later gets; any other file in the skill directory is a local artifact that is never checked or uploaded.
+When Skills are enabled, `plugin/lifecycle.mjs` registers a `ctx.skills` provider (the `lore` provider) at plugin startup and every `agent/created` fires a background `runSkillsSync` that reconciles the server catalog into `${LORE_HOME:-~/.lore}/skills/<project-id>/` (`.lore-sync-status.json` inside that directory records the outcome). The provider lists the marker-owned work copies there, parses each `SKILL.md` frontmatter (`name`, `description`), and serves the body on demand — no copies inside dsh's own directories. The previous session's sync is what a new session sees; changes become visible in the next session.
+
+`disable-model-invocation: true` in a skill's frontmatter maps to dsh's `invocation.modelInvocable: false`; `user-invocable: false` maps to `invocation.userInvocable: false`. Skill names must be kebab-case; others are skipped (dsh's registry rejects them). Server-managed files are read-only and refreshed by the sync; any other file in a skill directory is a local artifact that is never checked or uploaded. Same-named directories without a Lore marker are never touched.
 
 ## Tests
 

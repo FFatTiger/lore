@@ -9,8 +9,7 @@ Long-term memory and Skill work-copy integration for [Hermes Agent](https://gith
 - **Session Tracking** - Track which memories have been read
 - **Full CRUD Operations** - Create, read, update, delete memory nodes
 - **Search & Discovery** - Keyword and semantic search
-- **Lore Skills** - List/search/get/create/update/delete skills; materialize writable local work copies on get
-- **Skill Discovery** - Session start lists available skills; `$skill-name` in a prompt invokes one explicitly (no auto-download)
+- **Lore Skills** - Server skills sync into `~/.lore/skills/<project-id>/` at session start and surface through Hermes' native skill system
 
 ## Installation
 
@@ -25,8 +24,9 @@ ln -s /path/to/lore/hermes-plugin lore
 Hermes loads Lore as a `MemoryProvider`. Once configured, it automatically:
 
 - Injects **boot memories** into the system prompt at session start
-- Runs **recall prefetch** before each user message (memory context + any explicit `$skill-name` invocation)
-- Registers **memory + skill tools** for the agent to use
+- Runs **recall prefetch** before each user message
+- Registers **memory + skill management tools** for the agent to use
+- Syncs **Lore skills** into `~/.lore/skills/<project-id>/` for Hermes' native skill index
 
 ```python
 from lore_memory.client import LoreClient
@@ -45,19 +45,27 @@ client.create_node(
 # Skills API (client_type=hermes is always sent)
 client.list_skills()
 client.search_skills("auth")
-detail = client.get_skill("skill-id")
 ```
 
 ## Skills workflow
 
-- Session start lists the skills the agent may use (name, description, `skill_id`); the agent decides when to call `lore_skill_get`. Users can invoke a skill explicitly by typing `$skill-name` in a prompt; skills whose `SKILL.md` sets `disable-model-invocation: true` are hidden from the agent and only run this way. Hermes writes the server context through unchanged; it does **not** auto-download skills or inject local paths.
-- Session start may record project catalog identity (`skill_catalog.project_id`) without downloading.
-- `lore_skill_get(skill_id)` materializes a complete writable work copy under `${LORE_HOME:-~/.lore}/skills/<project-id>/<skill-name>/` and returns `SKILL.md` plus absolute `skill_dir`.
-- Same server version preserves local edits and extra agent outputs.
-- Server version upgrades overwrite/delete only server-managed files (tracked in `.lore-skill-marker.json` `managed_files`) and preserve local extras.
-- Unmanaged directories, symlinks, and unsafe markers are refused. Failed upgrades roll back via staging.
-- `lore_skill_update` requires a positive integer `expected_version` (optimistic concurrency).
-- There is no separate artifact tool and no behavioral prompt guidance for when to use skills.
+Lore is the install target and source of truth for skills; the plugin never copies them into Hermes itself. At each session start (Hermes `on_session_start` hook) a background thread reconciles the server catalog into `${LORE_HOME:-~/.lore}/skills/<project-id>/` and records the outcome in `.lore-sync-status.json` inside that directory.
+
+To make the synced skills visible to Hermes, list the directory under `skills.external_dirs` in `~/.hermes/config.yaml` (Hermes expands `~`):
+
+```yaml
+skills:
+  external_dirs:
+    - ~/.lore/skills/<project-id>
+```
+
+External-directory skills behave exactly like local skills: they enter the system-prompt index, `skills_list`, and the `/skill-name` command. Changes sync at the next session start, or immediately after Hermes' `/reload-skills` refreshes the index.
+
+The sync only manages directories carrying a Lore marker; same-named unmanaged directories are never touched. Server-side updates overwrite only server-managed files; local artifacts you add inside a skill directory survive updates and removals. Skills deleted or disabled on the server lose their managed files but keep local artifacts.
+
+- `lore_skill_list` / `lore_skill_search` / `lore_skill_import` manage skills on the server.
+- `lore_skill_create` / `lore_skill_update` / `lore_skill_delete` change the server copy; the local directory follows at the next session start (`lore_skill_update` requires a positive integer `expected_version`).
+- There is no per-skill load tool and no behavioral prompt guidance for when to use skills.
 
 ## Configuration
 
@@ -78,7 +86,7 @@ Environment variables remain as fallback compatibility:
 | `LORE_API_TOKEN` | - | API token for authentication |
 | `LORE_TIMEOUT` | `30` | Request timeout in seconds |
 | `LORE_DEFAULT_DOMAIN` | `core` | Default memory domain |
-| `LORE_HOME` | `~/.lore` | Root for local skill work copies |
+| `LORE_HOME` | `~/.lore` | Root of the synced local skills directory |
 
 ## API Reference
 
@@ -97,14 +105,13 @@ Environment variables remain as fallback compatibility:
 - `mark_recall_used(query_id, session_id, uris)` - Mark recall events as adopted
 - `list_skills(include_disabled=True)` - List project skills
 - `search_skills(query, limit=None)` - Search/recall skills
-- `get_skill(skill_id)` - Fetch skill detail (files + hashes)
 - `create_skill(body)` - Create skill on server
 - `update_skill(skill_id, body)` - Update skill (`expected_version` required, positive integer)
 - `delete_skill(skill_id)` - Archive/delete skill on server
 
 ### Skill tools
 
-- `lore_skill_list` / `lore_skill_search` / `lore_skill_get` / `lore_skill_create` / `lore_skill_update` / `lore_skill_delete` / `lore_skill_import` (public GitHub repo import; supports `dry_run`) / `lore_skill_status`
+- `lore_skill_list` / `lore_skill_search` / `lore_skill_create` / `lore_skill_update` / `lore_skill_delete` / `lore_skill_import` (public GitHub repo import; supports `dry_run`)
 
 ## Project Structure
 
@@ -115,7 +122,7 @@ hermes-plugin/
     ├── __init__.py         # MemoryProvider + tool schemas/handlers
     ├── client.py           # HTTP client for Lore API (incl. /skills)
     ├── formatters.py       # Output formatting
-    ├── skill_workcopy.py   # Python-native writable skill work-copy core
+    ├── skill_workcopy.py   # Python-native skill work-copy core + session-start sync
     ├── plugin.yaml         # Plugin manifest
     └── test_thin_adapters.py
 ```

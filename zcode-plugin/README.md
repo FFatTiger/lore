@@ -24,17 +24,13 @@ The plugin reads `${LORE_HOME:-~/.lore}/config.json` (`base_url`, `api_token`), 
 
 ## Hooks
 
-- `SessionStart` (`startup|resume|clear`, 8000ms): inject Lore boot context
+- `SessionStart` (`startup|resume|clear`, 8000ms): inject Lore boot context, then hand the skills sync to a detached background process
 - `UserPromptSubmit` (10000ms): inject Lore recall context for non-empty prompts
 
 Lore/network/parse errors fail open: the hooks exit 0 with empty stdout.
 
 ## Skills
 
-Skills are fail-closed. They are enabled only when the connected server advertises `capabilities.skills=true`, which the installer records as `server_profile` in `config.json` for the same base URL. `LORE_SKILLS_ENABLED=0` forces them off; `LORE_SKILLS_ENABLED=1` enables them when no matching profile exists. The open-source Lore server has no Skills, so its users never see `lore_skill_*` tools or Skills context.
+Skills are fail-closed. They are enabled only when the connected server advertises `capabilities.skills=true`, which the installer records as `server_profile` in `config.json` for the same base URL. `LORE_SKILLS_ENABLED=0` forces them off; `LORE_SKILLS_ENABLED=1` enables them when no matching profile exists.
 
-When Skills are enabled:
-
-- Session start lists the available skills (name, description, `skill_id`); the agent decides when to call `lore_skill_get`.
-- Type `$skill-name` in a prompt to invoke a skill explicitly. Skills whose `SKILL.md` sets `disable-model-invocation: true` are hidden from the agent and only run this way.
-- A successful `lore_skill_get` is validated and synchronized to `${LORE_HOME:-~/.lore}/skill-artifacts/<project-id>/<skill-name>/`. The bridge returns the `SKILL.md` text, local directory, version, and managed file list. Server-managed files are tracked in `.lore-skill-marker.json`; a later get restores modified managed files and removes managed files retired by the server, while extra local files are preserved as agent outputs. Path traversal, symlinks, hash mismatches, malformed base64, and collisions with local outputs fail before the work copy is changed.
+When Skills are enabled, every `SessionStart` syncs the visible skills into the plugin's own `skills/` directory (`skills/<name>/SKILL.md`) in a detached background process, so ZCode discovers them natively. The hook exits without waiting for the sync; the last outcome is recorded in `skills/.lore-sync-status.json` inside the plugin root. New or changed skills appear after a refresh in Settings → Skills (enabling or disabling the plugin refreshes automatically). Invoke a skill by typing `$` to pick one, or via the `/` menu's Skills group.

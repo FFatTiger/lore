@@ -18,7 +18,14 @@ export interface SkillsSyncStatus {
 
 export function runSkillsSync(opts: {
   clientType: string;
-  root: string;
+  /** Host-native skills directory to reconcile. */
+  root?: string;
+  /**
+   * Resolves the skills directory from the project_id returned by the catalog,
+   * for hosts keyed by server project identity (~/.lore/skills/<project_id>).
+   * Used when root is omitted.
+   */
+  rootForProject?: (projectId: string) => string;
   loreHome?: string;
   baseUrl?: string;
   apiToken?: string;

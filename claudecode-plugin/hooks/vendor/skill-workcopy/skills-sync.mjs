@@ -103,6 +103,7 @@ function writeStatusFile(root, status) {
 export async function runSkillsSync(opts) {
   const clientType = pickString(opts?.clientType);
   const root = pickString(opts?.root);
+  const rootForProject = typeof opts?.rootForProject === 'function' ? opts.rootForProject : null;
   const loreHome = pickString(opts?.loreHome) ? path.resolve(pickString(opts?.loreHome)) : resolveLoreHome();
   const timeoutMs = Number.isFinite(opts?.timeoutMs) ? Number(opts.timeoutMs) : DEFAULT_TIMEOUT_MS;
 
@@ -117,9 +118,10 @@ export async function runSkillsSync(opts) {
     conflicts: [],
     errors: [],
   };
+  let syncRoot = root;
   try {
     if (!clientType) throw new Error('runSkillsSync requires clientType');
-    if (!root) throw new Error('runSkillsSync requires root');
+    if (!root && !rootForProject) throw new Error('runSkillsSync requires root');
     const { baseUrl, apiToken } = loadConnection({
       loreHome,
       baseUrl: opts?.baseUrl,
@@ -129,12 +131,18 @@ export async function runSkillsSync(opts) {
     const signal = AbortSignal.timeout(timeoutMs);
     const catalog = await fetchSkillsJson(baseUrl, apiToken, clientType, '', signal);
     status.project_id = pickString(catalog?.project_id);
+    if (!syncRoot) {
+      // Hosts whose skills root is keyed by the server project identity (Pi,
+      // Hermes, dsh: ~/.lore/skills/<project_id>) resolve it after the catalog.
+      syncRoot = pickString(rootForProject(status.project_id));
+      if (!syncRoot) throw new Error('runSkillsSync requires root');
+    }
     status.catalog_revision = catalog?.catalog_revision === undefined || catalog?.catalog_revision === null
       ? ''
       : String(catalog.catalog_revision);
     const { adapt, filterConflicts } = hostAdapter(clientType);
     const result = await syncSkillsToDir({
-      root,
+      root: syncRoot,
       projectId: status.project_id,
       skills: Array.isArray(catalog?.skills) ? catalog.skills : [],
       loadSkill: (skillId) => fetchSkillsJson(baseUrl, apiToken, clientType, `/${encodeURIComponent(skillId)}`, signal),
@@ -150,9 +158,9 @@ export async function runSkillsSync(opts) {
     status.errors.push({ name: '', message: error instanceof Error ? error.message : String(error) });
   }
   status.finished_at = new Date().toISOString();
-  if (root) {
+  if (syncRoot) {
     try {
-      writeStatusFile(root, status);
+      writeStatusFile(syncRoot, status);
     } catch { /* silent: background best-effort */ }
   }
   return status;

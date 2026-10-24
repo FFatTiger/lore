@@ -28,6 +28,20 @@ snapshots/
 .claude/
 /.claude-plugin/
 
+# Session-start skills sync target inside the Claude Code plugin (runtime state)
+claudecode-plugin/skills/
+
+# Session-start skills sync target inside the OpenClaw plugin (runtime state)
+openclaw-plugin/skills/
+
+# Codex plugin: only the bundled lore-memory skill is tracked; everything else
+# under skills/ is a session-start sync target (runtime state).
+codex-plugin/skills/*
+!codex-plugin/skills/lore-memory/
+
+# Session-start skills sync target inside the ZCode plugin (runtime state)
+zcode-plugin/skills/
+
 # OS / editor
 .DS_Store
 .vscode/

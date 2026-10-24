@@ -49,7 +49,7 @@ Agent 没有启动记忆（boot）、没有召回、没有 Lore 工具，或者 
 
 - **Claude Code 和 ZCode：** 记忆工具显示为 `mcp__plugin_lore_lore__<tool>`。在 Claude Code 中，用 `/mcp` 检查 `lore` 是否已连接。
 - **DeepSeek Harness：** 记忆工具显示为 `mcp__lore__<tool>`，例如 `mcp__lore__lore_search`。
-- **Codex：** `codex mcp list` 必须列出 `lore`。在支持 Skills 的服务器上，还会列出 `lore-skills`。
+- **Codex：** `codex mcp list` 必须列出 `lore`。
 - **OpenCode：** 原生工具名称必须与 `lore_guidance` 到 `lore_move_node` 完全一致。如果出现 `lore_lore_search` 这样的名称，说明注册的是 MCP 条目，而不是原生插件。参见下一节。
 - **技能工具**（`lore_skill_*`）只有在服务器声明支持 Skills 时才会出现。开源服务器没有该功能，Loremem 云服务有。
 
@@ -59,7 +59,7 @@ Agent 没有启动记忆（boot）、没有召回、没有 Lore 工具，或者 
 
 **修复：**
 
-- **Claude Code：** 早期的安装可能留下了用户范围的 `lore` 或 `lore-skills` MCP 条目。删除它们，然后重新安装。如果命令提示找不到该服务，可以跳过。
+- **Claude Code：** 早期的安装可能留下了用户范围的 `lore` 或 `lore-skills` MCP 条目。删除它们，然后重新安装。如果命令提示找不到该服务，可以跳过。安装程序自己会清理 `lore-skills` 条目；现在技能通过插件的 `skills/` 目录进入 Claude Code。
 
   ```bash
   claude mcp remove --scope user lore

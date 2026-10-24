@@ -20,8 +20,8 @@ The installer skips Claude Code when the `claude` command is not on your `PATH`.
 
 - The plugin files from `lore-claudecode.zip`, in `~/.lore/claudecode/`. The installer registers that folder as a plugin marketplace and installs `lore@lore`.
 - Two hooks. `SessionStart` loads startup memory, and `UserPromptSubmit` adds recall to each prompt. Each hook has a 10-second timeout. The hooks run with `npx tsx`.
-- Two MCP servers. `lore` connects to `<server>/api/mcp?client_type=claudecode` and sends the token from `LORE_API_TOKEN`. `lore-skills` runs locally. Its Skill tools stay hidden unless Skills are enabled.
-- Connection values in the `env` block of `~/.claude/settings.json`: `LORE_BASE_URL`, `LORE_HOME`, `LORE_CLIENT_TYPE` (set to `claudecode`), `LORE_SKILLS_ENABLED` (`1` or `0`), and `LORE_API_TOKEN` when you set a token.
+- One MCP server. `lore` connects to `<server>/api/mcp?client_type=claudecode` and sends the token from `LORE_API_TOKEN`. Skills no longer have an MCP server of their own: session start syncs them into the plugin's `skills/` directory.
+- Connection values in the `env` block of `~/.claude/settings.json`: `LORE_BASE_URL`, `LORE_HOME`, `LORE_CLIENT_TYPE` (set to `claudecode`), and `LORE_API_TOKEN` when you set a token. The legacy `LORE_SKILLS_ENABLED` switch is scrubbed here.
 - Cleanup of earlier installs: the user-scope `lore` and `lore-skills` MCP entries are removed, and the legacy `~/.claude/lore-guidance.md` file and its import line in `~/.claude/CLAUDE.md` are removed.
 
 Claude Code lists Lore's tools with the `mcp__plugin_lore_lore__` prefix, for example `mcp__plugin_lore_lore__lore_search`.

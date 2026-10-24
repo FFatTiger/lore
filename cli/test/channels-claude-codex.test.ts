@@ -57,8 +57,6 @@ async function seedCodexArtifact(
   await fs.mkdir(path.join(market, 'hooks'), { recursive: true });
   await fs.writeFile(path.join(loreHome, 'codex', '.lore-release'), 'v1.3.15\n');
   await fs.mkdir(path.join(market, 'scripts'), { recursive: true });
-  await fs.mkdir(path.join(market, 'local-skills-mcp', 'src'), { recursive: true });
-  await fs.writeFile(path.join(market, 'local-skills-mcp', 'src', 'server.mjs'), '#!/usr/bin/env node\n');
   await fs.writeFile(path.join(market, 'hooks', 'hooks.json'), `${JSON.stringify(hooks, null, 2)}\n`);
   await fs.writeFile(path.join(market, 'scripts', 'install-hooks.sh'), '#!/bin/bash\nexit 0\n');
   await fs.chmod(path.join(market, 'scripts', 'install-hooks.sh'), 0o755);
@@ -69,15 +67,18 @@ async function readCodexConfig(home: string): Promise<string> {
   return fs.readFile(path.join(home, '.codex', 'config.toml'), 'utf8');
 }
 
-test('claude install writes settings and relies on the plugin MCP server', async () => {
+test('claude install writes settings, relying on the server profile for skills', async () => {
   const { home, loreHome } = await tempHome();
   await fs.mkdir(path.join(loreHome, 'claudecode'), { recursive: true });
+  const settingsPath = path.join(home, '.claude', 'settings.json');
+  await fs.mkdir(path.dirname(settingsPath), { recursive: true });
+  // Residue from older installers must be scrubbed, not kept.
+  await fs.writeFile(settingsPath, JSON.stringify({
+    env: { LORE_SKILLS_ENABLED: '1', LORE_CLIENT_TYPE: 'claudecode' },
+  }));
   const calls: string[] = [];
   const run: ExecFn = async (argv) => {
     calls.push(argv.join(' '));
-    if (argv.join(' ') === 'claude plugin list') {
-      return { code: 0, stdout: '', stderr: '' };
-    }
     return { code: 0, stdout: '', stderr: '' };
   };
 
@@ -88,16 +89,16 @@ test('claude install writes settings and relies on the plugin MCP server', async
     assert.ok(calls.includes('claude mcp remove --scope user lore'));
     assert.ok(calls.includes('claude mcp remove --scope user lore-skills'));
     assert.equal(calls.some((c) => c.startsWith('claude mcp add')), false);
-    const settings = JSON.parse(
-      await fs.readFile(path.join(home, '.claude', 'settings.json'), 'utf8'),
-    ) as { env: Record<string, string> };
+    const settings = JSON.parse(await fs.readFile(settingsPath, 'utf8')) as {
+      env: Record<string, string>;
+    };
     assert.equal(settings.env.LORE_BASE_URL, 'https://core.example');
     assert.equal(settings.env.LORE_API_TOKEN, 'lm_x');
-    assert.equal(settings.env.LORE_SKILLS_ENABLED, '1');
+    assert.equal(settings.env.LORE_SKILLS_ENABLED, undefined);
   });
 });
 
-test('claude install keeps Skills disabled when the server does not advertise them', async () => {
+test('claude install writes no skills switch when the server does not advertise them', async () => {
   const { home, loreHome } = await tempHome();
   await fs.mkdir(path.join(loreHome, 'claudecode'), { recursive: true });
   const run: ExecFn = async () => ({ code: 0, stdout: 'lore@lore', stderr: '' });
@@ -108,7 +109,7 @@ test('claude install keeps Skills disabled when the server does not advertise th
     const settings = JSON.parse(
       await fs.readFile(path.join(home, '.claude', 'settings.json'), 'utf8'),
     ) as { env: Record<string, string> };
-    assert.equal(settings.env.LORE_SKILLS_ENABLED, '0');
+    assert.equal(settings.env.LORE_SKILLS_ENABLED, undefined);
   });
 });
 
@@ -217,23 +218,20 @@ test('Claude rewrites the marketplace path under home to a portable ~ path', asy
   });
 });
 
-test('Claude plugin MCP server authenticates with LORE_API_TOKEN', async () => {
+test('Claude plugin ships only the remote lore MCP server', async () => {
   const pluginMcp = JSON.parse(
     await fs.readFile(new URL('../../claudecode-plugin/.mcp.json', import.meta.url), 'utf8'),
   ) as {
     mcpServers: {
       lore: { url: string; headers?: Record<string, string> };
-      'lore-skills': { command: string; args: string[]; env?: Record<string, string> };
+      'lore-skills'?: unknown;
     };
   };
   assert.match(pluginMcp.mcpServers.lore.url, /\$\{LORE_BASE_URL/);
   assert.equal(pluginMcp.mcpServers.lore.headers?.Authorization, 'Bearer ${LORE_API_TOKEN:-}');
-  // The plugin also ships the stdio Skills server, so the CLI never needs to
-  // register a duplicate user-scope MCP entry for it.
-  assert.ok(pluginMcp.mcpServers['lore-skills'].args.some((a) => a.includes('local-skills-mcp')));
-  assert.ok(pluginMcp.mcpServers['lore-skills'].args.includes('claudecode'));
-  // Fail-closed: the Skills server exposes no tools unless the installer enabled them.
-  assert.equal(pluginMcp.mcpServers['lore-skills'].env?.LORE_SKILLS_ENABLED, '${LORE_SKILLS_ENABLED:-0}');
+  // The local Skills MCP is gone: skills load from the host-native directory the
+  // plugin syncs at session start, so no stdio server ships or gets registered.
+  assert.equal(pluginMcp.mcpServers['lore-skills'], undefined);
 });
 
 test('Claude clear token removes settings token', async () => {
@@ -624,6 +622,36 @@ test('codex clear token removes stale MCP auth keys', async () => {
     if (process.platform !== 'win32') {
       assert.equal((await fs.stat(cfgPath)).mode & 0o777, 0o600);
     }
+  });
+});
+
+test('codex install scrubs the legacy lore-skills MCP entry', async () => {
+  const { home, loreHome } = await tempHome();
+  await seedCodexArtifact(loreHome);
+  const cfgPath = path.join(home, '.codex', 'config.toml');
+  await fs.mkdir(path.dirname(cfgPath), { recursive: true });
+  await fs.writeFile(
+    cfgPath,
+    '[mcp_servers.lore-skills]\n' +
+      'command = "node"\n' +
+      'args = ["/old/skills-server.mjs"]\n' +
+      'env = { LORE_SKILLS_ENABLED = "1" }\n',
+    'utf8',
+  );
+  const calls: string[] = [];
+  const run: ExecFn = async (argv) => {
+    calls.push(argv.join(' '));
+    return { code: 0, stdout: '', stderr: '' };
+  };
+
+  await withBin(home, 'codex', async () => {
+    const result = await codexInstaller.install(ctx({ loreHome, homeDir: home, run }));
+    assert.equal(result.status, 'ok');
+    assert.ok(calls.includes('codex mcp remove lore-skills'));
+    const cfg = await readCodexConfig(home);
+    assert.doesNotMatch(cfg, /lore-skills/);
+    assert.doesNotMatch(cfg, /LORE_SKILLS_ENABLED/);
+    assert.match(cfg, /\[mcp_servers\.lore\]/);
   });
 });
 

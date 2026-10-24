@@ -5,7 +5,7 @@
 
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { loadLoreConfig, pickString } from '../vendor/lore-config.mjs';
 
@@ -122,10 +122,29 @@ function writeHostOutput(response) {
   if (output.mode === 'stdout_text') process.stdout.write(String(output.value));
 }
 
-// Lore renders the Skills catalog and `$skill-name` invocations only for clients
-// that expose Skills tools.
-function skillsFeature() {
-  return loadLoreConfig().skillsEnabled ? { features: { skills: true } } : {};
+/**
+ * Skills sync runs in a detached background process: ZCode only sees new skills
+ * after a Settings → Skills refresh anyway, so the hook must never spend its
+ * budget waiting for it. The shared script records its outcome in
+ * <plugin root>/skills/.lore-sync-status.json.
+ */
+function spawnSkillsSync() {
+  try {
+    const pluginRoot = pickString(process.env.ZCODE_PLUGIN_ROOT)
+      || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+    const child = spawn(process.execPath, [
+      path.join(pluginRoot, 'vendor', 'skill-workcopy', 'skills-sync.mjs'),
+      '--client-type', 'zcode',
+      '--root', path.join(pluginRoot, 'skills'),
+    ], {
+      detached: true,
+      stdio: 'ignore',
+      env: process.env,
+    });
+    child.unref();
+  } catch {
+    // Silent degradation: skills sync is best-effort background work.
+  }
 }
 
 async function main() {
@@ -150,7 +169,6 @@ async function main() {
       protocol_version: 'lore.lifecycle.v1',
       runtime: lifecycleRuntime(),
       event: { name: 'prompt.submit', native_name: 'UserPromptSubmit' },
-      ...skillsFeature(),
       normalized,
       ...(nativeInputSnapshot ? { native_input_snapshot: nativeInputSnapshot } : {}),
     }, PROMPT_SUBMIT_TIMEOUT_MS);
@@ -164,12 +182,15 @@ async function main() {
     protocol_version: 'lore.lifecycle.v1',
     runtime: lifecycleRuntime(),
     event: { name: 'session.start', native_name: 'SessionStart' },
-    ...skillsFeature(),
     normalized: sessionId ? { session_id: sessionId } : {},
     project: detectProjectInfo(input.cwd),
     ...(nativeInputSnapshot ? { native_input_snapshot: nativeInputSnapshot } : {}),
   }, SESSION_START_TIMEOUT_MS);
   writeHostOutput(lifecycle);
+  // Write the lifecycle output first, hand the skills sync to a detached
+  // background process, and exit - the host picks synced skills up after a
+  // Skills refresh.
+  if (loadLoreConfig().skillsEnabled) spawnSkillsSync();
 }
 
 main().catch(() => {}).then(() => {

@@ -5,7 +5,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const LORE_CONFIG_FILE = path.join(os.homedir(), ".lore", "config.json");
@@ -158,6 +158,34 @@ function writeHostOutput(response: any) {
   if (output.mode === "stdout_text") process.stdout.write(String(output.value));
 }
 
+/**
+ * Skills sync runs in a detached background process: Codex only sees new skills
+ * in the next session, so the hook must never spend its 10s budget waiting for
+ * it. The shared script records its outcome in
+ * <pluginRoot>/skills/.lore-sync-status.json; the plugin root is pinned by the
+ * installer (LORE_CODEX_PLUGIN_ROOT) and falls back to this hook's own location,
+ * which is the plugin root in the repo/marketplace layout.
+ */
+function spawnSkillsSync(): void {
+  try {
+    const pluginRoot = pickString(process.env.LORE_CODEX_PLUGIN_ROOT)
+      || path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+    const hookDir = path.dirname(fileURLToPath(import.meta.url));
+    const child = spawn(process.execPath, [
+      path.join(hookDir, "vendor", "skill-workcopy", "skills-sync.mjs"),
+      "--client-type", "codex",
+      "--root", path.join(pluginRoot, "skills"),
+    ], {
+      detached: true,
+      stdio: "ignore",
+      env: process.env,
+    });
+    child.unref();
+  } catch {
+    // Silent degradation: skills sync is best-effort background work.
+  }
+}
+
 async function main() {
   let input: HookInput = {};
   try {
@@ -168,18 +196,20 @@ async function main() {
   const sessionId = resolveSessionId(input);
   const nativeInputSnapshot = buildNativeInputSnapshot(input);
   const { skillsEnabled } = loadConfig();
-  const lifecycle = await postLifecycle({
+  const lifecyclePromise = postLifecycle({
     protocol_version: "lore.lifecycle.v1",
     runtime: lifecycleRuntime(),
     event: { name: "session.start", native_name: "SessionStart" },
     normalized: sessionId ? { session_id: sessionId } : {},
     project: detectProjectInfo(),
-    // Lore appends the Skills catalog only for clients that expose Skills tools.
-    ...(skillsEnabled ? { features: { skills: true } } : {}),
     ...(nativeInputSnapshot ? { native_input_snapshot: nativeInputSnapshot } : {}),
   }, BOOT_TIMEOUT_MS).catch(() => null);
 
+  // Write the lifecycle output, hand the skills sync to a detached background
+  // process, and exit - the host picks synced skills up next session.
+  const lifecycle = await lifecyclePromise;
   writeHostOutput(lifecycle);
+  if (skillsEnabled) spawnSkillsSync();
 }
 
 main();

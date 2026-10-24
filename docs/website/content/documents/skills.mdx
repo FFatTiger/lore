@@ -1,4 +1,4 @@
-Skills are reusable instruction packages that Loremem Cloud gives to your agents. Each skill is a versioned package that agents see at session start and load only when they need it. Skills are available only on Loremem Cloud. The open-source server doesn't have them.
+Skills are reusable instruction packages that Loremem Cloud gives to your agents. Loremem is the source of truth: at session start each agent's Lore plugin syncs the skills that agent may use into the agent's own skills directory, and the agent discovers, lists, and loads them like any other skill it has. Skills are available only on Loremem Cloud. The open-source server doesn't have them.
 
 ## What a skill is
 
@@ -26,15 +26,17 @@ The rules for these fields are:
 
 ## How agents find and load skills
 
-1. At session start, an agent receives an `<available_skills>` list. Each entry shows the skill's name, description, and `skill_id`. Skills set to **User only** are not listed. The list holds up to 8,000 characters. If there are more skills than fit, the agent is told how many more exist and to call `lore_skill_list`.
-2. When a task matches a skill's description, the agent calls `lore_skill_get` with the `skill_id`.
-3. `lore_skill_get` returns the full `SKILL.md` and the absolute path of the skill's local directory.
+1. At session start, the Lore plugin for that agent fetches the catalog of enabled skills visible to it and reconciles them into the host's own skills directory.
+2. The host scans that directory as one of its skill sources, so the agent reads the skill's `name`, `description`, and `SKILL.md` the same way it reads a skill you installed by hand. There is no Lore-specific catalog in the prompt and no separate load step.
+3. When a task matches a skill's description, the agent loads it through the host's own skill mechanism.
 
-The local copy lives at `~/.lore/skills/<project-id>/<skill-name>/`. If `LORE_HOME` is set, Lore uses that folder instead of `~/.lore`. Lore downloads a skill when an agent first loads it, and refreshes the copy when the version changes. It doesn't download skills at session start.
+The sync runs in the background, so a session never waits for it: the session you are in sees what the previous sync left, and new or changed skills appear from the next session on. A host reload picks them up sooner: `/reload` in Pi, `/reload-skills` in Hermes, a **Settings → Skills** refresh in ZCode, and OpenClaw watches the directory and hot-loads changes. Each run records its outcome in `.lore-sync-status.json` in the synced directory.
+
+Installing or updating with the Lore CLI runs the same sync once for every channel it installed, so the first session already has the catalog.
 
 ## Invoke a skill yourself
 
-Type `$` followed by the skill name in a prompt, for example `$release-notes`. Lore loads that skill for the request, even if it is set to **User only**. One prompt can invoke up to three skills.
+There is no Lore prefix. Each agent runs a skill through its own trigger, listed under [Runtimes](#runtimes): in Claude Code `/lore:release-notes`, in Codex `$release-notes` or the `/skills` picker, in Pi `/skill:release-notes`, in OpenClaw and Hermes `/release-notes`. A skill set to **User only** still runs when you invoke it this way.
 
 ## Visibility and invocation
 
@@ -44,18 +46,26 @@ Each skill has three settings:
 | --- | --- | --- |
 | Enabled | On or off | When off, agents don't see or load the skill. |
 | Visible to | All agents, or the runtimes you pick | A skill limited to some runtimes appears only for those runtimes. |
-| Invocation | Agent and user (default), or User only | **User only** hides the skill from agents. It runs only when a user types `$name`. This is the same as `disable-model-invocation: true` in `SKILL.md`. |
+| Invocation | Agent and user (default), or User only | **User only** keeps the model from running the skill on its own. You can still invoke it with your agent's own trigger. This is the same as `disable-model-invocation: true` in `SKILL.md`. |
+
+The **User only** setting reaches the agent in the form each host understands: Claude Code, Pi, and OpenClaw honor `disable-model-invocation` natively; Codex gets a generated `agents/openai.yaml` with `policy.allow_implicit_invocation: false`; dsh maps it to its own invocation flags. Hermes and OpenCode have no equivalent, so the model can still invoke such a skill there.
 
 ## Local copies and file permissions
 
-Lore manages two kinds of files in a local copy:
+Copies live where each host's own skill system looks: the plugin's `skills/` directory for Claude Code, Codex, OpenClaw, and ZCode; `~/.lore/skills/<project-id>/` for Pi, Hermes, and dsh (with `LORE_HOME` replacing `~/.lore` when it is set); and `~/.config/opencode/skills/` for OpenCode. Hermes only sees the directory once it is listed under `skills.external_dirs` in `~/.hermes/config.yaml`.
 
-- **Managed files** come from the server. Lore makes them read-only (`0444` on Linux and macOS). If you edit one, the next `lore_skill_get` restores it.
+Every skill directory Lore writes carries a `.lore-skill-marker.json` file that records where the copy came from. Lore only reads, updates, and removes directories with that marker: a same-named directory you created yourself is left alone and reported as a conflict, and skills you keep in other directories are never read, uploaded, or deleted by Lore.
+
+Inside a managed directory there are two kinds of files:
+
+- **Managed files** come from the server. Lore makes them and the marker read-only (`0444` on Linux and macOS). If you edit one, the next sync restores it.
 - **Artifacts** are every other file in the skill directory, such as caches and intermediate files a skill writes while it runs. The directory stays writable. Lore never checks or uploads artifacts, and they survive updates.
 
 Agents save results meant for you, such as images or documents, where you asked or in the working directory, not in the skill directory.
 
-When a new version arrives, Lore updates only the managed files. If a local file conflicts with a managed path in the new version, the update fails and the existing copy stays as it was.
+When a new version arrives, Lore updates only the managed files. Archiving or disabling a skill, or limiting it to other runtimes, makes the next sync remove its managed files and marker; your artifacts stay. If a managed file in a new version collides with a file you created in the skill directory, the sync leaves that skill untouched and records the failure in the status file instead of overwriting your file.
+
+After every run, `.lore-sync-status.json` in the same directory records when the sync finished, the project and catalog revision it used, which skills were created, updated, unchanged, or removed, and any conflicts or errors.
 
 Lore doesn't set an executable bit on scripts. Run them through their interpreter, for example `python3 scripts/convert.py`.
 
@@ -81,9 +91,10 @@ Move my local agent skills into Loremem.
 
 1. Find every skill on this machine for each agent I use, for example
    ~/.agents/skills, ~/.claude/skills, ~/.codex/skills, ~/.pi/agent/skills,
-   ~/.config/opencode/skills, ~/.zcode/skills and ~/.dsh/skills, plus skills that come
-   with installed plugins or extensions. List them in a table with where
-   each one comes from, and mark duplicates.
+   ~/.config/opencode/skills, ~/.zcode/skills, ~/.dsh/skills, ~/.hermes/skills
+   and ~/.openclaw/skills, plus skills that come with installed plugins or
+   extensions. List them in a table with where each one comes from, and mark
+   duplicates.
 2. Sort them into two groups. General skills are instructions, references
    or scripts any agent can use. Agent-specific skills depend on one agent's
    own tools, hooks or extensions, or on code that reads the skill file at
@@ -97,14 +108,19 @@ Move my local agent skills into Loremem.
    config file outside the skill.
 4. Show me the plan and wait for my confirmation. Then create each general
    skill with lore_skill_create, back up the local skill folders, and remove
-   only the local copies you uploaded. If a plugin or extension bundles a
-   general skill, keep the plugin; turn off just its skill only if the agent
-   supports that.
+   only the local copies you uploaded. The local copy has to go: each agent
+   syncs the Lore copy into its own skills directory at session start, so a
+   leftover copy shows up twice. Claude Code then lists both tdd and lore:tdd,
+   and Pi, Hermes and OpenCode pick one of the two. If a plugin or extension
+   bundles a general skill, keep the plugin; turn off just its skill only if
+   the agent supports that.
 5. Finish with a report: uploaded, skipped and why, removed, and what stays
    local.
 ```
 
-After the migration, restart your agents so new sessions use the Loremem skills.
+After the migration, Loremem syncs the skills into each agent at the start of that agent's next session. Don't reinstall them locally.
+
+To keep a migrated skill manual-only, set `disable-model-invocation: true` in its `SKILL.md`, or choose **User only** in the console.
 
 ## Skill tools
 
@@ -112,17 +128,26 @@ After the migration, restart your agents so new sessions use the Loremem skills.
 | --- | --- |
 | `lore_skill_list` | List the skills in the active project. |
 | `lore_skill_search` | Search skills by query. |
-| `lore_skill_get` | Download or refresh the local copy, and return `SKILL.md` and the skill directory. |
-| `lore_skill_create` | Create a skill from a name and a list of files. |
-| `lore_skill_update` | Update a skill. Requires `expected_version`. |
-| `lore_skill_delete` | Archive a skill. |
+| `lore_skill_create` | Create a skill from a name and a list of files. It syncs to each agent at that agent's next session start. |
+| `lore_skill_update` | Update a skill. Requires `expected_version`. Changes sync at each agent's next session start. |
+| `lore_skill_delete` | Archive a skill. The next sync removes its managed files from every agent. |
 | `lore_skill_import` | Import skills from a public GitHub repository. Supports `dry_run`. |
-| `lore_skill_status` | Report whether each local copy is ready, missing, outdated, tampered, unmanaged, or invalid. It is read-only. |
 
 For the console and the create, update, and archive flows, see [Create and manage skills](/documents/skills/managing-skills).
 
 ## Runtimes
 
-Skills work with Claude Code, Codex, OpenCode, Pi, OpenClaw, Hermes, ZCode, and DeepSeek Harness. Clients that connect through generic MCP (`client_type=mcp`) don't get skills.
+| Host | Where copies live | How you invoke a skill |
+| --- | --- | --- |
+| Claude Code | `skills/` inside the Lore plugin | `/lore:<name>`; the model also calls it from the description |
+| Codex | `skills/` inside the Lore plugin | `$<name>`, or pick it from `/skills` |
+| Pi | `~/.lore/skills/<project-id>/`, registered as a Pi skill directory | `/skill:<name>` |
+| OpenClaw | `skills/` inside the Lore plugin | `/<name>` |
+| ZCode | `skills/` inside the Lore plugin | type `$` and pick the skill, or use the Skills group in the `/` menu |
+| Hermes | `~/.lore/skills/<project-id>/`, listed under `skills.external_dirs` in `~/.hermes/config.yaml` | `/<name>` |
+| DeepSeek Harness | `~/.lore/skills/<project-id>/`, served by the plugin's own skills provider | the host's user-invocable entry |
+| OpenCode | `~/.config/opencode/skills/<name>/` | the host's own skill tool |
 
-The CLI turns on the skill tools only when the server reports skills support. Loremem Cloud does. The open-source server doesn't.
+OpenCode is the one host without a plugin-owned skills directory, so Lore writes into OpenCode's own global skills folder. It only creates, updates, or removes entries that carry a Lore marker; anything else in that folder is left alone.
+
+Clients that connect through generic MCP (`client_type=mcp`) don't get skills. The open-source server has no skills, so it syncs none.

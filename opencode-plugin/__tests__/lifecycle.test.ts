@@ -1,6 +1,6 @@
 import type { Hooks } from '@opencode-ai/plugin';
 import type { Event, Part, Session, UserMessage } from '@opencode-ai/sdk';
-import { chmodSync, existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -66,7 +66,23 @@ const lifecycleConfig = {
   defaultDomain: 'core',
   skillsEnabled: true,
   loreHome: '/tmp/lore-home',
+  opencodeSkillsRoot: '/tmp/lore-opencode-skills',
 };
+
+const skillsRoots: string[] = [];
+
+function tempSkillsRoot(): string {
+  const root = mkdtempSync(join(tmpdir(), 'lore-opencode-skills-'));
+  skillsRoots.push(root);
+  return root;
+}
+
+async function untilTrue(condition: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 200 && !condition(); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  expect(condition()).toBe(true);
+}
 
 function session(id: string): Session {
   return {
@@ -126,7 +142,7 @@ function rmWritable(dir: string) {
 
 function adapter(logger = { warn: vi.fn(), debug: vi.fn() }) {
   return createOpenCodeLifecycleAdapter({
-    config: lifecycleConfig,
+    config: { ...lifecycleConfig, opencodeSkillsRoot: tempSkillsRoot() },
     directory: '/workspace/project',
     worktree: '/workspace',
     logger,
@@ -136,6 +152,7 @@ function adapter(logger = { warn: vi.fn(), debug: vi.fn() }) {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
+  for (const root of skillsRoots.splice(0)) rmWritable(root);
 });
 
 describe('classifies genuine OpenCode direct-user prompts', () => {
@@ -225,18 +242,26 @@ describe('classifies genuine OpenCode direct-user prompts', () => {
 describe('OpenCode lifecycle adapter', () => {
   it('prefetches startup once and injects one cached system block into concurrent transforms', async () => {
     const pending = deferred<Response>();
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockReturnValue(pending.promise);
+    const lifecycleCalls = () => fetchMock.mock.calls
+      .filter(([input]) => new URL(String(input)).pathname === '/api/lifecycle/event');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(String(input));
+      if (url.pathname !== '/api/lifecycle/event') {
+        // Background skills sync sees an empty catalog and writes nothing.
+        return Promise.resolve(jsonResponse({ project_id: 'project-1', catalog_revision: '', skills: [] }));
+      }
+      return pending.promise;
+    });
     const lifecycle = adapter();
 
     await lifecycle.hooks.event?.({ event: sessionEvent('session.created', 'ses-1') });
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(lifecycleCalls()).toHaveLength(1);
+    const [url, init] = lifecycleCalls()[0] as [string, RequestInit];
     expect(url).toBe('https://api.example.test/api/lifecycle/event?client_type=opencode');
     expect(JSON.parse(String(init.body))).toEqual({
       protocol_version: 'lore.lifecycle.v1',
       runtime: { runtime_id: 'opencode', runtime_family: 'opencode', plugin_version: pluginVersion },
       event: { name: 'session.start', native_name: 'session.created' },
-      features: { skills: true },
       normalized: { session_id: 'ses-1' },
       project: { dir_name: 'project', repo_name: 'workspace' },
       native_input_snapshot: { directory: '/workspace/project', worktree: '/workspace' },
@@ -269,54 +294,86 @@ describe('OpenCode lifecycle adapter', () => {
       ],
     };
     await lifecycle.hooks['experimental.chat.system.transform']?.(systemInput('ses-1'), later);
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(lifecycleCalls()).toHaveLength(1);
     expect(later.system.join('\n').match(/lore:opencode-system-context:start/g)).toHaveLength(1);
     expect(later.system.join('\n')).not.toContain('stale');
   });
 
-  it('declares Skills support at session start and never downloads or reconciles', async () => {
+  it('syncs the host-native skills directory at session start without blocking startup', async () => {
     const loreHome = mkdtempSync(join(tmpdir(), 'lore-opencode-life-'));
+    const skillsRoot = tempSkillsRoot();
+    // A pre-existing unmarked same-name directory must stay untouched.
+    mkdirSync(join(skillsRoot, 'local-skill'), { recursive: true });
+    writeFileSync(join(skillsRoot, 'local-skill', 'SKILL.md'), '# local skill\n');
+
+    const demoMd = '---\nname: demo-skill\ndescription: Demo.\n---\nDemo body.\n';
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = new URL(String(input));
       if (url.pathname === '/api/lifecycle/event') {
+        return jsonResponse({ host_output: { mode: 'return_value', value: { systemContext: 'BOOT' } } });
+      }
+      if (url.pathname === '/api/skills') {
         return jsonResponse({
-          host_output: { mode: 'return_value', value: { systemContext: 'BOOT' } },
+          project_id: 'project-1',
+          catalog_revision: 'rev-1',
+          skills: [
+            { skill_id: 'skill-1', name: 'demo-skill', version: 2 },
+            { skill_id: 'skill-2', name: 'local-skill', version: 1 },
+          ],
+        });
+      }
+      if (url.pathname === '/api/skills/skill-1') {
+        return jsonResponse({
+          project_id: 'project-1',
+          skill_id: 'skill-1',
+          name: 'demo-skill',
+          version: 2,
+          files: [{ path: 'SKILL.md', content: demoMd }],
         });
       }
       throw new Error(`unexpected request: ${url.pathname}`);
     });
 
     const lifecycle = createOpenCodeLifecycleAdapter({
-      config: { ...lifecycleConfig, loreHome },
+      config: { ...lifecycleConfig, loreHome, opencodeSkillsRoot: skillsRoot },
       directory: '/workspace/project',
       worktree: '/workspace',
       logger: { warn: vi.fn(), debug: vi.fn() },
     });
+    await lifecycle.hooks.event?.({ event: sessionEvent('session.created', 'ses-1') });
+
+    // The startup body carries no skills feature flag and never waits for the sync.
+    const startupBody = JSON.parse(String(fetchMock.mock.calls
+      .find(([input]) => new URL(String(input)).pathname === '/api/lifecycle/event')![1]?.body));
+    expect(startupBody.features).toBeUndefined();
     const out = { system: ['Existing'] };
     await lifecycle.hooks['experimental.chat.system.transform']?.(systemInput('ses-1'), out);
-
-    // Session start opts into the Skills catalog; it never calls /skills or downloads.
     expect(out.system.join('\n')).toContain('BOOT');
-    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).features).toEqual({ skills: true });
-    const requestSummary = fetchMock.mock.calls.map(([input]) => new URL(String(input)).pathname);
-    expect(requestSummary).toEqual(['/api/lifecycle/event']);
-    expect(existsSync(join(loreHome, 'skills', 'project-1', 'demo-skill'))).toBe(false);
+
+    // The fire-and-forget sync materializes the skill with a Lore marker.
+    await untilTrue(() => existsSync(join(skillsRoot, 'demo-skill', '.lore-skill-marker.json')));
+    expect(readFileSync(join(skillsRoot, 'demo-skill', 'SKILL.md'), 'utf8')).toBe(demoMd);
+    const marker = JSON.parse(readFileSync(join(skillsRoot, 'demo-skill', '.lore-skill-marker.json'), 'utf8'));
+    expect(marker.project_id).toBe('project-1');
+    expect(marker.skill_id).toBe('skill-1');
+    await untilTrue(() => existsSync(join(skillsRoot, '.lore-sync-status.json')));
+    const status = JSON.parse(readFileSync(join(skillsRoot, '.lore-sync-status.json'), 'utf8'));
+    expect(status.created).toEqual(['demo-skill']);
+    expect(status.conflicts).toEqual(['local-skill']);
+    expect(readFileSync(join(skillsRoot, 'local-skill', 'SKILL.md'), 'utf8')).toBe('# local skill\n');
+    expect(existsSync(join(skillsRoot, 'local-skill', '.lore-skill-marker.json'))).toBe(false);
 
     // A failing Skills API never blocks startup: system context is still returned.
     fetchMock.mockImplementation(async (input) => {
       const url = new URL(String(input));
       if (url.pathname === '/api/lifecycle/event') {
-        return jsonResponse({
-          host_output: { mode: 'return_value', value: { systemContext: 'BOOT2' } },
-        });
+        return jsonResponse({ host_output: { mode: 'return_value', value: { systemContext: 'BOOT2' } } });
       }
       throw new Error('skills API down');
     });
     const out2 = { system: ['Existing'] };
     await lifecycle.hooks['experimental.chat.system.transform']?.(systemInput('ses-2'), out2);
     expect(out2.system.join('\n')).toContain('BOOT2');
-    expect(fetchMock.mock.calls.map(([input]) => new URL(String(input)).pathname))
-      .toEqual(['/api/lifecycle/event', '/api/lifecycle/event']);
 
     rmWritable(loreHome);
   });
@@ -345,6 +402,11 @@ describe('OpenCode lifecycle adapter', () => {
     const signals: AbortSignal[] = [];
     const attempts = new Map<string, number>();
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const url = new URL(String(_url));
+      if (url.pathname !== '/api/lifecycle/event') {
+        // Background skills sync sees an empty catalog and writes nothing.
+        return jsonResponse({ project_id: 'project-1', catalog_revision: '', skills: [] });
+      }
       signals.push(init?.signal as AbortSignal);
       const body = JSON.parse(String(init?.body));
       const id = String(body.normalized.session_id);
@@ -409,7 +471,6 @@ describe('OpenCode lifecycle adapter', () => {
       protocol_version: 'lore.lifecycle.v1',
       runtime: { runtime_id: 'opencode', runtime_family: 'opencode', plugin_version: pluginVersion },
       event: { name: 'prompt.submit', native_name: 'chat.message' },
-      features: { skills: true },
       normalized: { session_id: 'ses-1', prompt: 'Remember the runtime contract' },
       project: { dir_name: 'project', repo_name: 'workspace' },
       native_input_snapshot: {
@@ -437,17 +498,17 @@ describe('OpenCode lifecycle adapter', () => {
     expect(output.parts).toHaveLength(2);
   });
 
-  it('writes server promptContext through and declares Skills support only when enabled', async () => {
+  it('writes server promptContext through without any skills feature flag', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
       host_output: { mode: 'return_value', value: { promptContext: '<skill_invocation>x</skill_invocation>' } },
     }));
     const [input, output] = fixture([textPart('prt-1', 'Run $deploy')]);
     await adapter().hooks['chat.message']?.(input, output);
-    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).features).toEqual({ skills: true });
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).features).toBeUndefined();
     expect((output.parts[1] as { text: string }).text).toBe('<skill_invocation>x</skill_invocation>');
 
     const disabled = createOpenCodeLifecycleAdapter({
-      config: { ...lifecycleConfig, skillsEnabled: false },
+      config: { ...lifecycleConfig, skillsEnabled: false, opencodeSkillsRoot: tempSkillsRoot() },
       directory: '/workspace/project',
       worktree: '/workspace',
       logger: { warn: vi.fn(), debug: vi.fn() },

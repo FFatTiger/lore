@@ -9,6 +9,7 @@ const config = {
   defaultDomain: 'core',
   skillsEnabled: true,
   loreHome: '/tmp/lore-home',
+  opencodeSkillsRoot: '/tmp/lore-opencode-skills',
 };
 
 function jsonResponse(value: unknown, init: ResponseInit = {}): Response {

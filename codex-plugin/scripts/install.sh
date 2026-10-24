@@ -37,15 +37,6 @@ SHARED_LORE_API_TOKEN="$(read_lore_config_value api_token)"
 LORE_BASE_URL="${SHARED_LORE_BASE_URL:-${LORE_BASE_URL:-}}"
 LORE_BASE_URL="${LORE_BASE_URL:-$DEFAULT_BASE_URL}"
 LORE_API_TOKEN="${SHARED_LORE_API_TOKEN:-${LORE_API_TOKEN:-${API_TOKEN:-}}}"
-LORE_SKILLS_EXPLICIT="${LORE_SKILLS_ENABLED+x}"
-LORE_SKILLS_ENABLED="${LORE_SKILLS_ENABLED:-0}"
-# Unset means auto-detect. Explicit 0 is a hard local kill switch.
-if [ -z "$LORE_SKILLS_EXPLICIT" ]; then
-  health_body=$(curl -fsSL --max-time 8 ${LORE_API_TOKEN:+-H "Authorization: Bearer ${LORE_API_TOKEN}"} "${LORE_BASE_URL%/}/api/health" 2>/dev/null || true)
-  if printf '%s' "$health_body" | python3 -c 'import json,sys; d=json.load(sys.stdin); raise SystemExit(0 if d.get("capabilities",{}).get("skills") is True else 1)' 2>/dev/null; then
-    LORE_SKILLS_ENABLED=1
-  fi
-fi
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -78,14 +69,6 @@ copy_source_layout() {
       cp -a "$source_plugin_root/$entry" "$TARGET_ROOT.tmp/plugins/$PLUGIN_NAME/$entry"
     fi
   done
-  if [ -d "$source_plugin_root/local-skills-mcp" ]; then
-    cp -a "$source_plugin_root/local-skills-mcp" "$TARGET_ROOT.tmp/plugins/$PLUGIN_NAME/local-skills-mcp"
-  elif [ -d "$source_plugin_root/../local-skills-mcp" ]; then
-    cp -a "$source_plugin_root/../local-skills-mcp" "$TARGET_ROOT.tmp/plugins/$PLUGIN_NAME/local-skills-mcp"
-  else
-    echo "Cannot locate local-skills-mcp beside $source_plugin_root" >&2
-    exit 1
-  fi
 
   rm -rf "$TARGET_ROOT"
   mv "$TARGET_ROOT.tmp" "$TARGET_ROOT"
@@ -208,18 +191,16 @@ PY
 configure_mcp() {
   local url="${LORE_BASE_URL%/}/api/mcp?client_type=codex"
   local token="${LORE_API_TOKEN:-${API_TOKEN:-}}"
-  local skills_server="${INSTALLED_PLUGIN_ROOT}/local-skills-mcp/src/server.mjs"
-  local lore_home="${LORE_HOME:-$HOME/.lore}"
 
   codex mcp remove lore >/dev/null 2>&1 || true
   codex mcp remove lore-skills >/dev/null 2>&1 || true
   codex mcp add lore --url "$url"
 
-  python3 - "$CODEX_CONFIG" "$url" "$token" "$skills_server" "$lore_home" "${LORE_BASE_URL%/}" "$LORE_SKILLS_ENABLED" <<'PY'
+  python3 - "$CODEX_CONFIG" "$url" "$token" <<'PY'
 import json
 import sys
 
-path, url, token, skills_server, lore_home, base_url, skills_enabled = sys.argv[1:8]
+path, url, token = sys.argv[1:4]
 try:
     with open(path, encoding="utf-8") as handle:
         lines = handle.read().splitlines()
@@ -266,25 +247,9 @@ lore_body = [f"url = {json.dumps(url)}"]
 if token:
     lore_body.append(f"http_headers = {{ Authorization = {json.dumps('Bearer ' + token)} }}")
 
-skills_env_parts = [
-    f"LORE_HOME = {json.dumps(lore_home)}",
-    f"LORE_BASE_URL = {json.dumps(base_url)}",
-    'LORE_CLIENT_TYPE = "codex"',
-    'LORE_SKILLS_ENABLED = "1"',
-]
-if token:
-    skills_env_parts.append(f"LORE_API_TOKEN = {json.dumps(token)}")
-skills_body = [
-    'command = "node"',
-    f"args = {json.dumps([skills_server, '--client-type', 'codex'])}",
-    f"env = {{ {', '.join(skills_env_parts)} }}",
-]
-
 lines = upsert_section(lines, "[mcp_servers.lore]", lore_body)
-if skills_enabled == "1":
-    lines = upsert_section(lines, "[mcp_servers.lore-skills]", skills_body)
-else:
-    lines = remove_section(lines, "[mcp_servers.lore-skills]")
+# Scrub the removed lore-skills stdio MCP left by older installers.
+lines = remove_section(lines, "[mcp_servers.lore-skills]")
 
 with open(path, "w", encoding="utf-8") as handle:
     handle.write("\n".join(lines).rstrip() + "\n")
@@ -348,7 +313,6 @@ patch_hook_placeholders "$TARGET_ROOT/plugins/$PLUGIN_NAME"
 jq -e '.plugins[0].source.path == "./plugins/lore"' "$TARGET_ROOT/.agents/plugins/marketplace.json" >/dev/null
 jq -e '.mcpServers.lore.url | contains("client_type=codex")' "$INSTALLED_PLUGIN_ROOT/.mcp.json" >/dev/null
 jq -e '(.mcpServers["lore-skills"] // null) == null' "$INSTALLED_PLUGIN_ROOT/.mcp.json" >/dev/null
-[ -f "$INSTALLED_PLUGIN_ROOT/local-skills-mcp/src/server.mjs" ]
 
 register_marketplace
 enable_plugin_config

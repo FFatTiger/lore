@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
+import { computeManifestHash, sha256Text } from '../../vendor/skill-workcopy/index.mjs';
 
 const hooksDir = path.resolve(import.meta.dirname, '..');
 const pluginRoot = path.resolve(hooksDir, '..');
@@ -13,6 +14,27 @@ const pluginVersion = JSON.parse(
   readFileSync(path.join(pluginRoot, '.zcode-plugin', 'plugin.json'), 'utf8'),
 ).version;
 const isolatedHome = mkdtempSync(path.join(tmpdir(), 'lore-zcode-hook-home-'));
+// Default isolated plugin root: detached skills-sync children spawned by the
+// hook must never write into the repository checkout.
+const defaultPluginRoot = mkdtempSync(path.join(tmpdir(), 'lore-zcode-plugin-root-'));
+
+/** Server-side skill package used by the native-sync tests. */
+function syncedSkillFixture() {
+  const content = '# Synced Skill\n\nDo it natively.\n';
+  const sha256 = sha256Text(content);
+  const files = [{ path: 'SKILL.md', content, sha256, size: Buffer.byteLength(content, 'utf-8') }];
+  const manifest_hash = computeManifestHash([{ path: 'SKILL.md', sha256, size: files[0].size }]);
+  return {
+    detail: {
+      skill_id: 'sk-sync-1',
+      name: 'synced-skill',
+      version: 3,
+      manifest_hash,
+      files,
+    },
+    summary: { skill_id: 'sk-sync-1', name: 'synced-skill', version: 3, manifest_hash },
+  };
+}
 
 function runHook(input, env = {}) {
   return new Promise((resolve, reject) => {
@@ -25,6 +47,7 @@ function runHook(input, env = {}) {
         LORE_SKILLS_ENABLED: '',
         LORE_API_TOKEN: '',
         API_TOKEN: '',
+        ZCODE_PLUGIN_ROOT: defaultPluginRoot,
         ...env,
       },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -45,10 +68,39 @@ function runHook(input, env = {}) {
   });
 }
 
-async function withServer(onRequest) {
+async function withServer(onRequest, skillsRoutes) {
   const requests = [];
   const headers = [];
+  const skillRequests = [];
+  const routes = skillsRoutes || {};
   const server = createServer(async (req, res) => {
+    if (req.method === 'GET') {
+      const url = new URL(req.url, 'http://127.0.0.1');
+      if (url.pathname === '/api/skills') {
+        skillRequests.push({ path: url.pathname, query: Object.fromEntries(url.searchParams) });
+        const list = routes.list || (() => ({ project_id: 'proj-1', catalog_revision: '0', skills: [] }));
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(await list()));
+        return;
+      }
+      const detailMatch = url.pathname.match(/^\/api\/skills\/([^/]+)$/);
+      if (detailMatch) {
+        skillRequests.push({ path: url.pathname, query: Object.fromEntries(url.searchParams) });
+        const detail = routes.detail || (() => null);
+        const data = await detail(decodeURIComponent(detailMatch[1]));
+        if (data) {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify(data));
+        } else {
+          res.writeHead(404, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ detail: 'not found' }));
+        }
+        return;
+      }
+      res.writeHead(404, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ detail: 'not found' }));
+      return;
+    }
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     const raw = Buffer.concat(chunks).toString('utf8');
@@ -70,6 +122,7 @@ async function withServer(onRequest) {
     baseUrl: `http://127.0.0.1:${port}`,
     requests,
     headers,
+    skillRequests,
     async close() {
       await new Promise((resolve) => server.close(resolve));
     },
@@ -78,7 +131,34 @@ async function withServer(onRequest) {
 
 test.after(() => {
   rmSync(isolatedHome, { recursive: true, force: true });
+  rmSync(defaultPluginRoot, { recursive: true, force: true });
 });
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Wait for the detached skills-sync child to record its outcome. */
+async function waitForStatusFile(pluginRootDir, timeoutMs = 30000) {
+  const statusPath = path.join(pluginRootDir, 'skills', '.lore-sync-status.json');
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (existsSync(statusPath)) return JSON.parse(readFileSync(statusPath, 'utf8'));
+    await delay(100);
+  }
+  throw new Error(`skills sync status file not written: ${statusPath}`);
+}
+
+/** Isolated plugin root with the vendored sync script the hook spawns. */
+function makeSyncCapablePluginRoot() {
+  const root = mkdtempSync(path.join(tmpdir(), 'lore-zcode-sync-root-'));
+  cpSync(
+    path.join(pluginRoot, 'vendor', 'skill-workcopy'),
+    path.join(root, 'vendor', 'skill-workcopy'),
+    { recursive: true },
+  );
+  return root;
+}
 
 test('bundled hooks.json uses process hooks, SessionStart matcher, and exact timeouts', () => {
   const hooks = JSON.parse(readFileSync(path.join(hooksDir, 'hooks.json'), 'utf8'));
@@ -102,6 +182,7 @@ test('plugin layout declares the official Lore MCP bridge', () => {
   const hooksSource = readFileSync(path.join(hooksDir, 'lifecycle-hooks.mjs'), 'utf8');
   assert.equal(manifest.name, 'lore');
   assert.equal(Object.hasOwn(manifest, 'tools'), false);
+  assert.equal(manifest.skills, './skills');
   assert.equal(mcp.mcpServers.lore.type, 'stdio');
   assert.equal(mcp.mcpServers.lore.command, 'node');
   assert.match(mcp.mcpServers.lore.args[0], /mcp\/lore-mcp\.mjs/);
@@ -312,37 +393,109 @@ test('hooks fail open on parse errors and unreachable servers', async () => {
   assert.equal(network.stdout, '');
 });
 
-test('Skills-enabled hooks declare features.skills and write Lore host output through', async () => {
+test('Skills-enabled hooks write Lore host output through and never declare skills features', async () => {
   const server = await withServer((body) => ({
     host_output: {
       mode: 'stdout_json',
-      value: { hookSpecificOutput: { hookEventName: body.event.native_name, additionalContext: `${body.event.name}:skills` } },
+      value: { hookSpecificOutput: { hookEventName: body.event.native_name, additionalContext: `${body.event.name}:through` } },
     },
   }));
   try {
     const env = { LORE_BASE_URL: server.baseUrl, LORE_SKILLS_ENABLED: '1' };
     const start = await runHook({ hook_event_name: 'SessionStart', session_id: 's1' }, env);
-    const prompt = await runHook({ hook_event_name: 'UserPromptSubmit', prompt: 'run $deploy', session_id: 's1' }, env);
-    assert.equal(JSON.parse(start.stdout).hookSpecificOutput.additionalContext, 'session.start:skills');
-    assert.equal(JSON.parse(prompt.stdout).hookSpecificOutput.additionalContext, 'prompt.submit:skills');
-    assert.deepEqual(server.requests.map((body) => body.features), [{ skills: true }, { skills: true }]);
+    const prompt = await runHook({ hook_event_name: 'UserPromptSubmit', prompt: 'hello', session_id: 's1' }, env);
+    assert.equal(JSON.parse(start.stdout).hookSpecificOutput.additionalContext, 'session.start:through');
+    assert.equal(JSON.parse(prompt.stdout).hookSpecificOutput.additionalContext, 'prompt.submit:through');
+    assert.deepEqual(server.requests.map((body) => body.features), [undefined, undefined]);
   } finally {
     await server.close();
   }
 });
 
-test('Skills stay off unless the configured server advertises them', async () => {
+test('SessionStart spawns a detached skills sync and exits before it finishes', async () => {
+  const fixture = syncedSkillFixture();
+  let releaseCatalog;
+  const catalogGate = new Promise((resolve) => { releaseCatalog = resolve; });
+  const server = await withServer(() => ({
+    host_output: { mode: 'stdout_text', value: 'BOOT_OK' },
+  }), {
+    list: async () => {
+      await catalogGate;
+      return { project_id: 'proj-1', catalog_revision: 'rev-5', skills: [fixture.summary] };
+    },
+    detail: (id) => (id === fixture.detail.skill_id ? fixture.detail : null),
+  });
+  const syncRoot = makeSyncCapablePluginRoot();
+  try {
+    const started = Date.now();
+    const result = await runHook({ hook_event_name: 'SessionStart', session_id: 's-sync' }, {
+      LORE_BASE_URL: server.baseUrl,
+      LORE_SKILLS_ENABLED: '1',
+      ZCODE_PLUGIN_ROOT: syncRoot,
+    });
+    const hookMs = Date.now() - started;
+    // The hook wrote its full lifecycle output and exited without waiting for
+    // the gated background sync.
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.stdout, 'BOOT_OK');
+    assert.ok(hookMs < 2500, `hook waited for the skills sync (${hookMs}ms)`);
+
+    releaseCatalog();
+    const status = await waitForStatusFile(syncRoot);
+    assert.deepEqual(status.created, ['synced-skill']);
+    assert.deepEqual(status.errors, []);
+    assert.equal(
+      readFileSync(path.join(syncRoot, 'skills', 'synced-skill', 'SKILL.md'), 'utf-8'),
+      '# Synced Skill\n\nDo it natively.\n',
+    );
+    assert.equal(server.skillRequests[0].query.client_type, 'zcode');
+    assert.equal(server.requests[0].features, undefined);
+  } finally {
+    releaseCatalog();
+    rmSync(syncRoot, { recursive: true, force: true });
+    await server.close();
+  }
+});
+
+test('skills sync only spawns for a configured server profile or an explicit env flag', async () => {
   const server = await withServer();
   const loreHome = mkdtempSync(path.join(tmpdir(), 'lore-zcode-hook-profile-'));
   try {
+    // No profile and no env flag: nothing is spawned and features stay off.
+    await runHook({ hook_event_name: 'SessionStart', session_id: 's1' }, { LORE_BASE_URL: server.baseUrl });
+    await delay(300);
+    assert.equal(existsSync(path.join(defaultPluginRoot, 'skills')), false);
+    assert.deepEqual(server.requests.map((body) => body.features), [undefined]);
+
+    // A matching server_profile with capabilities.skills turns the sync on.
+    const syncRoot = makeSyncCapablePluginRoot();
     writeFileSync(path.join(loreHome, 'config.json'), JSON.stringify({
       base_url: server.baseUrl,
       server_profile: { base_url: `${server.baseUrl}/`, capabilities: { skills: true } },
     }));
-    await runHook({ hook_event_name: 'SessionStart', session_id: 's1' }, { LORE_HOME: loreHome });
-    await runHook({ hook_event_name: 'UserPromptSubmit', prompt: 'hello' }, { LORE_HOME: loreHome, LORE_SKILLS_ENABLED: '0' });
-    await runHook({ hook_event_name: 'UserPromptSubmit', prompt: 'hello' }, { LORE_BASE_URL: server.baseUrl });
-    assert.deepEqual(server.requests.map((body) => body.features), [{ skills: true }, undefined, undefined]);
+    try {
+      await runHook({ hook_event_name: 'SessionStart', session_id: 's1' }, { LORE_HOME: loreHome, ZCODE_PLUGIN_ROOT: syncRoot });
+      const status = await waitForStatusFile(syncRoot);
+      assert.deepEqual(status.created, []);
+      assert.deepEqual(status.errors, []);
+      assert.equal(server.requests[1].features, undefined);
+    } finally {
+      rmSync(syncRoot, { recursive: true, force: true });
+    }
+
+    // LORE_SKILLS_ENABLED=0 keeps the sync off even with a matching profile.
+    const offRoot = makeSyncCapablePluginRoot();
+    try {
+      await runHook({ hook_event_name: 'SessionStart', session_id: 's1' }, {
+        LORE_HOME: loreHome,
+        LORE_SKILLS_ENABLED: '0',
+        ZCODE_PLUGIN_ROOT: offRoot,
+      });
+      await delay(300);
+      assert.equal(existsSync(path.join(offRoot, 'skills')), false);
+    } finally {
+      rmSync(offRoot, { recursive: true, force: true });
+    }
   } finally {
     rmSync(loreHome, { recursive: true, force: true });
     await server.close();

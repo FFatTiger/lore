@@ -38,7 +38,7 @@ The installer skips Pi when the `pi` command is not on your `PATH`. After the in
 - **Reload after changes.** Run `/reload` in Pi, or restart Pi, after you install or change the configuration.
 - **Existing folder.** If `~/.pi/agent/extensions/lore` is a real folder instead of a link, the installer stops and leaves the folder alone. Move the folder aside, then run the install again.
 - **Server settings.** Pi reads the server URL and token from `~/.lore/config.json`. If you set `LORE_HOME`, Pi reads that folder's `config.json` instead. `LORE_BASE_URL` and `LORE_API_TOKEN` are fallbacks.
-- **Skill list.** Pi's own `/skill` list may not show a skill that Lore has just downloaded until you run `/reload`. `lore_skill_get` returns the skill's folder and `SKILL.md` right away.
+- **Skill list.** Skills Lore syncs are visible to Pi only from the next session, or after `/reload`, because Pi builds its skill list at session start.
 
 ## Manual setup (fallback)
 

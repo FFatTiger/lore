@@ -38,7 +38,7 @@ npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_
 - **修改后重载。** 安装或修改配置后，请在 Pi 中运行 `/reload`，或者重启 Pi。
 - **已有目录。** 如果 `~/.pi/agent/extensions/lore` 是一个真实目录，而不是链接，安装程序会停止，并保持该目录不变。请先把该目录移走，再重新运行安装。
 - **服务器配置。** Pi 从 `~/.lore/config.json` 读取服务器地址和令牌。如果设置了 `LORE_HOME`，Pi 会读取该目录下的 `config.json`。`LORE_BASE_URL` 和 `LORE_API_TOKEN` 是备用来源。
-- **技能列表。** Pi 自带的 `/skill` 列表可能要等到运行 `/reload` 后，才会显示 Lore 刚下载的技能。`lore_skill_get` 会立即返回技能目录和 `SKILL.md` 的内容。
+- **技能列表。** Lore 同步过去的技能要等到下一次会话，或运行 `/reload` 之后才会出现在 Pi 里，因为 Pi 在会话开始时构建自己的技能列表。
 
 ## 手动安装（备用方案）
 

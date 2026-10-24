@@ -1,8 +1,9 @@
 import { execSync } from "node:child_process";
-import { basename } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { fetchJson, hasRecallConfig } from "./api";
-import { createSkillsSession, type SkillsSession } from "./skills";
+import { runSkillsSync } from "./vendor/skill-workcopy/skills-sync.mjs";
 
 // ---- Message text extraction helpers ----
 
@@ -64,6 +65,29 @@ function pluginVersion(): string | undefined {
   return undefined;
 }
 
+/**
+ * Resolve the plugin root (the directory holding openclaw.plugin.json, package.json,
+ * and the native skills/ sync target) from a module URL. Source layout keeps
+ * package.json next to hooks.ts; the built dist bundle resolves it one level up
+ * (<plugin root>/dist/hooks.js → <plugin root>).
+ */
+export function pluginRootFromModuleUrl(moduleUrl: string): string | undefined {
+  try {
+    for (const manifestUrl of [new URL("./package.json", moduleUrl), new URL("../package.json", moduleUrl)]) {
+      try {
+        readFileSync(manifestUrl, "utf8");
+        return dirname(fileURLToPath(manifestUrl));
+      } catch {}
+    }
+  } catch {}
+  return undefined;
+}
+
+function defaultSkillsRoot(): string | undefined {
+  const root = pluginRootFromModuleUrl(import.meta.url);
+  return root ? join(root, "skills") : undefined;
+}
+
 function lifecycleRuntime(): Record<string, string> {
   const runtime: Record<string, string> = { runtime_id: "openclaw", runtime_family: "openclaw" };
   const version = pluginVersion();
@@ -78,26 +102,22 @@ async function fetchLifecycleEvent(pluginCfg: any, body: Record<string, unknown>
   });
 }
 
-async function fetchStartupLifecycle(pluginCfg: any, sessionId: string, skills: boolean) {
+async function fetchStartupLifecycle(pluginCfg: any, sessionId: string) {
   return fetchLifecycleEvent(pluginCfg, {
     protocol_version: "lore.lifecycle.v1",
     runtime: lifecycleRuntime(),
     event: { name: "session.start", native_name: "session_start" },
-    // Lore appends the Skills catalog only for clients that expose Skills tools.
-    ...(skills ? { features: { skills: true } } : {}),
     normalized: { session_id: sessionId },
     project: detectProjectInfo(),
   });
 }
 
-async function fetchPromptLifecycle(pluginCfg: any, prompt: string, sessionId: string | undefined, skills: boolean) {
-  // Prompt lifecycle also carries explicit `$skill-name` invocations, so it must
-  // remain available when Memory recall injection is disabled.
+async function fetchPromptLifecycle(pluginCfg: any, prompt: string, sessionId: string | undefined) {
   return fetchLifecycleEvent(pluginCfg, {
     protocol_version: "lore.lifecycle.v1",
     runtime: lifecycleRuntime(),
     event: { name: "prompt.submit", native_name: "before_prompt_build" },
-    features: { memory_recall: hasRecallConfig(pluginCfg), ...(skills ? { skills: true } : {}) },
+    features: { memory_recall: hasRecallConfig(pluginCfg) },
     normalized: { session_id: sessionId, prompt },
   });
 }
@@ -114,11 +134,39 @@ function usableSessionId(value: unknown): string | undefined {
 
 // ---- Hook registration ----
 
-export function registerHooks(api: any, pluginCfg: any, skillsSession?: SkillsSession) {
+export interface HooksOptions {
+  /** Overrides the plugin-root-derived skills sync target (tests). */
+  skillsRoot?: string;
+}
+
+/**
+ * Fire-and-forget sync of the server catalog into the plugin's native skills/
+ * directory. OpenClaw watches the directory and hot-reloads changes, so the
+ * session never waits for the sync and failures stay debug-level.
+ */
+function startSkillsSync(api: any, pluginCfg: any, skillsRoot?: string) {
+  const root = typeof skillsRoot === "string" && skillsRoot.trim() ? skillsRoot.trim() : defaultSkillsRoot();
+  if (!root) {
+    api.logger?.debug?.("lore: cannot locate the plugin root for skills sync");
+    return;
+  }
+  void runSkillsSync({
+    clientType: "openclaw",
+    root,
+    loreHome: pluginCfg.loreHome,
+    baseUrl: pluginCfg.baseUrl,
+    apiToken: pluginCfg.apiToken,
+  }).then((status) => {
+    if (status.errors.length > 0) {
+      api.logger?.debug?.(`lore: background skills sync finished with ${status.errors.length} error(s)`);
+    }
+  });
+}
+
+export function registerHooks(api: any, pluginCfg: any, options: HooksOptions = {}) {
   const startupStates = new Map<string, { appendSystemContext: string; consumed: boolean }>();
   const startupRequests = new Map<string, { promise: Promise<void>; token: object }>();
   const endedTokens = new WeakSet<object>();
-  const skills = skillsSession;
 
   api.registerGatewayMethod("lore.status", async ({ respond }: any) => {
     try {
@@ -144,6 +192,10 @@ export function registerHooks(api: any, pluginCfg: any, skillsSession?: SkillsSe
   );
 
   api.on("session_start", async (event: any, ctx: any) => {
+    // Skills sync is independent of prompt guidance: it runs in the background
+    // and OpenClaw's file watcher picks the synced skills up.
+    if (pluginCfg.skillsEnabled) startSkillsSync(api, pluginCfg, options.skillsRoot);
+
     if (!pluginCfg.injectPromptGuidance) return;
     const sessionId = usableSessionId(event?.sessionId) ?? usableSessionId(ctx?.sessionId);
     if (!sessionId) return;
@@ -155,15 +207,7 @@ export function registerHooks(api: any, pluginCfg: any, skillsSession?: SkillsSe
     const token = {};
     const request = (async () => {
       try {
-        const lifecycleResponse = await fetchStartupLifecycle(pluginCfg, sessionId, Boolean(skills));
-        // Record project/catalog identity only — never auto-download or reconcile skills.
-        if (skills) {
-          try {
-            await skills.onSessionStart(lifecycleResponse);
-          } catch (error: any) {
-            api.logger.debug?.(`lore: skill catalog identity on session_start failed: ${error.message}`);
-          }
-        }
+        const lifecycleResponse = await fetchStartupLifecycle(pluginCfg, sessionId);
         const value = readReturnValue(lifecycleResponse);
         const appendSystemContext = typeof value?.appendSystemContext === "string"
           ? value.appendSystemContext.trim()
@@ -206,7 +250,7 @@ export function registerHooks(api: any, pluginCfg: any, skillsSession?: SkillsSe
 
     if (typeof event?.prompt === "string" && event.prompt.trim()) {
       try {
-        const lifecycleResponse = await fetchPromptLifecycle(pluginCfg, event.prompt, sessionId, Boolean(skills));
+        const lifecycleResponse = await fetchPromptLifecycle(pluginCfg, event.prompt, sessionId);
         const value = readReturnValue(lifecycleResponse);
         const prependContext = typeof value?.prependContext === "string"
           ? value.prependContext.trim()
@@ -219,6 +263,4 @@ export function registerHooks(api: any, pluginCfg: any, skillsSession?: SkillsSe
 
     return Object.keys(out).length > 0 ? out : undefined;
   });
-
-  return { skills };
 }

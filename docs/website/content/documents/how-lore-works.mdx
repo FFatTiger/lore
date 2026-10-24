@@ -7,7 +7,7 @@ When a session starts, Lore sends four things, in this order:
 1. **Global guidance.** Short usage rules for Lore. The text is managed on the server, and you can edit it in Settings. The setting is `lifecycle.guidance.enabled`, on by default.
 2. **Boot block.** The fixed baseline described below.
 3. **Startup recall.** Optional candidates chosen from the working directory and repository name.
-4. **Skills list** (Loremem Cloud only). An `<available_skills>` list of the skills the agent may use.
+4. **Skills rules** (Loremem Cloud only). A fixed `<lore_skills>` block that explains how Lore-managed skills work. The skill packages themselves reach each agent through its own skills directory, not through this block.
 
 ### Boot nodes
 
@@ -22,7 +22,7 @@ Boot nodes are fixed, so every session starts from the same baseline.
 
 ### Skills (Loremem Cloud)
 
-The agent sees the name, description, and `skill_id` of each enabled skill. It decides when a skill is relevant and loads it with `lore_skill_get`. You can run an enabled skill yourself by typing `$skill-name` in a prompt.
+The `<lore_skills>` block carries the rules, not the skill packages: the plugin syncs the enabled skills that agent may see into the host's own skills directory, and the agent lists, triggers, and loads them with its own skill system. You invoke one with your agent's own trigger, such as `/lore:<name>` in Claude Code or `/skill:<name>` in Pi. See [Skills](/documents/skills).
 
 ## Every prompt: recall
 

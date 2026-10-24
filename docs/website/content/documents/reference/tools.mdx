@@ -178,11 +178,11 @@ The example assumes that `project://checkout_api` already exists, with its own c
 
 | Runtime | How the tools appear | Example |
 | --- | --- | --- |
-| Claude Code | MCP tools with the prefix `mcp__plugin_lore_lore__<tool>`. Skills tools use `mcp__plugin_lore_lore-skills__<tool>`. | `mcp__plugin_lore_lore__lore_search` |
+| Claude Code | MCP tools with the prefix `mcp__plugin_lore_lore__<tool>`. | `mcp__plugin_lore_lore__lore_search` |
 | ZCode | MCP tools with the same prefix, `mcp__plugin_lore_lore__<tool>`. | `mcp__plugin_lore_lore__lore_search` |
 | DeepSeek Harness | MCP tools from the `lore` server, with the prefix `mcp__lore__<tool>`. | `mcp__lore__lore_search` |
 | OpenCode | Native tools with exact names. | `lore_search` |
-| Codex | MCP tools from the `lore` server. Skills tools come from `lore-skills`. | Named by Codex |
+| Codex | MCP tools from the `lore` server. | Named by Codex |
 | Pi, OpenClaw, Hermes | Tools registered by each plugin, with the same names. | `lore_search` |
 | Other MCP clients | Named by the client. Connect to `/api/mcp?client_type=mcp`. | Named by the client |
 
@@ -198,21 +198,19 @@ Skills tools appear only when the connected server advertises Skills. Loremem Cl
 | --- | --- | --- |
 | `lore_skill_list` | List the project's skills. | Optional: `include_disabled` (default `true`) |
 | `lore_skill_search` | Search skills by query. | Required: `query`. Optional: `limit` (1 to 50) |
-| `lore_skill_get` | Create or refresh a local copy, and return `SKILL.md` and the absolute `skill_dir`. | Required: `skill_id` |
-| `lore_skill_create` | Create a skill from files. | Required: `name`, `files`. Optional: `enabled` (default `true`) |
-| `lore_skill_update` | Change files or the enabled state. Uses optimistic concurrency. | Required: `skill_id`, `expected_version`. Optional: `enabled`, `upsert_files`, `delete_paths` |
-| `lore_skill_delete` | Archive the skill on the server. | Required: `skill_id` |
+| `lore_skill_create` | Create a skill from files. Syncs to each agent at its next session start. | Required: `name`, `files`. Optional: `enabled` (default `true`) |
+| `lore_skill_update` | Change files or the enabled state. Uses optimistic concurrency. Syncs at each agent's next session start. | Required: `skill_id`, `expected_version`. Optional: `enabled`, `upsert_files`, `delete_paths` |
+| `lore_skill_delete` | Archive the skill on the server. The next sync removes its managed files from each agent. | Required: `skill_id` |
 | `lore_skill_import` | Import skills from a public GitHub repository. | Required: `source`. Optional: `skills`, `visibility_client_types`, `dry_run` |
-| `lore_skill_status` | Report the state of local copies. Read-only. | None |
 
 Notes:
 
 - `files` is a list of objects. Each object has a `path` (required), either `content` (UTF-8 text) or `content_base64` (binary), and an optional `media_type`. A new skill's files must include `SKILL.md`.
 - Use lowercase letters, numbers, and hyphens in `name`. You cannot change it later.
 - `expected_version` is the version you last read. If someone changed the skill first, the update fails. Read the current version with `lore_skill_list`, then try again.
-- `lore_skill_get` writes the local copy to `~/.lore/skills/<project-id>/<skill-name>/`. Server-managed files are read-only. Any other file in the directory is an artifact: Lore never checks or uploads it, and it survives updates.
-- `lore_skill_status` reports each copy as `ready`, `missing`, `outdated`, `tampered`, `unmanaged`, or `invalid`.
-- `lore_skill_delete` does not remove local copies from the machine.
+- The agent doesn't load skills through these tools: each host syncs its own skills directory at session start. See [Skills](/documents/skills).
+- Server-managed files in a synced directory are read-only. Any other file there is an artifact: Lore never checks or uploads it, and it survives updates.
+- `lore_skill_delete` removes the skill's managed files from each agent at the next sync; artifacts stay.
 - `lore_skill_import` never overwrites existing skills: a skill with the same name is reported as `exists` and left alone. Run it with `dry_run` first to list what would be imported.
 
 Create a skill:

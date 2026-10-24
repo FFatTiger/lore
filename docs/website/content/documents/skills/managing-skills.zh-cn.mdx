@@ -53,23 +53,23 @@ Lore 强制执行以下限制：
 | --- | --- | --- |
 | 启用 | 开或关 | 关闭后，Agent 不再看到或加载该技能。 |
 | 可见范围 | 所有 Agent，或单个 Agent | 把技能限定在某个运行时。 |
-| 调用方式 | Agent 与用户，或仅用户触发 | **仅用户触发** 会对 Agent 隐藏该技能，只有用户输入 `$名称` 时才运行。 |
+| 调用方式 | Agent 与用户，或仅用户触发 | **仅用户触发** 不让模型自行运行该技能，你仍然可以用 Agent 自己的触发方式调用它。 |
 
-调用方式以 `disable-model-invocation: true` 的形式保存在 `SKILL.md` 中。在控制台中修改它会更新文件中的那一行；编辑该行也会改变控制台中的设置。选择 **复制触发词** 可复制 `$名称` 文本。
+调用方式以 `disable-model-invocation: true` 的形式保存在 `SKILL.md` 中。在控制台中修改它会更新文件中的那一行；编辑该行也会改变控制台中的设置。**复制名称** 复制技能名，各宿主会把它转成自己的触发方式，参见 [技能](/documents/skills#运行时)。
 
 ## 归档技能
 
 当不再需要任何 Agent 使用某个技能时，请归档它。依次选择 **归档技能**、**归档…**，然后用 **确认归档** 确认。
 
 > [!WARNING]
-> 归档不可撤销。Agent 将无法再找到或加载该技能，该名称也无法再次使用，而 Agent 机器上已有的副本会保留在原处。
+> 归档不可撤销。Agent 将无法再找到或加载该技能，该名称也无法再次使用。下一次同步会把该技能的托管文件从各个 Agent 删掉，你自己放进那些目录的制品会保留。
 
 ## 让 Agent 创建和更新技能
 
 拥有技能工具的 Agent 也可以管理技能：
 
-- `lore_skill_create` 接受 `name`、必须包含 `SKILL.md` 的 `files` 列表，以及可选的 `enabled` 标志（默认为 `true`）。新技能不会自动复制到 Agent 的机器上，直到 Agent 调用 `lore_skill_get`。
-- `lore_skill_update` 接受 `skill_id` 和 `expected_version`，即 Agent 上一次读取的版本号。它还可以设置 `enabled`、创建或替换文件（`upsert_files`），以及删除路径（`delete_paths`）。如果技能已经更新到更新的版本，更新会因版本冲突而失败。此时 Agent 应通过 `lore_skill_get` 读取最新版本，然后重试。名称不能修改。
+- `lore_skill_create` 接受 `name`、必须包含 `SKILL.md` 的 `files` 列表，以及可选的 `enabled` 标志（默认为 `true`）。新技能会在每个 Agent 下一次会话开始时同步过去。
+- `lore_skill_update` 接受 `skill_id` 和 `expected_version`，即 Agent 上一次读取的版本号。它还可以设置 `enabled`、创建或替换文件（`upsert_files`），以及删除路径（`delete_paths`）。如果技能已经更新到更新的版本，更新会因版本冲突而失败。此时 Agent 应通过 `lore_skill_list` 读取最新版本，然后重试。名称不能修改。
 - `lore_skill_delete` 会归档技能，效果与 **归档技能** 相同。
 
 关于这些工具的返回内容，以及 Agent 在会话开始时如何看到技能，请参见 [技能](/documents/skills)。

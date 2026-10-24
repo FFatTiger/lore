@@ -296,6 +296,9 @@ export function readWorkCopyMarker(dir) {
       revision_hash: typeof data.revision_hash === 'string' ? data.revision_hash : undefined,
       manifest_hash: typeof data.manifest_hash === 'string' ? data.manifest_hash : undefined,
       readonly: data.readonly === true,
+      // Present when a host adapter (adapt) changed the written file set: the server-side
+      // manifest of the unadapted payload, used to detect server-side updates.
+      ...(typeof data.source_manifest_hash === 'string' ? { source_manifest_hash: data.source_manifest_hash } : {}),
     };
   } catch {
     return null;
@@ -615,13 +618,36 @@ function assertInstallPathReplaceable(installPath) {
 export function materializeSkillWorkCopy(opts) {
   const { loreHome, projectId, detail } = opts;
   const skillName = sanitizeSegment(String(detail.name || ''));
+  return materializeSkillWorkCopyAt({
+    installPath: skillInstallPath(loreHome, projectId, skillName),
+    stagingBase: stagingRoot(loreHome, projectId),
+    projectId,
+    detail,
+  });
+}
+
+/** @deprecated Prefer materializeSkillWorkCopy. */
+export function writeSkillMirrorAtomic(opts) {
+  return materializeSkillWorkCopy(opts);
+}
+
+/**
+ * Materialize a work copy at an explicit install path and staging base (both must be
+ * on the same filesystem for the rename-based atomic swap). `sourceManifestHash`
+ * records the server-side manifest of the unadapted payload when a host adapter
+ * modified the written file set, so later syncs can distinguish "server has a new
+ * version" from "local managed files were changed". Omitted/equal values are not
+ * stored, keeping markers byte-identical to the non-adapted path.
+ */
+export function materializeSkillWorkCopyAt(opts) {
+  const { installPath, stagingBase, projectId, detail, sourceManifestHash } = opts;
+  const skillName = sanitizeSegment(String(detail.name || ''));
   const { files, manifest_hash } = validateSkillPayload(detail);
   const managedFiles = validateManagedFileList(files.map((f) => f.path), { requireSkillMd: true });
   const serverVersion = skillVersionOf(detail) ?? '';
   const serverRevision = skillRevisionOf(detail) || undefined;
   const skillId = skillIdOf(detail);
 
-  const installPath = skillInstallPath(loreHome, projectId, skillName);
   const existingMarker = assertInstallPathReplaceable(installPath);
   const existingManaged = existingMarker && existingMarker.schema === LORE_SKILL_SCHEMA
     ? existingMarker.managed_files
@@ -633,7 +659,7 @@ export function materializeSkillWorkCopy(opts) {
     assertManagedPathAncestorsSafe(installPath, existingManaged);
   }
 
-  const stagingBase = stagingRoot(loreHome, projectId);
+  // The stage must live on the same filesystem as the install (rename-based swap).
   ensureDir(stagingBase, WORK_DIR_MODE);
   const stageId = `${skillName}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
   const stagePath = path.join(stagingBase, stageId);
@@ -668,6 +694,10 @@ export function materializeSkillWorkCopy(opts) {
       fs.writeFileSync(dest, file.buffer, { mode: WORK_FILE_MODE });
     }
 
+    const sourceManifest = typeof sourceManifestHash === 'string'
+      && sourceManifestHash.trim().toLowerCase() !== manifest_hash
+      ? sourceManifestHash.trim().toLowerCase()
+      : undefined;
     const marker = {
       schema: LORE_SKILL_SCHEMA,
       project_id: projectId,
@@ -677,6 +707,7 @@ export function materializeSkillWorkCopy(opts) {
       managed_files: managedFiles,
       revision_hash: serverRevision,
       manifest_hash,
+      ...(sourceManifest ? { source_manifest_hash: sourceManifest } : {}),
       readonly: true,
       synced_at: new Date().toISOString(),
     };
@@ -688,7 +719,7 @@ export function materializeSkillWorkCopy(opts) {
     if (pathExists(finalStage)) rmrf(finalStage);
     fs.renameSync(stagePath, finalStage);
 
-    const installedBase = projectWorkCopyRoot(loreHome, projectId);
+    const installedBase = path.dirname(installPath);
     ensureDir(installedBase, WORK_DIR_MODE);
     const backupPath = path.join(stagingBase, `${skillName}.backup-${Date.now()}`);
     if (pathExists(installPath)) {
@@ -710,18 +741,10 @@ export function materializeSkillWorkCopy(opts) {
     if (pathExists(backupPath)) rmrf(backupPath);
     applyInstalledModes(installPath, managedFiles);
     return { installPath, marker };
-  } catch (error) {
-    // Failed staging never damages the existing copy (still at installPath or restored).
-    throw error;
   } finally {
     if (pathExists(stagePath)) rmrf(stagePath);
     if (pathExists(finalStage)) rmrf(finalStage);
   }
-}
-
-/** @deprecated Prefer materializeSkillWorkCopy. */
-export function writeSkillMirrorAtomic(opts) {
-  return materializeSkillWorkCopy(opts);
 }
 
 /**
@@ -1094,6 +1117,195 @@ export function listLocalWorkCopyStatuses(loreHome, projectId) {
     inspectLocalWorkCopy(loreHome, projectId, name),
   );
 }
+
+// ---- skills-directory sync (host-native skills/ directories) ----
+
+const SYNC_STAGING_DIR = '.lore-sync-staging';
+
+/**
+ * True when the marker identity matches the server summary (skill_id, version, and
+ * server manifest when the summary carries one). `source_manifest_hash` (recorded
+ * when adapt changed the written set) is compared against the server manifest so an
+ * adapted copy is not considered outdated just because its written files differ.
+ */
+function markerMatchesSummary(marker, summary) {
+  if (String(marker.skill_id) !== String(skillIdOf(summary))) return false;
+  const summaryVersion = skillVersionOf(summary);
+  if (summaryVersion !== undefined && summaryVersion !== '' && String(marker.version) !== String(summaryVersion)) {
+    return false;
+  }
+  const serverManifest = typeof summary.manifest_hash === 'string' ? summary.manifest_hash.trim().toLowerCase() : '';
+  if (serverManifest) {
+    const localSource = String(marker.source_manifest_hash || marker.manifest_hash || '').trim().toLowerCase();
+    if (localSource !== serverManifest) return false;
+  }
+  return true;
+}
+
+/**
+ * Remove the managed files and marker of a work copy, preserving local artifacts.
+ * The directory itself is removed only when nothing local remains in it.
+ */
+function removeManagedWorkCopy(dir, marker) {
+  assertManagedPathAncestorsSafe(dir, marker.managed_files);
+  for (const rel of [...marker.managed_files, LORE_SKILL_MARKER]) {
+    const full = path.join(dir, ...rel.split('/'));
+    const st = lstatOrNull(full);
+    if (!st) continue;
+    if (st.isDirectory()) continue; // a local artifact took over the managed path
+    fs.rmSync(full, { force: true });
+  }
+  const prefixes = [...managedDirPrefixes(new Set(marker.managed_files))]
+    .sort((a, b) => b.split('/').length - a.split('/').length);
+  for (const rel of prefixes) {
+    const full = path.join(dir, ...rel.split('/'));
+    const st = lstatOrNull(full);
+    if (st?.isDirectory()) {
+      try {
+        if (fs.readdirSync(full).length === 0) fs.rmdirSync(full);
+      } catch { /* ignore */ }
+    }
+  }
+  try {
+    if (fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
+  } catch { /* ignore */ }
+}
+
+/**
+ * Reconcile a host-native skills directory with the server catalog.
+ *
+ * - root/<sanitize(name)>/ is the install target for each summary.
+ * - Directories without a Lore marker, or whose marker belongs to another project,
+ *   are never touched and are reported as conflicts.
+ * - Matching skill_id + version + server manifest_hash with intact managed files is
+ *   unchanged: no detail request is made.
+ * - Otherwise the detail is fetched (loadSkill), optionally adapted for the host
+ *   (adapt), and materialized with the shared semantics: managed files 0444, local
+ *   artifacts preserved, safe conflict errors, atomic swap. The marker records the
+ *   server-side manifest separately (source_manifest_hash) so adapted copies are not
+ *   flagged as tampered or outdated on the next sync.
+ * - Directories carrying a this-project marker that the catalog no longer claims
+ *   (archived/disabled/renamed) lose their managed files and marker; local artifacts
+ *   keep the directory alive.
+ * - Staging lives in a hidden directory inside root (same filesystem) and is cleaned
+ *   up afterwards.
+ *
+ * Returns { created, updated, unchanged, removed, conflicts, errors } (name arrays;
+ * errors entries carry { name, message }).
+ */
+export async function syncSkillsToDir(opts) {
+  const { root, projectId, skills, loadSkill, adapt } = opts;
+  if (!root) throw new Error('syncSkillsToDir requires root');
+  const projectIdStr = String(projectId || '').trim();
+  if (!projectIdStr) throw new Error('syncSkillsToDir requires projectId');
+  if (typeof loadSkill !== 'function') {
+    throw new Error('syncSkillsToDir requires async loadSkill(skillId)');
+  }
+
+  const result = { created: [], updated: [], unchanged: [], removed: [], conflicts: [], errors: [] };
+  const rootPath = path.resolve(String(root));
+  fs.mkdirSync(rootPath, { recursive: true, mode: WORK_DIR_MODE });
+
+  const stagingBase = path.join(rootPath, SYNC_STAGING_DIR);
+  try {
+    const listedIds = new Set(); // skill_ids present in the server catalog
+    for (const raw of (Array.isArray(skills) ? skills : [])) {
+      const summary = normalizeSkillSummary(raw);
+      let name = String(summary.name || '');
+      try {
+        name = sanitizeSegment(name);
+        const skillId = skillIdOf(summary);
+        if (!skillId) throw new Error('skill summary missing skill_id');
+        listedIds.add(String(skillId));
+
+        const installPath = path.join(rootPath, name);
+        const existingStat = lstatOrNull(installPath);
+        if (existingStat && (existingStat.isSymbolicLink() || !existingStat.isDirectory())) {
+          result.conflicts.push(name);
+          continue;
+        }
+        if (existingStat) {
+          const marker = readWorkCopyMarker(installPath);
+          if (!marker || marker.project_id !== projectIdStr) {
+            result.conflicts.push(name);
+            continue;
+          }
+          if (markerMatchesSummary(marker, summary)) {
+            let intact = false;
+            try {
+              intact = hashLocalSkillFiles(installPath).manifest_hash === marker.manifest_hash;
+            } catch {
+              intact = false;
+            }
+            if (intact) {
+              result.unchanged.push(name);
+              continue;
+            }
+          }
+        }
+
+        const detail = normalizeSkillDetail(await loadSkill(skillId));
+        // Validate the server payload before any host adaptation so transport
+        // corruption is caught against the server's own manifest_hash.
+        const validated = validateSkillPayload(detail);
+        const sourceManifest = (
+          typeof detail.manifest_hash === 'string' ? detail.manifest_hash.trim().toLowerCase() : ''
+        ) || validated.manifest_hash;
+        let payload = detail;
+        if (typeof adapt === 'function') {
+          const adapted = await adapt(detail);
+          if (adapted && adapted !== detail) {
+            // The written file set may differ from the server manifest; the server
+            // value is recorded separately instead of failing payload validation.
+            payload = { ...adapted, manifest_hash: undefined };
+          }
+        }
+        materializeSkillWorkCopyAt({
+          installPath,
+          stagingBase,
+          projectId: projectIdStr,
+          detail: payload,
+          sourceManifestHash: sourceManifest,
+        });
+        (existingStat ? result.updated : result.created).push(name);
+      } catch (error) {
+        result.errors.push({ name, message: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
+    // Remove copies this project owns but whose skill_id is no longer listed
+    // (archived/disabled/no longer visible). Unmarked directories (e.g. skills
+    // bundled with the plugin itself) are never touched, and a skill whose detail
+    // fetch failed keeps its existing copy.
+    let entries = [];
+    try {
+      entries = fs.readdirSync(rootPath, { withFileTypes: true });
+    } catch {
+      entries = [];
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+      if (entry.name === SYNC_STAGING_DIR) continue;
+      const dir = path.join(rootPath, entry.name);
+      const marker = readWorkCopyMarker(dir);
+      if (!marker || marker.project_id !== projectIdStr) continue;
+      if (listedIds.has(String(marker.skill_id))) continue;
+      try {
+        removeManagedWorkCopy(dir, marker);
+        result.removed.push(entry.name);
+      } catch (error) {
+        result.errors.push({
+          name: entry.name,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return result;
+  } finally {
+    if (pathExists(stagingBase)) rmrf(stagingBase);
+  }
+}
+
 
 /**
  * List work copies from every project under LORE_HOME. This is intentionally

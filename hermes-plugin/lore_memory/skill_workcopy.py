@@ -24,6 +24,12 @@ Contract:
 - No separate artifact directory and no artifact-create tool.
 - No session-start bulk reconcile/download; all download/update is on-demand
   via getSkill. Recall is identity-only and never injects local paths.
+
+The host-native skills-directory sync (sync_skills_to_dir + run_skills_sync) is
+the Python equivalent of shared/skill-workcopy/skills-sync.mjs: it reconciles
+~/.lore/skills/<project-id>/ with the server catalog at session start so hosts
+that read Lore's skills directory directly (Hermes external_dirs) see the
+server skill set without any per-get tool.
 """
 
 from __future__ import annotations
@@ -546,6 +552,14 @@ def read_work_copy_marker(dir_path: str) -> Optional[Dict[str, Any]]:
             "revision_hash": data["revision_hash"] if isinstance(data.get("revision_hash"), str) else None,
             "manifest_hash": data["manifest_hash"] if isinstance(data.get("manifest_hash"), str) else None,
             "readonly": data.get("readonly") is True,
+            # Present when a host adapter changed the written file set: the
+            # server-side manifest of the unadapted payload, used to detect
+            # server-side updates.
+            "source_manifest_hash": (
+                data["source_manifest_hash"]
+                if isinstance(data.get("source_manifest_hash"), str)
+                else None
+            ),
         }
     except Exception:
         return None
@@ -963,136 +977,226 @@ def materialize_skill_work_copy(
             _rmrf(final_stage)
 
 
-def ensure_skill_work_copy(
+# ---- skills-directory sync (host-native ~/.lore/skills/<project-id>/) ----
+
+SYNC_STATUS_FILE = ".lore-sync-status.json"
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _marker_matches_summary(marker: Dict[str, Any], summary: Dict[str, Any]) -> bool:
+    """True when the marker identity matches the server summary (skill_id,
+    version, and server manifest when the summary carries one).
+    source_manifest_hash (recorded when a host adapter changed the written set)
+    is compared against the server manifest so an adapted copy is not flagged
+    outdated just because its written files differ."""
+    if str(marker.get("skill_id")) != skill_id_of(summary):
+        return False
+    summary_version = skill_version_of(summary)
+    if summary_version is not None and str(summary_version) != "" and str(marker.get("version")) != str(summary_version):
+        return False
+    server_manifest = (
+        summary["manifest_hash"].strip().lower()
+        if isinstance(summary.get("manifest_hash"), str)
+        else ""
+    )
+    if server_manifest:
+        local_source = str(
+            marker.get("source_manifest_hash") or marker.get("manifest_hash") or ""
+        ).strip().lower()
+        if local_source != server_manifest:
+            return False
+    return True
+
+
+def _remove_managed_work_copy(dir_path: str, marker: Dict[str, Any]) -> None:
+    """Remove the managed files and marker of a work copy, preserving local
+    artifacts. The directory itself is removed only when nothing local remains."""
+    _assert_managed_path_ancestors_safe(dir_path, marker["managed_files"])
+    for rel in list(marker["managed_files"]) + [LORE_SKILL_MARKER]:
+        full = os.path.join(dir_path, *rel.split("/"))
+        st = _lstat_or_none(full)
+        if st is None:
+            continue
+        if _is_dir(st):
+            continue  # a local artifact took over the managed path
+        os.remove(full)
+    prefixes = sorted(
+        _managed_dir_prefixes(set(marker["managed_files"])),
+        key=lambda item: item.count("/"),
+        reverse=True,
+    )
+    for rel in prefixes:
+        full = os.path.join(dir_path, *rel.split("/"))
+        st = _lstat_or_none(full)
+        if st is not None and _is_dir(st):
+            try:
+                if not os.listdir(full):
+                    os.rmdir(full)
+            except OSError:
+                pass
+    try:
+        if not os.listdir(dir_path):
+            os.rmdir(dir_path)
+    except OSError:
+        pass
+
+
+def sync_skills_to_dir(
     *,
-    skill_id: str,
+    root: str,
+    project_id: str,
+    skills: List[Dict[str, Any]],
     load_skill: Callable[[str], Dict[str, Any]],
     lore_home: Optional[str] = None,
-    project_id: Optional[str] = None,
-    load_catalog: Optional[Callable[[], Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """Ensure a local work copy. Rematerializes from server when missing, outdated,
-    tampered, or legacy (preserving extra local files). Same version with intact
-    managed files reuses the local copy. Unmanaged / invalid roots error."""
-    lore_home = lore_home or resolve_lore_home()
+    """Reconcile a host-native skills directory with the server catalog.
+
+    - root/<name>/ is the install target for each summary.
+    - Directories without a Lore marker, or whose marker belongs to another
+      project, are never touched and are reported as conflicts.
+    - Matching skill_id + version + server manifest_hash with intact managed
+      files is unchanged: no detail request is made.
+    - Otherwise the detail is fetched (load_skill) and materialized with the
+      shared semantics: managed files 0444, local artifacts preserved, safe
+      conflict errors, atomic swap. Staging lives under
+      staging_root(lore_home, project_id), outside root.
+    - Directories carrying a this-project marker that the catalog no longer
+      claims lose their managed files and marker; local artifacts keep the
+      directory alive.
+
+    Returns { created, updated, unchanged, removed, conflicts, errors } (name
+    lists; errors entries carry { name, message })."""
+    if not root:
+        raise SkillWorkCopyError("sync_skills_to_dir requires root")
+    project_id_str = str(project_id or "").strip()
+    if not project_id_str:
+        raise SkillWorkCopyError("sync_skills_to_dir requires project_id")
     if not callable(load_skill):
-        raise SkillWorkCopyError("ensure_skill_work_copy requires load_skill(skill_id)")
-    detail = normalize_skill_detail(load_skill(skill_id))
-    resolved_project_id = str(project_id or detail.get("project_id") or "").strip()
-    if not resolved_project_id:
-        if not callable(load_catalog):
-            raise SkillWorkCopyError("unable to determine project_id for skill mirror")
-        catalog = load_catalog() or {}
-        resolved_project_id = str(catalog.get("project_id") or "").strip()
-        if not resolved_project_id:
-            raise SkillWorkCopyError("unable to determine project_id for skill mirror")
-        return ensure_skill_work_copy(
-            skill_id=skill_id,
-            load_skill=load_skill,
-            lore_home=lore_home,
-            project_id=resolved_project_id,
-            load_catalog=load_catalog,
-        )
+        raise SkillWorkCopyError("sync_skills_to_dir requires load_skill(skill_id)")
+    lore_home = lore_home or resolve_lore_home()
 
-    skill_name = sanitize_segment(str(detail.get("name") or ""))
-    server_version = skill_version_of(detail)
-    server_revision = skill_revision_of(detail) or None
-    server_manifest = detail.get("manifest_hash") if isinstance(detail.get("manifest_hash"), str) else None
-    resolved_skill_id = skill_id_of(detail) or skill_id
-    install_path = skill_install_path(lore_home, resolved_project_id, skill_name)
+    result: Dict[str, Any] = {"created": [], "updated": [], "unchanged": [], "removed": [], "conflicts": [], "errors": []}
+    root_path = str(Path(root).resolve())
+    _ensure_dir(root_path, WORK_DIR_MODE)
 
-    status = inspect_local_work_copy(
-        lore_home,
-        resolved_project_id,
-        skill_name,
-        {
-            "skill_id": resolved_skill_id,
-            "version": server_version,
-            "revision_hash": server_revision,
-            "manifest_hash": server_manifest,
-        },
-    )
+    listed_ids = set()  # skill_ids present in the server catalog
+    for raw in (skills if isinstance(skills, list) else []):
+        summary = normalize_skill_summary(raw)
+        name = str(summary.get("name") or "")
+        try:
+            name = sanitize_segment(name)
+            skill_id = skill_id_of(summary)
+            if not skill_id:
+                raise SkillWorkCopyError("skill summary missing skill_id")
+            listed_ids.add(str(skill_id))
 
-    if status["state"] == "unmanaged":
-        raise SkillWorkCopyError(
-            status.get("message") or f"unmanaged path blocks skill mirror: {install_path}",
-            code="UNMANAGED_CONFLICT",
-        )
-    if status["state"] == "invalid":
-        raise SkillWorkCopyError(
-            status.get("message") or f"invalid local mirror: {install_path}",
-            code="INVALID_WORK_COPY",
-        )
+            install_path = os.path.join(root_path, name)
+            existing_stat = _lstat_or_none(install_path)
+            if existing_stat is not None and (_is_symlink(existing_stat) or not _is_dir(existing_stat)):
+                result["conflicts"].append(name)
+                continue
+            if existing_stat is not None:
+                marker = read_work_copy_marker(install_path)
+                if not marker or marker["project_id"] != project_id_str:
+                    result["conflicts"].append(name)
+                    continue
+                if _marker_matches_summary(marker, summary):
+                    try:
+                        intact = hash_local_skill_files(install_path)["manifest_hash"] == marker.get("manifest_hash")
+                    except Exception:
+                        intact = False
+                    if intact:
+                        result["unchanged"].append(name)
+                        continue
 
-    downloaded = False
-    skill_dir = install_path
-    active_marker: Optional[Dict[str, Any]] = None
-
-    if status["state"] == "ready" and status.get("path"):
-        marker = read_work_copy_marker(status["path"])
-        if not marker:
-            raise SkillWorkCopyError(
-                f"invalid local mirror marker: {status['path']}",
-                code="INVALID_WORK_COPY",
-            )
-        if marker["schema"] == LEGACY_MIRROR_SCHEMA:
-            result = materialize_skill_work_copy(
+            detail = normalize_skill_detail(load_skill(skill_id))
+            materialize_skill_work_copy(
                 lore_home=lore_home,
-                project_id=resolved_project_id,
+                project_id=project_id_str,
                 detail=detail,
             )
-            skill_dir = result["install_path"]
-            active_marker = result["marker"]
-            downloaded = True
-        elif marker["schema"] == LORE_SKILL_SCHEMA:
-            skill_dir = status["path"]
-            active_marker = marker
-            downloaded = False
-        else:
-            raise SkillWorkCopyError(
-                f"unsupported local mirror schema: {marker['schema']}",
-                code="INVALID_WORK_COPY",
-            )
-    else:
-        result = materialize_skill_work_copy(
-            lore_home=lore_home,
-            project_id=resolved_project_id,
-            detail=detail,
-        )
-        skill_dir = result["install_path"]
-        active_marker = result["marker"]
-        downloaded = True
+            (result["updated"] if existing_stat is not None else result["created"]).append(name)
+        except Exception as exc:
+            result["errors"].append({"name": name, "message": str(exc)})
 
-    if not active_marker:
-        raise SkillWorkCopyError("failed to materialize skill mirror")
+    # Remove copies this project owns but whose skill_id is no longer listed
+    # (archived/disabled/no longer visible). Unmarked directories are never
+    # touched, and a skill whose detail fetch failed keeps its existing copy.
+    try:
+        entries = list(os.scandir(root_path))
+    except OSError:
+        entries = []
+    for entry in entries:
+        try:
+            if not entry.is_dir(follow_symlinks=False):
+                continue
+            dir_path = os.path.join(root_path, entry.name)
+            marker = read_work_copy_marker(dir_path)
+            if not marker or marker["project_id"] != project_id_str:
+                continue
+            if str(marker["skill_id"]) in listed_ids:
+                continue
+            _remove_managed_work_copy(dir_path, marker)
+            result["removed"].append(entry.name)
+        except Exception as exc:
+            result["errors"].append({"name": entry.name, "message": str(exc)})
+    return result
 
-    if (
-        active_marker["project_id"] != resolved_project_id
-        or active_marker["skill_id"] != resolved_skill_id
-        or active_marker["name"] != skill_name
-    ):
-        raise SkillWorkCopyError(
-            "mirror identity mismatch after ensure: "
-            f"project={active_marker['project_id']} skill={active_marker['skill_id']} name={active_marker['name']}"
-        )
 
-    skill_md_path = os.path.join(skill_dir, SKILL_MD)
-    skill_md_stat = _lstat_or_none(skill_md_path)
-    if not skill_md_stat or _is_symlink(skill_md_stat) or not _is_file(skill_md_stat):
-        raise SkillWorkCopyError(f"SKILL.md missing or not a regular file in mirror: {skill_dir}")
-    with open(skill_md_path, "r", encoding="utf-8") as handle:
-        skill_md = handle.read()
-    return {
-        "skill_dir": str(Path(skill_dir).resolve()),
-        "skill_md": skill_md,
-        "skill_md_path": str(Path(skill_md_path).resolve()),
-        "marker": active_marker,
-        "project_id": resolved_project_id,
-        "skill": detail,
-        "server_version": server_version,
-        "local_version": active_marker["version"],
-        "downloaded": downloaded,
+def _write_status_file(root: str, status: Dict[str, Any]) -> None:
+    _ensure_dir(root, WORK_DIR_MODE)
+    tmp = os.path.join(root, f"{SYNC_STATUS_FILE}.tmp-{os.getpid()}")
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(status, handle, indent=2)
+        handle.write("\n")
+    os.rename(tmp, os.path.join(root, SYNC_STATUS_FILE))
+
+
+def run_skills_sync(client: Any, lore_home: Optional[str] = None) -> Dict[str, Any]:
+    """Sync the server skill catalog into ~/.lore/skills/<project-id>/ and
+    record the outcome in <root>/.lore-sync-status.json (atomic tmp + rename).
+    Never raises: failures land in status.errors. Returns the recorded status.
+
+    The client must expose list_skills(include_disabled) and get_skill(id)
+    (LoreClient stamps client_type on every request)."""
+    lore_home = lore_home or resolve_lore_home()
+    status: Dict[str, Any] = {
+        "finished_at": "",
+        "project_id": "",
+        "catalog_revision": "",
+        "created": [],
+        "updated": [],
+        "unchanged": [],
+        "removed": [],
+        "conflicts": [],
+        "errors": [],
     }
+    try:
+        catalog = client.list_skills(include_disabled=True) or {}
+        project_id = str(catalog.get("project_id") or "").strip()
+        status["project_id"] = project_id
+        catalog_revision = catalog.get("catalog_revision")
+        status["catalog_revision"] = "" if catalog_revision is None else str(catalog_revision)
+        result = sync_skills_to_dir(
+            root=skills_root(lore_home, project_id),
+            project_id=project_id,
+            skills=catalog.get("skills") if isinstance(catalog.get("skills"), list) else [],
+            load_skill=lambda skill_id: client.get_skill(skill_id),
+            lore_home=lore_home,
+        )
+        for key in ("created", "updated", "unchanged", "removed", "conflicts", "errors"):
+            status[key] = result[key]
+    except Exception as exc:
+        status["errors"].append({"name": "", "message": str(exc)})
+    status["finished_at"] = _utc_now_iso()
+    try:
+        _write_status_file(skills_root(lore_home, status["project_id"]), status)
+    except Exception:
+        pass  # silent: background best-effort
+    return status
 
 
 def list_local_work_copy_statuses(lore_home: str, project_id: str) -> List[Dict[str, Any]]:
@@ -1113,22 +1217,4 @@ def list_all_local_work_copy_statuses(lore_home: str) -> List[Dict[str, Any]]:
         for status in list_local_work_copy_statuses(lore_home, project_id):
             out.append({"project_id": project_id, **status})
     return out
-
-
-# ---- lifecycle helpers (no download / no local path) ----
-
-
-def read_skill_catalog(lifecycle_response: Any) -> Optional[Dict[str, str]]:
-    if not isinstance(lifecycle_response, dict):
-        return None
-    catalog = lifecycle_response.get("skill_catalog")
-    if not isinstance(catalog, dict):
-        return None
-    project_id = str(catalog.get("project_id") or "").strip()
-    if not project_id:
-        return None
-    return {
-        "project_id": project_id,
-        "catalog_revision": str(catalog.get("catalog_revision") or ""),
-    }
 

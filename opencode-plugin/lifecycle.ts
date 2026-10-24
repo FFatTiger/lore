@@ -5,6 +5,7 @@ import type { Hooks } from '@opencode-ai/plugin';
 import type { Part } from '@opencode-ai/sdk';
 import { LoreApiError, loreFetchJson } from './api.js';
 import type { LorePluginConfig } from './config.js';
+import { runSkillsSync } from './vendor/skill-workcopy/skills-sync.mjs';
 
 export const LORE_RECALL_MARKER = 'lore:prompt-context';
 
@@ -194,8 +195,6 @@ export function createOpenCodeLifecycleAdapter(args: {
       protocol_version: 'lore.lifecycle.v1',
       runtime: lifecycleRuntime(),
       event: { name: 'session.start', native_name: 'session.created' },
-      // Lore appends the Skills catalog only for clients that expose Skills tools.
-      ...(config.skillsEnabled ? { features: { skills: true } } : {}),
       normalized: { session_id: sessionID },
       project: project.project,
       native_input_snapshot: project.native,
@@ -207,8 +206,6 @@ export function createOpenCodeLifecycleAdapter(args: {
       protocol_version: 'lore.lifecycle.v1',
       runtime: lifecycleRuntime(),
       event: { name: 'prompt.submit', native_name: 'chat.message' },
-      // Lore renders `$skill-name` invocations only for clients that expose Skills tools.
-      ...(config.skillsEnabled ? { features: { skills: true } } : {}),
       normalized: { session_id: prompt.sessionID, prompt: prompt.prompt },
       project: project.project,
       native_input_snapshot: {
@@ -218,6 +215,19 @@ export function createOpenCodeLifecycleAdapter(args: {
         ...project.native,
       },
     };
+  }
+
+  // Fire-and-forget host-native skills sync: never awaited, never throws.
+  // OpenCode discovers skills/<name>/SKILL.md itself in the same global directory.
+  function triggerSkillsSync(): void {
+    if (!config.skillsEnabled) return;
+    void runSkillsSync({
+      clientType: 'opencode',
+      root: config.opencodeSkillsRoot,
+      loreHome: config.loreHome,
+      baseUrl: config.baseUrl,
+      apiToken: config.apiToken,
+    }).catch(() => { /* silent: outcome lands in the sync status file when possible */ });
   }
 
   async function ensureStartup(sessionID: string): Promise<string | null> {
@@ -253,7 +263,10 @@ export function createOpenCodeLifecycleAdapter(args: {
   const eventHook: NonNullable<Hooks['event']> = async ({ event }) => {
     if (event.type === 'session.created') {
       const sessionID = event.properties.info.id;
-      if (nonEmpty(sessionID)) void ensureStartup(sessionID);
+      if (nonEmpty(sessionID)) {
+        void ensureStartup(sessionID);
+        triggerSkillsSync();
+      }
       return;
     }
     if (event.type === 'session.deleted') {

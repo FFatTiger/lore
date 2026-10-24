@@ -18,6 +18,7 @@ import { collectInstallSnapshot } from '../core/snapshot.js';
 import { summarizeChannelResults } from '../core/result.js';
 import { isSaasBaseUrl } from '../core/saas.js';
 import { fetchServerProfile } from '../core/capabilities.js';
+import { runFirstSkillsSync } from '../core/skills-first-sync.js';
 import { createLogger } from '../ui/log.js';
 import { banner } from '../ui/banner.js';
 import { t } from '../ui/i18n.js';
@@ -271,6 +272,18 @@ async function executeInstallPlan(
     }
   }
 
+  if (capabilities.skills) {
+    await runFirstSkillsSync({
+      results,
+      loreHome,
+      baseUrl: resolvedBase,
+      apiToken,
+      homeDir: env.HOME || undefined,
+      env,
+      log,
+    });
+  }
+
   const outcome = summarizeChannelResults(results);
   const updateIncomplete = plan.operation === 'update' && outcome.skipped > 0;
   const versionLabel = releaseVersion ?? 'unknown';
@@ -303,7 +316,10 @@ async function executeInstallPlan(
     log.info(t(plan.lang, 'config.path', { path: configPath }));
     log.info(t(plan.lang, 'setup.url', { baseUrl: resolvedBase }));
     log.info(t(plan.lang, 'restart.next', { baseUrl: resolvedBase }));
-    if (capabilities.skills) log.info(t(plan.lang, 'skills.migrate_hint'));
+    if (capabilities.skills) {
+      log.info(t(plan.lang, 'skills.sync_hint'));
+      log.info(t(plan.lang, 'skills.migrate_hint'));
+    }
     return 0;
   }
 

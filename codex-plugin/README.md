@@ -15,10 +15,11 @@ JSON
 ./scripts/install.sh
 ```
 
-The installer stages the official Codex marketplace layout, registers the marketplace, enables `lore@lore`, enables Codex lifecycle hooks, and configures two MCP servers:
+The installer stages the official Codex marketplace layout, registers the marketplace, enables `lore@lore`, enables Codex lifecycle hooks, and configures one MCP server:
 
-- `lore` — remote HTTP MCP for memory tools
-- `lore-skills` — local stdio MCP (`local-skills-mcp`) for all `lore_skill_*` tools (list/search/get/create/update/delete/import/status)
+- `lore` — remote HTTP MCP for memory tools and the `lore_skill_*` tools (list/search/create/update/delete/import)
+
+Skills visible to Codex are synced into the plugin's `skills/` directory at session start, so Codex lists them as its own (`$<name>` or `/skills`).
 
 Lore hooks are bundled in the plugin manifest (`hooks/hooks.json`) rather than installed as user-level `~/.codex/hooks.json` entries.
 
@@ -35,11 +36,10 @@ docker compose up -d
 The plugin MCP config registers:
 
 ```text
-lore        → ${LORE_BASE_URL:-http://127.0.0.1:18901}/api/mcp?client_type=codex
-lore-skills → node <plugin>/local-skills-mcp/src/server.mjs --client-type codex
+lore → ${LORE_BASE_URL:-http://127.0.0.1:18901}/api/mcp?client_type=codex
 ```
 
-Shared connection settings come from `~/.lore/config.json` (and env). The local skills server reads `LORE_HOME` / `LORE_BASE_URL` / `LORE_API_TOKEN` from the environment or that file — tokens are never placed in the MCP command string.
+Shared connection settings come from `~/.lore/config.json` (and env). The hooks and the background skills sync read `LORE_HOME` / `LORE_BASE_URL` / `LORE_API_TOKEN` from the environment or that file — tokens are never placed in the MCP command string.
 
 ```json
 {
@@ -48,7 +48,7 @@ Shared connection settings come from `~/.lore/config.json` (and env). The local 
 }
 ```
 
-The installer configures remote `lore` MCP with a standard `Authorization: Bearer ...` HTTP header (or env-backed auth) and registers local `lore-skills` as a stdio command pointing into the installed plugin artifact.
+The installer configures the remote `lore` MCP with a standard `Authorization: Bearer ...` HTTP header (or env-backed auth).
 
 ## Prompt Injection Hooks
 
@@ -63,7 +63,7 @@ Set `LORE_CODEX_INSTALL_USER_HOOKS=1` only for legacy Codex builds that require 
 
 The hooks add:
 
-- `SessionStart`: server-returned Lore boot lifecycle context from `client_type=codex`
-- `UserPromptSubmit`: `<recall>` / Memory host output, plus a `<skill_invocation>` block when the prompt invokes a skill with `$skill-name` (Skills-enabled servers only)
+- `SessionStart`: server-returned Lore boot lifecycle context from `client_type=codex`, plus a background sync of the visible skills into the plugin's own `skills/` directory so Codex discovers them natively — invoke with `$skill-name` or `/skills`; the sync runs in a detached process after the hook returns, its last outcome is recorded in `skills/.lore-sync-status.json`, and changes appear from the next session on. Skills marked `disable-model-invocation` get a generated `agents/openai.yaml` policy, and the bundled `skills/lore-memory` is never touched.
+- `UserPromptSubmit`: `<recall>` / Memory host output
 
 Hook commands run plain `node` `.mjs` files instead of `npx tsx`, avoiding per-prompt package runner startup cost.

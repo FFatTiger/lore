@@ -1,14 +1,12 @@
 /**
  * OpenClaw skills adapter — thin wrapper over vendor/skill-workcopy.
- * Owns lore_skill_* tools and the session-start project identity used for work copies.
+ * Owns the lore_skill_* management tools; discovery and loading are OpenClaw's
+ * own skills directory (hooks.ts syncs it at session start).
  */
 
 import { Type } from "@sinclair/typebox";
 import { fetchJson, textResult } from "./api";
 import {
-  ensureSkillWorkCopy as ensureSharedWorkCopy,
-  listAllLocalWorkCopyStatuses,
-  listLocalWorkCopyStatuses,
   normalizeSkillCandidate,
   normalizeSkillDetail,
   normalizeSkillSummary,
@@ -16,9 +14,7 @@ import {
   skillVersionOf,
   resolveLoreHome as resolveVendorLoreHome,
   type SkillCandidate,
-  type SkillDetail,
   type SkillSummary,
-  type WorkCopyStatus,
 } from "./vendor/skill-workcopy/index.mjs";
 
 export {
@@ -27,11 +23,9 @@ export {
   normalizeSkillSummary,
   normalizeSkillDetail,
   normalizeSkillCandidate,
-  listAllLocalWorkCopyStatuses,
-  listLocalWorkCopyStatuses,
 };
 
-export type { SkillCandidate, SkillDetail, SkillSummary, WorkCopyStatus };
+export type { SkillCandidate, SkillSummary };
 
 export function resolveLoreHome(env: NodeJS.ProcessEnv = process.env): string {
   return resolveVendorLoreHome(env);
@@ -40,12 +34,6 @@ export function resolveLoreHome(env: NodeJS.ProcessEnv = process.env): string {
 export interface SkillsClientState {
   projectId?: string;
   catalogRevision?: string;
-  lastError?: string;
-}
-
-export interface SkillCatalog {
-  project_id: string;
-  catalog_revision: string;
 }
 
 // ---- API ----
@@ -62,11 +50,6 @@ export async function listSkillsApi(pluginCfg: any, includeDisabled = true): Pro
     catalog_revision: String(data?.catalog_revision || ""),
     skills: Array.isArray(data?.skills) ? data.skills.map(normalizeSkillSummary) : [],
   };
-}
-
-export async function getSkillApi(pluginCfg: any, skillId: string): Promise<SkillDetail> {
-  const data = await fetchJson(pluginCfg, `/skills/${encodeURIComponent(skillId)}`, { method: "GET" });
-  return normalizeSkillDetail(data);
 }
 
 export async function searchSkillsApi(pluginCfg: any, query: string, limit?: number): Promise<any> {
@@ -135,82 +118,17 @@ export function formatSkillImportText(data: any): string {
   return [`Import from ${repoLabel}${pathLabel}: ${summary || "no results"}`, ...lines].join("\n");
 }
 
-export async function ensureSkillWorkCopy(opts: {
-  pluginCfg: any;
-  loreHome?: string;
-  skillId: string;
-  projectId?: string;
-}) {
-  const loreHome = opts.loreHome
-    || (typeof opts.pluginCfg?.loreHome === "string" && opts.pluginCfg.loreHome.trim()
-      ? opts.pluginCfg.loreHome.trim()
-      : resolveLoreHome());
-  return ensureSharedWorkCopy({
-    loreHome,
-    skillId: opts.skillId,
-    projectId: opts.projectId,
-    loadSkill: (skillId: string) => getSkillApi(opts.pluginCfg, skillId),
-    loadCatalog: async () => listSkillsApi(opts.pluginCfg, true),
-  });
-}
-
-export function readSkillCatalog(lifecycleResponse: any): SkillCatalog | null {
-  const catalog = lifecycleResponse?.skill_catalog;
-  if (!catalog || typeof catalog !== "object") return null;
-  const project_id = String(catalog.project_id || "").trim();
-  if (!project_id) return null;
-  return {
-    project_id,
-    catalog_revision: String(catalog.catalog_revision || ""),
-  };
-}
-
 // ---- session ----
 
 export function createSkillsSession(pluginCfg: any) {
+  // Project/catalog identity is recorded by the lore_skill_* tools; the session
+  // itself never downloads or reconciles skills (hooks.ts owns the sync).
   const state: SkillsClientState = {};
   const loreHome = () => (typeof pluginCfg?.loreHome === "string" && pluginCfg.loreHome.trim()
     ? pluginCfg.loreHome.trim()
     : resolveLoreHome());
 
-  /** Session start: record project/catalog identity only. Never auto-downloads or reconciles. */
-  async function onSessionStart(lifecycleResponse: any): Promise<void> {
-    const catalog = readSkillCatalog(lifecycleResponse);
-    if (!catalog?.project_id) return;
-    state.projectId = catalog.project_id;
-    state.catalogRevision = catalog.catalog_revision;
-  }
-
-  function getStatus(): {
-    project_id?: string;
-    catalog_revision?: string;
-    work_copies: WorkCopyStatus[];
-    last_error?: string;
-  } {
-    const projectId = state.projectId;
-    const work_copies = projectId
-      ? listLocalWorkCopyStatuses(loreHome(), projectId)
-      : listAllLocalWorkCopyStatuses(loreHome());
-    return {
-      project_id: projectId,
-      catalog_revision: state.catalogRevision,
-      work_copies,
-      last_error: state.lastError,
-    };
-  }
-
-  return {
-    state,
-    loreHome,
-    onSessionStart,
-    getStatus,
-    ensureSkillWorkCopy: (skillId: string) => ensureSkillWorkCopy({
-      pluginCfg,
-      loreHome: loreHome(),
-      skillId,
-      projectId: state.projectId,
-    }),
-  };
+  return { state, loreHome };
 }
 
 export type SkillsSession = ReturnType<typeof createSkillsSession>;
@@ -277,62 +195,9 @@ export function registerSkillTools(api: any, pluginCfg: any, skillsSession?: Ski
   });
 
   api.registerTool({
-    name: "lore_skill_get",
-    label: "Lore skill get",
-    description:
-      "Load a Lore skill (cloud-stored, not part of the host's own skill system) by skill_id, including its package files. "
-      + "Use it when a task matches a Lore skill or another skill's instructions name one.",
-    parameters: Type.Object({
-      skill_id: Type.String({ description: "Skill id." }),
-    }),
-    async execute(_id: any, params: any = {}) {
-      try {
-        const skillId = String(params?.skill_id || "").trim();
-        if (!skillId) throw new Error("skill_id is required");
-        const result = await ensureSkillWorkCopy({
-          pluginCfg,
-          loreHome: session.loreHome(),
-          skillId,
-          projectId: session.state.projectId,
-        });
-        if (result.project_id) session.state.projectId = result.project_id;
-        const text = [
-          `Skill ready: ${result.skill.name || skillId}`,
-          `skill_dir: ${result.skill_dir}`,
-          'Files from Lore in skill_dir are read-only and refreshed by lore_skill_get. Any other file there is a local artifact: never checked or uploaded. Save deliverables for the user where they asked or in the working directory, not in skill_dir.',
-          `server_version: ${result.server_version ?? "?"}`,
-          `local_version: ${result.local_version}`,
-          `downloaded: ${result.downloaded}`,
-          "",
-          result.skill_md,
-        ].join("\n");
-        return textResult(text, {
-          ok: true,
-          skill_dir: result.skill_dir,
-          skill_md: result.skill_md,
-          skill_md_path: result.skill_md_path,
-          server_version: result.server_version,
-          local_version: result.local_version,
-          downloaded: result.downloaded,
-          project_id: result.project_id,
-          skill: {
-            skill_id: skillIdOf(result.skill),
-            name: result.skill.name,
-            description: result.skill.description,
-            version: result.server_version,
-          },
-          marker: result.marker,
-        });
-      } catch (error: any) {
-        return textResult(`Lore skill get failed: ${error.message}`, { ok: false, error: error.message });
-      }
-    },
-  });
-
-  api.registerTool({
     name: "lore_skill_create",
     label: "Lore skill create",
-    description: "Create a Lore skill on the server. Does not auto-materialize a local copy; call lore_skill_get later if needed.",
+    description: "Create a Lore skill on the server. Changes sync to the local skills directory when the next session starts.",
     parameters: Type.Object({
       name: Type.String({ description: "Skill name." }),
       enabled: Type.Optional(Type.Boolean({ description: "Whether the skill is enabled (default true)." })),
@@ -365,7 +230,7 @@ export function registerSkillTools(api: any, pluginCfg: any, skillsSession?: Ski
     label: "Lore skill update",
     description:
       "Update a Lore skill on the server with optimistic concurrency via expected_version. "
-      + "Does not auto-reconcile the local copy; call lore_skill_get later if the version differs.",
+      + "Changes sync to the local skills directory when the next session starts.",
     parameters: Type.Object({
       skill_id: Type.String({ description: "Skill id." }),
       expected_version: Type.Integer({ minimum: 1, description: "Expected current integer version (optimistic concurrency)." }),
@@ -407,7 +272,8 @@ export function registerSkillTools(api: any, pluginCfg: any, skillsSession?: Ski
   api.registerTool({
     name: "lore_skill_delete",
     label: "Lore skill delete",
-    description: "Archive/delete a Lore skill on the server. Does not auto-remove the local copy.",
+    description:
+      "Archive/delete a Lore skill on the server. Changes sync to the local skills directory when the next session starts.",
     parameters: Type.Object({
       skill_id: Type.String({ description: "Skill id." }),
     }),
@@ -454,44 +320,6 @@ export function registerSkillTools(api: any, pluginCfg: any, skillsSession?: Ski
         return textResult(`${formatSkillImportText(data)}\n\n${JSON.stringify(data, null, 2)}`, { ok: true, result: data });
       } catch (error: any) {
         return textResult(`Lore skill import failed: ${error.message}`, { ok: false, error: error.message, source });
-      }
-    },
-  });
-
-  api.registerTool({
-    name: "lore_skill_status",
-    label: "Lore skill status",
-    description:
-      "Report local skill work-copy states (ready/missing/outdated/tampered/unmanaged/invalid). "
-      + "Read-only: never mutates or reconciles copies.",
-    parameters: Type.Object({}),
-    async execute(_id: any, _params: any = {}) {
-      try {
-        let status = session.getStatus();
-        if (!status.project_id) {
-          try {
-            const catalog = await listSkillsApi(pluginCfg, true);
-            if (catalog.project_id) {
-              session.state.projectId = catalog.project_id;
-              session.state.catalogRevision = catalog.catalog_revision;
-              status = session.getStatus();
-            }
-          } catch {
-            // keep local-only status
-          }
-        }
-        const lines = status.work_copies.map((m) => {
-          const ver = m.version !== undefined ? ` v${m.version}` : "";
-          const msg = m.message ? ` — ${m.message}` : "";
-          return `- ${m.name}: ${m.state}${ver}${msg}`;
-        });
-        const header = `project=${status.project_id || "?"} catalog_revision=${status.catalog_revision || "?"}`;
-        const text = [header, ...(lines.length ? lines : ["(no local work copies)"]), status.last_error ? `last_error: ${status.last_error}` : ""]
-          .filter(Boolean)
-          .join("\n");
-        return textResult(text, { ok: true, ...status });
-      } catch (error: any) {
-        return textResult(`Lore skill status failed: ${error.message}`, { ok: false, error: error.message });
       }
     },
   });

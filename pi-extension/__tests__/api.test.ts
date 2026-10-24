@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { authHeaders, buildApiUrl, fetchJson, hasRecallConfig, pickPluginConfig, textResult } from '../api';
 
 let originalLoreBaseUrl: string | undefined;
+let originalLoreHomeEnv: string | undefined;
+let originalSkillsEnabledEnv: string | undefined;
 let originalHome: string | undefined;
 let tempHome: string;
 
@@ -17,10 +19,15 @@ describe('Pi extension API helpers', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn());
     originalLoreBaseUrl = process.env.LORE_BASE_URL;
+    originalLoreHomeEnv = process.env.LORE_HOME;
+    originalSkillsEnabledEnv = process.env.LORE_SKILLS_ENABLED;
     originalHome = process.env.HOME;
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'lore-pi-home-'));
     process.env.HOME = tempHome;
+    // A Lore-enabled machine exports LORE_HOME / LORE_SKILLS_ENABLED; the tests must stay hermetic.
     delete process.env.LORE_BASE_URL;
+    delete process.env.LORE_HOME;
+    delete process.env.LORE_SKILLS_ENABLED;
     delete process.env.LORE_API_TOKEN;
     delete process.env.API_TOKEN;
   });
@@ -28,6 +35,10 @@ describe('Pi extension API helpers', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     restoreEnvVar('LORE_BASE_URL', originalLoreBaseUrl);
+    if (originalLoreHomeEnv === undefined) delete process.env.LORE_HOME;
+    else process.env.LORE_HOME = originalLoreHomeEnv;
+    if (originalSkillsEnabledEnv === undefined) delete process.env.LORE_SKILLS_ENABLED;
+    else process.env.LORE_SKILLS_ENABLED = originalSkillsEnabledEnv;
     if (originalHome === undefined) delete process.env.HOME;
     else process.env.HOME = originalHome;
     fs.rmSync(tempHome, { recursive: true, force: true });

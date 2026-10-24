@@ -178,11 +178,11 @@ Agent 通过下面这些工具读写 Lore。各运行时的参数名相同，只
 
 | 运行时 | 工具的显示方式 | 示例 |
 | --- | --- | --- |
-| Claude Code | MCP 工具，前缀为 `mcp__plugin_lore_lore__<tool>`。技能工具使用 `mcp__plugin_lore_lore-skills__<tool>`。 | `mcp__plugin_lore_lore__lore_search` |
+| Claude Code | MCP 工具，前缀为 `mcp__plugin_lore_lore__<tool>`。 | `mcp__plugin_lore_lore__lore_search` |
 | ZCode | MCP 工具，前缀同样为 `mcp__plugin_lore_lore__<tool>`。 | `mcp__plugin_lore_lore__lore_search` |
 | DeepSeek Harness | 来自 `lore` 服务器的 MCP 工具，前缀为 `mcp__lore__<tool>`。 | `mcp__lore__lore_search` |
 | OpenCode | 原生工具，名称完全一致。 | `lore_search` |
-| Codex | 来自 `lore` 服务的 MCP 工具。技能工具来自 `lore-skills`。 | 由 Codex 显示 |
+| Codex | 来自 `lore` 服务的 MCP 工具。 | 由 Codex 显示 |
 | Pi、OpenClaw、Hermes | 由各自的插件注册，名称相同。 | `lore_search` |
 | 其他 MCP 客户端 | 由客户端命名。连接 `/api/mcp?client_type=mcp`。 | 由客户端命名 |
 
@@ -198,21 +198,19 @@ Pi、OpenClaw 和 Hermes 不注册 `lore_guidance`。它们的会话开始上下
 | --- | --- | --- |
 | `lore_skill_list` | 列出项目中的技能。 | 可选：`include_disabled`（默认 `true`） |
 | `lore_skill_search` | 按查询内容搜索技能。 | 必填：`query`。可选：`limit`（1 到 50） |
-| `lore_skill_get` | 创建或刷新本地副本，并返回 `SKILL.md` 和绝对路径 `skill_dir`。 | 必填：`skill_id` |
-| `lore_skill_create` | 用文件创建技能。 | 必填：`name`、`files`。可选：`enabled`（默认 `true`） |
-| `lore_skill_update` | 修改文件或启用状态。使用乐观并发控制。 | 必填：`skill_id`、`expected_version`。可选：`enabled`、`upsert_files`、`delete_paths` |
-| `lore_skill_delete` | 在服务器上归档技能。 | 必填：`skill_id` |
+| `lore_skill_create` | 用文件创建技能。会在每个 Agent 下一次会话开始时同步过去。 | 必填：`name`、`files`。可选：`enabled`（默认 `true`） |
+| `lore_skill_update` | 修改文件或启用状态。使用乐观并发控制。修改会在每个 Agent 下一次会话开始时同步。 | 必填：`skill_id`、`expected_version`。可选：`enabled`、`upsert_files`、`delete_paths` |
+| `lore_skill_delete` | 在服务器上归档技能。下一次同步会把它的托管文件从各个 Agent 删掉。 | 必填：`skill_id` |
 | `lore_skill_import` | 从公开的 GitHub 仓库导入技能。 | 必填：`source`。可选：`skills`、`visibility_client_types`、`dry_run` |
-| `lore_skill_status` | 报告本地副本的状态。只读。 | 无 |
 
 说明：
 
 - `files` 是对象列表。每个对象都有 `path`（必填），以及 `content`（UTF-8 文本）或 `content_base64`（二进制）之一，另外还可以有可选的 `media_type`。新技能的文件必须包含 `SKILL.md`。
 - `name` 只能使用小写字母、数字和连字符。创建后无法修改。
 - `expected_version` 是你最后一次读取到的版本。如果有人先修改了该技能，更新会失败。请用 `lore_skill_list` 读取当前版本，然后重试。
-- `lore_skill_get` 会把本地副本写入 `~/.lore/skills/<project-id>/<skill-name>/`。服务器管理的文件是只读的，目录中的其他文件都是制品：Lore 不检查、不上传，更新后保留。
-- `lore_skill_status` 会把每个副本报告为 `ready`、`missing`、`outdated`、`tampered`、`unmanaged` 或 `invalid` 之一。
-- `lore_skill_delete` 不会删除本机上的本地副本。
+- Agent 不通过这些工具加载技能：每个宿主在会话开始时自己同步技能目录。参见[技能](/documents/skills)。
+- 同步目录中的托管文件是只读的。目录里的其他文件都是制品：Lore 不检查、不上传，更新后保留。
+- `lore_skill_delete` 归档技能后，下一次同步会把它的托管文件从各个 Agent 删掉，制品保留。
 - `lore_skill_import` 从不覆盖已有技能：同名技能会报告为 `exists` 并保持不变。先带 `dry_run` 运行可以预览将要导入的内容。
 
 创建技能：

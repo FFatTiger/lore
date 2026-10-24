@@ -2,6 +2,7 @@
   "name": "lore",
   "version": "1.11.0",
   "description": "Long-term Lore memory for ZCode via the Lore MCP bridge and bundled lifecycle hooks.",
+  "skills": "./skills",
   "author": {
     "name": "FFatTiger"
   },

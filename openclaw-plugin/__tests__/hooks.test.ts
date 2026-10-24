@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   extractMessageText,
   extractAssistantText,
+  pluginRootFromModuleUrl,
   registerHooks,
 } from '../hooks';
 
@@ -64,6 +68,38 @@ describe('extractAssistantText', () => {
 
   it('returns empty when no assistant message', () => {
     expect(extractAssistantText([{ role: 'user', content: 'hi' }])).toBe('');
+  });
+});
+
+describe('pluginRootFromModuleUrl', () => {
+  it('resolves the plugin root from a dist-layout module URL', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'lore-openclaw-plugin-root-'));
+    try {
+      writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: '@local/lore' }));
+      mkdirSync(path.join(root, 'dist'));
+      const distModule = pathToFileURL(path.join(root, 'dist', 'hooks.js')).href;
+      expect(pluginRootFromModuleUrl(distModule)).toBe(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves the source layout where package.json sits next to hooks.ts', () => {
+    const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+    expect(pluginRootFromModuleUrl(pathToFileURL(path.join(sourceRoot, 'hooks.ts')).href)).toBe(sourceRoot);
+    expect(pluginRootFromModuleUrl(import.meta.url)).toBe(sourceRoot);
+  });
+
+  it('returns undefined when no package.json sits at or above the module', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'lore-openclaw-plugin-bare-'));
+    try {
+      mkdirSync(path.join(root, 'dist'), { recursive: true });
+      const distModule = pathToFileURL(path.join(root, 'dist', 'hooks.js')).href;
+      expect(pluginRootFromModuleUrl(distModule)).toBeUndefined();
+      expect(existsSync(path.join(root, 'skills'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
@@ -237,7 +273,7 @@ describe('registerHooks', () => {
     }
   });
 
-  it('still runs prompt.submit for Skills invocations when recall is disabled', async () => {
+  it('still posts prompt.submit when recall is disabled', async () => {
     const api = makeMockApi();
     const bodies: any[] = [];
     vi.stubGlobal('fetch', vi.fn(async (url: string, init: any) => {
@@ -247,7 +283,7 @@ describe('registerHooks', () => {
           ok: true,
           status: 200,
           text: async () => JSON.stringify({
-            host_output: { mode: 'return_value', value: { prependContext: '<skill_invocation>x</skill_invocation>' } },
+            host_output: { mode: 'return_value', value: { prependContext: 'RECALL' } },
           }),
         };
       }
@@ -258,14 +294,13 @@ describe('registerHooks', () => {
       startupHealthcheck: false,
       injectPromptGuidance: true,
       recallEnabled: false,
-      skillsEnabled: true,
       baseUrl: 'http://localhost',
-    }, {} as any);
+    });
     const result = await api.events.before_prompt_build.handler(
-      { prompt: 'run $deploy', messages: [] },
-      { sessionId: 'sess-skills' },
+      { prompt: 'hello', messages: [] },
+      { sessionId: 'sess-1' },
     );
-    expect(bodies.map((body) => body.features)).toEqual([{ memory_recall: false, skills: true }]);
-    expect(result.prependContext).toBe('<skill_invocation>x</skill_invocation>');
+    expect(bodies.map((body) => body.features)).toEqual([{ memory_recall: false }]);
+    expect(result.prependContext).toBe('RECALL');
   });
 });

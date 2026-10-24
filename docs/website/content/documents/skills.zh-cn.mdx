@@ -1,4 +1,4 @@
-技能（Skill）是 Loremem 云服务为 Agent 提供的可复用指令包。每个技能是一个带版本的包，Agent 在会话开始时就能看到它，需要时再加载。技能仅在 Loremem 云服务中可用，开源服务器没有技能功能。
+技能（Skill）是 Loremem 云服务为 Agent 提供的可复用指令包。Loremem 是技能的唯一事实来源：每个 Agent 的 Lore 插件会在会话开始时把该 Agent 可用的技能同步到宿主自己的技能目录，Agent 像对待自己安装的技能一样发现、列出并加载它们。技能仅在 Loremem 云服务中可用，开源服务器没有技能功能。
 
 ## 技能是什么
 
@@ -26,15 +26,17 @@ description: Write release notes for checkout-api from merged pull requests. Use
 
 ## Agent 如何找到并加载技能
 
-1. 会话开始时，Agent 会收到一个 `<available_skills>` 列表。每一项显示技能的名称、描述和 `skill_id`。设置为 **仅用户触发** 的技能不会出现在列表中。列表最多容纳 8,000 个字符。如果技能太多放不下，Agent 会被告知还有多少个技能，并被要求调用 `lore_skill_list`。
-2. 当任务与某个技能的描述匹配时，Agent 会用 `skill_id` 调用 `lore_skill_get`。
-3. `lore_skill_get` 返回完整的 `SKILL.md`，以及该技能本地目录的绝对路径。
+1. 会话开始时，该 Agent 的 Lore 插件会拉取对它可见、已启用的技能清单，并把这些技能同步到宿主自己的技能目录。
+2. 宿主把这个目录当作自己的一个技能来源，Agent 读到的 `name`、`description` 和 `SKILL.md` 与手工安装的技能完全一样。提示词里不再有 Lore 专属的清单，也没有单独的加载步骤。
+3. 当任务与某个技能的描述匹配时，Agent 通过宿主自己的技能机制加载它。
 
-本地副本位于 `~/.lore/skills/<project-id>/<skill-name>/`。如果设置了 `LORE_HOME`，Lore 会使用该目录而不是 `~/.lore`。Agent 第一次加载某个技能时，Lore 会下载它；版本变化时，Lore 会刷新副本。会话开始时，Lore 不会下载技能。
+同步在后台运行，会话不会等它：当前会话看到的是上一次同步的结果，新增和修改的技能从下一个会话开始生效。宿主重载能提前看到它们：Pi 的 `/reload`、Hermes 的 `/reload-skills`、ZCode 在 **设置 → 技能** 里刷新，OpenClaw 会监听该目录并热更新。每次同步的结果记录在同步目录下的 `.lore-sync-status.json`。
+
+用 Lore CLI 安装或更新时，会对它安装的每个渠道各跑一次同样的同步，所以第一个会话就能看到清单。
 
 ## 自己调用技能
 
-在提示词中输入 `$` 加技能名称，例如 `$release-notes`。即使技能设置为 **仅用户触发**，Lore 也会为这次请求加载它。一条提示最多可以调用三个技能。
+没有 Lore 专属的前缀。每个 Agent 用它自己的方式触发技能，见[运行时](#运行时)：Claude Code 输入 `/lore:release-notes`，Codex 输入 `$release-notes` 或从 `/skills` 里选，Pi 输入 `/skill:release-notes`，OpenClaw 和 Hermes 输入 `/release-notes`。设置为 **仅用户触发** 的技能也能用这种方式运行。
 
 ## 可见范围与调用方式
 
@@ -44,18 +46,26 @@ description: Write release notes for checkout-api from merged pull requests. Use
 | --- | --- | --- |
 | 启用 | 开或关 | 关闭后，Agent 不会看到或加载该技能。 |
 | 可见范围 | 所有 Agent，或勾选的若干运行时 | 限定了运行时的技能，只对勾选的运行时可见。 |
-| 调用方式 | Agent 与用户（默认），或仅用户触发 | **仅用户触发** 会对 Agent 隐藏该技能，只有用户输入 `$名称` 时才运行。它等同于在 `SKILL.md` 中设置 `disable-model-invocation: true`。 |
+| 调用方式 | Agent 与用户（默认），或仅用户触发 | **仅用户触发** 不让模型自行运行该技能，你仍然可以用 Agent 自己的触发方式调用它。它等同于在 `SKILL.md` 中设置 `disable-model-invocation: true`。 |
+
+**仅用户触发** 会按宿主能理解的形式传给 Agent：Claude Code、Pi、OpenClaw 原生支持 `disable-model-invocation`；Codex 会生成 `agents/openai.yaml`，写入 `policy.allow_implicit_invocation: false`；dsh 把它映射到自己的调用开关。Hermes 和 OpenCode 没有等价机制，在那里模型仍然可以自动调用这类技能。
 
 ## 本地副本与文件权限
 
-Lore 在本地副本中管理两类文件：
+副本放在每个宿主自己的技能系统会读取的位置：Claude Code、Codex、OpenClaw、ZCode 在插件的 `skills/` 目录；Pi、Hermes、dsh 在 `~/.lore/skills/<project-id>/`（如果设置了 `LORE_HOME`，则用该目录代替 `~/.lore`）；OpenCode 在 `~/.config/opencode/skills/`。Hermes 只有在 `~/.hermes/config.yaml` 的 `skills.external_dirs` 里列出该目录后才能看到它。
 
-- **托管文件**来自服务器。Lore 会把它们设为只读（在 Linux 和 macOS 上为 `0444`）。如果你编辑了其中一个文件，下一次 `lore_skill_get` 会把它恢复。
+Lore 写入的每个技能目录里都有一个 `.lore-skill-marker.json`，记录这份副本的来源。Lore 只读取、更新和删除带这个标记的目录：你自己建的同名目录不会被碰，只会被报告为冲突；你放在其他目录里的技能，Lore 不读、不传、也不删。
+
+托管目录里有两类文件：
+
+- **托管文件**来自服务器。Lore 会把它们和标记设为只读（在 Linux 和 macOS 上为 `0444`）。如果你编辑了其中一个文件，下一次同步会把它恢复。
 - **制品**是技能目录中的其他所有文件，例如技能运行时写下的缓存和中间文件。该目录保持可写。Lore 从不检查、也从不上传制品，它们在更新后会保留。
 
 交给你的成果（例如图片、文档）由 Agent 保存到你指定的位置或当前工作目录，不放进技能目录。
 
-有新版本到达时，Lore 只更新托管文件。如果某个本地文件与新版本中的托管路径冲突，更新会失败，现有副本保持不变。
+有新版本到达时，Lore 只更新托管文件。归档、停用某个技能，或把它限定到其他运行时后，下一次同步会删掉它的托管文件和标记，你的制品保留。如果新版本里的托管文件和你自己放在技能目录里的文件撞上，同步会让该技能保持不变，并把这次失败记进状态文件，而不是覆盖你的文件。
+
+每次同步结束后，同一目录下的 `.lore-sync-status.json` 会记录完成时间、使用的项目和清单版本、哪些技能被创建、更新、未变或删除，以及冲突和错误。
 
 Lore 不会为脚本设置可执行权限，因此请通过解释器运行脚本，例如 `python3 scripts/convert.py`。
 
@@ -81,7 +91,8 @@ Loremem 不会替你自动迁移本地技能。有些技能只能在某一个 Ag
 
 1. 找出这台机器上我用的每个 Agent 的全部技能，例如 ~/.agents/skills、
    ~/.claude/skills、~/.codex/skills、~/.pi/agent/skills、
-   ~/.config/opencode/skills、~/.zcode/skills、~/.dsh/skills，以及已安装的插件或扩展
+   ~/.config/opencode/skills、~/.zcode/skills、~/.dsh/skills、
+   ~/.hermes/skills、~/.openclaw/skills，以及已安装的插件或扩展
    自带的技能。列成表格，写明每个技能的来源，并标出重复项。
 2. 分成两组。通用技能是任何 Agent 都能用的说明、参考资料或脚本。
    专属技能依赖某个 Agent 自己的工具、钩子或扩展，或者有代码在运行时
@@ -94,12 +105,17 @@ Loremem 不会替你自动迁移本地技能。有些技能只能在某一个 Ag
    本地配置文件里。
 4. 先给我看迁移计划，等我确认。确认后用 lore_skill_create 逐个创建
    通用技能，备份本地技能目录，只删除已经上传的那些本地副本。
+   本地副本必须删掉：每个 Agent 会在会话开始时把 Lore 里的副本同步到
+   自己的技能目录，留下本地副本就会出现两份。Claude Code 里会同时有
+   tdd 和 lore:tdd，Pi、Hermes、OpenCode 则只挑其中一个。
    插件或扩展自带的通用技能，保留插件本身；只有在 Agent 支持时才单独
    关掉它的技能。
 5. 最后给我一份报告：已上传、已跳过及原因、已删除、留在本地的。
 ```
 
-迁移完成后重启各个 Agent，新会话就会使用 Loremem 里的技能。
+迁移完成后，Loremem 会在每个 Agent 下一次会话开始时把技能同步过去，不要再在本地重装。
+
+如果想让迁过去的技能只能手动触发，在它的 `SKILL.md` 里加上 `disable-model-invocation: true`，或在控制台选择 **仅用户触发**。
 
 ## 技能工具
 
@@ -107,17 +123,26 @@ Loremem 不会替你自动迁移本地技能。有些技能只能在某一个 Ag
 | --- | --- |
 | `lore_skill_list` | 列出当前项目中的技能。 |
 | `lore_skill_search` | 按查询词搜索技能。 |
-| `lore_skill_get` | 下载或刷新本地副本，并返回 `SKILL.md` 和技能目录。 |
-| `lore_skill_create` | 用名称和文件列表创建技能。 |
-| `lore_skill_update` | 更新技能。需要 `expected_version`。 |
-| `lore_skill_delete` | 归档技能。 |
+| `lore_skill_create` | 用名称和文件列表创建技能。技能会在每个 Agent 下一次会话开始时同步过去。 |
+| `lore_skill_update` | 更新技能。需要 `expected_version`。修改会在每个 Agent 下一次会话开始时同步。 |
+| `lore_skill_delete` | 归档技能。下一次同步会从每个 Agent 删掉它的托管文件。 |
 | `lore_skill_import` | 从公开的 GitHub 仓库导入技能。支持 `dry_run`。 |
-| `lore_skill_status` | 报告每个本地副本是就绪、缺失、过期、被篡改、未托管还是无效。该工具只读。 |
 
 有关控制台以及创建、更新和归档的操作，请参见 [创建与管理技能](/documents/skills/managing-skills)。
 
 ## 运行时
 
-技能适用于 Claude Code、Codex、OpenCode、Pi、OpenClaw、Hermes、ZCode 和 DeepSeek Harness。通过通用 MCP（`client_type=mcp`）连接的客户端不会获得技能。
+| 宿主 | 副本位置 | 如何调用技能 |
+| --- | --- | --- |
+| Claude Code | Lore 插件内的 `skills/` | `/lore:<名称>`；模型也会按描述自动调用 |
+| Codex | Lore 插件内的 `skills/` | `$<名称>`，或从 `/skills` 里选 |
+| Pi | `~/.lore/skills/<project-id>/`，注册为 Pi 的技能目录 | `/skill:<名称>` |
+| OpenClaw | Lore 插件内的 `skills/` | `/<名称>` |
+| ZCode | Lore 插件内的 `skills/` | 输入 `$` 选择，或用 `/` 菜单里的技能分组 |
+| Hermes | `~/.lore/skills/<project-id>/`，需要在 `~/.hermes/config.yaml` 的 `skills.external_dirs` 里列出 | `/<名称>` |
+| DeepSeek Harness | `~/.lore/skills/<project-id>/`，由插件自己的 skills provider 提供 | 按宿主的用户可调用入口 |
+| OpenCode | `~/.config/opencode/skills/<名称>/` | 宿主自己的技能工具 |
 
-只有当服务器报告支持技能时，CLI 才会启用技能工具。Loremem 云服务支持技能，开源服务器不支持。
+OpenCode 是唯一没有插件专属技能目录的宿主，所以 Lore 直接写入 OpenCode 自己的全局技能目录。Lore 只会创建、更新、删除带 Lore 标记的条目，目录里其他东西一律不碰。
+
+通过通用 MCP（`client_type=mcp`）连接的客户端不会获得技能。开源服务器没有技能，也不会同步任何技能。

@@ -40,7 +40,7 @@
 
 ## What Lore is
 
-Lore is a self-hosted memory and Skill service for coding agents and other LLM runtimes. It gives agents a durable graph of memories, a fixed startup baseline, per-prompt recall, guarded write tools, and versioned Skills that become local work copies only when an agent opens them; server-managed package files are read-only while the skill directory itself stays writable, so local outputs, caches, and artifacts live directly inside the copy.
+Lore is a self-hosted memory and Skill service for coding agents and other LLM runtimes. It gives agents a durable graph of memories, a fixed startup baseline, per-prompt recall, guarded write tools, and versioned Skills that sync into each agent's own skills directory at session start; server-managed package files are read-only while the skill directory itself stays writable, so local outputs, caches, and artifacts live directly inside the copy.
 
 Most memory layers stop at retrieval. Lore covers the full lifecycle:
 
@@ -50,7 +50,7 @@ Most memory layers stop at retrieval. Lore covers the full lifecycle:
 - **URI-first graph** — durable addresses such as `core://agent`, `preferences://user`, `project://my_project`
 - **Disclosure** — each memory states when it should surface
 - **Dream** — scheduled maintenance with quality checks and rollback history
-- **Skills** — on servers that advertise Skills, session start lists the skills the agent may use, and `lore_skill_get` downloads or refreshes the server-managed package files of a local work copy on demand (managed files are read-only; the skill directory stays writable for local outputs)
+- **Skills** — on servers that advertise Skills, Loremem is the source of truth: at session start each agent's plugin syncs the skills that agent can see into the host's own skills directory, so the host's native skill system discovers and loads them (`/lore:<name>` in Claude Code, `$name` or `/skills` in Codex, `/skill:<name>` in Pi, `/<name>` in OpenClaw and Hermes). Server-managed files are read-only and the skill directory stays writable for local outputs
 
 ## Quick Start
 
@@ -146,12 +146,12 @@ Then open `/settings` only if you want to tune recall weights, Dream schedule, b
 
 | Runtime | Integration | What you get |
 | --- | --- | --- |
-| **Pi** | `pi-extension/` | Extension tools, startup boot, per-prompt recall, and local Skill work copies (managed files read-only, dir writable). |
-| **Claude Code** | `claudecode-plugin/` | Marketplace plugin, remote Memory MCP, local Skills MCP, SessionStart boot, and recall hooks |
-| **Codex** | `codex-plugin/` | Local marketplace plugin, remote Memory MCP, local Skills MCP, and boot/recall hooks |
-| **OpenClaw** | `openclaw-plugin/` | Runtime plugin with boot, recall, Lore tools, and native local Skill work copies |
-| **Hermes** | `hermes-plugin/` | MemoryProvider plugin with Lore tools, recall, and Python-native local Skill work copies |
-| **OpenCode** | `opencode-plugin/` | Native plugin with exact `lore_*` tools, recall, and bundled local Skill work copies |
+| **Pi** | `pi-extension/` | Extension tools, startup boot, per-prompt recall, and Skill sync into Pi's own skill system (managed files read-only, dir writable). |
+| **Claude Code** | `claudecode-plugin/` | Marketplace plugin, remote Memory MCP, SessionStart boot and recall hooks, and Skill sync into the plugin's `skills/` directory |
+| **Codex** | `codex-plugin/` | Local marketplace plugin, remote Memory MCP, boot/recall hooks, and Skill sync into the plugin's `skills/` directory |
+| **OpenClaw** | `openclaw-plugin/` | Runtime plugin with boot, recall, Lore tools, and Skill sync into the plugin's `skills/` directory |
+| **Hermes** | `hermes-plugin/` | MemoryProvider plugin with Lore tools, recall, and Python-native Skill sync into `~/.lore/skills/<project-id>/` |
+| **OpenCode** | `opencode-plugin/` | Native plugin with exact `lore_*` tools and recall, plus session-start Skill sync into `~/.config/opencode/skills/` (Lore-marked entries only) |
 | **ZCode** | `zcode-plugin/` | Native marketplace plugin with SessionStart boot and UserPromptSubmit recall hooks (no MCP) |
 | **DeepSeek Harness** | `dsh-plugin/` | Native lifecycle plugin with per-session boot, pre-step recall, and an MCP bridge (`mcp__lore__*` tools) |
 | **Generic MCP** | `/api/mcp` | Streamable HTTP endpoint for clients that can attach remote tools |
@@ -182,11 +182,11 @@ Once connected, the Memory flow is:
 
 The Skill flow is separate and only exists on servers that advertise Skills (`capabilities.skills=true`). The open-source server has none, so plugins expose no Skills tools or context there.
 
-1. session start lists the skills the agent may use (`<available_skills>` with name, description, and `skill_id`); skills whose `SKILL.md` sets `disable-model-invocation: true` are hidden
-2. the agent decides when a skill is relevant and calls `lore_skill_get(skill_id)`; a user can also invoke any skill explicitly by typing `$skill-name` in a prompt
-3. the runtime downloads the complete package into a local work copy at `${LORE_HOME:-~/.lore}/skills/<project-id>/<skill-name>/` when missing, or updates the server-managed package files when the server version differs
-4. the tool returns the full `SKILL.md` content and absolute `skill_dir`; server-managed package files are read-only (0444 on POSIX) and the skill directory stays writable (0755) so agents can create local outputs, caches, and artifacts directly inside the same copy
-5. extra local files never trigger tamper and survive getSkill calls and version upgrades; a version mismatch updates only the server-managed package files
+1. at session start, each plugin syncs the skills that agent can see into the host's own skills directory: the plugin's `skills/` directory for Claude Code, Codex, OpenClaw, and ZCode; `~/.lore/skills/<project-id>/` for Pi, Hermes (listed under `skills.external_dirs` in `~/.hermes/config.yaml`), and DeepSeek Harness; `~/.config/opencode/skills/` for OpenCode. Hook hosts hand the sync to a background process and exit, and every run records its outcome in `.lore-sync-status.json` in that directory. `lore install` and `lore update` run the same sync once for every channel they installed
+2. the host invokes skills through its own skill mechanism, so changes appear from the next session on — or sooner after `/reload` in Pi, `/reload-skills` in Hermes, a **Settings → Skills** refresh in ZCode; OpenClaw watches the directory and hot-loads changes
+3. every synced directory carries a `.lore-skill-marker.json` file, which is how Lore knows the directory is its own: unmarked directories are never touched, and skills in other directories are never read, uploaded, or deleted
+4. server-managed package files and the marker are read-only (0444 on POSIX) and the skill directory itself stays writable (0755) so agents can create local outputs, caches, and artifacts in the same copy; those artifacts are never checked or uploaded and they survive updates, and archiving or disabling a skill removes only its managed files
+5. `disable-model-invocation` skills stay out of model-initiated use on hosts that support the flag (Codex gets a generated `agents/openai.yaml` policy, DeepSeek Harness maps it to its invocation flags); each host's own trigger is listed in [Skills](https://loremem.com/documents/skills)
 
 Useful pages:
 

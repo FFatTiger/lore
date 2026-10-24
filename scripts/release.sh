@@ -54,8 +54,6 @@ prepare_version() {
   "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" zcode-plugin/.zcode-plugin/plugin.json
   "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" zcode-plugin/marketplace.json
   "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" dsh-plugin/.dsh-plugin/plugin.json
-  "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" local-skills-mcp/package.json
-  "${SED_INPLACE[@]}" "s/version: '[^']*'/version: '${VERSION}'/" local-skills-mcp/src/server.mjs
 
   python3 - "${VERSION}" \
     web/package-lock.json \
@@ -97,18 +95,16 @@ verify_versions() {
     opencode-plugin/package-lock.json \
     zcode-plugin/.zcode-plugin/plugin.json \
     zcode-plugin/marketplace.json \
-    dsh-plugin/.dsh-plugin/plugin.json \
-    local-skills-mcp/package.json
-  grep -n "version:" web/server/mcpServer.ts local-skills-mcp/src/server.mjs | head -2
+    dsh-plugin/.dsh-plugin/plugin.json
+  grep -n "version:" web/server/mcpServer.ts | head -1
   grep -n "version:" hermes-plugin/lore_memory/plugin.yaml | head -1
 
-  python3 - "${VERSION}" cli/package.json cli/package-lock.json opencode-plugin/package.json opencode-plugin/package-lock.json local-skills-mcp/package.json local-skills-mcp/src/server.mjs <<'PYVERIFY'
+  python3 - "${VERSION}" cli/package.json cli/package-lock.json opencode-plugin/package.json opencode-plugin/package-lock.json <<'PYVERIFY'
 import json
-import re
 import sys
 from pathlib import Path
 
-version, cli_manifest_name, cli_lock_name, manifest_name, lock_name, skills_manifest_name, skills_server_name = sys.argv[1:]
+version, cli_manifest_name, cli_lock_name, manifest_name, lock_name = sys.argv[1:]
 cli_manifest = json.loads(Path(cli_manifest_name).read_text())
 cli_lock = json.loads(Path(cli_lock_name).read_text())
 manifest = json.loads(Path(manifest_name).read_text())
@@ -123,9 +119,6 @@ assert lock["packages"][""]["version"] == version
 assert lock["packages"][""]["dependencies"]["@opencode-ai/plugin"] == "1.18.3"
 assert lock["packages"]["node_modules/@opencode-ai/plugin"]["version"] == "1.18.3"
 assert lock["packages"]["node_modules/@opencode-ai/sdk"]["version"] == "1.18.3"
-assert json.loads(Path(skills_manifest_name).read_text())["version"] == version
-server_source = Path(skills_server_name).read_text()
-assert re.search(r"version:\s*['\"]" + re.escape(version) + r"['\"]", server_source)
 PYVERIFY
   echo ""
 }

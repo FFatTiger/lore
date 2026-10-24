@@ -2,6 +2,11 @@
 set -euo pipefail
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# The CLI pins the marketplace plugin root (LORE_CODEX_PLUGIN_ROOT) so the
+# copied-out hook syncs skills into the installed plugin's skills/ directory
+# instead of this checkout. Without it (manual run from a repo) the checkout
+# itself is the plugin root.
+LORE_REAL_PLUGIN_ROOT="${LORE_CODEX_PLUGIN_ROOT:-$PLUGIN_ROOT}"
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 HOOK_ROOT="$CODEX_HOME/hooks/lore"
 HOOKS_JSON="$CODEX_HOME/hooks.json"
@@ -11,6 +16,11 @@ cp "$PLUGIN_ROOT/hooks/rules-inject.ts" "$HOOK_ROOT/hooks/rules-inject.ts"
 cp "$PLUGIN_ROOT/hooks/recall-inject.ts" "$HOOK_ROOT/hooks/recall-inject.ts"
 cp "$PLUGIN_ROOT/hooks/rules-inject.mjs" "$HOOK_ROOT/hooks/rules-inject.mjs"
 cp "$PLUGIN_ROOT/hooks/recall-inject.mjs" "$HOOK_ROOT/hooks/recall-inject.mjs"
+# The hooks import the shared skill-workcopy core (including the background
+# skills-sync script) relative to their own file.
+if [[ -d "$PLUGIN_ROOT/hooks/vendor" ]]; then
+  cp -R "$PLUGIN_ROOT/hooks/vendor" "$HOOK_ROOT/hooks/vendor"
+fi
 # The hooks read runtime.plugin_version from ../plugin.json in this layout.
 cp "$PLUGIN_ROOT/.codex-plugin/plugin.json" "$HOOK_ROOT/plugin.json"
 rm -f "$HOOK_ROOT/rules/lore-guidance.md"
@@ -22,11 +32,13 @@ fi
 
 export LORE_CODEX_HOOK_ROOT="$HOOK_ROOT"
 export LORE_CODEX_HOOKS_JSON="$HOOKS_JSON"
+export LORE_CODEX_REAL_PLUGIN_ROOT="$LORE_REAL_PLUGIN_ROOT"
 
 node <<'NODE'
 const fs = require('node:fs');
 const hooksJson = process.env.LORE_CODEX_HOOKS_JSON;
 const hookRoot = process.env.LORE_CODEX_HOOK_ROOT;
+const realPluginRoot = process.env.LORE_CODEX_REAL_PLUGIN_ROOT;
 
 let data = { hooks: {} };
 if (fs.existsSync(hooksJson)) {
@@ -37,7 +49,7 @@ if (!data || typeof data !== 'object' || Array.isArray(data)) data = { hooks: {}
 if (!data.hooks || typeof data.hooks !== 'object' || Array.isArray(data.hooks)) data.hooks = {};
 
 const commandFor = (script) =>
-  `LORE_CODEX_PLUGIN_ROOT="${hookRoot}" LORE_BASE_URL=\${LORE_BASE_URL:-http://127.0.0.1:18901} node "${hookRoot}/hooks/${script}"`;
+  `LORE_CODEX_PLUGIN_ROOT=${JSON.stringify(realPluginRoot)} LORE_BASE_URL=\${LORE_BASE_URL:-http://127.0.0.1:18901} node "${hookRoot}/hooks/${script}"`;
 
 const entries = {
   SessionStart: {

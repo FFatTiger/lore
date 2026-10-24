@@ -2,9 +2,9 @@
 /**
  * Sync shared vendor sources into plugin directories as byte-identical copies.
  *
- * Covers shared/skill-workcopy (pi, openclaw, opencode) and the shared Lore
- * channel sources (lore-config, mcp-bridge, skill-materializer) vendored
- * into zcode-plugin and dsh-plugin.
+ * Covers shared/skill-workcopy (pi, openclaw, opencode, claudecode, codex, cli,
+ * zcode) and the shared Lore channel sources (lore-config, mcp-bridge)
+ * vendored into zcode-plugin and dsh-plugin.
  *
  * Usage:
  *   node scripts/sync-skill-workcopy.mjs          # write vendor copies
@@ -20,25 +20,20 @@ const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, '..');
 
 const SOURCE_DIR = path.join(REPO_ROOT, 'shared', 'skill-workcopy');
-const SOURCE_FILES = ['index.mjs', 'index.d.mts'];
+const SOURCE_FILES = ['index.mjs', 'index.d.mts', 'skills-sync.mjs', 'skills-sync.d.mts'];
 
 const VENDOR_TARGETS = [
   'pi-extension/vendor/skill-workcopy',
   'openclaw-plugin/vendor/skill-workcopy',
   'opencode-plugin/vendor/skill-workcopy',
+  'claudecode-plugin/hooks/vendor/skill-workcopy',
+  'codex-plugin/hooks/vendor/skill-workcopy',
+  'cli/vendor/skill-workcopy',
+  'zcode-plugin/vendor/skill-workcopy',
 ];
 
-const EXTRA_VENDOR_TARGETS = [{
-  dir: 'local-skills-mcp/vendor',
-  files: {
-    'skill-workcopy.mjs': 'index.mjs',
-    'skill-workcopy.d.mts': 'index.d.mts',
-  },
-}];
-
-// Per-plugin vendor copies of the shared channel sources. zcode keeps its
-// legacy mcp/skill-materializer.mjs; dsh uses the newer skill-workcopy core
-// under ~/.lore/skills like the other channels.
+// Per-plugin vendor copies of the shared channel sources. dsh additionally
+// uses the skill-workcopy core under ~/.lore/skills like the other channels.
 const CHANNEL_VENDOR_TARGETS = [
   {
     dir: 'zcode-plugin/vendor',
@@ -107,25 +102,6 @@ function main() {
     }
   }
 
-  for (const target of EXTRA_VENDOR_TARGETS) {
-    const destDir = path.join(REPO_ROOT, target.dir);
-    if (!checkOnly) fs.mkdirSync(destDir, { recursive: true });
-    for (const [destName, sourceName] of Object.entries(target.files)) {
-      const dest = path.join(destDir, destName);
-      const expected = sources[sourceName];
-      if (checkOnly) {
-        if (!fs.existsSync(dest) || !fs.readFileSync(dest).equals(expected)) {
-          console.error(`DRIFT content: ${path.join(target.dir, destName)}`);
-          drift += 1;
-        }
-      } else {
-        fs.writeFileSync(dest, expected);
-        written += 1;
-        console.log(`wrote ${path.join(target.dir, destName)}`);
-      }
-    }
-  }
-
   for (const target of CHANNEL_VENDOR_TARGETS) {
     const destDir = path.join(REPO_ROOT, target.dir);
     if (!checkOnly) fs.mkdirSync(destDir, { recursive: true });
@@ -151,11 +127,11 @@ function main() {
       console.error(`shared vendor check failed: ${drift} drift(s)`);
       process.exit(1);
     }
-    console.log(`shared vendor check ok (${VENDOR_TARGETS.length + EXTRA_VENDOR_TARGETS.length + CHANNEL_VENDOR_TARGETS.length} targets)`);
+    console.log(`shared vendor check ok (${VENDOR_TARGETS.length + CHANNEL_VENDOR_TARGETS.length} targets)`);
     return;
   }
 
-  console.log(`shared vendors synced: ${written} file(s) → ${VENDOR_TARGETS.length + EXTRA_VENDOR_TARGETS.length + CHANNEL_VENDOR_TARGETS.length} vendor targets`);
+  console.log(`shared vendors synced: ${written} file(s) → ${VENDOR_TARGETS.length + CHANNEL_VENDOR_TARGETS.length} vendor targets`);
 }
 
 try {

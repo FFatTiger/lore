@@ -16,7 +16,7 @@ export default definePluginEntry({
       const skillsSession = pluginCfg.skillsEnabled ? createSkillsSession(pluginCfg) : undefined;
       registerTools(api, pluginCfg, skillsSession);
       api.logger.info(`lore: tools registered ok`);
-      registerHooks(api, pluginCfg, skillsSession);
+      registerHooks(api, pluginCfg);
       api.logger.info(`lore: hooks registered ok`);
     } catch (e: any) {
       api.logger.error(`lore: register() FAILED: ${e.message}\n${e.stack}`);
@@ -31,6 +31,5 @@ export { formatNode, formatBootView, formatRecallBlock, readCueList, normalizeSe
 export { textResult, pickPluginConfig } from "./api";
 export {
   createSkillsSession,
-  ensureSkillWorkCopy,
   registerSkillTools,
 } from "./skills";

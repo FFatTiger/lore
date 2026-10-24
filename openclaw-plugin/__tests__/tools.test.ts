@@ -30,12 +30,12 @@ const RECALL_SESSION_ID_DESCRIPTION = 'REQUIRED when the URI came from <recall>:
 const RECALL_QUERY_ID_DESCRIPTION = 'REQUIRED when the URI came from <recall>: copy the exact query_id from that <recall> tag.';
 
 describe('registerTools — tool registration', () => {
-  it('registers all 17 tools including skills and no artifact tool', () => {
+  it('registers all 15 tools including skills and no artifact tool', () => {
     const api = makeMockApi();
     const cfg = makePluginCfg();
     registerTools(api as any, cfg);
     const names = Object.keys(api.tools);
-    expect(names).toHaveLength(17);
+    expect(names).toHaveLength(15);
     expect(names).toContain('lore_status');
     expect(names).toContain('lore_boot');
     expect(names).toContain('lore_get_node');
@@ -47,13 +47,27 @@ describe('registerTools — tool registration', () => {
     expect(names).toContain('lore_move_node');
     expect(names).toContain('lore_skill_list');
     expect(names).toContain('lore_skill_search');
-    expect(names).toContain('lore_skill_get');
     expect(names).toContain('lore_skill_create');
     expect(names).toContain('lore_skill_update');
     expect(names).toContain('lore_skill_delete');
     expect(names).toContain('lore_skill_import');
-    expect(names).toContain('lore_skill_status');
-    expect(names).not.toContain('lore_skill_artifact_create');
+    expect([...names].sort()).toEqual([
+      'lore_boot',
+      'lore_create_node',
+      'lore_delete_node',
+      'lore_get_node',
+      'lore_list_domains',
+      'lore_move_node',
+      'lore_search',
+      'lore_skill_create',
+      'lore_skill_delete',
+      'lore_skill_import',
+      'lore_skill_list',
+      'lore_skill_search',
+      'lore_skill_update',
+      'lore_status',
+      'lore_update_node',
+    ]);
     expect(names).not.toContain('lore_list_session_reads');
     expect(names).not.toContain('lore_clear_session_reads');
   });

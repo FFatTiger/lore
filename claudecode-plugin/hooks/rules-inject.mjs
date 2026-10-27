@@ -20,24 +20,9 @@ const SNAPSHOT_ALLOWLIST = [
   "permission_mode",
   "transcript_path",
   "source",
-] as const;
+];
 
-interface LoreConfig {
-  base_url?: string;
-  api_token?: string;
-  server_profile?: {
-    base_url?: string;
-    capabilities?: Record<string, boolean>;
-  };
-}
-
-interface HookInput {
-  session_id?: string;
-  conversation_id?: string;
-  [key: string]: any;
-}
-
-function readLoreConfig(): LoreConfig {
+function readLoreConfig() {
   try {
     return JSON.parse(fs.readFileSync(LORE_CONFIG_FILE, "utf-8"));
   } catch {
@@ -45,16 +30,16 @@ function readLoreConfig(): LoreConfig {
   }
 }
 
-function pickString(value: unknown): string {
+function pickString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
-function resolveSessionId(input: HookInput): string {
+function resolveSessionId(input) {
   return pickString(input.session_id) || pickString(input.conversation_id);
 }
 
-function buildNativeInputSnapshot(input: HookInput): Record<string, string> | undefined {
-  const snapshot: Record<string, string> = {};
+function buildNativeInputSnapshot(input) {
+  const snapshot = {};
   for (const key of SNAPSHOT_ALLOWLIST) {
     const value = pickString(input[key]);
     if (value) snapshot[key] = value;
@@ -62,7 +47,7 @@ function buildNativeInputSnapshot(input: HookInput): Record<string, string> | un
   return Object.keys(snapshot).length ? snapshot : undefined;
 }
 
-function resolveSkillsEnabled(config: LoreConfig, baseUrl: string): boolean {
+function resolveSkillsEnabled(config, baseUrl) {
   if (process.env.LORE_SKILLS_ENABLED === "0") return false;
   const profileBase = pickString(config.server_profile?.base_url).replace(/\/+$/, "").toLowerCase();
   if (profileBase === baseUrl.toLowerCase()) {
@@ -71,7 +56,7 @@ function resolveSkillsEnabled(config: LoreConfig, baseUrl: string): boolean {
   return process.env.LORE_SKILLS_ENABLED === "1";
 }
 
-function resolvePluginVersion(): string | undefined {
+function resolvePluginVersion() {
   try {
     const manifest = JSON.parse(fs.readFileSync(
       path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".claude-plugin", "plugin.json"),
@@ -83,8 +68,8 @@ function resolvePluginVersion(): string | undefined {
   }
 }
 
-function lifecycleRuntime(): Record<string, string> {
-  const runtime: Record<string, string> = { runtime_id: RUNTIME_FAMILY, runtime_family: RUNTIME_FAMILY };
+function lifecycleRuntime() {
+  const runtime = { runtime_id: RUNTIME_FAMILY, runtime_family: RUNTIME_FAMILY };
   const pluginVersion = resolvePluginVersion();
   if (pluginVersion) runtime.plugin_version = pluginVersion;
   return runtime;
@@ -104,14 +89,9 @@ function loadConfig() {
   };
 }
 
-interface ProjectInfo {
-  dir_name: string;
-  repo_name: string | null;
-}
-
-function detectProjectInfo(): ProjectInfo {
+function detectProjectInfo() {
   const dir_name = path.basename(process.cwd());
-  let repo_name: string | null = null;
+  let repo_name = null;
   try {
     const remote = execSync("git remote", { encoding: "utf-8", timeout: 2000, stdio: ["pipe", "pipe", "pipe"] }).trim().split("\n")[0];
     const remoteUrl = execSync(`git remote get-url ${remote}`, {
@@ -125,16 +105,16 @@ function detectProjectInfo(): ProjectInfo {
   return { dir_name, repo_name };
 }
 
-async function readStdin(): Promise<string> {
+async function readStdin() {
   if (process.stdin.isTTY) return "";
-  const chunks: Buffer[] = [];
+  const chunks = [];
   for await (const chunk of process.stdin) chunks.push(chunk);
   return Buffer.concat(chunks).toString("utf-8");
 }
 
-async function postLifecycle(body: Record<string, unknown>, timeoutMs: number): Promise<any> {
+async function postLifecycle(body, timeoutMs) {
   const cfg = loadConfig();
-  const headers: Record<string, string> = { "content-type": "application/json" };
+  const headers = { "content-type": "application/json" };
   if (cfg.apiToken) headers.authorization = `Bearer ${cfg.apiToken}`;
   const response = await fetch(`${cfg.baseUrl}/api/lifecycle/event`, {
     method: "POST",
@@ -146,7 +126,7 @@ async function postLifecycle(body: Record<string, unknown>, timeoutMs: number): 
   return response.json();
 }
 
-function writeHostOutput(response: any) {
+function writeHostOutput(response) {
   const output = response?.host_output;
   if (!output || output.mode === "none" || output.value == null) return;
   if (output.mode === "stdout_json") process.stdout.write(JSON.stringify(output.value));
@@ -159,7 +139,7 @@ function writeHostOutput(response: any) {
  * waiting for it. The shared script records its outcome in
  * <CLAUDE_PLUGIN_ROOT>/skills/.lore-sync-status.json.
  */
-function spawnSkillsSync(): void {
+function spawnSkillsSync() {
   try {
     const pluginRoot = pickString(process.env.CLAUDE_PLUGIN_ROOT);
     if (!pluginRoot) return;
@@ -180,7 +160,7 @@ function spawnSkillsSync(): void {
 }
 
 async function main() {
-  let input: HookInput = {};
+  let input = {};
   try {
     const raw = await readStdin();
     input = raw.trim() ? JSON.parse(raw) : {};

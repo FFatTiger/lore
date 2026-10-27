@@ -19,7 +19,7 @@ npx @loremem/cli install --base-url https://api.loremem.com --api-token lm_your_
 ## 安装内容
 
 - 来自 `lore-claudecode.zip` 的插件文件，位于 `~/.lore/claudecode/`。安装程序会把该目录注册为插件市场，并安装 `lore@lore`。
-- 两个钩子。`SessionStart` 加载启动记忆，`UserPromptSubmit` 为每条提示词添加召回。每个钩子的超时时间为 10 秒。钩子通过 `npx tsx` 运行。
+- 两个钩子。`SessionStart` 加载启动记忆，`UserPromptSubmit` 为每条提示词添加召回。每个钩子的超时时间为 10 秒。钩子以普通 `node` 脚本运行。
 - 一个 MCP 服务。`lore` 连接到 `<server>/api/mcp?client_type=claudecode`，并使用 `LORE_API_TOKEN` 中的令牌。技能不再有独立的 MCP 服务：会话开始时会把它们同步到插件的 `skills/` 目录。
 - `~/.claude/settings.json` 的 `env` 块中的连接配置：`LORE_BASE_URL`、`LORE_HOME`、`LORE_CLIENT_TYPE`（值为 `claudecode`），以及设置了令牌时的 `LORE_API_TOKEN`。旧的 `LORE_SKILLS_ENABLED` 开关会在这里被清理掉。
 - 清理早期安装留下的内容：移除用户级别的 `lore` 和 `lore-skills` MCP 条目，并删除旧的 `~/.claude/lore-guidance.md` 文件，以及 `~/.claude/CLAUDE.md` 中指向它的导入行。
@@ -47,7 +47,7 @@ Claude Code 中 Lore 工具带有 `mcp__plugin_lore_lore__` 前缀，例如 `mcp
   也可以在同一文件的 `env` 块中把 `CLAUDE_CODE_DISABLE_AUTO_MEMORY` 设为 `1`。
 
 - **`CLAUDE.md`。** Lore 不会写入 `CLAUDE.md`。如需把长期规则从该文件迁移到 Lore，请参见[把 CLAUDE.md 和 AGENTS.md 迁入 Lore](/documents/migrate-agent-instructions)。
-- **`npx` 需在 `PATH` 中。** 钩子通过 `npx tsx` 运行，因此 Claude Code 使用的 `PATH` 中必须包含 `npx`。
+- **`node` 需在 `PATH` 中。** 钩子通过 `node` 运行，因此 Claude Code 使用的 `PATH` 中必须包含 `node`。
 - **修改后重启。** 钩子和 MCP 设置在进程启动时加载。修改 `~/.claude/settings.json` 或令牌后，请重启 Claude Code。
 
 ## 手动安装（备用方案）

@@ -12,7 +12,7 @@
  *
  * Connection resolution matches the other Lore scripts: <loreHome>/config.json
  * (base_url, api_token) with LORE_BASE_URL / LORE_API_TOKEN / API_TOKEN env
- * fallbacks; explicit options win. One AbortSignal.timeout (default 120s)
+ * fallbacks; explicit options win. One AbortSignal.timeout (default 10 min)
  * covers the catalog request and every skill detail request. Network and
  * other failures never throw: they are recorded in status.errors, and the
  * explicit process.exit in the CLI keeps lingering keep-alive sockets from
@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { resolveLoreHome, syncSkillsToDir } from './index.mjs';
 
 const DEFAULT_BASE_URL = 'http://127.0.0.1:18901';
-const DEFAULT_TIMEOUT_MS = 120000;
+const DEFAULT_TIMEOUT_MS = 600000;
 const STATUS_FILE = '.lore-sync-status.json';
 const OPENAI_YAML_PATH = 'agents/openai.yaml';
 // Codex has no disable-model-invocation frontmatter support; the equivalent is

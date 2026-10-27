@@ -48,6 +48,8 @@ const CHANNEL_VENDOR_TARGETS = [
       'lore-config.mjs': 'lore-config.mjs',
       'mcp-bridge/index.mjs': 'mcp-bridge/index.mjs',
       'skill-workcopy/index.mjs': 'skill-workcopy/index.mjs',
+      'skill-workcopy/skills-sync.mjs': 'skill-workcopy/skills-sync.mjs',
+      'skill-workcopy/skills-sync.d.mts': 'skill-workcopy/skills-sync.d.mts',
       'skill-workcopy/index.d.mts': 'skill-workcopy/index.d.mts',
     },
   },

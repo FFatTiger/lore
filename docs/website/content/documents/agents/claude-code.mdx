@@ -19,7 +19,7 @@ The installer skips Claude Code when the `claude` command is not on your `PATH`.
 ## What gets installed
 
 - The plugin files from `lore-claudecode.zip`, in `~/.lore/claudecode/`. The installer registers that folder as a plugin marketplace and installs `lore@lore`.
-- Two hooks. `SessionStart` loads startup memory, and `UserPromptSubmit` adds recall to each prompt. Each hook has a 10-second timeout. The hooks run with `npx tsx`.
+- Two hooks. `SessionStart` loads startup memory, and `UserPromptSubmit` adds recall to each prompt. Each hook has a 10-second timeout. The hooks run as plain `node` scripts.
 - One MCP server. `lore` connects to `<server>/api/mcp?client_type=claudecode` and sends the token from `LORE_API_TOKEN`. Skills no longer have an MCP server of their own: session start syncs them into the plugin's `skills/` directory.
 - Connection values in the `env` block of `~/.claude/settings.json`: `LORE_BASE_URL`, `LORE_HOME`, `LORE_CLIENT_TYPE` (set to `claudecode`), and `LORE_API_TOKEN` when you set a token. The legacy `LORE_SKILLS_ENABLED` switch is scrubbed here.
 - Cleanup of earlier installs: the user-scope `lore` and `lore-skills` MCP entries are removed, and the legacy `~/.claude/lore-guidance.md` file and its import line in `~/.claude/CLAUDE.md` are removed.
@@ -47,7 +47,7 @@ Claude Code lists Lore's tools with the `mcp__plugin_lore_lore__` prefix, for ex
   You can also set `CLAUDE_CODE_DISABLE_AUTO_MEMORY` to `1` in the same file's `env` block.
 
 - **`CLAUDE.md`.** Lore does not write to `CLAUDE.md`. To move durable rules out of that file, see [Move CLAUDE.md and AGENTS.md into Lore](/documents/migrate-agent-instructions).
-- **`npx` on `PATH`.** The hooks run `npx tsx`, so `npx` must be on the `PATH` that Claude Code uses.
+- **`node` on `PATH`.** The hooks run `node`, so `node` must be on the `PATH` that Claude Code uses.
 - **Restart after changes.** Hooks and MCP settings load at process start. Restart Claude Code after you change `~/.claude/settings.json` or the token.
 
 ## Manual setup (fallback)

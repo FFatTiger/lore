@@ -349,7 +349,8 @@ export function createLoreTools(
         const glossaryRemove = normalizeKeywordList(args.glossary_remove);
         const search = new URLSearchParams({ domain: locator.domain, path: locator.path });
         const body: Record<string, unknown> = { session_id: context.sessionID };
-        if (args.old_text !== undefined) {
+        // Models often fill unused optional fields with "": old_text and new_text both empty means no targeted edit.
+        if (args.old_text !== undefined && (args.old_text || args.new_text)) {
           if (args.old_text.length === 0) throw new Error('old_text must not be empty');
           if (args.content !== undefined) throw new Error('Pass either content or old_text/new_text, not both');
           const current = await request<LoreNodePayload>(config, context, '/browse/node', { search });

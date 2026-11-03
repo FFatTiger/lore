@@ -221,6 +221,29 @@ describe('Pi extension tools', () => {
     expect(result.content[0].text).not.toContain('glossary=');
   });
 
+  it('update treats empty old_text and new_text as omitted when content is given', async () => {
+    const pi = makeMockPi();
+    registerTools(pi as any, makePluginCfg());
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => JSON.stringify({ uri: 'core://agent/profile', node_uuid: 'uuid-update' }),
+    }));
+
+    // Models fill every optional field; this used to fail with "old_text must not be empty" on every retry.
+    const result = await pi.tools.lore_update_node.execute('tool-1', {
+      uri: 'core://agent/profile',
+      content: 'whole new body',
+      old_text: '',
+      new_text: '',
+    }, undefined, undefined, {});
+
+    expect(result.details.ok).toBe(true);
+    expect((fetch as any).mock.calls).toHaveLength(1);
+    expect(JSON.parse((fetch as any).mock.calls[0][1].body)).toMatchObject({ content: 'whole new body' });
+  });
+
   it('update exposes glossary mutations without full replacement', () => {
     const pi = makeMockPi();
     registerTools(pi as any, makePluginCfg());

@@ -815,6 +815,9 @@ class LoreMemoryProvider(MemoryProvider):
         domain, path = self._client.parse_uri(uri)
         content = args.get("content")
         old_text = args.get("old_text")
+        # Models often fill unused optional fields with "": old_text and new_text both empty means no targeted edit.
+        if old_text == "" and not args.get("new_text"):
+            old_text = None
         if old_text is not None:
             new_text = str(args.get("new_text") or "")
             if not str(old_text):

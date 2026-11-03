@@ -261,7 +261,8 @@ export function registerTools(pi: any, pluginCfg: any, skillsSession?: SkillsSes
       let path = '';
       try {
         ({ domain, path } = resolveMemoryLocator(params, { defaultDomain: pluginCfg.defaultDomain, pathKey: '__unused_path', allowEmptyPath: false, label: 'uri' }));
-        const oldText = typeof params?.old_text === 'string' ? params.old_text : null;
+        // Models often fill unused optional fields with "": old_text and new_text both empty means no targeted edit.
+        const oldText = typeof params?.old_text === 'string' && (params.old_text || params?.new_text) ? params.old_text : null;
         const body: any = {};
         if (oldText !== null) {
           if (oldText.length === 0) throw new Error('old_text must not be empty');

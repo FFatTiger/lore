@@ -946,6 +946,20 @@ class LoreProviderThinAdapterTests(unittest.TestCase):
         self.assertEqual(self.provider._client.last_update_kwargs["glossary_add"], ["memory"])
         self.assertNotIn("old_text", self.provider._client.last_update_kwargs)
 
+    def test_update_tool_never_blanks_content_or_disclosure_from_empty_fields(self):
+        self.provider._tool_lore_update_node({
+            "uri": "core://agent/profile", "content": "", "old_text": "", "new_text": "", "priority": 3, "disclosure": "",
+        })
+        kwargs = self.provider._client.last_update_kwargs
+        self.assertIsNone(kwargs["content"])
+        self.assertIsNone(kwargs["disclosure"])
+        self.assertEqual(kwargs["priority"], 3)
+
+        self.provider._tool_lore_update_node({
+            "uri": "core://agent/profile", "content": "", "old_text": "beta gamma", "new_text": "BETA GAMMA",
+        })
+        self.assertEqual(self.provider._client.last_update_kwargs["content"], "alpha BETA GAMMA beta")
+
     def test_update_tool_rejects_ambiguous_or_invalid_targeted_edits(self):
         cases = [
             ({"uri": "core://agent/profile", "old_text": "missing", "new_text": "x"}, "old_text not found"),

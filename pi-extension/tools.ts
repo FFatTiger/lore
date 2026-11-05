@@ -261,23 +261,25 @@ export function registerTools(pi: any, pluginCfg: any, skillsSession?: SkillsSes
       let path = '';
       try {
         ({ domain, path } = resolveMemoryLocator(params, { defaultDomain: pluginCfg.defaultDomain, pathKey: '__unused_path', allowEmptyPath: false, label: 'uri' }));
-        // Models often fill unused optional fields with "": old_text and new_text both empty means no targeted edit.
+        // Models often fill unused optional fields with "": old_text and new_text both empty means no targeted edit,
+        // and an empty content or disclosure means "leave it unchanged", never "blank the node".
         const oldText = typeof params?.old_text === 'string' && (params.old_text || params?.new_text) ? params.old_text : null;
+        const content = typeof params?.content === 'string' && params.content ? params.content : null;
         const body: any = {};
         if (oldText !== null) {
           if (oldText.length === 0) throw new Error('old_text must not be empty');
-          if (typeof params?.content === 'string') throw new Error('Pass either content or old_text/new_text, not both');
+          if (content !== null) throw new Error('Pass either content or old_text/new_text, not both');
           const current = await fetchJson(pluginCfg, `/browse/node?${new URLSearchParams({ domain, path }).toString()}`, { method: 'GET' });
           const currentContent = String(current?.node?.content ?? '');
           const occurrences = currentContent.split(oldText).length - 1;
           if (occurrences === 0) throw new Error('old_text not found');
           if (occurrences > 1) throw new Error(`old_text found ${occurrences} times`);
           body.content = currentContent.replace(oldText, typeof params?.new_text === 'string' ? params.new_text : '');
-        } else if (typeof params?.content === 'string') {
-          body.content = params.content;
+        } else if (content !== null) {
+          body.content = content;
         }
         if (Number.isFinite(params?.priority)) body.priority = params.priority;
-        if (typeof params?.disclosure === 'string') body.disclosure = params.disclosure;
+        if (typeof params?.disclosure === 'string' && params.disclosure) body.disclosure = params.disclosure;
         if (glossaryAdd.length > 0) body.glossary_add = glossaryAdd;
         if (glossaryRemove.length > 0) body.glossary_remove = glossaryRemove;
         const qs = new URLSearchParams({ domain, path });

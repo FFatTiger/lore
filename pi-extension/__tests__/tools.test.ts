@@ -244,6 +244,31 @@ describe('Pi extension tools', () => {
     expect(JSON.parse((fetch as any).mock.calls[0][1].body)).toMatchObject({ content: 'whole new body' });
   });
 
+  it('update never blanks content or disclosure from empty filler fields', async () => {
+    const pi = makeMockPi();
+    registerTools(pi as any, makePluginCfg());
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => JSON.stringify({ uri: 'core://agent/profile', node: { content: 'alpha beta' } }),
+    }));
+
+    // Only the priority changes: the empty strings the model filled in must not wipe the node.
+    const metaOnly = await pi.tools.lore_update_node.execute('tool-1', {
+      uri: 'core://agent/profile', content: '', old_text: '', new_text: '', priority: 3, disclosure: '', glossary_remove: [],
+    }, undefined, undefined, {});
+    expect(metaOnly.details.ok).toBe(true);
+    expect(JSON.parse((fetch as any).mock.calls[0][1].body)).toEqual({ priority: 3 });
+
+    // A targeted edit with content filled in as "" is still a targeted edit, not "both".
+    const targeted = await pi.tools.lore_update_node.execute('tool-1', {
+      uri: 'core://agent/profile', content: '', old_text: 'beta', new_text: 'gamma', disclosure: '',
+    }, undefined, undefined, {});
+    expect(targeted.details.ok).toBe(true);
+    expect(JSON.parse((fetch as any).mock.calls[2][1].body)).toEqual({ content: 'alpha gamma' });
+  });
+
   it('update exposes glossary mutations without full replacement', () => {
     const pi = makeMockPi();
     registerTools(pi as any, makePluginCfg());

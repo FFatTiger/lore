@@ -349,21 +349,22 @@ export function createLoreTools(
         const glossaryRemove = normalizeKeywordList(args.glossary_remove);
         const search = new URLSearchParams({ domain: locator.domain, path: locator.path });
         const body: Record<string, unknown> = { session_id: context.sessionID };
-        // Models often fill unused optional fields with "": old_text and new_text both empty means no targeted edit.
+        // Models often fill unused optional fields with "": old_text and new_text both empty means no targeted edit,
+        // and an empty content or disclosure means "leave it unchanged", never "blank the node".
         if (args.old_text !== undefined && (args.old_text || args.new_text)) {
           if (args.old_text.length === 0) throw new Error('old_text must not be empty');
-          if (args.content !== undefined) throw new Error('Pass either content or old_text/new_text, not both');
+          if (args.content) throw new Error('Pass either content or old_text/new_text, not both');
           const current = await request<LoreNodePayload>(config, context, '/browse/node', { search });
           const currentContent = typeof current.node?.content === 'string' ? current.node.content : '';
           const occurrences = currentContent.split(args.old_text).length - 1;
           if (occurrences === 0) throw new Error('old_text not found');
           if (occurrences > 1) throw new Error(`old_text found ${occurrences} times`);
           body.content = currentContent.replace(args.old_text, args.new_text ?? '');
-        } else if (args.content !== undefined) {
+        } else if (args.content) {
           body.content = args.content;
         }
         if (args.priority !== undefined) body.priority = args.priority;
-        if (args.disclosure !== undefined) body.disclosure = args.disclosure;
+        if (args.disclosure) body.disclosure = args.disclosure;
         if (glossaryAdd.length > 0) body.glossary_add = glossaryAdd;
         if (glossaryRemove.length > 0) body.glossary_remove = glossaryRemove;
         const data = await request<Record<string, unknown>>(config, context, '/browse/node', {

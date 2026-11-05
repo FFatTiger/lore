@@ -407,6 +407,24 @@ describe('native OpenCode Lore tools', () => {
     expect(body.old_text).toBeUndefined();
   });
 
+  it('lore_update_node never blanks content or disclosure from empty filler fields', async () => {
+    const calls: Array<{ url: URL; init: RequestInit }> = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init = {}) => {
+      const url = new URL(String(input));
+      calls.push({ url, init });
+      if ((init.method ?? 'GET') === 'GET') return jsonResponse({ node: { uri: 'core://agent/profile', content: 'alpha beta' } });
+      return jsonResponse({ uri: 'core://agent/profile' });
+    });
+    const tools = createLoreTools(config);
+
+    await tools.lore_update_node.execute({ uri: 'core://agent/profile', content: '', old_text: '', new_text: '', priority: 3, disclosure: '' }, context());
+    expect(JSON.parse(String(calls[0].init.body))).not.toHaveProperty('content');
+    expect(JSON.parse(String(calls[0].init.body))).not.toHaveProperty('disclosure');
+
+    await tools.lore_update_node.execute({ uri: 'core://agent/profile', content: '', old_text: 'beta', new_text: 'gamma' }, context());
+    expect(JSON.parse(String(calls[2].init.body)).content).toBe('alpha gamma');
+  });
+
   it('lore_update_node rejects ambiguous or invalid targeted edits', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => jsonResponse({
       node: { uri: 'core://agent/profile', content: 'beta and beta' },

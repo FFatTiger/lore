@@ -813,9 +813,10 @@ class LoreMemoryProvider(MemoryProvider):
     def _tool_lore_update_node(self, args: Dict) -> str:
         uri = args.get("uri", "")
         domain, path = self._client.parse_uri(uri)
-        content = args.get("content")
+        # Models often fill unused optional fields with "": old_text and new_text both empty means no targeted edit,
+        # and an empty content or disclosure means "leave it unchanged", never "blank the node".
+        content = args.get("content") or None
         old_text = args.get("old_text")
-        # Models often fill unused optional fields with "": old_text and new_text both empty means no targeted edit.
         if old_text == "" and not args.get("new_text"):
             old_text = None
         if old_text is not None:
@@ -835,7 +836,7 @@ class LoreMemoryProvider(MemoryProvider):
             content = current_content.replace(str(old_text), new_text, 1)
         data = self._client.update_node(
             domain=domain, path=path, content=content,
-            priority=args.get("priority"), disclosure=args.get("disclosure"),
+            priority=args.get("priority"), disclosure=args.get("disclosure") or None,
             glossary_add=args.get("glossary_add"),
             glossary_remove=args.get("glossary_remove")
         )

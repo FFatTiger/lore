@@ -16,7 +16,8 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lore} -d ${POSTGRES_DB:-lore}"]
       interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 30
+      start_period: 30s
 
   redis:
     image: ${LORE_REDIS_IMAGE:-redis:7-alpine}
@@ -43,7 +44,7 @@ services:
         condition: service_healthy
     environment:
       TZ: ${TZ:-Asia/Shanghai}
-      DATABASE_URL: ${DATABASE_URL:-postgresql://lore:change-me@postgres:5432/lore}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-lore}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-lore}}
       API_TOKEN: ${API_TOKEN:-}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       CACHE_KEY_PREFIX: ${CACHE_KEY_PREFIX:-lore}

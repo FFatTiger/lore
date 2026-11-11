@@ -1,7 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { constants as fsConstants } from 'node:fs';
 import type { ExecFn } from './exec.js';
+import { dshHomeDir } from './paths.js';
 
 const AGENT_BINS = [
   'claude',
@@ -57,6 +59,20 @@ export async function haveCommand(
     }
   }
   return false;
+}
+
+/** dsh is present when its binary is on PATH or its runtime home exists. */
+export async function isDshRuntimePresent(
+  env: NodeJS.ProcessEnv = process.env,
+  homeDir: string = os.homedir(),
+): Promise<boolean> {
+  if (await haveCommand('dsh', env)) return true;
+  try {
+    await fs.access(dshHomeDir(env, homeDir));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function detectAgents(

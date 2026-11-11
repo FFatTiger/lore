@@ -1,5 +1,5 @@
 import { ALL_CHANNELS, type ChannelId, type ChannelStatus, type LoreConfig } from './types.js';
-import { detectAgents } from './detect.js';
+import { detectAgents, isDshRuntimePresent } from './detect.js';
 import { getInstaller } from '../channels/registry.js';
 import { classifyServerKind, type ServerKind } from './saas.js';
 
@@ -34,7 +34,7 @@ export async function collectInstallSnapshot(opts: {
       ['opencode', agents.opencode],
       ['hermes', agents.hermes],
       ['zcode', agents.zcode],
-      ['dsh', agents.dsh],
+      ['dsh', await isDshRuntimePresent(env, opts.homeDir)],
     ] as Array<[ChannelId, boolean]>
   )
     .filter(([, on]) => on)

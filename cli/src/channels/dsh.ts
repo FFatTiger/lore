@@ -3,8 +3,8 @@ import { constants as fsConstants } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { downloadOrSkipDetailed } from '../core/artifact.js';
-import { haveCommand } from '../core/detect.js';
-import { channelDir } from '../core/paths.js';
+import { isDshRuntimePresent } from '../core/detect.js';
+import { channelDir, dshHomeDir } from '../core/paths.js';
 import type { ChannelResult, ChannelStatus } from '../core/types.js';
 import type { ChannelContext, ChannelInstaller, UninstallContext } from './types.js';
 
@@ -21,18 +21,7 @@ function failure(err: unknown): ChannelResult {
   };
 }
 
-export function dshHomeDir(env: NodeJS.ProcessEnv = process.env, homeDir: string = os.homedir()): string {
-  return env.DSH_HOME?.trim() || path.join(homeDir, '.dsh');
-}
-
-async function pathExists(target: string): Promise<boolean> {
-  try {
-    await fs.access(target);
-    return true;
-  } catch {
-    return false;
-  }
-}
+export { dshHomeDir } from '../core/paths.js';
 
 /**
  * The two Lore rows for the home-level cordis.patch.yml. Absolute plugin
@@ -137,23 +126,18 @@ function hasLoreRows(content: string | null): boolean {
   return content !== null && content.includes(BEGIN_MARKER) && content.includes(END_MARKER);
 }
 
-async function hasDshBinaryAndHome(env: NodeJS.ProcessEnv, homeDir: string): Promise<boolean> {
-  if (await haveCommand('dsh', env)) return true;
-  return pathExists(dshHomeDir(env, homeDir));
-}
-
 export const dshInstaller: ChannelInstaller = {
   id: 'dsh',
 
   async detectCli(): Promise<boolean> {
-    return hasDshBinaryAndHome(process.env, os.homedir());
+    return isDshRuntimePresent(process.env, os.homedir());
   },
 
   async install(ctx: ChannelContext): Promise<ChannelResult> {
     const env = ctx.env ?? process.env;
     const homeDir = ctx.homeDir ?? os.homedir();
     const dshHome = dshHomeDir(env, homeDir);
-    if (!(await hasDshBinaryAndHome(env, homeDir))) {
+    if (!(await isDshRuntimePresent(env, homeDir))) {
       return { id: 'dsh', status: 'skipped', message: 'dsh CLI not found and no ~/.dsh directory exists' };
     }
 

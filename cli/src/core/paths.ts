@@ -6,6 +6,10 @@ export function getLoreHome(env: NodeJS.ProcessEnv = process.env): string {
   return env.LORE_HOME?.trim() || path.join(os.homedir(), '.lore');
 }
 
+export function dshHomeDir(env: NodeJS.ProcessEnv = process.env, homeDir: string = os.homedir()): string {
+  return env.DSH_HOME?.trim() || path.join(homeDir, '.dsh');
+}
+
 export function getConfigPath(loreHome: string): string {
   return path.join(loreHome, 'config.json');
 }

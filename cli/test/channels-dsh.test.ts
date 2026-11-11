@@ -12,6 +12,7 @@ import {
 } from '../src/channels/dsh.ts';
 import { getInstaller, allInstallers } from '../src/channels/registry.ts';
 import type { ChannelContext } from '../src/channels/types.ts';
+import { collectInstallSnapshot } from '../src/core/snapshot.ts';
 
 async function tempHome() {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-dsh-'));
@@ -56,6 +57,45 @@ test('registry lists dsh', () => {
   assert.ok(ids.includes('dsh'));
   assert.equal(getInstaller('dsh').id, 'dsh');
 });
+
+for (const scenario of [
+  { name: 'no binary or home', expected: false },
+  { name: 'default home without a binary', defaultHome: true, expected: true },
+  { name: 'DSH_HOME without a binary', customHome: true, expected: true },
+  { name: 'missing DSH_HOME overrides default home', defaultHome: true, missingOverride: true, expected: false },
+  { name: 'binary on PATH without a home', binary: true, expected: true },
+]) {
+  test(`snapshot detects dsh runtime: ${scenario.name}`, async (t) => {
+    const { home, loreHome } = await tempHome();
+    t.after(() => fs.rm(home, { recursive: true, force: true }));
+    const binDir = path.join(home, 'bin');
+    await fs.mkdir(binDir);
+    const env: NodeJS.ProcessEnv = { PATH: binDir };
+    if (scenario.defaultHome) await fs.mkdir(path.join(home, '.dsh'));
+    if (scenario.customHome) {
+      const customHome = path.join(home, 'custom-dsh');
+      await fs.mkdir(customHome);
+      env.DSH_HOME = `  ${customHome}  `;
+    }
+    if (scenario.missingOverride) env.DSH_HOME = path.join(home, 'missing-dsh');
+    if (scenario.binary) {
+      await fs.writeFile(path.join(binDir, 'dsh'), '', { mode: 0o755 });
+    }
+    // Status inspection is unrelated to runtime detection and may read host env.
+    for (const installer of allInstallers()) {
+      t.mock.method(installer, 'status', async () => ({ id: installer.id, state: 'missing', details: [] }));
+    }
+    const snapshot = await collectInstallSnapshot({
+      loreHome,
+      configPath: path.join(loreHome, 'config.json'),
+      config: {},
+      homeDir: home,
+      env,
+    });
+    assert.equal(snapshot.agents.dsh, Boolean(scenario.binary));
+    assert.deepEqual(snapshot.detectedChannels, scenario.expected ? ['dsh'] : []);
+  });
+}
 
 test('renderLoreRows quotes paths as YAML double-quoted scalars', () => {
   const plain = renderLoreRows({ pluginPath: '/a/lifecycle.mjs', bridgePath: '/a/lore-mcp.mjs' });

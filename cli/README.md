@@ -89,7 +89,7 @@ LORE_CODEX_INSTALL_USER_HOOKS=1 npx @loremem/cli install \
 
 ## Google Antigravity CLI (`agy`)
 
-The `agy` channel provides MCP-only memory tools: no lifecycle hooks, automatic boot/recall, or Skills installation/sync. Explicit channel selection works for all four commands:
+The `agy` channel installs the Lore plugin with boot, recall, Skills sync, and MCP memory tools. Explicit channel selection works for all four commands:
 
 ```bash
 npx @loremem/cli install --channels agy
@@ -98,7 +98,7 @@ npx @loremem/cli status --channels agy
 npx @loremem/cli uninstall --channels agy
 ```
 
-The integration uses `~/.gemini/config/mcp_config.json`, preserving unrelated configuration and any manually registered `lore` entry. Stable integration files live under `<LORE_HOME>/agy` (default `~/.lore/agy`) and read the shared `<LORE_HOME>/config.json`; the token is not duplicated into the MCP config. Restart `agy` after installation to use the Lore memory tools.
+The plugin is installed under `~/.gemini/config/plugins/lore`, with its release artifact cached under `<LORE_HOME>/agy`. It reads `<LORE_HOME>/config.json`. The installer removes a legacy MCP entry only when it matches its ownership receipt, preserving user-modified entries. Restart `agy` after installation.
 
 ## Channel behavior
 

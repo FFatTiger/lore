@@ -1,0 +1,33 @@
+Lore 插件为 Antigravity CLI 提供启动记忆、召回、原生技能和 MCP 记忆工具。
+
+## 安装
+
+在装有 `agy` 的机器上运行：
+
+```bash
+npx -y @loremem/cli install --channels agy
+```
+
+如果 `agy` 不在 `PATH` 中，安装器会跳过该渠道。安装后重启 Antigravity CLI。
+
+## 安装内容
+
+- 发布包缓存在 `~/.lore/agy`；`agy plugin install` 将其复制到 `~/.gemini/config/plugins/lore`，安装器随后启用插件。
+- `SessionStart` 注入启动记忆，并在技能启用时启动后台同步。技能保存在已安装插件的 `skills/` 目录中。
+- `PreInvocation` 在每条非空用户输入的首次模型调用前请求一次召回。
+- `lore` MCP 桥接以 `client_type=agy` 转发请求。技能工具和同步需要服务器声明支持技能。
+
+插件读取 `${LORE_HOME:-~/.lore}/config.json`，并以标准 Lore 环境变量作为备用配置。网络和解析失败时返回空 JSON，会话继续运行。
+
+## 验证与排查
+
+1. 运行 `agy plugin list`，确认 `lore` 已启用。
+2. 运行 `agy plugin validate ~/.lore/agy`，检查缓存的插件。
+3. 运行 `npx -y @loremem/cli status --channels agy`，然后开始新会话，检查启动记忆、召回和 `lore_status`。
+4. MCP 工具无法连接时检查服务器配置和令牌；参见 [Agent 接入问题](/documents/troubleshooting/agents)。
+
+## 卸载
+
+```bash
+npx -y @loremem/cli uninstall --channels agy
+```

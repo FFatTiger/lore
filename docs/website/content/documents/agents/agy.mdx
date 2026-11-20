@@ -1,0 +1,33 @@
+The Lore plugin gives Antigravity CLI startup memory, recall, native skills and memory tools through MCP.
+
+## Install
+
+Run on the machine with `agy` installed:
+
+```bash
+npx -y @loremem/cli install --channels agy
+```
+
+The installer skips this channel if `agy` is not on `PATH`. Restart Antigravity CLI after installation.
+
+## What gets installed
+
+- The release artifact is cached at `~/.lore/agy`; `agy plugin install` copies it to `~/.gemini/config/plugins/lore` and the installer enables it.
+- `SessionStart` supplies boot context and starts an enabled skills sync in the background. Skills are stored in the installed plugin's `skills/` directory.
+- `PreInvocation` requests recall once for the first model invocation of a non-empty user prompt.
+- The `lore` MCP bridge forwards requests with `client_type=agy`. Skill tools and sync require a server that advertises Skills.
+
+The plugin reads `${LORE_HOME:-~/.lore}/config.json` and falls back to the standard Lore environment variables. Network and parsing failures return empty JSON and let the session continue.
+
+## Verify and troubleshoot
+
+1. Run `agy plugin list` and check that `lore` is enabled.
+2. Run `agy plugin validate ~/.lore/agy` to validate the cached plugin.
+3. Run `npx -y @loremem/cli status --channels agy`, then start a new session and check boot, recall and `lore_status`.
+4. Check the server configuration and token if the MCP tools cannot connect. See [Agent connection issues](/documents/troubleshooting/agents).
+
+## Uninstall
+
+```bash
+npx -y @loremem/cli uninstall --channels agy
+```

@@ -52,7 +52,7 @@ The **User only** setting reaches the agent in the form each host understands: C
 
 ## Local copies and file permissions
 
-Copies live where each host's own skill system looks: the plugin's `skills/` directory for Claude Code, Codex, OpenClaw, and ZCode; `~/.lore/skills/<project-id>/` for Pi, Hermes, and dsh (with `LORE_HOME` replacing `~/.lore` when it is set); and `~/.config/opencode/skills/` for OpenCode. Hermes only sees the directory once it is listed under `skills.external_dirs` in `~/.hermes/config.yaml`.
+Copies live where each host's own skill system looks: the plugin's `skills/` directory for Claude Code, Codex, OpenClaw, ZCode, and Antigravity CLI; `~/.lore/skills/<project-id>/` for Pi, Hermes, and dsh (with `LORE_HOME` replacing `~/.lore` when it is set); and `~/.config/opencode/skills/` for OpenCode. Hermes only sees the directory once it is listed under `skills.external_dirs` in `~/.hermes/config.yaml`.
 
 Every skill directory Lore writes carries a `.lore-skill-marker.json` file that records where the copy came from. Lore only reads, updates, and removes directories with that marker: a same-named directory you created yourself is left alone and reported as a conflict, and skills you keep in other directories are never read, uploaded, or deleted by Lore.
 
@@ -144,6 +144,7 @@ For the console and the create, update, and archive flows, see [Create and manag
 | Pi | `~/.lore/skills/<project-id>/`, registered as a Pi skill directory | `/skill:<name>` |
 | OpenClaw | `skills/` inside the Lore plugin | `/<name>` |
 | ZCode | `skills/` inside the Lore plugin | type `$` and pick the skill, or use the Skills group in the `/` menu |
+| Antigravity CLI | `skills/` inside the Lore plugin | the host's skill entry |
 | Hermes | `~/.lore/skills/<project-id>/`, listed under `skills.external_dirs` in `~/.hermes/config.yaml` | `/<name>` |
 | DeepSeek Harness | `~/.lore/skills/<project-id>/`, served by the plugin's own skills provider | the host's user-invocable entry |
 | OpenCode | `~/.config/opencode/skills/<name>/` | the host's own skill tool |

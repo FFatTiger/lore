@@ -80,6 +80,11 @@
           "description": "Connect ZCode with the Lore plugin: lifecycle hooks plus a local MCP bridge."
         },
         {
+          "path": "agents/agy",
+          "title": "Antigravity CLI",
+          "description": "Connect Antigravity CLI with boot, recall, skills, and an MCP bridge."
+        },
+        {
           "path": "agents/dsh",
           "title": "DeepSeek Harness",
           "description": "Connect DeepSeek Harness (dsh) with a native lifecycle plugin and an MCP bridge: per-session boot, recall before each user message, and lore tools."

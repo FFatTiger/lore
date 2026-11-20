@@ -16,6 +16,7 @@ Agent 没有启动记忆（boot）、没有召回、没有 Lore 工具，或者 
 | OpenClaw | `~/.openclaw/openclaw.json` 中有 `plugins.entries.lore` 条目，且插件已启用。 | 重启 OpenClaw。 |
 | Hermes | `~/.hermes/skills/lore_memory` 是指向 `~/.lore/hermes/lore_memory` 的符号链接。 | 重启 Hermes。 |
 | ZCode | `zcode plugins list` 中包含 `lore@lore`，并且已运行 `zcode plugins enable lore@lore`。 | 重启 ZCode。 |
+| Antigravity CLI | `agy plugin list` 中包含 `lore`；用 `agy plugin validate ~/.lore/agy` 检查缓存的插件。 | 重启 Antigravity CLI。 |
 | DeepSeek Harness | `~/.dsh/cordis.patch.yml` 包含 `lore (managed)` 块，且 `loremem status` 显示 dsh 已安装。 | 重启 dsh。 |
 | 其他 MCP 客户端 | 客户端以 `Authorization: Bearer` 请求头连接 `<服务器>/api/mcp?client_type=mcp`。系统不会自动加载启动记忆或召回，需要你自己调用 `lore_boot`。 | 重启客户端。 |
 

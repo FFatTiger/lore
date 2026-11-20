@@ -140,7 +140,7 @@ You are ready when:
 
 1. `http://127.0.0.1:18901/setup` completes
 2. the Web UI opens at `http://127.0.0.1:18901`
-3. restarting a connected agent injects Lore boot context and later shows `<recall>` candidates (for MCP-only `agy`, verify that Lore memory tools are available instead)
+3. restarting a connected agent injects Lore boot context and later shows `<recall>` candidates
 
 Then open `/settings` only if you want to tune recall weights, Dream schedule, backups, or write policy.
 
@@ -156,7 +156,7 @@ Then open `/settings` only if you want to tune recall weights, Dream schedule, b
 | **OpenCode** | `opencode-plugin/` | Native plugin with exact `lore_*` tools and recall, plus session-start Skill sync into `~/.config/opencode/skills/` (Lore-marked entries only) |
 | **ZCode** | `zcode-plugin/` | Native marketplace plugin with SessionStart boot and UserPromptSubmit recall hooks (no MCP) |
 | **DeepSeek Harness** | `dsh-plugin/` | Native lifecycle plugin with per-session boot, pre-step recall, and an MCP bridge (`mcp__lore__*` tools) |
-| **Google Antigravity CLI (`agy`)** | `<LORE_HOME>/agy` | MCP-only memory tools; no lifecycle hooks, automatic boot/recall, or Skills |
+| **Google Antigravity CLI (`agy`)** | `agy-plugin/` | Plugin with SessionStart boot, PreInvocation recall, Skills, and an MCP bridge |
 | **Generic MCP** | `/api/mcp` | Streamable HTTP endpoint for clients that can attach remote tools |
 
 After install, restart each runtime. Useful notes:
@@ -166,7 +166,7 @@ After install, restart each runtime. Useful notes:
 - **OpenCode** reads `~/.lore/config.json`. The installer skips OpenCode cleanly when the `opencode` CLI is absent. See [OpenCode notes](#opencode-notes) for compatibility details.
 - **ZCode** uses native process hooks only. From a source checkout: `zcode plugins marketplace add /path/to/lore/zcode-plugin && zcode plugins install lore@lore && zcode plugins enable lore@lore`. Create `core://agent/zcode` in Lore setup if that node is still empty.
 - **DeepSeek Harness (dsh)** is wired through the home-level `~/.dsh/cordis.patch.yml`, so every profile gets the lifecycle plugin and the `mcp__lore__*` tools. Restart dsh after the install. Create `core://agent/dsh` in Lore setup if that node is still empty.
-- **Google Antigravity CLI (`agy`)** uses `~/.gemini/config/mcp_config.json`, preserving unrelated configuration and any manually registered `lore` entry. Stable integration files live under `<LORE_HOME>/agy` (default `~/.lore/agy`) and read the shared Lore config (`<LORE_HOME>/config.json`); the token is not duplicated into the MCP config.
+- **Google Antigravity CLI (`agy`)** installs the plugin to `~/.gemini/config/plugins/lore`, using cached files in `<LORE_HOME>/agy` and shared configuration in `<LORE_HOME>/config.json`. User-modified MCP entries are preserved.
 
 Generic MCP URL shape:
 
@@ -176,7 +176,7 @@ http://your-host:18901/api/mcp?client_type=mcp
 
 ## Daily use
 
-For lifecycle-enabled integrations (not MCP-only `agy`), the Memory flow is:
+For lifecycle-enabled integrations, the Memory flow is:
 
 1. load boot memories at session start
 2. receive `<recall>` candidates before prompts
@@ -186,7 +186,7 @@ For lifecycle-enabled integrations (not MCP-only `agy`), the Memory flow is:
 
 The Skill flow is separate and only exists on servers that advertise Skills (`capabilities.skills=true`). The open-source server has none, so plugins expose no Skills tools or context there.
 
-1. at session start, each plugin syncs the skills that agent can see into the host's own skills directory: the plugin's `skills/` directory for Claude Code, Codex, OpenClaw, and ZCode; `~/.lore/skills/<project-id>/` for Pi, Hermes (listed under `skills.external_dirs` in `~/.hermes/config.yaml`), and DeepSeek Harness; `~/.config/opencode/skills/` for OpenCode. Hook hosts hand the sync to a background process and exit, and every run records its outcome in `.lore-sync-status.json` in that directory. `lore install` and `lore update` run the same sync once for every Skills-capable channel they installed (not `agy`)
+1. at session start, each plugin syncs the skills that agent can see into the host's own skills directory: the plugin's `skills/` directory for Claude Code, Codex, OpenClaw, ZCode, and Antigravity CLI; `~/.lore/skills/<project-id>/` for Pi, Hermes (listed under `skills.external_dirs` in `~/.hermes/config.yaml`), and DeepSeek Harness; `~/.config/opencode/skills/` for OpenCode. Hook hosts hand the sync to a background process and exit, and every run records its outcome in `.lore-sync-status.json` in that directory. `lore install` and `lore update` run the same sync once for every Skills-capable channel they installed (not `agy`)
 2. the host invokes skills through its own skill mechanism, so changes appear from the next session on — or sooner after `/reload` in Pi, `/reload-skills` in Hermes, a **Settings → Skills** refresh in ZCode; OpenClaw watches the directory and hot-loads changes
 3. every synced directory carries a `.lore-skill-marker.json` file, which is how Lore knows the directory is its own: unmarked directories are never touched, and skills in other directories are never read, uploaded, or deleted
 4. server-managed package files and the marker are read-only (0444 on POSIX) and the skill directory itself stays writable (0755) so agents can create local outputs, caches, and artifacts in the same copy; those artifacts are never checked or uploaded and they survive updates, and archiving or disabling a skill removes only its managed files

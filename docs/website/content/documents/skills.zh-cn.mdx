@@ -52,7 +52,7 @@ description: Write release notes for checkout-api from merged pull requests. Use
 
 ## 本地副本与文件权限
 
-副本放在每个宿主自己的技能系统会读取的位置：Claude Code、Codex、OpenClaw、ZCode 在插件的 `skills/` 目录；Pi、Hermes、dsh 在 `~/.lore/skills/<project-id>/`（如果设置了 `LORE_HOME`，则用该目录代替 `~/.lore`）；OpenCode 在 `~/.config/opencode/skills/`。Hermes 只有在 `~/.hermes/config.yaml` 的 `skills.external_dirs` 里列出该目录后才能看到它。
+副本放在每个宿主自己的技能系统会读取的位置：Claude Code、Codex、OpenClaw、ZCode 和 Antigravity CLI 在插件的 `skills/` 目录；Pi、Hermes、dsh 在 `~/.lore/skills/<project-id>/`（如果设置了 `LORE_HOME`，则用该目录代替 `~/.lore`）；OpenCode 在 `~/.config/opencode/skills/`。Hermes 只有在 `~/.hermes/config.yaml` 的 `skills.external_dirs` 里列出该目录后才能看到它。
 
 Lore 写入的每个技能目录里都有一个 `.lore-skill-marker.json`，记录这份副本的来源。Lore 只读取、更新和删除带这个标记的目录：你自己建的同名目录不会被碰，只会被报告为冲突；你放在其他目录里的技能，Lore 不读、不传、也不删。
 
@@ -139,6 +139,7 @@ Loremem 不会替你自动迁移本地技能。有些技能只能在某一个 Ag
 | Pi | `~/.lore/skills/<project-id>/`，注册为 Pi 的技能目录 | `/skill:<名称>` |
 | OpenClaw | Lore 插件内的 `skills/` | `/<名称>` |
 | ZCode | Lore 插件内的 `skills/` | 输入 `$` 选择，或用 `/` 菜单里的技能分组 |
+| Antigravity CLI | Lore 插件内的 `skills/` | 使用宿主的技能入口 |
 | Hermes | `~/.lore/skills/<project-id>/`，需要在 `~/.hermes/config.yaml` 的 `skills.external_dirs` 里列出 | `/<名称>` |
 | DeepSeek Harness | `~/.lore/skills/<project-id>/`，由插件自己的 skills provider 提供 | 按宿主的用户可调用入口 |
 | OpenCode | `~/.config/opencode/skills/<名称>/` | 宿主自己的技能工具 |

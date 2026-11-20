@@ -16,6 +16,7 @@ Run the check for your runtime, and restart the runtime after any change.
 | OpenClaw | `~/.openclaw/openclaw.json` has a `plugins.entries.lore` entry, and the plugin is enabled. | Restart OpenClaw. |
 | Hermes | `~/.hermes/skills/lore_memory` is a symlink to `~/.lore/hermes/lore_memory`. | Restart Hermes. |
 | ZCode | `zcode plugins list` includes `lore@lore`, and `zcode plugins enable lore@lore` has run. | Restart ZCode. |
+| Antigravity CLI | `agy plugin list` includes `lore`; validate the cached plugin with `agy plugin validate ~/.lore/agy`. | Restart Antigravity CLI. |
 | DeepSeek Harness | `~/.dsh/cordis.patch.yml` contains the `lore (managed)` block, and `loremem status` shows dsh installed. | Restart dsh. |
 | Other MCP clients | The client connects to `<server>/api/mcp?client_type=mcp` with an `Authorization: Bearer` header. Nothing loads boot or recall automatically, so call `lore_boot` yourself. | Restart the client. |
 

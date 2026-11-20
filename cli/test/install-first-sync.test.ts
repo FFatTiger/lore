@@ -187,6 +187,18 @@ test('first sync writes opencode skills under XDG_CONFIG_HOME and defaults to ~/
   }
 });
 
+test('first sync writes agy skills into the installed plugin', async () => {
+  const { server, baseUrl } = await startSkillsServer();
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-first-sync-agy-'));
+  try {
+    await runFirstSkillsSync({ results: [{ id: 'agy', status: 'ok' }], loreHome: path.join(home, '.lore'), baseUrl, homeDir: home, env: {}, log: recordLogger([]) });
+    await fs.access(path.join(home, '.gemini', 'config', 'plugins', 'lore', 'skills', 'demo-skill', 'SKILL.md'));
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await fs.rm(home, { recursive: true, force: true });
+  }
+});
+
 test('first sync writes archive-installed Claude Code skills into the recorded installPath', async () => {
   const { server, baseUrl } = await startSkillsServer();
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-first-sync-cca-'));

@@ -14,6 +14,7 @@ const ARTIFACT_MAP: Partial<Record<ChannelId, string>> = {
   hermes: 'lore-hermes.zip',
   opencode: 'lore-opencode.zip',
   zcode: 'lore-zcode.zip',
+  agy: 'lore-agy.zip',
   dsh: 'lore-dsh.zip',
 };
 

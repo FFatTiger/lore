@@ -68,8 +68,7 @@ function skillsRootFor(id: ChannelId, args: { loreHome: string; homeDir: string;
       // Resolved asynchronously below from installed_plugins.json.
       return undefined;
     case 'agy':
-      // MCP-only integration: never synchronize skills.
-      return undefined;
+      return { clientType: id, root: path.join(args.homeDir, '.gemini', 'config', 'plugins', 'lore', 'skills') };
     case 'zcode':
       // zcode installs into a zcode-managed plugin root the CLI cannot see, so
       // it syncs from its own session hooks only.

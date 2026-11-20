@@ -16,6 +16,7 @@ test('artifactName map', () => {
   assert.equal(artifactName('openclaw'), 'lore-openclaw.zip');
   assert.equal(artifactName('hermes'), 'lore-hermes.zip');
   assert.equal(artifactName('zcode'), 'lore-zcode.zip');
+  assert.equal(artifactName('agy'), 'lore-agy.zip');
   assert.equal(artifactName('dsh'), 'lore-dsh.zip');
 });
 

@@ -8,7 +8,7 @@
   },
   "files": [
     "dist",
-    "vendor",
+    "vendor/skill-workcopy",
     "README.md"
   ],
   "scripts": {

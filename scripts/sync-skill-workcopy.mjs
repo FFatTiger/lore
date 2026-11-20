@@ -37,13 +37,6 @@ const VENDOR_TARGETS = [
 // uses the skill-workcopy core under ~/.lore/skills like the other channels.
 const CHANNEL_VENDOR_TARGETS = [
   {
-    dir: 'cli/vendor',
-    files: {
-      'lore-config.mjs': 'lore-config.mjs',
-      'mcp-bridge/index.mjs': 'mcp-bridge/index.mjs',
-    },
-  },
-  {
     dir: 'agy-plugin/vendor',
     files: {
       'lore-config.mjs': 'lore-config.mjs',

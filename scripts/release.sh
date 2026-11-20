@@ -54,6 +54,7 @@ prepare_version() {
   "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" zcode-plugin/.zcode-plugin/plugin.json
   "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" zcode-plugin/marketplace.json
   "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" dsh-plugin/.dsh-plugin/plugin.json
+  "${SED_INPLACE[@]}" "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" agy-plugin/plugin.json
 
   python3 - "${VERSION}" \
     web/package-lock.json \
@@ -95,7 +96,8 @@ verify_versions() {
     opencode-plugin/package-lock.json \
     zcode-plugin/.zcode-plugin/plugin.json \
     zcode-plugin/marketplace.json \
-    dsh-plugin/.dsh-plugin/plugin.json
+    dsh-plugin/.dsh-plugin/plugin.json \
+    agy-plugin/plugin.json
   grep -n "version:" web/server/mcpServer.ts | head -1
   grep -n "version:" hermes-plugin/lore_memory/plugin.yaml | head -1
 

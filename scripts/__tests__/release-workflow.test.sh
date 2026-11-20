@@ -32,6 +32,8 @@ grep -Fq 'lore-zcode.zip .zcode-plugin .mcp.json marketplace.json hooks mcp vend
 grep -Fq 'name: Build DSH artifact' "$WORKFLOW" || fail 'DSH artifact step missing'
 grep -Fq 'lore-dsh.zip' "$WORKFLOW" || fail 'DSH zip missing'
 grep -Fq 'lore-dsh.zip .dsh-plugin plugin mcp vendor README.md' "$WORKFLOW" || fail 'DSH zip must ship the lifecycle plugin and MCP bridge'
+grep -Fq 'name: Build Antigravity CLI artifact' "$WORKFLOW" || fail 'Antigravity artifact step missing'
+grep -Fq 'lore-agy.zip plugin.json hooks.json mcp_config.json hooks mcp skills vendor README.md' "$WORKFLOW" || fail 'Antigravity zip must ship the plugin, hooks, MCP and skills'
 grep -Fq 'for f in dist/lore-*.zip' "$WORKFLOW" || fail 'release upload loop missing'
 if grep -Fq -- '--clobber' "$WORKFLOW"; then
   fail 'release workflow must not overwrite immutable assets'

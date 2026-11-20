@@ -6,7 +6,7 @@ import type { ExecFn } from './exec.js';
 
 const DEFAULT_REPO = 'FFatTiger/lore';
 
-const ARTIFACT_MAP: Record<ChannelId, string> = {
+const ARTIFACT_MAP: Partial<Record<ChannelId, string>> = {
   claudecode: 'lore-claudecode.zip',
   codex: 'lore-codex.zip',
   pi: 'lore-pi.zip',
@@ -17,7 +17,7 @@ const ARTIFACT_MAP: Record<ChannelId, string> = {
   dsh: 'lore-dsh.zip',
 };
 
-export function artifactName(id: ChannelId): string {
+export function artifactName(id: ChannelId): string | undefined {
   return ARTIFACT_MAP[id];
 }
 

@@ -7,6 +7,7 @@ import { openclawInstaller } from './openclaw.js';
 import { opencodeInstaller } from './opencode.js';
 import { piInstaller } from './pi.js';
 import { zcodeInstaller } from './zcode.js';
+import { agyInstaller } from './agy.js';
 import { dshInstaller } from './dsh.js';
 
 const installers: Partial<Record<ChannelId, ChannelInstaller>> = {
@@ -18,6 +19,7 @@ const installers: Partial<Record<ChannelId, ChannelInstaller>> = {
   opencode: opencodeInstaller,
   zcode: zcodeInstaller,
   dsh: dshInstaller,
+  agy: agyInstaller,
 };
 
 export function getInstaller(id: ChannelId): ChannelInstaller {

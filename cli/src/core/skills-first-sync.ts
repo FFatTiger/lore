@@ -14,6 +14,7 @@ const CHANNEL_LABELS: Record<ChannelId, string> = {
   opencode: 'OpenCode',
   zcode: 'ZCode',
   dsh: 'DeepSeek Harness',
+  agy: 'Google Antigravity',
 };
 
 type SyncOptions = {
@@ -65,6 +66,9 @@ function skillsRootFor(id: ChannelId, args: { loreHome: string; homeDir: string;
   switch (id) {
     case 'claudecode':
       // Resolved asynchronously below from installed_plugins.json.
+      return undefined;
+    case 'agy':
+      // MCP-only integration: never synchronize skills.
       return undefined;
     case 'zcode':
       // zcode installs into a zcode-managed plugin root the CLI cannot see, so

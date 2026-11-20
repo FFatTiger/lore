@@ -72,10 +72,12 @@ npx @loremem/cli
 一条命令会：
 
 - 连接已有 Lore 服务；或在你选择时用 Docker Compose 在本机部署（`postgres` + `redis` + `web`）
-- 接入本机检测到的 agent 运行时
+- 接入本机检测到的 agent 运行时，包括 `PATH` 中存在 `agy` 时自动选中的 Google Antigravity CLI
 - 写入 `~/.lore/config.json`
 
 在 TTY 下运行 `npx @loremem/cli` 总会进入交互安装，命令行传入的参数会被预先选中，仍可修改。加 `-y` 则直接按参数执行：未指定的项用默认值（渠道默认为本机检测到的运行时），服务端必须通过 `--base-url`、`--docker` 或已保存的配置给出，否则报错。随时重跑即可更新。
+
+`install`、`update`、`status` 和 `uninstall` 均支持 `--channels agy`，仅操作 Google Antigravity CLI。
 
 常用参数：
 
@@ -83,7 +85,7 @@ npx @loremem/cli
 | --- | --- |
 | `--pre` | 尝鲜版（`pre-latest` 镜像） |
 | `--dev` | 开发版（`dev-latest` 镜像） |
-| `--channels CH,...` | 只装部分运行时：`claudecode`、`codex`、`pi`、`openclaw`、`hermes`、`opencode`、`zcode`、`dsh` |
+| `--channels CH,...` | 只装部分运行时：`claudecode`、`codex`、`pi`、`openclaw`、`hermes`、`opencode`、`zcode`、`dsh`、`agy` |
 | `--base-url URL` | 使用已有 Lore 服务，跳过本地 Docker |
 | `--docker` | 在本机用 Docker 部署 Lore 服务端 |
 | `--api-token TOKEN` | 服务端 API token |
@@ -137,7 +139,7 @@ http://127.0.0.1:18901/setup
 
 1. `http://127.0.0.1:18901/setup` 走完
 2. Web UI 可在 `http://127.0.0.1:18901` 打开
-3. 重启已接入的 agent 后，会出现 Lore boot 上下文，后续 prompt 前能看到 `<recall>` 候选
+3. 重启已接入的 agent 后，会出现 Lore boot 上下文，后续 prompt 前能看到 `<recall>` 候选（仅 MCP 接入的 `agy` 则检查 Lore 记忆工具是否可用）
 
 需要再调 recall 权重、Dream 计划、备份或写入策略时，再打开 `/settings`。
 
@@ -153,6 +155,7 @@ http://127.0.0.1:18901/setup
 | **OpenCode** | `opencode-plugin/` | 原生插件，装到 `~/.config/opencode/plugins/lore-memory.js`，提供原生 `lore_*` 工具 |
 | **ZCode** | `zcode-plugin/` | 原生 marketplace 插件，SessionStart boot 和 UserPromptSubmit recall hooks（不含 MCP） |
 | **DeepSeek Harness** | `dsh-plugin/` | 原生 lifecycle 插件，按 session 注入 boot、pre-step recall，外加 MCP bridge（`mcp__lore__*` 工具） |
+| **Google Antigravity CLI (`agy`)** | `<LORE_HOME>/agy` | 仅 MCP 记忆工具；不含 lifecycle hooks、自动 boot/recall 或 Skills |
 | **通用 MCP** | `/api/mcp` | Streamable HTTP endpoint，适合能挂远程 tools 的客户端 |
 
 安装后重启对应运行时。几个实用提醒：
@@ -162,6 +165,7 @@ http://127.0.0.1:18901/setup
 - **OpenCode** 读取 `~/.lore/config.json`。本机没有 `opencode` CLI 时安装脚本会干净跳过。兼容细节见 [OpenCode 说明](#opencode-说明)。
 - **ZCode** 只用原生 process hooks。源码目录安装：`zcode plugins marketplace add /path/to/lore/zcode-plugin && zcode plugins install lore@lore && zcode plugins enable lore@lore`。若 `core://agent/zcode` 仍为空，在 Lore setup 中创建该节点。
 - **DeepSeek Harness (dsh)** 通过家目录级 `~/.dsh/cordis.patch.yml` 接入，所有 profile 都会加载 lifecycle 插件和 `mcp__lore__*` 工具。安装后重启 dsh。若 `core://agent/dsh` 仍为空，在 Lore setup 中创建该节点。
+- **Google Antigravity CLI (`agy`)** 使用 `~/.gemini/config/mcp_config.json`，保留其他配置和手动注册的 `lore` 条目。稳定集成文件位于 `<LORE_HOME>/agy`（默认 `~/.lore/agy`），读取共享 Lore 配置 `<LORE_HOME>/config.json`，不会把 token 复制到 MCP 配置中。
 
 通用 MCP URL：
 
@@ -171,7 +175,7 @@ http://your-host:18901/api/mcp?client_type=mcp
 
 ## 日常使用
 
-接入后，agent 工作流是：
+支持生命周期集成的 agent（不含仅 MCP 接入的 `agy`）工作流是：
 
 1. 会话启动时加载 boot 记忆
 2. prompt 前收到 `<recall>` 候选
@@ -309,7 +313,7 @@ npx @loremem/cli uninstall --purge -y
 <details>
 <summary>旧版 shell 安装器</summary>
 
-`scripts/install.sh`、`scripts/install.zh.sh`、`scripts/uninstall.sh` 仍可用于兼容，但已 **frozen**，不再加新功能。请优先使用 `npx @loremem/cli`。
+`scripts/install.sh`、`scripts/install.zh.sh`、`scripts/uninstall.sh` 仍可用于兼容，但已 **frozen**，不再加新功能，也不支持 `agy`。请优先使用 `npx @loremem/cli`。
 
 ```bash
 # 仅兼容路径

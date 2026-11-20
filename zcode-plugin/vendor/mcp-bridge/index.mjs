@@ -63,10 +63,13 @@ export function runLoreMcpBridge(options = {}) {
       };
     }
     const url = `${config.baseUrl}/api/mcp?client_type=${encodeURIComponent(clientType)}`;
-    const headers = { 'content-type': 'application/json' };
+    const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
     if (config.apiToken) headers.authorization = `Bearer ${config.apiToken}`;
     const response = await fetch(url, {
       method: 'POST',
+      // Agy opts out of redirects to avoid forwarding credentials or requests
+      // to another endpoint; preserve legacy host behavior by default.
+      redirect: options.redirect === 'error' ? 'error' : 'follow',
       headers,
       body: JSON.stringify(message),
       signal: AbortSignal.timeout(requestTimeoutMs),

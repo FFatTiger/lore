@@ -35,6 +35,8 @@ npx @loremem/cli install -y --docker
 
 On a TTY every `install` opens the wizard, with command-line flags preselected and still editable. `-y` (or a non-TTY stdin with flags) runs straight from flags: unset options fall back to defaults — channels default to runtimes detected on this machine — while the server is required from `--base-url`, `--docker`, or a saved config.
 
+Default channel detection automatically includes Google Antigravity CLI when `agy` is on `PATH`.
+
 A token-bearing remote connection must use HTTPS by default. Plain HTTP is automatically allowed only for loopback development servers such as `localhost`, `127.0.0.1`, or `::1`. For a non-loopback HTTP server, parameter mode requires the explicit, runtime-only `--allow-insecure-http` flag; `--yes` does not grant this permission. The interactive wizard instead shows a separate default-No risk confirmation. This approval is never saved to config.
 
 ## Update, status, and uninstall
@@ -85,9 +87,22 @@ LORE_CODEX_INSTALL_USER_HOOKS=1 npx @loremem/cli install \
   --channels codex
 ```
 
+## Google Antigravity CLI (`agy`)
+
+The `agy` channel provides MCP-only memory tools: no lifecycle hooks, automatic boot/recall, or Skills installation/sync. Explicit channel selection works for all four commands:
+
+```bash
+npx @loremem/cli install --channels agy
+npx @loremem/cli update --channels agy
+npx @loremem/cli status --channels agy
+npx @loremem/cli uninstall --channels agy
+```
+
+The integration uses `~/.gemini/config/mcp_config.json`, preserving unrelated configuration and any manually registered `lore` entry. Stable integration files live under `<LORE_HOME>/agy` (default `~/.lore/agy`) and read the shared `<LORE_HOME>/config.json`; the token is not duplicated into the MCP config. Restart `agy` after installation to use the Lore memory tools.
+
 ## Channel behavior
 
-- Claude Code, Codex, Pi, OpenClaw, OpenCode, and ZCode require their corresponding host CLI for automatic setup.
+- Claude Code, Codex, Pi, OpenClaw, OpenCode, ZCode, and Google Antigravity CLI require their corresponding host CLI for automatic setup.
 - Hermes downloads and prepares the `lore_memory` files, but linking them into the Hermes skills/plugin path is a manual step.
 - Missing host CLIs are reported as skipped rather than silently treated as configured.
 - Required marketplace, MCP, build, plugin, compatibility, and Docker commands report failures with bounded, token-redacted diagnostics.
@@ -99,7 +114,7 @@ The current installer supports macOS and Linux. Some integrations still invoke P
 - Node.js 20 or newer
 - Bash for Bash-dependent integration helpers
 - `curl` and `unzip` for GitHub release artifacts
-- Host CLIs for the selected integrations (`claude`, `codex`, `pi`, `openclaw`, `opencode`, `zcode`, `dsh`, and others as applicable)
+- Host CLIs for the selected integrations (`claude`, `codex`, `pi`, `openclaw`, `opencode`, `zcode`, `dsh`, `agy`, and others as applicable)
 - Docker plus Docker Compose only for local self-host mode
 - Python 3 for optional OpenCode compatibility handling when that compatibility state is present
 
@@ -114,4 +129,4 @@ The following are intentionally not part of the `1.3.20` safety patch:
 - redesign of subset purge and the complete Docker shutdown/data lifecycle;
 - Windows-native installers that remove the remaining Bash dependencies.
 
-The frozen curl installer remains a compatibility fallback, not a second evolving implementation. The `npx @loremem/cli` entrypoint is the source of supported install, update, uninstall, and status behavior.
+The frozen curl installer remains a compatibility fallback, not a second evolving implementation, and does not support `agy`. The `npx @loremem/cli` entrypoint is the source of supported install, update, uninstall, and status behavior.

@@ -18,6 +18,7 @@ const emptySnapshot: InstallSnapshot = {
     hermes: false,
     zcode: false,
     dsh: false,
+    agy: false,
     docker: true,
   },
   channels: [
@@ -36,7 +37,7 @@ test('status snapshot is a compact decision summary', () => {
   const snapshot = formatSnapshot(emptySnapshot, 'en');
   assert.match(snapshot, /^Connection/m);
   assert.match(snapshot, /Runtimes/);
-  assert.match(snapshot, /2 detected · 1\/8 integrations installed/);
+  assert.match(snapshot, /2 detected · 1\/9 integrations installed/);
   assert.match(snapshot, /Full details: loremem status/);
   assert.doesNotMatch(snapshot, /\t/);
 });

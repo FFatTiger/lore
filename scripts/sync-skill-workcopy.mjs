@@ -30,6 +30,7 @@ const VENDOR_TARGETS = [
   'codex-plugin/hooks/vendor/skill-workcopy',
   'cli/vendor/skill-workcopy',
   'zcode-plugin/vendor/skill-workcopy',
+  'agy-plugin/vendor/skill-workcopy',
 ];
 
 // Per-plugin vendor copies of the shared channel sources. dsh additionally
@@ -37,6 +38,13 @@ const VENDOR_TARGETS = [
 const CHANNEL_VENDOR_TARGETS = [
   {
     dir: 'cli/vendor',
+    files: {
+      'lore-config.mjs': 'lore-config.mjs',
+      'mcp-bridge/index.mjs': 'mcp-bridge/index.mjs',
+    },
+  },
+  {
+    dir: 'agy-plugin/vendor',
     files: {
       'lore-config.mjs': 'lore-config.mjs',
       'mcp-bridge/index.mjs': 'mcp-bridge/index.mjs',

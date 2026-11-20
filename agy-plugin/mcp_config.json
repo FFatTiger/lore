@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "lore": { "command": "node", "args": ["${PLUGIN_ROOT}/mcp/lore-mcp.mjs"] }
+  }
+}

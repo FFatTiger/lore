@@ -1,0 +1,12 @@
+{
+  "name": "lore",
+  "displayName": "Lore",
+  "version": "1.12.5",
+  "description": "Long-term Lore memory for Antigravity CLI via the Lore MCP bridge and bundled lifecycle hooks.",
+  "skills": "./skills",
+  "author": { "name": "FFatTiger" },
+  "homepage": "https://github.com/FFatTiger/lore",
+  "repository": "https://github.com/FFatTiger/lore",
+  "license": "MIT",
+  "keywords": ["memory", "antigravity", "hooks", "recall", "mcp"]
+}

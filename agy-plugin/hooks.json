@@ -1,0 +1,10 @@
+{
+  "lore": {
+    "SessionStart": [
+      { "type": "command", "command": "node ./hooks/lifecycle-hooks.mjs session-start", "timeout": 10 }
+    ],
+    "PreInvocation": [
+      { "type": "command", "command": "node ./hooks/lifecycle-hooks.mjs pre-invocation", "timeout": 12 }
+    ]
+  }
+}

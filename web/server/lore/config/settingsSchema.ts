@@ -201,6 +201,13 @@ export const DEFAULT_BOOT_DRAFT_CLIENT_DSH_INSTRUCTIONS = [
   'Assume shared working rules remain in core://agent rather than repeating them here.',
 ].join('\n');
 
+export const DEFAULT_BOOT_DRAFT_CLIENT_AGY_INSTRUCTIONS = [
+  'Focus on Antigravity CLI (agy) runtime defaults for the native Lore hooks, stdout_json injectSteps system message injection, and coding workflow expectations.',
+  'State that SessionStart boot and PreInvocation recall both return injectSteps whose systemMessage carries the Lore context, and that empty context returns no output.',
+  'Mention client_type=agy with runtime_id=agy and runtime_family=agy lifecycle attribution, and require fail open behavior when Lore or hook parsing is unavailable.',
+  'Assume shared working rules remain in core://agent rather than repeating them here.',
+].join('\n');
+
 export const DEFAULT_DREAM_SYSTEM_PROMPT = `你是 Lore 的夜间记忆卫生系统。Lore 是一棵会自我生长的语义记忆树。会话中的 agent 已经带着完整上下文写记忆，所以你不再从今日内容里抽取或补写；你的工作是让这棵树在明天被更好地想起：修复结构、合并重复、修剪过载的 glossary。
 
 ## 目标优先级（每轮固定）
@@ -505,6 +512,13 @@ export const SETTINGS_SCHEMA: SettingDef[] = [
     label: 'Boot 草稿 dsh 说明',
     type: 'text', default: DEFAULT_BOOT_DRAFT_CLIENT_DSH_INSTRUCTIONS,
     description: '生成 core://agent/dsh 初稿时追加的约束。',
+  },
+  {
+    key: 'prompts.boot_draft.instructions.client_agy',
+    section: 'prompts',
+    label: 'Boot 草稿 agy 说明',
+    type: 'text', default: DEFAULT_BOOT_DRAFT_CLIENT_AGY_INSTRUCTIONS,
+    description: '生成 core://agent/agy 初稿时追加的约束。',
   },
   {
     key: 'prompts.dream.system',

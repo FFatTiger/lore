@@ -56,6 +56,12 @@ const CLIENT_TYPE_META: Record<string, ClientTypeMeta> = {
     assetPath: '/channel-icons/dsh.svg',
     initials: 'DS',
   },
+  agy: {
+    label: 'Antigravity CLI',
+    tone: 'purple',
+    assetPath: '/channel-icons/agy.svg',
+    initials: 'AG',
+  },
   mcp: {
     label: 'MCP',
     tone: 'orange',

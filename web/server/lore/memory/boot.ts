@@ -8,7 +8,7 @@ export type BootNodeRole = 'agent' | 'soul' | 'user';
 export type BootNodeState = 'missing' | 'empty' | 'initialized';
 export type BootOverallState = 'uninitialized' | 'partial' | 'complete';
 export type BootNodeScope = 'global' | 'client';
-export type BootClientType = Extract<ClientType, 'claudecode' | 'openclaw' | 'hermes' | 'codex' | 'pi' | 'opencode' | 'zcode' | 'dsh'>;
+export type BootClientType = Extract<ClientType, 'claudecode' | 'openclaw' | 'hermes' | 'codex' | 'pi' | 'opencode' | 'zcode' | 'dsh' | 'agy'>;
 
 export interface BootNodeSpec {
   id: string;
@@ -239,6 +239,19 @@ const CLIENT_BOOT_NODES: readonly BootNodeSpec[] = [
     setup_title: 'DeepSeek Harness boot memory',
     setup_description: 'Write the dsh-specific lifecycle, boot, recall, attribution, and fail-open rules that load together with core://agent.',
   },
+  {
+    id: 'agent-agy',
+    uri: 'core://agent/agy',
+    role: 'agent',
+    role_label: 'agy runtime constraints',
+    purpose: 'Antigravity CLI-specific hooks, system message injection, and runtime workflow constraints.',
+    dream_protection: 'protected',
+    scope: 'client',
+    client_type: 'agy',
+    setup_slug: 'agent-agy',
+    setup_title: 'Antigravity CLI boot memory',
+    setup_description: 'Write the agy-specific hook, system message injection, attribution, and fail-open rules that load together with core://agent.',
+  },
 ] as const;
 
 const FIXED_BOOT_NODES: readonly BootNodeSpec[] = [
@@ -279,7 +292,8 @@ function isRuntimeBootClientType(value: ClientType | null | undefined): value is
     || value === 'pi'
     || value === 'opencode'
     || value === 'zcode'
-    || value === 'dsh';
+    || value === 'dsh'
+    || value === 'agy';
 }
 
 function shouldIncludeAllClientBootNodes(options: BootViewOptions): boolean {

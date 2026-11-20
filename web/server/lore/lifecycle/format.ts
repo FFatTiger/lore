@@ -34,6 +34,7 @@ const CLIENT_LABELS: Partial<Record<ClientType, string>> = {
   opencode: 'OpenCode',
   zcode: 'ZCode',
   dsh: 'DeepSeek Harness',
+  agy: 'Antigravity CLI',
   mcp: 'MCP',
   admin: 'Admin',
 };
@@ -47,6 +48,7 @@ const CLIENT_BOOT_LABELS: Partial<Record<ClientType, string>> = {
   opencode: 'opencode runtime constraints',
   zcode: 'zcode runtime constraints',
   dsh: 'dsh runtime constraints',
+  agy: 'agy runtime constraints',
   mcp: 'mcp runtime constraints',
   admin: 'admin runtime constraints',
 };

@@ -18,3 +18,13 @@ The file `opencode.svg` is copied unchanged from the package listed above.
 - License: MIT
 
 The `dsh.svg` mark is the DeepSeek whale path from the package above.
+
+## Antigravity icon
+
+- Package: `@lobehub/icons-static-svg@1.104.0`
+- Source file: `icons/antigravity-color.svg` (package archive path: `package/icons/antigravity-color.svg`)
+- Upstream project: [LobeHub Icons](https://github.com/lobehub/lobe-icons)
+- License: MIT
+- SHA-256: `652128cf55a28bb958563ee372d0bd00208d9e6fd446f523f77aafd811eef8ca`
+
+The file `agy.svg` is copied unchanged from the package listed above.

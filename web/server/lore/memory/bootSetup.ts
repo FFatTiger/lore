@@ -103,6 +103,7 @@ function clientInstructions(config: ServerPromptConfig, clientType: BootClientTy
   if (clientType === 'opencode') return config.bootDraftClientOpencodeInstructions;
   if (clientType === 'zcode') return config.bootDraftClientZcodeInstructions;
   if (clientType === 'dsh') return config.bootDraftClientDshInstructions;
+  if (clientType === 'agy') return config.bootDraftClientAgyInstructions;
   return config.bootDraftClientPiInstructions;
 }
 

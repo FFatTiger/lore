@@ -121,6 +121,10 @@ export const SETTINGS_EN: Record<string, EnglishCopy> = {
     label: 'Boot draft: dsh instructions',
     description: 'Constraints appended when drafting core://agent/dsh.',
   },
+  'prompts.boot_draft.instructions.client_agy': {
+    label: 'Boot draft: agy instructions',
+    description: 'Constraints appended when drafting core://agent/agy.',
+  },
   'prompts.dream.system': {
     label: 'Dream system prompt',
     description: 'Main system prompt of the Dream consolidation agent; supports template variables such as {{guidance}} and {{boot_baseline_json}}.',

@@ -96,6 +96,18 @@ describe('bootSetup routing helpers', () => {
     expect(content).not.toContain('Pi extensions');
   });
 
+  it('provides agy-specific default boot content', () => {
+    const content = getDefaultBootContent('core://agent/agy');
+
+    expect(content).toContain('core://agent');
+    expect(content).toContain('SessionStart');
+    expect(content).toContain('PreInvocation');
+    expect(content).toContain('client_type=agy');
+    expect(content).toContain('runtime_family=agy');
+    expect(content).toContain('fail open');
+    expect(content).not.toContain('Pi extensions');
+  });
+
   it('detects setup paths', () => {
     expect(isSetupPath('/setup')).toBe(true);
     expect(isSetupPath('/setup/extra')).toBe(true);

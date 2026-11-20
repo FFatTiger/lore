@@ -6,6 +6,7 @@ vi.mock('../../config/settings', () => ({
 
 import { getSettings } from '../../config/settings';
 import {
+  DEFAULT_BOOT_DRAFT_CLIENT_AGY_INSTRUCTIONS,
   DEFAULT_BOOT_DRAFT_CLIENT_DSH_INSTRUCTIONS,
   DEFAULT_BOOT_DRAFT_CLIENT_OPENCODE_INSTRUCTIONS,
   DEFAULT_BOOT_DRAFT_CLIENT_ZCODE_INSTRUCTIONS,
@@ -69,6 +70,16 @@ describe('loadServerPromptConfig', () => {
       type: 'text',
       default: DEFAULT_BOOT_DRAFT_CLIENT_DSH_INSTRUCTIONS,
       description: '生成 core://agent/dsh 初稿时追加的约束。',
+    });
+  });
+
+  it('registers the agy Boot draft instructions in the Settings schema', () => {
+    expect(SCHEMA_BY_KEY.get('prompts.boot_draft.instructions.client_agy')).toMatchObject({
+      section: 'prompts',
+      label: 'Boot 草稿 agy 说明',
+      type: 'text',
+      default: DEFAULT_BOOT_DRAFT_CLIENT_AGY_INSTRUCTIONS,
+      description: '生成 core://agent/agy 初稿时追加的约束。',
     });
   });
 });

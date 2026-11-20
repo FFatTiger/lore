@@ -41,4 +41,11 @@ describe('clientTypeMeta', () => {
     expect(clientTypeAssetPath('dsh')).toBe('/channel-icons/dsh.svg');
     expect(clientTypeInitials('dsh')).toBe('DS');
   });
+
+  it('exposes agy display metadata', () => {
+    expect(KNOWN_CLIENT_TYPES).toContain('agy');
+    expect(clientTypeLabel('agy')).toBe('Antigravity CLI');
+    expect(clientTypeAssetPath('agy')).toBe('/channel-icons/agy.svg');
+    expect(clientTypeInitials('agy')).toBe('AG');
+  });
 });

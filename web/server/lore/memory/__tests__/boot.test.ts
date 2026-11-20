@@ -37,6 +37,7 @@ describe('boot helpers', () => {
       'core://agent/opencode',
       'core://agent/zcode',
       'core://agent/dsh',
+      'core://agent/agy',
     ]);
     expect(getRuntimeBootUris('codex')).toEqual([
       'core://agent',
@@ -61,6 +62,12 @@ describe('boot helpers', () => {
       'core://soul',
       'preferences://user',
       'core://agent/dsh',
+    ]);
+    expect(getRuntimeBootUris('agy')).toEqual([
+      'core://agent',
+      'core://soul',
+      'preferences://user',
+      'core://agent/agy',
     ]);
   });
 
@@ -442,12 +449,13 @@ describe('bootView', () => {
       .mockResolvedValueOnce({ rows: [{ node_uuid: 'opencode-uuid', priority: 1, disclosure: null, content: 'OpenCode rules' }], rowCount: 1 } as any)
       .mockResolvedValueOnce({ rows: [{ node_uuid: 'zcode-uuid', priority: 1, disclosure: null, content: 'ZCode rules' }], rowCount: 1 } as any)
       .mockResolvedValueOnce({ rows: [{ node_uuid: 'dsh-uuid', priority: 1, disclosure: null, content: 'dsh rules' }], rowCount: 1 } as any)
+      .mockResolvedValueOnce({ rows: [{ node_uuid: 'agy-uuid', priority: 1, disclosure: null, content: 'agy rules' }], rowCount: 1 } as any)
       .mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
 
     const result = await bootView({ client_type: 'admin' });
 
-    expect(result.total).toBe(11);
-    expect(result.loaded).toBe(11);
+    expect(result.total).toBe(12);
+    expect(result.loaded).toBe(12);
     expect(result.selected_client_type).toBe('admin');
     expect(result.includes_all_clients).toBe(true);
     expect(result.core_memories.map((memory) => memory.uri)).toEqual(getBootUris());

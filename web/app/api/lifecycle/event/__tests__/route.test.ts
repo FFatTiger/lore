@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../../../server/auth', () => {
-  const clientTypes = new Set(['claudecode', 'openclaw', 'hermes', 'codex', 'pi', 'opencode', 'zcode', 'mcp', 'admin']);
+  const clientTypes = new Set(['claudecode', 'openclaw', 'hermes', 'codex', 'pi', 'opencode', 'zcode', 'dsh', 'agy', 'mcp', 'admin']);
   return {
     requireBearerAuth: vi.fn(),
     normalizeClientType: vi.fn((value: string | null) => {
@@ -239,6 +239,61 @@ describe('lifecycle event route', () => {
     );
     expect(prompt.query_id).toBe('q-prompt');
     expect(prompt.node_uris).toEqual(['core://agent/opencode']);
+  });
+
+  it('returns host-ready agy startup and prompt output', async () => {
+    mockBootView.mockResolvedValueOnce({
+      loaded: 2,
+      total: 2,
+      failed: [],
+      core_memories: [
+        { uri: 'core://agent', content: 'Agent rules', priority: 1, boot_role_label: 'workflow constraints' },
+        { uri: 'core://agent/agy', content: 'agy rules', priority: 0, boot_role_label: 'agy runtime constraints', scope: 'client', client_type: 'agy' },
+      ],
+      recent_memories: [],
+    } as any);
+
+    const startupResponse = await lifecycleRoute.POST(new Request('http://localhost/api/lifecycle/event', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        protocol_version: 'lore.lifecycle.v1',
+        runtime: { runtime_id: 'agy', runtime_family: 'agy' },
+        event: { name: 'session.start', native_name: 'SessionStart' },
+        normalized: { session_id: 'agy-session' },
+        project: { dir_name: 'lore', repo_name: 'lore' },
+      }),
+    }) as any);
+    const startup = await startupResponse.json();
+
+    expect(startup.host_output).toEqual({
+      mode: 'stdout_json',
+      value: { injectSteps: [{ systemMessage: { systemMessage: expect.any(String) } }] },
+    });
+    expect(startup.host_output.value.injectSteps[0].systemMessage.systemMessage).toContain('core://agent/agy');
+    expect(mockBootView).toHaveBeenCalledWith({ client_type: 'agy' });
+
+    mockRecallMemories.mockResolvedValueOnce({
+      items: [{ uri: 'core://agent/agy', score_display: 0.86, cues: ['Antigravity'] }],
+      event_log: { query_id: 'q-agy' },
+    } as any);
+    const promptResponse = await lifecycleRoute.POST(new Request('http://localhost/api/lifecycle/event', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        runtime: { runtime_id: 'agy', runtime_family: 'agy' },
+        event: { name: 'prompt.submit', native_name: 'PreInvocation' },
+        normalized: { session_id: 'agy-session', prompt: 'Antigravity hooks' },
+      }),
+    }) as any);
+    const prompt = await promptResponse.json();
+
+    expect(prompt.host_output).toEqual({
+      mode: 'stdout_json',
+      value: { injectSteps: [{ systemMessage: { systemMessage: expect.any(String) } }] },
+    });
+    expect(prompt.host_output.value.injectSteps[0].systemMessage.systemMessage).toContain('PROMPT RECALL PREAMBLE');
+    expect(prompt.query_id).toBe('q-agy');
   });
 
   it('gates duplicate OpenCode startup Recall without removing current Boot output', async () => {

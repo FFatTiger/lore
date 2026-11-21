@@ -9,8 +9,8 @@ import { test } from 'node:test';
 import { computeManifestHash, sha256Text } from '../vendor/skill-workcopy/index.mjs';
 
 const hooksDir = path.resolve(import.meta.dirname, '..');
-const recallHook = path.join(hooksDir, 'recall-inject.ts');
-const rulesHook = path.join(hooksDir, 'rules-inject.ts');
+const recallHook = path.join(hooksDir, 'recall-inject.mjs');
+const rulesHook = path.join(hooksDir, 'rules-inject.mjs');
 const pluginVersion = JSON.parse(
   readFileSync(path.join(hooksDir, '..', '.claude-plugin', 'plugin.json'), 'utf8'),
 ).version;
@@ -40,7 +40,7 @@ function syncedSkillFixture() {
 
 function runHook(scriptPath, input, env = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn('npx', ['tsx', scriptPath], {
+    const child = spawn(process.execPath, [scriptPath], {
       cwd: hooksDir,
       env: {
         ...process.env,
@@ -321,7 +321,7 @@ test('bundled hooks.json uses portable quoted commands', () => {
     .flatMap((entries) => entries)
     .flatMap((entry) => entry.hooks)
     .map((hook) => hook.command);
-  assert.ok(commands.every((command) => command.startsWith('npx tsx "')));
+  assert.ok(commands.every((command) => command.startsWith('node "')));
   assert.ok(commands.every((command) => !command.includes('LORE_BASE_URL=')));
 });
 
